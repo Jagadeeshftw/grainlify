@@ -19,6 +19,8 @@ mod traits;
 pub mod upgrade_safety;
 
 #[cfg(test)]
+mod capability_replay_tests;
+#[cfg(test)]
 mod test_fee_on_transfer;
 #[cfg(test)]
 mod test_filter_pagination;
