@@ -234,19 +234,19 @@ export function InstallGitHubAppModal({ isOpen, onClose, onSuccess }: InstallGit
           {/* Don't show again */}
           <label className="flex items-center gap-2 cursor-pointer">
             <div className="relative">
-              <input
-                type="checkbox"
-                checked={dontShowAgain}
-                onChange={(e) => setDontShowAgain(e.target.checked)}
-                disabled={isInstalling}
+            <input
+              type="checkbox"
+              checked={dontShowAgain}
+              onChange={(e) => setDontShowAgain(e.target.checked)}
+              disabled={isInstalling}
                 className={`w-4 h-4 rounded border-2 checked:bg-[#c9983a] checked:border-[#c9983a] focus:ring-2 focus:ring-[#c9983a]/40 transition-all cursor-pointer appearance-none ${
-                  darkTheme
-                    ? 'border-[#b8a898]/50 bg-[#2d2820]'
-                    : 'border-[#7a6b5a]/50 bg-[#e8dfd0]'
+                darkTheme
+                  ? 'border-[#b8a898]/50 bg-[#2d2820]'
+                  : 'border-[#7a6b5a]/50 bg-[#e8dfd0]'
                 } ${isInstalling ? 'opacity-50 cursor-not-allowed' : ''} ${
                   dontShowAgain ? 'bg-[#c9983a] border-[#c9983a]' : ''
                 }`}
-              />
+            />
               {dontShowAgain && (
                 <svg 
                   className="absolute top-0 left-0 w-4 h-4 pointer-events-none"
