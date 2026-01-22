@@ -276,6 +276,8 @@ export const getPublicProfile = (userId?: string, login?: string) => {
   return apiRequest<{
     login: string;
     user_id: string;
+    first_name?: string;
+    last_name?: string;
     avatar_url?: string;
     contributions_count: number;
     projects_contributed_to_count: number;

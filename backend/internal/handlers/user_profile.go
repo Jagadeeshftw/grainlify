@@ -763,7 +763,7 @@ func (h *UserProfileHandler) PublicProfile() fiber.Handler {
 
 		var githubLogin *string
 		var userID *uuid.UUID
-		var bio, website, telegram, linkedin, whatsapp, twitter, discord *string
+		var firstName, lastName, bio, website, telegram, linkedin, whatsapp, twitter, discord *string
 
 		// If user_id is provided, get GitHub login from it
 		if userIDParam != "" {
@@ -785,10 +785,10 @@ WHERE user_id = $1
 
 			// Get profile fields
 			_ = h.db.Pool.QueryRow(c.Context(), `
-SELECT bio, website, telegram, linkedin, whatsapp, twitter, discord
+SELECT first_name, last_name, bio, website, telegram, linkedin, whatsapp, twitter, discord
 FROM users
 WHERE id = $1
-`, parsedUserID).Scan(&bio, &website, &telegram, &linkedin, &whatsapp, &twitter, &discord)
+`, parsedUserID).Scan(&firstName, &lastName, &bio, &website, &telegram, &linkedin, &whatsapp, &twitter, &discord)
 		} else {
 			// If login is provided, get user_id from it
 			loginParamLower := strings.ToLower(loginParam)
@@ -822,10 +822,10 @@ WHERE LOWER(ga.login) = $1
 
 			// Get profile fields
 			_ = h.db.Pool.QueryRow(c.Context(), `
-SELECT bio, website, telegram, linkedin, whatsapp, twitter, discord
+SELECT first_name, last_name, bio, website, telegram, linkedin, whatsapp, twitter, discord
 FROM users
 WHERE id = $1
-`, foundUserID).Scan(&bio, &website, &telegram, &linkedin, &whatsapp, &twitter, &discord)
+`, foundUserID).Scan(&firstName, &lastName, &bio, &website, &telegram, &linkedin, &whatsapp, &twitter, &discord)
 		}
 
 		if githubLogin == nil || *githubLogin == "" {
@@ -1050,6 +1050,13 @@ WHERE u.id = $1
 				"tier_name":  rankTierName,
 				"tier_color": rankTierColor,
 			},
+		}
+
+		if firstName != nil && *firstName != "" {
+			response["first_name"] = *firstName
+		}
+		if lastName != nil && *lastName != "" {
+			response["last_name"] = *lastName
 		}
 
 		if bio != nil && *bio != "" {
