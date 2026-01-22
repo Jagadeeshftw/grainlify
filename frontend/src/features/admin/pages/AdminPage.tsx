@@ -259,8 +259,8 @@ export function AdminPage() {
     <div className="space-y-6">
       {/* Admin Header */}
       <div className={`backdrop-blur-[40px] bg-gradient-to-br rounded-[28px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-10 transition-all overflow-hidden relative ${theme === 'dark'
-          ? 'from-white/[0.08] to-white/[0.04] border-white/10'
-          : 'from-white/[0.15] to-white/[0.08] border-white/20'
+        ? 'from-white/[0.08] to-white/[0.04] border-white/10'
+        : 'from-white/[0.15] to-white/[0.08] border-white/20'
         }`}>
         {/* Decorative gradient */}
         <div className="absolute -top-20 -right-20 w-80 h-80 bg-gradient-to-br from-[#c9983a]/20 to-transparent rounded-full blur-3xl"></div>
@@ -282,8 +282,8 @@ export function AdminPage() {
             </div>
             <div className="flex items-center gap-3">
               <div className={`px-4 py-2 rounded-[12px] backdrop-blur-[20px] border transition-colors ${theme === 'dark'
-                  ? 'bg-white/[0.08] border-white/15 text-[#d4d4d4]'
-                  : 'bg-white/[0.15] border-white/25 text-[#7a6b5a]'
+                ? 'bg-white/[0.08] border-white/15 text-[#d4d4d4]'
+                : 'bg-white/[0.15] border-white/25 text-[#7a6b5a]'
                 }`}>
                 <span className="text-[13px] font-medium">Admin Access</span>
               </div>
@@ -294,8 +294,8 @@ export function AdminPage() {
 
       {/* Ecosystem Management Section */}
       <div className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${theme === 'dark'
-          ? 'bg-white/[0.08] border-white/10'
-          : 'bg-white/[0.15] border-white/20'
+        ? 'bg-white/[0.08] border-white/10'
+        : 'bg-white/[0.15] border-white/20'
         }`}>
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -317,8 +317,8 @@ export function AdminPage() {
         {/* Inline error (avoid ugly alerts) */}
         {errorMessage && (
           <div className={`mb-4 rounded-[16px] border px-4 py-3 text-[13px] ${theme === 'dark'
-              ? 'bg-red-500/10 border-red-500/20 text-red-200'
-              : 'bg-red-500/10 border-red-500/20 text-red-700'
+            ? 'bg-red-500/10 border-red-500/20 text-red-200'
+            : 'bg-red-500/10 border-red-500/20 text-red-700'
             }`}>
             {errorMessage}
           </div>
@@ -332,8 +332,8 @@ export function AdminPage() {
                 <div
                   key={idx}
                   className={`backdrop-blur-[30px] rounded-[16px] border p-5 ${theme === 'dark'
-                      ? 'bg-white/[0.06] border-white/10'
-                      : 'bg-white/[0.12] border-white/20'
+                    ? 'bg-white/[0.06] border-white/10'
+                    : 'bg-white/[0.12] border-white/20'
                     }`}
                 >
                   <div className="flex items-start justify-between mb-3">
@@ -413,8 +413,8 @@ export function AdminPage() {
                   <div
                     key={ecosystem.id}
                     className={`backdrop-blur-[30px] rounded-[16px] border p-5 transition-all hover:scale-[1.02] ${theme === 'dark'
-                        ? 'bg-white/[0.06] border-white/10'
-                        : 'bg-white/[0.12] border-white/20'
+                      ? 'bg-white/[0.06] border-white/10'
+                      : 'bg-white/[0.12] border-white/20'
                       }`}
                   >
                     <div className="flex items-start justify-between mb-3">
@@ -425,10 +425,10 @@ export function AdminPage() {
                         onClick={() => confirmDelete(ecosystem.id, ecosystem.name)}
                         disabled={deletingId === ecosystem.id}
                         className={`p-2 rounded-[10px] transition-all ${deletingId === ecosystem.id
-                            ? 'opacity-50 cursor-not-allowed'
-                            : theme === 'dark'
-                              ? 'hover:bg-red-500/20 text-red-400'
-                              : 'hover:bg-red-500/30 text-red-600'
+                          ? 'opacity-50 cursor-not-allowed'
+                          : theme === 'dark'
+                            ? 'hover:bg-red-500/20 text-red-400'
+                            : 'hover:bg-red-500/30 text-red-600'
                           }`}
                         title="Delete ecosystem"
                       >
@@ -475,12 +475,12 @@ export function AdminPage() {
 
                     <div className="mt-3 pt-3 border-t border-white/10">
                       <span className={`text-[11px] px-2 py-1 rounded-[6px] ${ecosystem.status === 'active'
-                          ? theme === 'dark'
-                            ? 'bg-green-500/20 text-green-400'
-                            : 'bg-green-500/30 text-green-700'
-                          : theme === 'dark'
-                            ? 'bg-gray-500/20 text-gray-400'
-                            : 'bg-gray-500/30 text-gray-700'
+                        ? theme === 'dark'
+                          ? 'bg-green-500/20 text-green-400'
+                          : 'bg-green-500/30 text-green-700'
+                        : theme === 'dark'
+                          ? 'bg-gray-500/20 text-gray-400'
+                          : 'bg-gray-500/30 text-gray-700'
                         }`}>
                         {ecosystem.status}
                       </span>
@@ -494,8 +494,8 @@ export function AdminPage() {
 
         {/* Info Message */}
         <div className={`backdrop-blur-[30px] rounded-[16px] border p-5 flex items-start gap-4 transition-colors mt-6 ${theme === 'dark'
-            ? 'bg-white/[0.06] border-white/10'
-            : 'bg-white/[0.12] border-white/20'
+          ? 'bg-white/[0.06] border-white/10'
+          : 'bg-white/[0.12] border-white/20'
           }`}>
           <div className="p-2 rounded-[10px] bg-gradient-to-br from-[#c9983a]/20 to-[#a67c2e]/10 border border-[#c9983a]/20">
             <Sparkles className="w-5 h-5 text-[#c9983a]" />
@@ -513,8 +513,8 @@ export function AdminPage() {
 
       {/* Open Source Week Events Section */}
       <div className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${theme === 'dark'
-          ? 'bg-white/[0.08] border-white/10'
-          : 'bg-white/[0.15] border-white/20'
+        ? 'bg-white/[0.08] border-white/10'
+        : 'bg-white/[0.15] border-white/20'
         }`}>
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -616,7 +616,6 @@ export function AdminPage() {
                 if (error) setErrors(prev => ({ ...prev, name: error }));
               }}
               placeholder="e.g., Web3 Ecosystem"
-              required
               error={errors.name}
             />
 
@@ -633,7 +632,6 @@ export function AdminPage() {
               }}
               placeholder="Describe the ecosystem..."
               rows={4}
-              required
               error={errors.description}
             />
 
@@ -660,7 +658,6 @@ export function AdminPage() {
                 if (error) setErrors(prev => ({ ...prev, websiteUrl: error }));
               }}
               placeholder="https://example.com"
-              required
               error={errors.websiteUrl}
             />
           </div>
@@ -805,8 +802,8 @@ export function AdminPage() {
             </span>? This action cannot be undone.
           </p>
           <div className={`rounded-[16px] border px-4 py-3 text-[13px] ${theme === 'dark'
-              ? 'bg-white/[0.06] border-white/10 text-[#d4d4d4]'
-              : 'bg-white/[0.12] border-white/20 text-[#7a6b5a]'
+            ? 'bg-white/[0.06] border-white/10 text-[#d4d4d4]'
+            : 'bg-white/[0.12] border-white/20 text-[#7a6b5a]'
             }`}>
             You can only delete ecosystems that have <span className={theme === 'dark' ? 'text-[#f5f5f5] font-medium' : 'text-[#2d2820] font-medium'}>no associated projects</span>.
           </div>
