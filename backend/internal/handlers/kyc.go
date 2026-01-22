@@ -31,9 +31,7 @@ func extractKYCInfo(data map[string]interface{}) map[string]interface{} {
 		if fullName, ok := idVerification["full_name"].(string); ok && fullName != "" {
 			extracted["full_name"] = fullName
 		}
-		if address, ok := idVerification["address"].(string); ok && address != "" {
-			extracted["address"] = address
-		}
+		if address, ok := idVerification["address"].(string); ok && strings.TrimSpace(address) != "" {}
 		if dob, ok := idVerification["date_of_birth"].(string); ok && dob != "" {
 			extracted["date_of_birth"] = dob
 		}
@@ -49,8 +47,13 @@ func extractKYCInfo(data map[string]interface{}) map[string]interface{} {
 		if status, ok := idVerification["status"].(string); ok && status != "" {
 			extracted["id_verification_status"] = status
 		}
-	}
-
+		if status, ok := idVerification["status"].(string); ok && strings.TrimSpace(status) != "" {
+			    extracted["id_verification_status"] = strings.TrimSpace(status)
+				}
+				
+		}
+	
+    
 	// Extract face match information
 	if faceMatch, ok := data["face_match"].(map[string]interface{}); ok {
 		if score, ok := faceMatch["score"].(float64); ok {
