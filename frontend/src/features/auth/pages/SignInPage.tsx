@@ -21,6 +21,10 @@ export function SignInPage() {
   }, [navigate]);
 
   const handleGitHubSignIn = () => {
+    if (isRedirecting) {
+          return;
+          }
+    }
     console.log('Sign in button clicked');
     setIsRedirecting(true);
     const githubUrl = getGitHubLoginUrl();
