@@ -42,7 +42,12 @@ export function AuthCallbackPage() {
 
         if (errorParam) {
           console.error('OAuth Error:', errorParam);
-          setError(errorParam);
+          if (errorParam === 'access_denied') {
+                setError('Login was cancelled. Please try again.');
+                } else {
+                    setError(errorParam || 'An unexpected error occurred');
+                    }
+          }
           setIsProcessing(false);
           // Redirect to signin after 3 seconds
           setTimeout(() => navigate('/signin'), 3000);
