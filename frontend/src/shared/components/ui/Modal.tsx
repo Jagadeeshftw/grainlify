@@ -56,8 +56,8 @@ export function Modal({
     >
       <div
         className={`rounded-[24px] border-2 shadow-[0_20px_60px_rgba(0,0,0,0.3)] ${widthClasses[width]} max-w-[90vw] max-h-[90vh] flex flex-col transition-all animate-in zoom-in-95 duration-200 ${isDark
-            ? 'bg-[#3a3228] border-white/30'
-            : 'bg-[#d4c5b0] border-white/40'
+          ? 'bg-[#3a3228] border-white/30'
+          : 'bg-[#d4c5b0] border-white/40'
           }`}
         onClick={(e) => e.stopPropagation()}
       >
@@ -67,8 +67,8 @@ export function Modal({
             <div className="flex items-center gap-3 flex-1">
               {icon && (
                 <div className={`w-10 h-10 rounded-[12px] flex items-center justify-center shadow-lg border-2 flex-shrink-0 ${isDark
-                    ? 'bg-gradient-to-br from-[#e8c571]/30 via-[#d4af37]/25 to-[#c9983a]/20 border-[#e8c571]/50'
-                    : 'bg-gradient-to-br from-[#c9983a]/30 via-[#d4af37]/25 to-[#c9983a]/20 border-[#c9983a]/50'
+                  ? 'bg-gradient-to-br from-[#e8c571]/30 via-[#d4af37]/25 to-[#c9983a]/20 border-[#e8c571]/50'
+                  : 'bg-gradient-to-br from-[#c9983a]/30 via-[#d4af37]/25 to-[#c9983a]/20 border-[#c9983a]/50'
                   }`}>
                   {icon}
                 </div>
@@ -84,8 +84,8 @@ export function Modal({
               <button
                 onClick={onClose}
                 className={`p-2 rounded-[10px] transition-all hover:scale-110 flex-shrink-0 ${isDark
-                    ? 'hover:bg-white/[0.1] text-[#e8c571] hover:text-[#f5d98a]'
-                    : 'hover:bg-black/[0.05] text-[#8b6f3a] hover:text-[#c9983a]'
+                  ? 'hover:bg-white/[0.1] text-[#e8c571] hover:text-[#f5d98a]'
+                  : 'hover:bg-black/[0.05] text-[#8b6f3a] hover:text-[#c9983a]'
                   }`}
               >
                 <X className="w-4 h-4" />
@@ -129,6 +129,7 @@ interface ModalButtonProps {
   type?: 'button' | 'submit' | 'reset';
   variant?: 'primary' | 'secondary';
   className?: string;
+  disabled?: boolean;
 }
 
 export function ModalButton({
@@ -136,7 +137,8 @@ export function ModalButton({
   onClick,
   type = 'button',
   variant = 'secondary',
-  className = ''
+  className = '',
+  disabled = false
 }: ModalButtonProps) {
   const { theme } = useTheme();
 
@@ -145,7 +147,8 @@ export function ModalButton({
       <button
         type={type}
         onClick={onClick}
-        className={`px-5 py-2.5 rounded-[12px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white font-medium text-[14px] shadow-[0_6px_20px_rgba(162,121,44,0.35)] hover:shadow-[0_8px_24px_rgba(162,121,44,0.5)] transition-all border border-white/10 hover:scale-[1.02] flex items-center justify-center gap-2 ${className}`}
+        disabled={disabled}
+        className={`px-5 py-2.5 rounded-[12px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white font-medium text-[14px] shadow-[0_6px_20px_rgba(162,121,44,0.35)] hover:shadow-[0_8px_24px_rgba(162,121,44,0.5)] transition-all border border-white/10 hover:scale-[1.02] flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 ${className}`}
       >
         {children}
       </button>
@@ -156,9 +159,10 @@ export function ModalButton({
     <button
       type={type}
       onClick={onClick}
-      className={`px-5 py-2.5 rounded-[12px] backdrop-blur-[20px] border font-medium text-[14px] transition-all hover:scale-[1.02] ${theme === 'dark'
-          ? 'bg-white/[0.08] border-white/15 text-[#d4d4d4] hover:bg-white/[0.12]'
-          : 'bg-white/[0.15] border-white/25 text-[#7a6b5a] hover:bg-white/[0.2]'
+      disabled={disabled}
+      className={`px-5 py-2.5 rounded-[12px] backdrop-blur-[20px] border font-medium text-[14px] transition-all hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 ${theme === 'dark'
+        ? 'bg-white/[0.08] border-white/15 text-[#d4d4d4] hover:bg-white/[0.12]'
+        : 'bg-white/[0.15] border-white/25 text-[#7a6b5a] hover:bg-white/[0.2]'
         } ${className}`}
     >
       {children}
@@ -196,12 +200,12 @@ export function ModalInput({
   const isError = !!error;
 
   const inputClasses = `w-full px-4 py-3 rounded-[14px] backdrop-blur-[30px] border focus:outline-none transition-all text-[14px] ${isError
-      ? theme === 'dark'
-        ? 'bg-red-500/10 border-red-500/40 text-[#f5f5f5] placeholder-red-300/50 focus:border-red-500/60'
-        : 'bg-red-500/5 border-red-500/40 text-[#2d2820] placeholder-red-700/50 focus:border-red-500/60'
-      : theme === 'dark'
-        ? 'bg-white/[0.08] border-white/15 text-[#f5f5f5] placeholder-[#d4d4d4] focus:bg-white/[0.12] focus:border-[#c9983a]/30'
-        : 'bg-white/[0.15] border-white/25 text-[#2d2820] placeholder-[#7a6b5a] focus:bg-white/[0.2] focus:border-[#c9983a]/30'
+    ? theme === 'dark'
+      ? 'bg-red-500/10 border-red-500/40 text-[#f5f5f5] placeholder-red-300/50 focus:border-red-500/60'
+      : 'bg-red-500/5 border-red-500/40 text-[#2d2820] placeholder-red-700/50 focus:border-red-500/60'
+    : theme === 'dark'
+      ? 'bg-white/[0.08] border-white/15 text-[#f5f5f5] placeholder-[#d4d4d4] focus:bg-white/[0.12] focus:border-[#c9983a]/30'
+      : 'bg-white/[0.15] border-white/25 text-[#2d2820] placeholder-[#7a6b5a] focus:bg-white/[0.2] focus:border-[#c9983a]/30'
     } ${className}`;
 
   return (
@@ -277,8 +281,8 @@ export function ModalSelect({
         onChange={(e) => onChange(e.target.value)}
         required={required}
         className={`w-full px-4 py-3 rounded-[14px] backdrop-blur-[30px] border focus:outline-none transition-all text-[14px] ${theme === 'dark'
-            ? 'bg-white/[0.08] border-white/15 text-[#f5f5f5] focus:bg-white/[0.12] focus:border-[#c9983a]/30'
-            : 'bg-white/[0.15] border-white/25 text-[#2d2820] focus:bg-white/[0.2] focus:border-[#c9983a]/30'
+          ? 'bg-white/[0.08] border-white/15 text-[#f5f5f5] focus:bg-white/[0.12] focus:border-[#c9983a]/30'
+          : 'bg-white/[0.15] border-white/25 text-[#2d2820] focus:bg-white/[0.2] focus:border-[#c9983a]/30'
           }`}
       >
         {options.map((option) => (

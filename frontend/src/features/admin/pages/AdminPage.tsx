@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
-import { Shield, Globe, Plus, Sparkles, Trash2, ExternalLink, Calendar } from 'lucide-react';
+import { Shield, Globe, Plus, Sparkles, Trash2, ExternalLink, Calendar, Pencil } from 'lucide-react';
+import { toast } from 'sonner';
 import { Modal, ModalFooter, ModalButton, ModalInput, ModalSelect } from '../../../shared/components/ui/Modal';
-import { createEcosystem, getAdminEcosystems, deleteEcosystem, createOpenSourceWeekEvent, getAdminOpenSourceWeekEvents, deleteOpenSourceWeekEvent } from '../../../shared/api/client';
+import { createEcosystem, getAdminEcosystems, deleteEcosystem, updateEcosystem, createOpenSourceWeekEvent, getAdminOpenSourceWeekEvents, deleteOpenSourceWeekEvent } from '../../../shared/api/client';
 
 interface Ecosystem {
   id: string;
@@ -25,6 +26,13 @@ export function AdminPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null);
+  const [editingEcosystem, setEditingEcosystem] = useState<Ecosystem | null>(null);
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    description: '',
+    status: 'active',
+    websiteUrl: ''
+  });
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -195,9 +203,12 @@ export function AdminPage() {
       // Dispatch event to update other pages
       window.dispatchEvent(new CustomEvent('ecosystems-updated'));
       setDeleteConfirm(null);
+      toast.success('Ecosystem deleted successfully');
     } catch (error) {
       console.error('Failed to delete ecosystem:', error);
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to delete ecosystem. Make sure it has no associated projects.');
+      const msg = error instanceof Error ? error.message : 'Failed to delete ecosystem. Make sure it has no associated projects.';
+      setErrorMessage(msg);
+      toast.error(msg);
     } finally {
       setDeletingId(null);
     }
@@ -248,8 +259,75 @@ export function AdminPage() {
       // Dispatch event to update other pages
       window.dispatchEvent(new CustomEvent('ecosystems-updated'));
     } catch (error) {
-      console.error('Failed to create ecosystem:', error);
       setErrorMessage(error instanceof Error ? error.message : 'Failed to create ecosystem. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const openEditModal = (ecosystem: Ecosystem) => {
+    setEditFormData({
+      name: ecosystem.name,
+      description: ecosystem.description || '',
+      status: ecosystem.status,
+      websiteUrl: ecosystem.website_url || ''
+    });
+    setEditingEcosystem(ecosystem);
+    setErrors({});
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingEcosystem) return;
+
+    // Validate all fields
+    const nameError = validateName(editFormData.name);
+    const descError = validateDescription(editFormData.description);
+    const urlError = validateWebsiteUrl(editFormData.websiteUrl);
+
+    const newErrors: Record<string, string> = {};
+    if (nameError) newErrors.name = nameError;
+    if (descError) newErrors.description = descError;
+    if (urlError) newErrors.websiteUrl = urlError;
+
+    setErrors(newErrors);
+
+    if (Object.keys(newErrors).length > 0) {
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      setErrorMessage(null);
+      await updateEcosystem(editingEcosystem.id, {
+        name: editFormData.name,
+        description: editFormData.description || undefined,
+        website_url: editFormData.websiteUrl || undefined,
+        status: editFormData.status as 'active' | 'inactive',
+      });
+
+      // Success - close modal and reset form
+      setEditingEcosystem(null);
+      setErrors({});
+      setEditFormData({
+        name: '',
+        description: '',
+        status: 'active',
+        websiteUrl: ''
+      });
+
+      toast.success('Ecosystem updated successfully');
+
+      // Refresh ecosystems list
+      await fetchEcosystems();
+      // Dispatch event to update other pages
+      window.dispatchEvent(new CustomEvent('ecosystems-updated'));
+    } catch (error) {
+      console.error('Failed to update ecosystem:', error);
+      const msg = error instanceof Error ? error.message : 'Failed to update ecosystem. Please try again.';
+      setErrorMessage(msg);
+      toast.error(msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -421,19 +499,31 @@ export function AdminPage() {
                       <div className={`w-12 h-12 rounded-[12px] ${bgColor} flex items-center justify-center text-white font-bold text-lg shadow-lg`}>
                         {firstLetter}
                       </div>
-                      <button
-                        onClick={() => confirmDelete(ecosystem.id, ecosystem.name)}
-                        disabled={deletingId === ecosystem.id}
-                        className={`p-2 rounded-[10px] transition-all ${deletingId === ecosystem.id
-                          ? 'opacity-50 cursor-not-allowed'
-                          : theme === 'dark'
-                            ? 'hover:bg-red-500/20 text-red-400'
-                            : 'hover:bg-red-500/30 text-red-600'
-                          }`}
-                        title="Delete ecosystem"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => openEditModal(ecosystem)}
+                          className={`p-2 rounded-[10px] transition-all ${theme === 'dark'
+                            ? 'hover:bg-amber-500/20 text-amber-400'
+                            : 'hover:bg-amber-500/30 text-amber-600'
+                            }`}
+                          title="Edit ecosystem"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => confirmDelete(ecosystem.id, ecosystem.name)}
+                          disabled={deletingId === ecosystem.id}
+                          className={`p-2 rounded-[10px] transition-all ${deletingId === ecosystem.id
+                            ? 'opacity-50 cursor-not-allowed'
+                            : theme === 'dark'
+                              ? 'hover:bg-red-500/20 text-red-400'
+                              : 'hover:bg-red-500/30 text-red-600'
+                            }`}
+                          title="Delete ecosystem"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
 
                     <h3 className={`text-[18px] font-bold mb-2 transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
@@ -669,6 +759,89 @@ export function AdminPage() {
             <ModalButton type="submit" variant="primary" disabled={isSubmitting}>
               <Plus className="w-4 h-4" />
               {isSubmitting ? 'Adding...' : 'Add Ecosystem'}
+            </ModalButton>
+          </ModalFooter>
+        </form>
+      </Modal>
+
+      {/* Edit Ecosystem Modal */}
+      <Modal
+        isOpen={!!editingEcosystem}
+        onClose={() => setEditingEcosystem(null)}
+        title="Edit Ecosystem"
+        icon={<Pencil className="w-6 h-6 text-[#c9983a]" />}
+        width="lg"
+      >
+        <p className={`text-[14px] mb-6 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+          }`}>Update the ecosystem details below</p>
+
+        <form onSubmit={handleEditSubmit}>
+          <div className="space-y-4">
+            <ModalInput
+              label="Ecosystem Name"
+              value={editFormData.name}
+              onChange={(value) => {
+                setEditFormData({ ...editFormData, name: value });
+                if (errors.name) setErrors({ ...errors, name: '' });
+              }}
+              onBlur={() => {
+                const error = validateName(editFormData.name);
+                if (error) setErrors(prev => ({ ...prev, name: error }));
+              }}
+              placeholder="e.g., Web3 Ecosystem"
+              error={errors.name}
+            />
+
+            <ModalInput
+              label="Description"
+              value={editFormData.description}
+              onChange={(value) => {
+                setEditFormData({ ...editFormData, description: value });
+                if (errors.description) setErrors({ ...errors, description: '' });
+              }}
+              onBlur={() => {
+                const error = validateDescription(editFormData.description);
+                if (error) setErrors(prev => ({ ...prev, description: error }));
+              }}
+              placeholder="Describe the ecosystem..."
+              rows={4}
+              error={errors.description}
+            />
+
+            <ModalSelect
+              label="Status"
+              value={editFormData.status}
+              onChange={(value) => setEditFormData({ ...editFormData, status: value })}
+              options={[
+                { value: 'active', label: 'Active' },
+                { value: 'inactive', label: 'Inactive' }
+              ]}
+            />
+
+            <ModalInput
+              label="Website URL"
+              type="url"
+              value={editFormData.websiteUrl}
+              onChange={(value) => {
+                setEditFormData({ ...editFormData, websiteUrl: value });
+                if (errors.websiteUrl) setErrors({ ...errors, websiteUrl: '' });
+              }}
+              onBlur={() => {
+                const error = validateWebsiteUrl(editFormData.websiteUrl);
+                if (error) setErrors(prev => ({ ...prev, websiteUrl: error }));
+              }}
+              placeholder="https://example.com"
+              error={errors.websiteUrl}
+            />
+          </div>
+
+          <ModalFooter>
+            <ModalButton onClick={() => setEditingEcosystem(null)}>
+              Cancel
+            </ModalButton>
+            <ModalButton type="submit" variant="primary" disabled={isSubmitting}>
+              <Pencil className="w-4 h-4" />
+              {isSubmitting ? 'Updating...' : 'Update Ecosystem'}
             </ModalButton>
           </ModalFooter>
         </form>

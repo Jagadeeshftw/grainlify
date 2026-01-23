@@ -51,8 +51,8 @@ async function apiRequest<T>(
     console.log("API Request - API_BASE_URL:", API_BASE_URL);
     console.log("API Request - endpoint:", endpoint);
   }
-  const requestHeaders: HeadersInit = {
-    ...headers,
+  const requestHeaders: Record<string, string> = {
+    ...(headers as any),
   };
 
   // Avoid forcing CORS preflight for simple GET/HEAD requests by only setting
@@ -639,6 +639,29 @@ export const deleteEcosystem = (id: string) =>
   }>(`/admin/ecosystems/${id}`, {
     requiresAuth: true,
     method: "DELETE",
+  });
+
+export const updateEcosystem = (id: string, data: {
+  name: string;
+  description?: string;
+  website_url?: string;
+  status: 'active' | 'inactive';
+}) =>
+  apiRequest<{
+    id: string;
+    slug: string;
+    name: string;
+    description: string;
+    website_url: string;
+    status: string;
+    project_count: number;
+    user_count: number;
+    created_at: string;
+    updated_at: string;
+  }>(`/admin/ecosystems/${id}`, {
+    requiresAuth: true,
+    method: 'PUT',
+    body: JSON.stringify(data),
   });
 
 // Leaderboard

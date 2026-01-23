@@ -2,6 +2,7 @@ import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "../shared/contexts/AuthContext";
 import { ThemeProvider } from "../shared/contexts/ThemeContext";
+import { Toaster } from "sonner";
 import { LandingPage } from "../features/landing";
 import { SignInPage, SignUpPage, AuthCallbackPage } from "../features/auth";
 import { Dashboard } from "../features/dashboard";
@@ -20,6 +21,7 @@ export default function App() {
     <BrowserRouter>
       <ThemeProvider>
         <AuthProvider>
+          <Toaster position="top-right" richColors closeButton />
           <Routes>
             <Route path="/" element={<LandingPage />} />
             <Route path="/signin" element={<SignInPage />} />
