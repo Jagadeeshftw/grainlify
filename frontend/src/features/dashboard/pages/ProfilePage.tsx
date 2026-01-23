@@ -198,34 +198,80 @@ export function ProfilePage({
     const fetchProjects = async () => {
       setIsLoadingProjects(true);
       try {
-        const data = await getProjectsContributed(
-          effectiveViewingUserId || undefined,
-          effectiveViewingUserLogin || undefined,
-        );
-        // Limit to 3 and map to Project format
-        const contributedProjects = data.slice(0, 3).map((p: any) => ({
-          id: p.id,
-          github_full_name: p.github_full_name,
-          status: p.status,
-          ecosystem_name: p.ecosystem_name,
-          language: p.language,
-          owner_avatar_url: undefined, // Will be fetched from GitHub if needed
-          stars_count: 0,
-          forks_count: 0,
-          contributors_count: 0,
+        const data = await getProjectsContributed(viewingUserId || undefined, viewingUserLogin || undefined);
+        // Limit to 3 and map to Project format with initial zeros
+        const contributedProjects = data
+          .slice(0, 3)
+          .map((p: any) => ({
+            id: p.id,
+            github_full_name: p.github_full_name,
+            status: p.status,
+            ecosystem_name: p.ecosystem_name,
+            language: p.language,
+            owner_avatar_url: null,
+            stars_count: 0,
+            forks_count: 0,
+            contributors_count: 0,
+            merged_pr_count: 0, // Added for accurate merged PRs
+          }));
+
+        setProjects(contributedProjects); // Set initial to show loading if needed
+
+        // Fetch accurate stats from GitHub API (since backend docs show no direct stats in project responses)
+        const updatedProjects = await Promise.all(contributedProjects.map(async (proj) => {
+          const [owner, repo] = proj.github_full_name.split('/');
+          try {
+            // Fetch repo details for stars, forks, and owner avatar
+            const repoResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}`);
+            const repoData = await repoResponse.json();
+            if (!repoResponse.ok) throw new Error(repoData.message || 'Failed to fetch repo data');
+
+            // Fetch merged PR count using search API (filters to merged PRs only)
+            const mergedPRResponse = await fetch(`https://api.github.com/search/issues?q=repo:${owner}/${repo}+is:pr+is:merged`);
+            const mergedPRData = await mergedPRResponse.json();
+            if (!mergedPRResponse.ok) throw new Error(mergedPRData.message || 'Failed to fetch merged PRs');
+
+            // Fetch contributors count via link header pagination
+            const contributorsResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/contributors?per_page=1`);
+            if (!contributorsResponse.ok) {
+              const errData = await contributorsResponse.json();
+              throw new Error(errData.message || 'Failed to fetch contributors');
+            }
+            const linkHeader = contributorsResponse.headers.get('link');
+            let contributorsCount = 0;
+            if (linkHeader) {
+              const match = linkHeader.match(/<[^>]+[&?]page=(\d+)[^>]*>; rel="last"/);
+              if (match) contributorsCount = parseInt(match[1], 10);
+            } else {
+              // Fallback if no pagination (few contributors)
+              const contribData = await contributorsResponse.json();
+              contributorsCount = contribData.length;
+            }
+
+            return {
+              ...proj,
+              owner_avatar_url: repoData.owner?.avatar_url || null,
+              stars_count: repoData.stargazers_count || 0,
+              forks_count: repoData.forks_count || 0,
+              contributors_count: contributorsCount || 0,
+              merged_pr_count: mergedPRData.total_count || 0,
+            };
+          } catch (error) {
+            console.error(`Failed to fetch stats for ${proj.github_full_name}:`, error);
+            return { ...proj }; // Fallback to zeros on error
+          }
         }));
-        setProjects(contributedProjects);
+
+        setProjects(updatedProjects);
         setIsLoadingProjects(false);
       } catch (error) {
-        console.error("Failed to fetch projects:", error);
-        // Keep loading state true to show skeleton forever when backend is down
+        console.error('Failed to fetch projects:', error);
+        setProjects([]); // Clear projects on main error
+        setIsLoadingProjects(false); // End loading to show error UI if implemented
       }
     };
     fetchProjects();
-    if (!effectiveViewingUserId && !effectiveViewingUserLogin) {
-      setIsLoadingProjects(false);
-    }
-  }, [effectiveViewingUserId, effectiveViewingUserLogin]);
+  }, [viewingUserId, viewingUserLogin]);
 
   // Fetch contribution calendar
   useEffect(() => {
