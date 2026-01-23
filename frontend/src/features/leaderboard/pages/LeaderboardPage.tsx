@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { LeaderboardType, FilterType, Petal, LeaderData, ProjectData } from '../types';
-import { getLeaderboard, getProjectLeaderboard, getEcosystems } from '../../../shared/api/client';
+import { getLeaderboard, getProjectLeaderboard } from '../../../shared/api/client';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
 import { FallingPetals } from '../components/FallingPetals';
 import { LeaderboardTypeToggle } from '../components/LeaderboardTypeToggle';
@@ -14,17 +14,14 @@ import { LeaderboardStyles } from '../components/LeaderboardStyles';
 import { ContributorsPodiumSkeleton } from '../components/ContributorsPodiumSkeleton';
 import { ContributorsTableSkeleton } from '../components/ContributorsTableSkeleton';
 import { ProjectsPodiumSkeleton } from '../components/ProjectsPodiumSkeleton';
+import { EcosystemOption } from '../components/FiltersSection';
 
 export function LeaderboardPage() {
   const { theme } = useTheme();
-  const [activeFilter, setActiveFilter] = useState<FilterType>("overall");
-  const [leaderboardType, setLeaderboardType] =
-    useState<LeaderboardType>("contributors");
+  const [activeFilter, setActiveFilter] = useState<FilterType>('overall');
+  const [leaderboardType, setLeaderboardType] = useState<LeaderboardType>('contributors');
   const [showEcosystemDropdown, setShowEcosystemDropdown] = useState(false);
-  const [selectedEcosystem, setSelectedEcosystem] = useState({
-    label: "All Ecosystems",
-    value: "all",
-  });
+  const [selectedEcosystem, setSelectedEcosystem] = useState<EcosystemOption>({ label: 'All Ecosystems', value: 'all' });
   const [petals, setPetals] = useState<Petal[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
   const [leaderboardData, setLeaderboardData] = useState<LeaderData[]>([]);
@@ -33,75 +30,23 @@ export function LeaderboardPage() {
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [ecosystems, setEcosystems] = useState<string[]>(['All Ecosystems']);
-  const [isLoadingEcosystems, setIsLoadingEcosystems] = useState(true);
-
-  // Fetch ecosystems from API
-  useEffect(() => {
-    const fetchEcosystems = async () => {
-      setIsLoadingEcosystems(true);
-      try {
-        const response = await getEcosystems();
-        // Handle different response structures
-        let ecosystemsArray: any[] = [];
-        
-        if (response && Array.isArray(response)) {
-          ecosystemsArray = response;
-        } else if (response && response.ecosystems && Array.isArray(response.ecosystems)) {
-          ecosystemsArray = response.ecosystems;
-        } else if (response && typeof response === 'object') {
-          // Try to find any array property
-          const keys = Object.keys(response);
-          for (const key of keys) {
-            if (Array.isArray((response as any)[key])) {
-              ecosystemsArray = (response as any)[key];
-              break;
-            }
-          }
-        }
-        
-        // Filter only active ecosystems and map to string array
-        const activeEcosystems = ecosystemsArray
-          .filter((eco: any) => eco.status === 'active')
-          .map((eco: any) => eco.name);
-        
-        // Add "All Ecosystems" at the beginning
-        setEcosystems(['All Ecosystems', ...activeEcosystems]);
-      } catch (err) {
-        console.error('LeaderboardPage: Failed to fetch ecosystems:', err);
-        // Fallback to just "All Ecosystems" on error
-        setEcosystems(['All Ecosystems']);
-      } finally {
-        setIsLoadingEcosystems(false);
-      }
-    };
-
-    fetchEcosystems();
-  }, []);
 
   // Fetch leaderboard data
   useEffect(() => {
     const fetchLeaderboard = async () => {
-      if (leaderboardType === "contributors") {
+      if (leaderboardType === 'contributors') {
         setIsLoading(true);
         setOffset(0); // Reset offset when switching types
         try {
-          const data = await getLeaderboard(
-            10,
-            0,
-            selectedEcosystem.value !== "all"
-              ? selectedEcosystem.value
-              : undefined,
-          );
+          const data = await getLeaderboard(10, 0);
           // Transform API data to match LeaderData type
           const transformedData: LeaderData[] = data.map((item) => ({
             rank: item.rank,
             rank_tier: item.rank_tier,
             rank_tier_name: item.rank_tier_name,
             username: item.username,
-            avatar:
-              item.avatar || `https://github.com/${item.username}.png?size=200`,
-            user_id: item.user_id || "",
+            avatar: item.avatar || `https://github.com/${item.username}.png?size=200`,
+            user_id: item.user_id || '',
             score: item.score,
             trend: item.trend,
             trendValue: item.trendValue,
@@ -112,7 +57,7 @@ export function LeaderboardPage() {
           setHasMore(data.length === 10); // If we got 10 items, there might be more
           setIsLoading(false);
         } catch (err) {
-          console.error("Failed to fetch leaderboard:", err);
+          console.error('Failed to fetch leaderboard:', err);
           setLeaderboardData([]);
           setIsLoading(false); // Set loading to false to show empty state instead of skeleton
         }
@@ -121,10 +66,10 @@ export function LeaderboardPage() {
         setIsLoading(true);
         setOffset(0); // Reset offset when switching types
         try {
-          // Convert ecosystem name to slug (e.g., "Web3" -> "web3", "Developer Tools" -> "developer-tools")
+          // Use ecosystem slug from the selected option
           let ecosystemFilter: string | undefined = undefined;
           if (selectedEcosystem.value !== 'all') {
-            ecosystemFilter = selectedEcosystem.value.toLowerCase().replace(/\s+/g, '-');
+            ecosystemFilter = selectedEcosystem.value;
           }
           const data = await getProjectLeaderboard(100, 0, ecosystemFilter);
           // Transform API data to match ProjectData type
@@ -150,21 +95,17 @@ export function LeaderboardPage() {
     };
 
     fetchLeaderboard();
-  }, [leaderboardType, selectedEcosystem.value]);
+  }, [leaderboardType, selectedEcosystem]);
 
   // Load more leaderboard data
   const loadMore = async () => {
     if (isLoadingMore || !hasMore) return;
-
+    
     setIsLoadingMore(true);
     try {
       const nextOffset = offset + 10;
-      const data = await getLeaderboard(
-        10,
-        nextOffset,
-        selectedEcosystem.value !== "all" ? selectedEcosystem.value : undefined,
-      );
-
+      const data = await getLeaderboard(10, nextOffset);
+      
       if (data.length === 0) {
         setHasMore(false);
         setIsLoadingMore(false);
@@ -177,21 +118,20 @@ export function LeaderboardPage() {
         rank_tier: item.rank_tier,
         rank_tier_name: item.rank_tier_name,
         username: item.username,
-        avatar:
-          item.avatar || `https://github.com/${item.username}.png?size=200`,
-        user_id: item.user_id || "",
+        avatar: item.avatar || `https://github.com/${item.username}.png?size=200`,
+        user_id: item.user_id || '',
         score: item.score,
         trend: item.trend,
         trendValue: item.trendValue,
         contributions: item.contributions,
         ecosystems: item.ecosystems || [],
       }));
-
+      
       setLeaderboardData((prev) => [...prev, ...transformedData]);
       setOffset(nextOffset);
       setHasMore(data.length === 10); // If we got less than 10, no more data
     } catch (err) {
-      console.error("Failed to load more leaderboard:", err);
+      console.error('Failed to load more leaderboard:', err);
       setHasMore(false);
     } finally {
       setIsLoadingMore(false);
@@ -226,18 +166,16 @@ export function LeaderboardPage() {
   // Ensure we have at least 3 items for the podium (pad with empty data if needed)
   const contributorTopThree: LeaderData[] = [
     ...leaderboardData.slice(0, 3),
-    ...Array(Math.max(0, 3 - leaderboardData.length))
-      .fill(null)
-      .map((_, i) => ({
-        rank: leaderboardData.length + i + 1,
-        username: "-",
-        avatar: "👤",
-        score: 0,
-        trend: "same" as const,
-        trendValue: 0,
-        contributions: 0,
-        ecosystems: [],
-      })),
+    ...Array(Math.max(0, 3 - leaderboardData.length)).fill(null).map((_, i) => ({
+      rank: leaderboardData.length + i + 1,
+      username: '-',
+      avatar: '👤',
+      score: 0,
+      trend: 'same' as const,
+      trendValue: 0,
+      contributions: 0,
+      ecosystems: [],
+    })),
   ].slice(0, 3) as LeaderData[];
   
   // Ensure we have at least 3 items for the project podium (pad with empty data if needed)
@@ -270,29 +208,23 @@ export function LeaderboardPage() {
       {/* Hero Header Section */}
       <LeaderboardHero leaderboardType={leaderboardType} isLoaded={isLoaded}>
         {/* Top 3 Podium - Contributors */}
-        {leaderboardType === "contributors" && isLoading && (
+        {leaderboardType === 'contributors' && isLoading && (
           <ContributorsPodiumSkeleton />
         )}
-        {leaderboardType === "contributors" &&
-          !isLoading &&
-          leaderboardData.length > 0 && (
-            <ContributorsPodium
-              topThree={contributorTopThree}
-              isLoaded={isLoaded}
-              actualCount={leaderboardData.length}
-            />
-          )}
-        {leaderboardType === "contributors" &&
-          !isLoading &&
-          leaderboardData.length === 0 && (
-            <div
-              className={`text-center py-8 transition-colors ${
-                theme === "dark" ? "text-[#b8a898]" : "text-[#7a6b5a]"
-              }`}
-            >
-              No contributors yet. Be the first to contribute!
-            </div>
-          )}
+        {leaderboardType === 'contributors' && !isLoading && leaderboardData.length > 0 && (
+          <ContributorsPodium 
+            topThree={contributorTopThree} 
+            isLoaded={isLoaded} 
+            actualCount={leaderboardData.length}
+          />
+        )}
+        {leaderboardType === 'contributors' && !isLoading && leaderboardData.length === 0 && (
+          <div className={`text-center py-8 transition-colors ${
+            theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
+          }`}>
+            No contributors yet. Be the first to contribute!
+          </div>
+        )}
 
         {/* Top 3 Podium - Projects */}
         {leaderboardType === 'projects' && isLoading && (
@@ -315,20 +247,14 @@ export function LeaderboardPage() {
         activeFilter={activeFilter}
         onFilterChange={setActiveFilter}
         selectedEcosystem={selectedEcosystem}
-        onEcosystemChange={(ecosystem) => {
-          setSelectedEcosystem(ecosystem);
-        }}
+        onEcosystemChange={setSelectedEcosystem}
         showDropdown={showEcosystemDropdown}
-        onToggleDropdown={() =>
-          setShowEcosystemDropdown(!showEcosystemDropdown)
-        }
+        onToggleDropdown={() => setShowEcosystemDropdown(!showEcosystemDropdown)}
         isLoaded={isLoaded}
-        ecosystems={ecosystems}
-        isLoadingEcosystems={isLoadingEcosystems}
       />
 
       {/* Leaderboard Table - Contributors */}
-      {leaderboardType === "contributors" && (
+      {leaderboardType === 'contributors' && (
         <>
           {isLoading ? (
             <ContributorsTableSkeleton />
@@ -357,7 +283,7 @@ export function LeaderboardPage() {
                         Loading...
                       </>
                     ) : (
-                      "View All"
+                      'View All'
                     )}
                   </button>
                 </div>

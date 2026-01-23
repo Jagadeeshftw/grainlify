@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from 'react';
 import { ChevronDown } from "lucide-react";
 import { useTheme } from "../../../shared/contexts/ThemeContext";
 import { getEcosystems } from "../../../shared/api/client";
@@ -12,11 +12,9 @@ interface FiltersSectionProps {
   showDropdown: boolean;
   onToggleDropdown: () => void;
   isLoaded: boolean;
-  ecosystems: string[];
-  isLoadingEcosystems?: boolean;
 }
 
-interface EcosystemOption {
+export interface EcosystemOption {
   label: string;
   value: string;
 }
@@ -29,8 +27,6 @@ export function FiltersSection({
   showDropdown,
   onToggleDropdown,
   isLoaded,
-  ecosystems,
-  isLoadingEcosystems = false,
 }: FiltersSectionProps) {
   const { theme } = useTheme();
 
