@@ -277,26 +277,47 @@ WHERE user_id = $1
 		}
 
 		// Add user profile fields to response (for first_name, last_name, social links)
-		if firstName != nil && *firstName != "" {
+		// Add user profile fields to response (return empty string if nil)
+		if firstName != nil {
 			response["first_name"] = *firstName
+		} else {
+			response["first_name"] = ""
 		}
-		if lastName != nil && *lastName != "" {
+
+		if lastName != nil {
 			response["last_name"] = *lastName
+		} else {
+			response["last_name"] = ""
 		}
-		if telegram != nil && *telegram != "" {
+
+		if telegram != nil {
 			response["telegram"] = *telegram
+		} else {
+			response["telegram"] = ""
 		}
-		if linkedin != nil && *linkedin != "" {
+
+		if linkedin != nil {
 			response["linkedin"] = *linkedin
+		} else {
+			response["linkedin"] = ""
 		}
-		if whatsapp != nil && *whatsapp != "" {
+
+		if whatsapp != nil {
 			response["whatsapp"] = *whatsapp
+		} else {
+			response["whatsapp"] = ""
 		}
-		if twitter != nil && *twitter != "" {
+
+		if twitter != nil {
 			response["twitter"] = *twitter
+		} else {
+			response["twitter"] = ""
 		}
-		if discord != nil && *discord != "" {
+
+		if discord != nil {
 			response["discord"] = *discord
+		} else {
+			response["discord"] = ""
 		}
 
 		return c.Status(fiber.StatusOK).JSON(response)
@@ -376,5 +397,3 @@ WHERE user_id = $3
 		})
 	}
 }
-
-

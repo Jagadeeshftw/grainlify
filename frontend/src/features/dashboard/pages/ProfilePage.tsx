@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { Search, ChevronDown, Award, Briefcase, GitPullRequest, FolderGit2, Trophy, Github, Code, Globe, Sparkles, TrendingUp, Star, Users, GitFork, DollarSign, GitMerge, Calendar, ChevronRight, Filter, Circle, Eye, Crown, Link, ArrowLeft, Medal } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
@@ -100,8 +101,7 @@ export function ProfilePage({ viewingUserId, viewingUserLogin, onBack, onIssueCl
         setIsLoadingProfile(false);
       } catch (error) {
         console.error('Failed to fetch profile:', error);
-        // Keep loading state true to show skeleton forever when backend is down
-        // Don't set isLoadingProfile to false - keep showing skeleton
+        setIsLoadingProfile(false);
       }
     };
     fetchProfile();

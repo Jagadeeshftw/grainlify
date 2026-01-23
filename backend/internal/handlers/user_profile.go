@@ -50,12 +50,14 @@ WHERE user_id = $1
 `, userID).Scan(&githubLogin)
 
 		// Get user profile fields (bio, website, social links) from users table
-		var bio, website, telegram, linkedin, whatsapp, twitter, discord *string
+		var firstName, lastName, bio, website, telegram, linkedin, whatsapp, twitter, discord *string
 		_ = h.db.Pool.QueryRow(c.Context(), `
-SELECT bio, website, telegram, linkedin, whatsapp, twitter, discord
+SELECT first_name, last_name, bio, website, telegram, linkedin, whatsapp, twitter, discord
 FROM users
 WHERE id = $1
-`, userID).Scan(&bio, &website, &telegram, &linkedin, &whatsapp, &twitter, &discord)
+`, userID).Scan(&firstName, &lastName, &bio, &website, &telegram, &linkedin, &whatsapp, &twitter, &discord)
+
+		slog.Info("PROFILE_FETCH_DEBUG", "user_id", userID, "first_name", firstName, "last_name", lastName)
 		if err != nil {
 			// User doesn't have GitHub account linked
 			return c.Status(fiber.StatusOK).JSON(fiber.Map{
@@ -122,7 +124,7 @@ LIMIT 10
 				continue
 			}
 			languages = append(languages, fiber.Map{
-				"language":            lang,
+				"language":           lang,
 				"contribution_count": count,
 			})
 		}
@@ -260,12 +262,12 @@ WHERE p.status = 'verified'
 		}
 
 		response := fiber.Map{
-			"contributions_count":         contributionsCount,
+			"contributions_count":           contributionsCount,
 			"projects_contributed_to_count": projectsContributedToCount,
-			"projects_led_count":          projectsLedCount,
-			"rewards_count":              0, // TODO: Implement rewards system
-			"languages":                  languages,
-			"ecosystems":                 ecosystems,
+			"projects_led_count":            projectsLedCount,
+			"rewards_count":                 0, // TODO: Implement rewards system
+			"languages":                     languages,
+			"ecosystems":                    ecosystems,
 			"rank": fiber.Map{
 				"position":   rankPosition,
 				"tier":       string(rankTier),
@@ -275,6 +277,12 @@ WHERE p.status = 'verified'
 		}
 
 		// Add bio, website, and social links if available
+		if firstName != nil && *firstName != "" {
+			response["first_name"] = *firstName
+		}
+		if lastName != nil && *lastName != "" {
+			response["last_name"] = *lastName
+		}
 		if bio != nil && *bio != "" {
 			response["bio"] = *bio
 		}
@@ -421,19 +429,19 @@ ORDER BY date ASC
 		// Using GitHub's algorithm: levels are based on quartiles
 		var calendar []fiber.Map
 		currentDate := startDate
-		for currentDate.Before(now) || currentDate.Equal(now.Truncate(24 * time.Hour)) {
+		for currentDate.Before(now) || currentDate.Equal(now.Truncate(24*time.Hour)) {
 			dateStr := currentDate.Format("2006-01-02")
 			count := dateCounts[dateStr]
-			
+
 			// Calculate level (0-4) based on count
 			level := calculateContributionLevel(count, maxCount)
-			
+
 			calendar = append(calendar, fiber.Map{
 				"date":  dateStr,
 				"count": count,
 				"level": level,
 			})
-			
+
 			currentDate = currentDate.AddDate(0, 0, 1)
 		}
 
@@ -602,7 +610,7 @@ SELECT
 		return c.Status(fiber.StatusOK).JSON(fiber.Map{
 			"activities": activities,
 			"total":      total,
-			"limit":     limit,
+			"limit":      limit,
 			"offset":     offset,
 		})
 	}
@@ -802,13 +810,13 @@ WHERE LOWER(ga.login) = $1
 				// User not found in database, but they might still be a contributor
 				// Return basic profile with just the login
 				return c.Status(fiber.StatusOK).JSON(fiber.Map{
-					"login":            loginParam,
-					"user_id":          "",
+					"login":               loginParam,
+					"user_id":             "",
 					"contributions_count": 0,
-					"languages":        []fiber.Map{},
-					"ecosystems":       []fiber.Map{},
-					"bio":              nil,
-					"website":          nil,
+					"languages":           []fiber.Map{},
+					"ecosystems":          []fiber.Map{},
+					"bio":                 nil,
+					"website":             nil,
 					"rank": fiber.Map{
 						"position":   nil,
 						"tier":       "unranked",
@@ -884,7 +892,7 @@ LIMIT 10
 				continue
 			}
 			languages = append(languages, fiber.Map{
-				"language":          lang,
+				"language":           lang,
 				"contribution_count": count,
 			})
 		}
@@ -926,7 +934,7 @@ LIMIT 10
 				continue
 			}
 			ecosystems = append(ecosystems, fiber.Map{
-				"ecosystem_name":    ecoName,
+				"ecosystem_name":     ecoName,
 				"contribution_count": count,
 			})
 		}
@@ -1026,24 +1034,24 @@ WHERE u.id = $1
 		}
 
 		response := fiber.Map{
-			"login":                      *githubLogin,
-			"user_id":                    func() string {
+			"login": *githubLogin,
+			"user_id": func() string {
 				if userID != nil {
 					return userID.String()
 				}
 				return ""
 			}(),
-			"avatar_url":                 func() string {
+			"avatar_url": func() string {
 				if avatarURL != nil && *avatarURL != "" {
 					return *avatarURL
 				}
 				return ""
 			}(),
-			"contributions_count":         contributionsCount,
+			"contributions_count":           contributionsCount,
 			"projects_contributed_to_count": projectsContributedToCount,
-			"projects_led_count":        projectsLedCount,
-			"languages":                  languages,
-			"ecosystems":                 ecosystems,
+			"projects_led_count":            projectsLedCount,
+			"languages":                     languages,
+			"ecosystems":                    ecosystems,
 			"rank": fiber.Map{
 				"position":   rankPosition,
 				"tier":       string(rankTier),
@@ -1148,13 +1156,23 @@ func (h *UserProfileHandler) UpdateProfile() fiber.Handler {
 		argPos := 1
 
 		if req.FirstName != nil {
+			trimmed := strings.TrimSpace(*req.FirstName)
 			updates = append(updates, fmt.Sprintf("first_name = $%d", argPos))
-			args = append(args, strings.TrimSpace(*req.FirstName))
+			if trimmed == "" {
+				args = append(args, nil)
+			} else {
+				args = append(args, trimmed)
+			}
 			argPos++
 		}
 		if req.LastName != nil {
+			trimmed := strings.TrimSpace(*req.LastName)
 			updates = append(updates, fmt.Sprintf("last_name = $%d", argPos))
-			args = append(args, strings.TrimSpace(*req.LastName))
+			if trimmed == "" {
+				args = append(args, nil)
+			} else {
+				args = append(args, trimmed)
+			}
 			argPos++
 		}
 		if req.Location != nil {
@@ -1217,6 +1235,7 @@ WHERE id = $%d
 			slog.Error("failed to update user profile", "error", err, "user_id", userID)
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "profile_update_failed"})
 		}
+		slog.Info("PROFILE_UPDATE_SUCCESS", "user_id", userID, "updates", updates)
 
 		return c.Status(fiber.StatusOK).JSON(fiber.Map{"message": "profile_updated"})
 	}
@@ -1272,4 +1291,3 @@ WHERE id = $2
 		})
 	}
 }
-

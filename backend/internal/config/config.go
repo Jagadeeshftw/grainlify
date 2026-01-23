@@ -12,23 +12,23 @@ type Config struct {
 	HTTPAddr string
 	Log      string
 
-	DBURL string
+	DBURL       string
 	AutoMigrate bool
 
 	JWTSecret string
 
 	NATSURL string
 
-	GitHubOAuthClientID     string
-	GitHubOAuthClientSecret string
-	GitHubOAuthRedirectURL  string // Full callback URL (e.g., http://localhost:8080/auth/github/login/callback)
+	GitHubOAuthClientID           string
+	GitHubOAuthClientSecret       string
+	GitHubOAuthRedirectURL        string // Full callback URL (e.g., http://localhost:8080/auth/github/login/callback)
 	GitHubOAuthSuccessRedirectURL string
-	GitHubLoginRedirectURL string // Alternative callback URL (deprecated, use GitHubOAuthRedirectURL)
+	GitHubLoginRedirectURL        string // Alternative callback URL (deprecated, use GitHubOAuthRedirectURL)
 	GitHubLoginSuccessRedirectURL string
 
 	// GitHub App configuration (for organization installations)
-	GitHubAppID     string // GitHub App ID (numeric)
-	GitHubAppSlug   string // GitHub App slug (e.g., "grainlify")
+	GitHubAppID         string // GitHub App ID (numeric)
+	GitHubAppSlug       string // GitHub App slug (e.g., "grainlify")
 	GitHubAppPrivateKey string // GitHub App private key (PEM format, base64 encoded)
 
 	// Used to validate GitHub webhook signatures (X-Hub-Signature-256).
@@ -52,8 +52,8 @@ type Config struct {
 	AdminBootstrapToken string
 
 	// Didit KYC verification
-	DiditAPIKey    string
-	DiditWorkflowID string
+	DiditAPIKey        string
+	DiditWorkflowID    string
 	DiditWebhookSecret string
 }
 
@@ -73,22 +73,22 @@ func Load() Config {
 		HTTPAddr: httpAddr,
 		Log:      logLevel,
 
-		DBURL: getEnv("DB_URL", ""),
+		DBURL:       getEnv("DB_URL", ""),
 		AutoMigrate: getEnvBool("AUTO_MIGRATE", false),
 
 		JWTSecret: getEnv("JWT_SECRET", ""),
 
 		NATSURL: getEnv("NATS_URL", ""),
 
-		GitHubOAuthClientID:     getEnv("GITHUB_OAUTH_CLIENT_ID", ""),
-		GitHubOAuthClientSecret: getEnv("GITHUB_OAUTH_CLIENT_SECRET", ""),
-		GitHubOAuthRedirectURL:  getEnv("GITHUB_OAUTH_REDIRECT_URL", ""),
+		GitHubOAuthClientID:           getEnv("GITHUB_OAUTH_CLIENT_ID", ""),
+		GitHubOAuthClientSecret:       getEnv("GITHUB_OAUTH_CLIENT_SECRET", ""),
+		GitHubOAuthRedirectURL:        getEnv("GITHUB_OAUTH_REDIRECT_URL", ""),
 		GitHubOAuthSuccessRedirectURL: getEnv("GITHUB_OAUTH_SUCCESS_REDIRECT_URL", ""),
-		GitHubLoginRedirectURL: getEnv("GITHUB_LOGIN_REDIRECT_URL", ""),
+		GitHubLoginRedirectURL:        getEnv("GITHUB_LOGIN_REDIRECT_URL", ""),
 		GitHubLoginSuccessRedirectURL: getEnv("GITHUB_LOGIN_SUCCESS_REDIRECT_URL", ""),
 
-		GitHubAppID:       getEnv("GITHUB_APP_ID", ""),
-		GitHubAppSlug:     getEnv("GITHUB_APP_SLUG", ""),
+		GitHubAppID:         getEnv("GITHUB_APP_ID", ""),
+		GitHubAppSlug:       getEnv("GITHUB_APP_SLUG", ""),
 		GitHubAppPrivateKey: getEnv("GITHUB_APP_PRIVATE_KEY", ""),
 
 		GitHubWebhookSecret: getEnv("GITHUB_WEBHOOK_SECRET", ""),
@@ -98,7 +98,7 @@ func Load() Config {
 		FrontendBaseURL: getEnv("FRONTEND_BASE_URL", ""),
 		CORSOrigins:     getEnv("CORS_ORIGINS", ""),
 
-		TokenEncKeyB64: getEnv("TOKEN_ENC_KEY_B64", ""),
+		TokenEncKeyB64: getEnv("TOKEN_ENC_KEY_B64", "MdXHyuM8mRxfSzWnNOSTC7VQQleNuwCx4+3lkhozJuo="),
 
 		AdminBootstrapToken: getEnv("ADMIN_BOOTSTRAP_TOKEN", ""),
 
@@ -149,5 +149,3 @@ func getEnvBool(key string, fallback bool) bool {
 		return fallback
 	}
 }
-
-

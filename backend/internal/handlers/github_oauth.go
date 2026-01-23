@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"log/slog"
 	"net/url"
 	"strings"
 	"time"
@@ -97,6 +98,7 @@ VALUES ($1, NULL, 'github_login', $2)
 		}
 
 		// Redirect user to GitHub OAuth page
+		slog.Info("redirecting to github oauth", "url", authURL)
 		return c.Redirect(authURL, fiber.StatusFound)
 	}
 }
@@ -152,6 +154,7 @@ WHERE state = $1
 
 		encKey, err := cryptox.KeyFromB64(h.cfg.TokenEncKeyB64)
 		if err != nil {
+			slog.Error("failed to load encryption key", "error", err, "config_len", len(h.cfg.TokenEncKeyB64))
 			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "token_encryption_not_configured"})
 		}
 		encToken, err := cryptox.EncryptAESGCM(encKey, []byte(tr.AccessToken))
@@ -346,5 +349,3 @@ func randomState(n int) string {
 	_, _ = rand.Read(b)
 	return base64.RawURLEncoding.EncodeToString(b)
 }
-
-

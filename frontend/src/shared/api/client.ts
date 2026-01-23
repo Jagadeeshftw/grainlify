@@ -135,10 +135,10 @@ async function apiRequest<T>(
 // API Methods
 
 // Health & Status
-export const checkHealth = () => 
+export const checkHealth = () =>
   apiRequest<{ ok: boolean; service: string }>('/health');
 
-export const checkReady = () => 
+export const checkReady = () =>
   apiRequest<{ ok: boolean; db: string }>('/ready');
 
 // Landing stats (public)
@@ -153,8 +153,8 @@ export const getLandingStats = () =>
 
 // Authentication
 export const getCurrentUser = () =>
-  apiRequest<{ 
-    id: string; 
+  apiRequest<{
+    id: string;
     role: string;
     first_name?: string;
     last_name?: string;
@@ -196,9 +196,9 @@ export const getGitHubLoginUrl = () => {
 };
 
 export const getGitHubStatus = () =>
-  apiRequest<{ 
-    linked: boolean; 
-    github?: { id: number; login: string } 
+  apiRequest<{
+    linked: boolean;
+    github?: { id: number; login: string }
   }>('/auth/github/status', { requiresAuth: true });
 
 // User Profile
@@ -297,7 +297,7 @@ export const getPublicProfile = (userId?: string, login?: string) => {
       tier_name: string;
       tier_color: string;
     };
-  }>(`/profile/public?${params.toString()}`, { requiresAuth: false });
+  }>(`/profile/public?${params.toString()}&t=${Date.now()}`, { requiresAuth: false });
 };
 
 export const updateProfile = (data: {
@@ -306,6 +306,11 @@ export const updateProfile = (data: {
   location?: string;
   website?: string;
   bio?: string;
+  telegram?: string;
+  linkedin?: string;
+  whatsapp?: string;
+  twitter?: string;
+  discord?: string;
 }) =>
   apiRequest<{ message: string }>('/profile/update', {
     method: 'PUT',
@@ -624,9 +629,9 @@ export const startKYCVerification = () =>
   apiRequest<{
     session_id: string;
     url: string;
-  }>('/auth/kyc/start', { 
+  }>('/auth/kyc/start', {
     requiresAuth: true,
-    method: 'POST' 
+    method: 'POST'
   });
 
 export const getKYCStatus = () =>
