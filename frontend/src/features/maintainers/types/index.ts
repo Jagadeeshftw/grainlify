@@ -17,6 +17,7 @@ export interface Activity {
   title: string;
   label: string | null;
   timeAgo: string;
+  projectId?: string;
 }
 
 export interface ChartDataPoint {

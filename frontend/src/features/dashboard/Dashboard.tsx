@@ -31,9 +31,9 @@ import { IssueDetailPage } from './pages/IssueDetailPage';
 import { LeaderboardPage } from '../leaderboard/pages/LeaderboardPage';
 import { BlogPage } from '../blog/pages/BlogPage';
 import { SettingsPage } from '../settings/pages/SettingsPage';
-import { SettingsTabType } from '../settings/types';
 import { AdminPage } from '../admin/pages/AdminPage';
 import { SearchPage } from './pages/SearchPage';
+import { SettingsTabType } from '../settings/types';
 
 
 export function Dashboard() {

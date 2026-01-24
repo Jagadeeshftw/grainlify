@@ -5,9 +5,10 @@ import { Activity } from '../../types';
 interface ActivityItemProps {
   activity: Activity;
   index: number;
+  onClick?: () => void;
 }
 
-export function ActivityItem({ activity, index }: ActivityItemProps) {
+export function ActivityItem({ activity, index, onClick }: ActivityItemProps) {
   const { theme } = useTheme();
 
   const getPRIconColor = () => {
@@ -27,11 +28,11 @@ export function ActivityItem({ activity, index }: ActivityItemProps) {
 
   return (
     <div
-      className={`backdrop-blur-[25px] rounded-[14px] border p-4 hover:border-[#c9983a]/30 transition-all duration-300 group/item cursor-pointer ${
-        theme === 'dark'
+      onClick={onClick}
+      className={`backdrop-blur-[25px] rounded-[14px] border p-4 hover:border-[#c9983a]/30 transition-all duration-300 group/item cursor-pointer ${theme === 'dark'
           ? 'bg-white/[0.08] border-white/10 hover:bg-white/[0.12]'
           : 'bg-white/[0.15] border-white/25 hover:bg-white/[0.22]'
-      }`}
+        }`}
       style={{ animationDelay: `${index * 80}ms` }}
     >
       <div className="flex items-start justify-between gap-4">
@@ -51,7 +52,7 @@ export function ActivityItem({ activity, index }: ActivityItemProps) {
             activity.type === 'pr'
               ? 'bg-[#d4af37]/50'
               : 'bg-[#c9983a]/50'
-          }`}>
+            }`}>
             <span className="text-[13px] font-bold text-white">
               #{activity.number}
             </span>
@@ -59,11 +60,10 @@ export function ActivityItem({ activity, index }: ActivityItemProps) {
 
           {/* Title and Time */}
           <div className="flex-1 min-w-0 pt-0.5">
-            <h3 className={`text-[14px] font-medium transition-colors mb-1.5 line-clamp-1 ${
-              theme === 'dark'
+            <h3 className={`text-[14px] font-medium transition-colors mb-1.5 line-clamp-1 ${theme === 'dark'
                 ? 'text-[#e8dfd0] group-hover/item:text-[#f5ede0]'
                 : 'text-[#2d2820] group-hover/item:text-[#4a3f2f]'
-            }`}>
+              }`}>
               {activity.title}
             </h3>
 
@@ -73,9 +73,8 @@ export function ActivityItem({ activity, index }: ActivityItemProps) {
                   {activity.label}
                 </span>
               )}
-              <span className={`text-[12px] font-medium transition-colors ${
-                theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
-              }`}>
+              <span className={`text-[12px] font-medium transition-colors ${theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
+                }`}>
                 {activity.timeAgo}
               </span>
             </div>

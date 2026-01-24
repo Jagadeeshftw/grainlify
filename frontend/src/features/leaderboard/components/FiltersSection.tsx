@@ -28,6 +28,8 @@ export function FiltersSection({
   showDropdown,
   onToggleDropdown,
   isLoaded,
+  // ecosystems,
+  // isLoadingEcosystems = false,
 }: FiltersSectionProps) {
   const { theme } = useTheme();
   const isMobile = useIsMobile();
