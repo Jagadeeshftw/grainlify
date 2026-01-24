@@ -12,7 +12,7 @@ const Toast = () => {
       duration={4000}
       toastOptions={{
         unstyled: true,
-        className: `${theme === 'dark' ? 'bg-[#2d2820]/10 text-[#e8dfd0]' : 'bg-[#e8dfd0]/10 text-[#2d2820]'}  backdrop-blur-[40px] w-[340px] flex flex-row py-2 text-md px-3 rounded-md border border-white/15`,
+        className: `${theme === 'dark' ? 'bg-[#2d2820]/10 text-[#e8dfd0]' : 'bg-[#e8dfd0]/10 text-[#2d2820]'}  backdrop-blur-[40px] w-[340px] flex flex-row text-md py-3 px-4 rounded-md border border-white/15`,
         classNames: {
           closeButton: "order-last ml-auto cursor-pointer",
           icon: "mr-1 mt-0.5",
