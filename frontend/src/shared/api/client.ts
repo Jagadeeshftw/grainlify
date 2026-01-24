@@ -167,6 +167,7 @@ export const getCurrentUser = () =>
     whatsapp?: string;
     twitter?: string;
     discord?: string;
+    is_kyc_verified?: boolean;
     github?: {
       login: string;
       avatar_url: string;
@@ -210,6 +211,7 @@ export const getUserProfile = () =>
     rewards_count: number;
     languages: Array<{ language: string; contribution_count: number }>;
     ecosystems: Array<{ ecosystem_name: string; contribution_count: number }>;
+    is_kyc_verified?: boolean;
     rank: {
       position: number | null;
       tier: string;
@@ -289,6 +291,7 @@ export const getPublicProfile = (userId?: string, login?: string) => {
     whatsapp?: string;
     twitter?: string;
     discord?: string;
+    is_kyc_verified?: boolean;
     rank: {
       position: number | null;
       tier: string;

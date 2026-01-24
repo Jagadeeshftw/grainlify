@@ -67,8 +67,11 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.1.12",
+    "@types/react": "^19.2.9",
+    "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "4.7.0",
     "tailwindcss": "4.1.12",
+    "typescript": "^5.9.3",
     "vite": "6.3.5"
   },
   "peerDependencies": {
