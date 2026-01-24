@@ -1,15 +1,12 @@
-import React from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { AuthProvider, useAuth } from "../shared/contexts/AuthContext";
-import { ThemeProvider } from "../shared/contexts/ThemeContext";
-import { LandingPage } from "../features/landing";
-import { SignInPage, SignUpPage, AuthCallbackPage } from "../features/auth";
-import { Dashboard } from "../features/dashboard";
-import { ProfilePage } from "../features/dashboard/pages/ProfilePage";
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from '../shared/contexts/AuthContext';
+import { ThemeProvider } from '../shared/contexts/ThemeContext';
+import { LandingPage } from '../features/landing';
+import { SignInPage, SignUpPage, AuthCallbackPage } from '../features/auth';
+import { Dashboard } from '../features/dashboard';
 
-function ProtectedRoute({ children }: { children: React.ReactElement }) {
+function ProtectedRoute({ children }: { children: JSX.Element }) {
   const { isAuthenticated, isLoading } = useAuth();
-
   if (isLoading) return children; // let AuthProvider finish initial check
   if (!isAuthenticated) return <Navigate to="/" replace />;
   return children;
@@ -25,22 +22,6 @@ export default function App() {
             <Route path="/signin" element={<SignInPage />} />
             <Route path="/signup" element={<SignUpPage />} />
             <Route path="/auth/callback" element={<AuthCallbackPage />} />
-            <Route
-              path="/profile"
-              element={
-                <ProtectedRoute>
-                  <ProfilePage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/profile/:username"
-              element={
-                <ProtectedRoute>
-                  <ProfilePage />
-                </ProtectedRoute>
-              }
-            />
             <Route
               path="/dashboard"
               element={

@@ -196,7 +196,6 @@ export function DiscoverPage({ onGoToBilling, onGoToOpenSourceWeek }: DiscoverPa
         });
 
         const mappedProjects = filteredProjects.map((p) => {
-        const mappedProjects = projectsArray.map((p) => {
           const repoName = p.github_full_name.split('/')[1] || p.github_full_name;
           return {
             id: p.id,
@@ -222,44 +221,6 @@ export function DiscoverPage({ onGoToBilling, onGoToOpenSourceWeek }: DiscoverPa
   // Fetch recommended issues from top projects
   useEffect(() => {
     const loadRecommendedIssues = async () => {
-      if (projects.length === 0) return;
-
-      setIsLoadingIssues(true);
-      const issues: Array<{
-        id: string;
-        title: string;
-        description: string;
-        language: string;
-        daysLeft: string;
-        primaryTag?: string;
-        projectId: string;
-      }> = [];
-
-      // Try to get issues from projects, moving to next if a project has no issues
-      for (const project of projects) {
-        if (issues.length >= 6) break; // We only need 6 issues
-
-        try {
-          const issuesResponse = await getPublicProjectIssues(project.id);
-          if (issuesResponse?.issues && Array.isArray(issuesResponse.issues) && issuesResponse.issues.length > 0) {
-            // Take up to 2 issues from this project
-            const projectIssues = issuesResponse.issues.slice(0, 2);
-            for (const issue of projectIssues) {
-              if (issues.length >= 6) break;
-
-              // Get project language for the issue
-              const projectData = projects.find(p => p.id === project.id);
-              const language = projectData?.tags.find(t => ['TypeScript', 'JavaScript', 'Python', 'Rust', 'Go', 'CSS', 'HTML'].includes(t)) || projectData?.tags[0] || 'TypeScript';
-
-              issues.push({
-                id: String(issue.github_issue_id),
-                title: issue.title || 'Untitled Issue',
-                description: cleanIssueDescription(issue.description),
-                language: language,
-                daysLeft: getDaysLeft(),
-                primaryTag: getPrimaryTag(issue.labels || []),
-                projectId: project.id,
-              });
       // Only fetch issues if we have projects and they're loaded
       if (isLoadingProjects || projects.length === 0) return;
 
@@ -299,11 +260,6 @@ export function DiscoverPage({ onGoToBilling, onGoToOpenSourceWeek }: DiscoverPa
             continue;
           }
         }
-      }
-
-      setRecommendedIssues(issues);
-      setIsLoadingIssues(false);
-        
 
         return issues;
       });
@@ -336,11 +292,6 @@ export function DiscoverPage({ onGoToBilling, onGoToOpenSourceWeek }: DiscoverPa
   return (
     <div className="space-y-4 md:space-y-6 px-4 md:px-0 pb-8">
       {/* Hero Section */}
-      <div className={`backdrop-blur-[40px] rounded-[28px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-12 text-center transition-colors ${theme === 'dark'
-          ? 'bg-gradient-to-br from-white/[0.08] to-white/[0.04] border-white/10'
-          : 'bg-gradient-to-br from-white/[0.15] to-white/[0.08] border-white/20'
-        }`}>
-        <h1 className={`text-[36px] font-bold mb-2 transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
       <div className={`backdrop-blur-[40px] rounded-[28px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-6 md:p-12 text-center transition-colors ${theme === 'dark'
         ? 'bg-gradient-to-br from-white/[0.08] to-white/[0.04] border-white/10'
         : 'bg-gradient-to-br from-white/[0.15] to-white/[0.08] border-white/20'
@@ -352,7 +303,6 @@ export function DiscoverPage({ onGoToBilling, onGoToOpenSourceWeek }: DiscoverPa
         <h2 className="text-3xl md:text-[42px] font-bold bg-gradient-to-r from-[#c9983a] via-[#a67c2e] to-[#8b7355] bg-clip-text text-transparent mb-4 md:mb-6">
           Open source contributions!
         </h2>
-        <p className={`text-[16px] mb-8 max-w-2xl mx-auto transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
         <p className={`text-sm md:text-[16px] mb-6 md:mb-8 max-w-2xl mx-auto transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
           }`}>
           Get matched automatically once you add your billing profile and verify your KYC so we can route rewards on-chain.
@@ -360,7 +310,6 @@ export function DiscoverPage({ onGoToBilling, onGoToOpenSourceWeek }: DiscoverPa
         <button
           onClick={onGoToBilling}
           disabled={!onGoToBilling}
-          className={`px-8 py-4 rounded-[16px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white font-semibold text-[16px] shadow-[0_6px_24px_rgba(162,121,44,0.4)] hover:shadow-[0_8px_28px_rgba(162,121,44,0.5)] transition-all inline-flex items-center space-x-2 border border-white/10 ${!onGoToBilling ? 'opacity-70 cursor-default' : ''
           className={`w-full md:w-auto px-6 py-3 md:px-8 md:py-4 rounded-[16px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white font-semibold text-sm md:text-[16px] shadow-[0_6px_24px_rgba(162,121,44,0.4)] hover:shadow-[0_8px_28px_rgba(162,121,44,0.5)] transition-all inline-flex items-center justify-center space-x-2 border border-white/10 ${!onGoToBilling ? 'opacity-70 cursor-default' : ''
             }`}
         >
@@ -370,17 +319,6 @@ export function DiscoverPage({ onGoToBilling, onGoToOpenSourceWeek }: DiscoverPa
       </div>
 
       {/* Embark on GrainHack */}
-      <div className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${theme === 'dark'
-          ? 'bg-gradient-to-br from-white/[0.1] to-white/[0.06] border-white/15'
-          : 'bg-gradient-to-br from-white/[0.18] to-white/[0.12] border-white/25'
-        }`}>
-        <div className="flex items-center justify-between">
-          <div className="flex-1">
-            <h3 className={`text-[28px] font-bold mb-2 transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-              }`}>
-              Join the <span className="text-[#c9983a]">GrainHack</span>
-            </h3>
-            <p className={`text-[16px] mb-6 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
       <div className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-6 md:p-8 transition-colors ${theme === 'dark'
         ? 'bg-gradient-to-br from-white/[0.1] to-white/[0.06] border-white/15'
         : 'bg-gradient-to-br from-white/[0.18] to-white/[0.12] border-white/25'
@@ -398,7 +336,6 @@ export function DiscoverPage({ onGoToBilling, onGoToOpenSourceWeek }: DiscoverPa
             <button
               onClick={onGoToOpenSourceWeek}
               disabled={!onGoToOpenSourceWeek}
-              className={`px-6 py-3 rounded-[14px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white font-semibold text-[14px] shadow-[0_6px_20px_rgba(162,121,44,0.35)] hover:shadow-[0_8px_24px_rgba(162,121,44,0.4)] transition-all border border-white/10 ${!onGoToOpenSourceWeek ? 'opacity-70 cursor-default' : ''
               className={`w-full md:w-auto px-6 py-3 rounded-[14px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white font-semibold text-[14px] shadow-[0_6px_20px_rgba(162,121,44,0.35)] hover:shadow-[0_8px_24px_rgba(162,121,44,0.4)] transition-all border border-white/10 ${!onGoToOpenSourceWeek ? 'opacity-70 cursor-default' : ''
                 }`}
             >
@@ -412,13 +349,6 @@ export function DiscoverPage({ onGoToBilling, onGoToOpenSourceWeek }: DiscoverPa
       </div>
 
       {/* Recommended Projects */}
-      <div className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${theme === 'dark'
-          ? 'bg-white/[0.08] border-white/10'
-          : 'bg-white/[0.12] border-white/20'
-        }`}>
-        <div className="flex items-center space-x-3 mb-2">
-          <Zap className="w-6 h-6 text-[#c9983a] drop-shadow-sm" />
-          <h3 className={`text-[24px] font-bold transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
       <div className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-6 md:p-8 transition-colors ${theme === 'dark'
         ? 'bg-white/[0.08] border-white/10'
         : 'bg-white/[0.12] border-white/20'
@@ -430,7 +360,6 @@ export function DiscoverPage({ onGoToBilling, onGoToOpenSourceWeek }: DiscoverPa
             Recommended Projects ({projects.length})
           </h3>
         </div>
-        <p className={`text-[14px] mb-6 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
         <p className={`text-[13px] md:text-[14px] mb-6 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
           }`}>
           Finding best suited your interests and expertise
@@ -439,7 +368,6 @@ export function DiscoverPage({ onGoToBilling, onGoToOpenSourceWeek }: DiscoverPa
         {isLoadingProjects ? (
           <div className="flex flex-col md:flex-row gap-4 md:gap-6 overflow-x-auto pb-2">
             {[...Array(4)].map((_, idx) => (
-              <div key={idx} className={`flex-shrink-0 w-[320px] rounded-[20px] border p-6 ${theme === 'dark' ? 'bg-white/[0.08] border-white/15' : 'bg-white/[0.15] border-white/25'
               <div key={idx} className={`flex-shrink-0 w-full md:w-[320px] rounded-[20px] border p-6 ${theme === 'dark' ? 'bg-white/[0.08] border-white/15' : 'bg-white/[0.15] border-white/25'
                 }`}>
                 {/* Icon and Heart button */}
@@ -471,8 +399,6 @@ export function DiscoverPage({ onGoToBilling, onGoToOpenSourceWeek }: DiscoverPa
           </div>
         ) : projects.length === 0 ? (
           <div className={`p-8 rounded-[16px] border text-center ${theme === 'dark'
-              ? 'bg-white/[0.08] border-white/15 text-[#d4d4d4]'
-              : 'bg-white/[0.15] border-white/25 text-[#7a6b5a]'
             ? 'bg-white/[0.08] border-white/15 text-[#d4d4d4]'
             : 'bg-white/[0.15] border-white/25 text-[#7a6b5a]'
             }`}>
@@ -484,9 +410,6 @@ export function DiscoverPage({ onGoToBilling, onGoToOpenSourceWeek }: DiscoverPa
               <div
                 key={project.id}
                 onClick={() => setSelectedProjectId(String(project.id))}
-                className={`backdrop-blur-[30px] rounded-[20px] border p-6 transition-all cursor-pointer flex-shrink-0 w-[320px] ${theme === 'dark'
-                    ? 'bg-white/[0.08] border-white/15 hover:bg-white/[0.12] hover:shadow-[0_8px_24px_rgba(201,152,58,0.15)]'
-                    : 'bg-white/[0.15] border-white/25 hover:bg-white/[0.2] hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)]'
                 className={`backdrop-blur-[30px] rounded-[20px] border p-6 transition-all cursor-pointer flex-shrink-0 w-full md:w-[320px] ${theme === 'dark'
                   ? 'bg-white/[0.08] border-white/15 hover:bg-white/[0.12] hover:shadow-[0_8px_24px_rgba(201,152,58,0.15)]'
                   : 'bg-white/[0.15] border-white/25 hover:bg-white/[0.2] hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)]'
@@ -534,8 +457,6 @@ export function DiscoverPage({ onGoToBilling, onGoToOpenSourceWeek }: DiscoverPa
                     <span
                       key={idx}
                       className={`px-3 py-1.5 rounded-[10px] border text-[12px] font-semibold shadow-[0_2px_8px_rgba(201,152,58,0.15)] ${theme === 'dark'
-                          ? 'bg-[#c9983a]/15 border-[#c9983a]/30 text-[#f5c563]'
-                          : 'bg-[#c9983a]/20 border-[#c9983a]/35 text-[#8b6f3a]'
                         ? 'bg-[#c9983a]/15 border-[#c9983a]/30 text-[#f5c563]'
                         : 'bg-[#c9983a]/20 border-[#c9983a]/35 text-[#8b6f3a]'
                         }`}
@@ -551,13 +472,6 @@ export function DiscoverPage({ onGoToBilling, onGoToOpenSourceWeek }: DiscoverPa
       </div>
 
       {/* Recommended Issues */}
-      <div className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${theme === 'dark'
-          ? 'bg-white/[0.08] border-white/10'
-          : 'bg-white/[0.12] border-white/20'
-        }`}>
-        <h3 className={`text-[24px] font-bold mb-2 transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-          }`}>Recommended Issues</h3>
-        <p className={`text-[14px] mb-6 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
       <div className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-6 md:p-8 transition-colors ${theme === 'dark'
         ? 'bg-white/[0.08] border-white/10'
         : 'bg-white/[0.12] border-white/20'
@@ -572,7 +486,6 @@ export function DiscoverPage({ onGoToBilling, onGoToOpenSourceWeek }: DiscoverPa
         {isLoadingIssues ? (
           <div className="flex flex-col md:flex-row gap-4 md:overflow-x-auto pb-2">
             {[...Array(3)].map((_, idx) => (
-              <div key={idx} className={`flex-shrink-0 w-[480px] rounded-[16px] border p-6 ${theme === 'dark' ? 'bg-white/[0.08] border-white/15' : 'bg-white/[0.15] border-white/25'
               <div key={idx} className={`flex-shrink-0 w-full md:w-[480px] rounded-[16px] border p-6 ${theme === 'dark' ? 'bg-white/[0.08] border-white/15' : 'bg-white/[0.15] border-white/25'
                 }`}>
                 {/* Title with status indicator */}
@@ -601,8 +514,6 @@ export function DiscoverPage({ onGoToBilling, onGoToOpenSourceWeek }: DiscoverPa
           </div>
         ) : recommendedIssues.length === 0 ? (
           <div className={`p-8 rounded-[16px] border text-center ${theme === 'dark'
-              ? 'bg-white/[0.08] border-white/15 text-[#d4d4d4]'
-              : 'bg-white/[0.15] border-white/25 text-[#7a6b5a]'
             ? 'bg-white/[0.08] border-white/15 text-[#d4d4d4]'
             : 'bg-white/[0.15] border-white/25 text-[#7a6b5a]'
             }`}>

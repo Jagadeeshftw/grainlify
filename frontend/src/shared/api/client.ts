@@ -208,7 +208,10 @@ export const resyncGitHubProfile = () =>
   }>("/me/github/resync", { requiresAuth: true, method: "POST" });
 
 export const getGitHubLoginUrl = () => {
-  return `${API_BASE_URL}/auth/github/login/start`;
+  // Pass the current frontend origin as redirect parameter
+  // This allows the backend to redirect back to the correct frontend after OAuth
+  const redirectAfterLogin = window.location.origin;
+  return `${API_BASE_URL}/auth/github/login/start?redirect=${encodeURIComponent(redirectAfterLogin)}`;
 };
 
 export const getGitHubStatus = () =>

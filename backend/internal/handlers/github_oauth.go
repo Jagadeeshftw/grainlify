@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"fmt"
+	"log/slog"
 	"net/url"
 	"strings"
 	"time"
@@ -18,6 +20,57 @@ import (
 	"github.com/jagadeesh/grainlify/backend/internal/db"
 	"github.com/jagadeesh/grainlify/backend/internal/github"
 )
+
+// isAllowedRedirectURI validates that a redirect URI is from an allowed origin.
+// This prevents open redirect vulnerabilities by only allowing:
+// - localhost origins (for development)
+// - *.vercel.app domains (for preview deployments)
+// - Explicit origins from CORS_ORIGINS config
+// - FrontendBaseURL (if configured)
+func isAllowedRedirectURI(redirectURI string, cfg config.Config) bool {
+	parsedURL, err := url.Parse(redirectURI)
+	if err != nil {
+		return false
+	}
+
+	// Extract origin (scheme + host)
+	origin := parsedURL.Scheme + "://" + parsedURL.Host
+
+	// Always allow localhost origins for development
+	if strings.HasPrefix(origin, "http://localhost:") ||
+		strings.HasPrefix(origin, "http://127.0.0.1:") ||
+		strings.HasPrefix(origin, "https://localhost:") ||
+		strings.HasPrefix(origin, "https://127.0.0.1:") {
+		return true
+	}
+
+	// Allow all Vercel preview deployments (*.vercel.app)
+	if strings.HasSuffix(origin, ".vercel.app") {
+		return true
+	}
+
+	// Check explicit CORS origins
+	if strings.TrimSpace(cfg.CORSOrigins) != "" {
+		for _, o := range strings.Split(cfg.CORSOrigins, ",") {
+			o = strings.TrimSpace(o)
+			if o == "" {
+				continue
+			}
+			if origin == o || strings.HasPrefix(origin, o+"/") {
+				return true
+			}
+		}
+	}
+
+	// If FrontendBaseURL is set, allow it
+	if cfg.FrontendBaseURL != "" {
+		if origin == cfg.FrontendBaseURL || strings.HasPrefix(origin, cfg.FrontendBaseURL+"/") {
+			return true
+		}
+	}
+
+	return false
+}
 
 type GitHubOAuthHandler struct {
 	cfg config.Config
@@ -70,6 +123,8 @@ VALUES ($1, $2, 'github_link', $3)
 }
 
 // LoginStart begins GitHub-only login/signup (no prior JWT required).
+// Accepts optional 'redirect' query parameter to specify where to redirect after successful login.
+// This enables single OAuth callback URL to work with multiple frontend deployments (production, preview, etc.)
 func (h *GitHubOAuthHandler) LoginStart() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		if h.db == nil || h.db.Pool == nil {
@@ -79,16 +134,55 @@ func (h *GitHubOAuthHandler) LoginStart() fiber.Handler {
 			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "github_login_not_configured"})
 		}
 
-		state := randomState(32)
+		// Get redirect_uri from query parameter (frontend origin)
+		redirectURI := c.Query("redirect")
+		slog.Info("OAuth login start - received redirect parameter", "redirect", redirectURI)
+
+		// Validate redirect_uri is a valid URL and from an allowed origin
+		if redirectURI != "" {
+			parsedURL, err := url.Parse(redirectURI)
+			if err != nil {
+				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_redirect_uri"})
+			}
+
+			// Security: Only allow redirects to whitelisted origins
+			// This prevents open redirect vulnerabilities
+			if !isAllowedRedirectURI(redirectURI, h.cfg) {
+				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+					"error":   "redirect_uri_not_allowed",
+					"message": "Redirect URI must be from an allowed origin (localhost, *.vercel.app, or configured CORS origins)",
+				})
+			}
+
+			// Ensure redirect URI uses http or https scheme
+			if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_redirect_uri_scheme"})
+			}
+		}
+
+		// Generate CSRF token for state validation
+		csrfToken := randomState(32)
 		expiresAt := time.Now().UTC().Add(10 * time.Minute)
 
+		// Store CSRF token in database for validation (OAuth 2.0 security requirement)
 		_, err := h.db.Pool.Exec(c.Context(), `
-INSERT INTO oauth_states (state, user_id, kind, expires_at)
-VALUES ($1, NULL, 'github_login', $2)
-`, state, expiresAt)
+INSERT INTO oauth_states (state, user_id, kind, expires_at, redirect_uri)
+VALUES ($1, NULL, 'github_login', $2, $3)
+`, csrfToken, expiresAt, redirectURI)
 		if err != nil {
+			slog.Error("OAuth login start - failed to store state", "error", err)
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "state_create_failed"})
 		}
+
+		// Encode redirect_uri in state parameter (OAuth 2.0 spec recommendation)
+		// Format: base64(csrf_token|redirect_uri)
+		// This allows dynamic redirection while maintaining CSRF protection
+		state := encodeStateWithRedirect(csrfToken, redirectURI)
+		slog.Info("OAuth login start - encoded state with redirect",
+			"csrf_token", csrfToken,
+			"redirect_uri", redirectURI,
+			"encoded_state", state,
+		)
 
 		// Login scopes: identity + email + repo access for later project verification.
 		authURL, err := github.AuthorizeURL(h.cfg.GitHubOAuthClientID, effectiveGitHubRedirect(h.cfg), state, []string{"read:user", "user:email", "repo", "admin:repo_hook", "read:org"})
@@ -119,27 +213,103 @@ func (h *GitHubOAuthHandler) CallbackUnified() fiber.Handler {
 		}
 
 		code := c.Query("code")
-		state := c.Query("state")
-		if code == "" || state == "" {
+		encodedState := c.Query("state")
+		if code == "" || encodedState == "" {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "missing_code_or_state"})
 		}
 
+		// Decode state parameter to extract CSRF token and redirect_uri (OAuth 2.0 spec)
+		csrfToken, redirectURIFromState, err := decodeStateWithRedirect(encodedState)
+		if err != nil {
+			slog.Error("OAuth callback - failed to decode state",
+				"error", err,
+				"encoded_state", encodedState,
+			)
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_state_format"})
+		}
+
+		slog.Info("OAuth callback - decoded state",
+			"csrf_token", csrfToken,
+			"redirect_uri_from_state", redirectURIFromState,
+			"encoded_state_length", len(encodedState),
+		)
+
+		// Validate CSRF token against database (OAuth 2.0 security requirement)
 		var storedKind string
 		var stateUserID *uuid.UUID
-		err := h.db.Pool.QueryRow(c.Context(), `
-SELECT kind, user_id
+		var storedRedirectURI *string
+		err = h.db.Pool.QueryRow(c.Context(), `
+SELECT kind, user_id, redirect_uri
 FROM oauth_states
 WHERE state = $1
   AND expires_at > now()
-`, state).Scan(&storedKind, &stateUserID)
+`, csrfToken).Scan(&storedKind, &stateUserID, &storedRedirectURI)
 		if errors.Is(err, pgx.ErrNoRows) {
+			slog.Warn("OAuth callback - state not found or expired",
+				"csrf_token", csrfToken,
+				"encoded_state", encodedState,
+			)
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_or_expired_state"})
 		}
 		if err != nil {
+			slog.Error("OAuth callback - database error during state lookup",
+				"error", err,
+				"csrf_token", csrfToken,
+				"encoded_state", encodedState,
+			)
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "state_lookup_failed"})
 		}
 
-		_, _ = h.db.Pool.Exec(c.Context(), `DELETE FROM oauth_states WHERE state = $1`, state)
+		// Use redirect_uri from state parameter (OAuth 2.0 spec), fallback to database if not in state
+		// Priority: state parameter > database > config
+		// IMPORTANT: Validate redirect_uri from state parameter for security (prevent open redirect)
+		var finalRedirectURI string
+		if redirectURIFromState != "" {
+			// Security: Validate redirect_uri from state parameter against allowed origins
+			if !isAllowedRedirectURI(redirectURIFromState, h.cfg) {
+				slog.Warn("OAuth callback - redirect_uri from state not allowed, rejecting",
+					"redirect_uri", redirectURIFromState,
+					"allowed_origins", h.cfg.CORSOrigins,
+					"frontend_base_url", h.cfg.FrontendBaseURL,
+				)
+				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+					"error":   "redirect_uri_not_allowed",
+					"message": "Redirect URI from state parameter is not from an allowed origin",
+				})
+			}
+			finalRedirectURI = redirectURIFromState
+			slog.Info("OAuth callback - using redirect_uri from state parameter",
+				"redirect_uri", finalRedirectURI,
+				"kind", storedKind,
+			)
+		} else if storedRedirectURI != nil && *storedRedirectURI != "" {
+			// Validate redirect_uri from database as well
+			if !isAllowedRedirectURI(*storedRedirectURI, h.cfg) {
+				slog.Warn("OAuth callback - redirect_uri from database not allowed, rejecting",
+					"redirect_uri", *storedRedirectURI,
+				)
+				// Don't reject, just log and fall through to config
+			} else {
+				finalRedirectURI = *storedRedirectURI
+				slog.Info("OAuth callback - using redirect_uri from database (fallback)",
+					"redirect_uri", finalRedirectURI,
+					"kind", storedKind,
+				)
+			}
+		}
+
+		if finalRedirectURI == "" {
+			slog.Info("OAuth callback - no redirect_uri in state or database, will use config fallback",
+				"kind", storedKind,
+				"redirect_uri_from_state", redirectURIFromState,
+				"stored_redirect_uri", storedRedirectURI,
+				"github_login_success_redirect_url", h.cfg.GitHubLoginSuccessRedirectURL,
+				"frontend_base_url", h.cfg.FrontendBaseURL,
+			)
+		}
+
+		// Delete used state to prevent replay attacks
+		_, _ = h.db.Pool.Exec(c.Context(), `DELETE FROM oauth_states WHERE state = $1`, csrfToken)
 
 		tr, err := github.ExchangeCode(c.Context(), code, github.OAuthConfig{
 			ClientID:     h.cfg.GitHubOAuthClientID,
@@ -225,20 +395,94 @@ UPDATE users SET github_user_id = $2, updated_at = now() WHERE id = $1
 				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "token_issue_failed"})
 			}
 
-			// Determine redirect URL: use config if set, otherwise construct from FrontendBaseURL
-			redirectURL := h.cfg.GitHubLoginSuccessRedirectURL
-			if redirectURL == "" && h.cfg.FrontendBaseURL != "" {
-				redirectURL = strings.TrimSuffix(h.cfg.FrontendBaseURL, "/") + "/auth/callback"
+			// Determine redirect URL priority (OAuth 2.0 spec: use state parameter):
+			// 1. redirect_uri from state parameter (OAuth 2.0 recommended approach) - ALWAYS PRIORITIZE
+			// 2. redirect_uri from database (fallback for backward compatibility)
+			// 3. Config GitHubLoginSuccessRedirectURL (only if not localhost in production)
+			// 4. Construct from FrontendBaseURL (only if not localhost in production)
+			// IMPORTANT: Always redirect to override GitHub's Homepage URL default
+			// IMPORTANT: Never use localhost fallback if redirect_uri was provided (security)
+			var redirectURL string
+			if finalRedirectURI != "" {
+				// Use the redirect_uri from state parameter (OAuth 2.0 spec)
+				// This is the primary source and should always be used when available
+				redirectURL = strings.TrimSuffix(finalRedirectURI, "/") + "/auth/callback"
+				slog.Info("OAuth redirect - using redirect_uri from state parameter",
+					"redirect_url", redirectURL,
+					"final_redirect_uri", finalRedirectURI,
+				)
+			} else {
+				// Fallback to config only if redirect_uri was not provided
+				// This should rarely happen if frontend is correctly passing redirect parameter
+				// Security: Reject localhost in production environment
+				isLocalhost := func(url string) bool {
+					return strings.Contains(url, "localhost") || strings.Contains(url, "127.0.0.1")
+				}
+
+				if h.cfg.GitHubLoginSuccessRedirectURL != "" && !isLocalhost(h.cfg.GitHubLoginSuccessRedirectURL) {
+					// If GitHubLoginSuccessRedirectURL doesn't already include /auth/callback, append it
+					redirectURL = strings.TrimSuffix(h.cfg.GitHubLoginSuccessRedirectURL, "/")
+					if !strings.HasSuffix(redirectURL, "/auth/callback") {
+						redirectURL = redirectURL + "/auth/callback"
+					}
+					slog.Warn("OAuth redirect - using GitHubLoginSuccessRedirectURL (fallback - redirect_uri from state was empty)",
+						"redirect_url", redirectURL,
+						"redirect_uri_from_state", redirectURIFromState,
+						"stored_redirect_uri", storedRedirectURI,
+					)
+				} else if h.cfg.FrontendBaseURL != "" && !isLocalhost(h.cfg.FrontendBaseURL) {
+					redirectURL = strings.TrimSuffix(h.cfg.FrontendBaseURL, "/") + "/auth/callback"
+					slog.Warn("OAuth redirect - using FrontendBaseURL (fallback - redirect_uri from state was empty)",
+						"redirect_url", redirectURL,
+						"frontend_base_url", h.cfg.FrontendBaseURL,
+						"redirect_uri_from_state", redirectURIFromState,
+						"stored_redirect_uri", storedRedirectURI,
+					)
+				} else {
+					// Last resort: allow localhost only if explicitly in config (for development)
+					// But log a warning that redirect_uri should have been provided
+					if h.cfg.FrontendBaseURL != "" {
+						redirectURL = strings.TrimSuffix(h.cfg.FrontendBaseURL, "/") + "/auth/callback"
+						slog.Error("OAuth redirect - WARNING: Using localhost fallback (redirect_uri from state was empty)",
+							"redirect_url", redirectURL,
+							"redirect_uri_from_state", redirectURIFromState,
+							"stored_redirect_uri", storedRedirectURI,
+							"frontend_base_url", h.cfg.FrontendBaseURL,
+							"message", "Frontend should always pass redirect parameter. This fallback should not be used in production.",
+						)
+					} else {
+						slog.Error("OAuth redirect - no redirect URL configured, cannot redirect user",
+							"redirect_uri_from_state", redirectURIFromState,
+							"stored_redirect_uri", storedRedirectURI,
+							"github_login_success_redirect_url", h.cfg.GitHubLoginSuccessRedirectURL,
+							"frontend_base_url", h.cfg.FrontendBaseURL,
+						)
+					}
+				}
 			}
 
+			// Always redirect if we have a URL (this overrides GitHub's Homepage URL)
 			if redirectURL != "" {
 				ru, err := url.Parse(redirectURL)
-				if err == nil {
+				if err != nil {
+					slog.Error("OAuth redirect - failed to parse redirect URL", "error", err, "redirect_url", redirectURL)
+					// Fall through to JSON response
+				} else {
+					// Ensure the path is set correctly (should be /auth/callback)
+					if ru.Path == "" || ru.Path == "/" {
+						ru.Path = "/auth/callback"
+					}
 					q := ru.Query()
 					q.Set("token", jwtToken)
 					q.Set("github", u.Login)
 					ru.RawQuery = q.Encode()
-					return c.Redirect(ru.String(), fiber.StatusFound)
+					finalRedirectURL := ru.String()
+					slog.Info("OAuth redirect - redirecting user",
+						"final_redirect_url", finalRedirectURL,
+						"path", ru.Path,
+						"host", ru.Host,
+					)
+					return c.Redirect(finalRedirectURL, fiber.StatusFound)
 				}
 			}
 
@@ -347,4 +591,44 @@ func randomState(n int) string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
+// encodeStateWithRedirect encodes both a CSRF token and redirect_uri in the state parameter.
+// Format: base64(csrf_token + "|" + redirect_uri)
+// This follows OAuth 2.0 spec recommendation to use state parameter for dynamic redirection.
+func encodeStateWithRedirect(csrfToken, redirectURI string) string {
+	// If no redirect_uri, just return the CSRF token (backward compatible)
+	if redirectURI == "" {
+		return csrfToken
+	}
+	// Encode: csrf_token|redirect_uri
+	stateData := fmt.Sprintf("%s|%s", csrfToken, redirectURI)
+	return base64.RawURLEncoding.EncodeToString([]byte(stateData))
+}
 
+// decodeStateWithRedirect decodes the state parameter to extract CSRF token and redirect_uri.
+// Returns: (csrfToken, redirectURI, error)
+// Handles backward compatibility:
+// - Old format: state is just the CSRF token (base64-encoded random string from randomState)
+// - New format: state is base64(csrf_token|redirect_uri)
+func decodeStateWithRedirect(encodedState string) (string, string, error) {
+	// Try to decode as base64
+	decoded, err := base64.RawURLEncoding.DecodeString(encodedState)
+	if err != nil {
+		// If decoding fails, treat entire state as CSRF token (backward compatible)
+		// This handles states that are not base64-encoded
+		return encodedState, "", nil
+	}
+
+	decodedStr := string(decoded)
+	parts := strings.SplitN(decodedStr, "|", 2)
+	if len(parts) == 2 {
+		// New format: csrf_token|redirect_uri
+		return parts[0], parts[1], nil
+	}
+
+	// If no separator, check if this looks like a valid CSRF token
+	// Old format: state is base64-encoded random bytes (from randomState)
+	// In this case, the decoded value is random binary data, not a valid token
+	// So we should use the original encoded state as the CSRF token
+	// This handles backward compatibility with old OAuth flows
+	return encodedState, "", nil
+}
