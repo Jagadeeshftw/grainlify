@@ -1,6 +1,7 @@
 import { Crown, Trophy, Star } from 'lucide-react';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
 import { LeaderboardType } from '../types';
+import { useIsMobile } from '../../../app/components/ui/use-mobile';
 
 interface LeaderboardHeroProps {
   leaderboardType: LeaderboardType;
@@ -10,10 +11,11 @@ interface LeaderboardHeroProps {
 
 export function LeaderboardHero({ leaderboardType, isLoaded, children }: LeaderboardHeroProps) {
   const { theme } = useTheme();
+  const isMobile = useIsMobile();
 
   return (
     <div 
-      className={`relative min-h-[450px] backdrop-blur-[40px] bg-gradient-to-br from-white/[0.18] to-white/[0.12] rounded-[28px] border border-white/25 shadow-[0_8px_32px_rgba(0,0,0,0.08)] overflow-hidden transition-all duration-1000 ${
+      className={`relative min-h-[450px] md:min-h-[450px] backdrop-blur-[40px] bg-gradient-to-br from-white/[0.18] to-white/[0.12] rounded-[20px] md:rounded-[28px] border border-white/25 shadow-[0_8px_32px_rgba(0,0,0,0.08)] overflow-hidden transition-all duration-1000 ${
         isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
       }`}
     >
@@ -47,13 +49,13 @@ export function LeaderboardHero({ leaderboardType, isLoaded, children }: Leaderb
         <div className="absolute bottom-1/4 left-1/4 w-20 h-20 border-2 border-[#c9983a]/20 rounded-full animate-float-slow" />
       </div>
 
-      <div className="relative z-10 p-10">
+      <div className={`relative z-10 ${isMobile ? 'p-4 md:p-6' : 'p-10'}`}>
         {/* Title Section with Entrance Animation */}
-        <div className={`text-center mb-10 transition-all duration-1000 delay-200 ${
+        <div className={`text-center ${isMobile ? 'mb-6' : 'mb-10'} transition-all duration-1000 delay-200 ${
           isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'
         }`}>
           <div className="relative inline-block mb-3">
-            <h1 className={`text-[44px] font-bold drop-shadow-sm relative z-10 transition-colors ${
+            <h1 className={`${isMobile ? 'text-[28px] md:text-[36px]' : 'text-[44px]'} font-bold drop-shadow-sm relative z-10 transition-colors ${
               theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
             }`}>
               {leaderboardType === 'contributors' ? 'Seasonal Contributors' : 'Top Projects'}
@@ -63,8 +65,8 @@ export function LeaderboardHero({ leaderboardType, isLoaded, children }: Leaderb
           </div>
           
           <div className="relative inline-block">
-            <Crown className="absolute -top-8 left-1/2 -translate-x-1/2 w-10 h-10 text-[#c9983a] animate-bounce-slow drop-shadow-[0_2px_8px_rgba(201,152,58,0.4)]" />
-            <h2 className={`text-[44px] font-bold mb-4 ml-2 pt-4 transition-colors ${
+            <Crown className={`absolute ${isMobile ? '-top-6 left-1/2 -translate-x-1/2 w-7 h-7' : '-top-8 left-1/2 -translate-x-1/2 w-10 h-10'} text-[#c9983a] animate-bounce-slow drop-shadow-[0_2px_8px_rgba(201,152,58,0.4)]`} />
+            <h2 className={`${isMobile ? 'text-[28px] md:text-[36px]' : 'text-[44px]'} font-bold ${isMobile ? 'mb-3' : 'mb-4'} ml-2 ${isMobile ? 'pt-3' : 'pt-4'} transition-colors ${
               theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
             }`} style={{ 
               textShadow: '0 2px 8px rgba(201, 152, 58, 0.3), 0 0 20px rgba(201, 152, 58, 0.2)' 
@@ -73,7 +75,7 @@ export function LeaderboardHero({ leaderboardType, isLoaded, children }: Leaderb
             </h2>
           </div>
           
-          <p className={`text-[14px] max-w-2xl mx-auto leading-relaxed transition-colors ${
+          <p className={`${isMobile ? 'text-[12px] px-2' : 'text-[14px]'} max-w-2xl mx-auto leading-relaxed transition-colors ${
             theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#6b5d4d]'
           }`}>
             {leaderboardType === 'contributors' 
@@ -84,29 +86,29 @@ export function LeaderboardHero({ leaderboardType, isLoaded, children }: Leaderb
 
         {/* Podium Section */}
         <div 
-          className={`backdrop-blur-[40px] bg-white/[0.15] rounded-[24px] border border-white/30 p-8 max-w-3xl mx-auto shadow-[0_8px_32px_rgba(0,0,0,0.12)] transition-all duration-1000 delay-500 ${
+          className={`backdrop-blur-[40px] bg-white/[0.15] rounded-[16px] md:rounded-[24px] border border-white/30 ${isMobile ? 'p-4 md:p-6' : 'p-8'} max-w-3xl mx-auto shadow-[0_8px_32px_rgba(0,0,0,0.12)] transition-all duration-1000 delay-500 ${
             isLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
           }`}
         >
-          <div className="flex items-center justify-center gap-2 mb-6">
-            <h3 className={`text-[18px] font-bold transition-colors ${
+          <div className={`flex items-center justify-center gap-2 ${isMobile ? 'mb-4' : 'mb-6'}`}>
+            <h3 className={`${isMobile ? 'text-[14px] md:text-[16px]' : 'text-[18px]'} font-bold transition-colors ${
               theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
             }`}>
               {leaderboardType === 'contributors' ? 'Most Our Champions' : 'Elite Projects'}
             </h3>
-            <Trophy className="w-5 h-5 text-[#c9983a] drop-shadow-sm animate-wiggle" />
-            <Trophy className="w-5 h-5 text-[#c9983a] drop-shadow-sm animate-wiggle-delayed" />
-            <Trophy className="w-5 h-5 text-[#c9983a] drop-shadow-sm animate-wiggle" />
+            <Trophy className={`${isMobile ? 'w-4 h-4' : 'w-5 h-5'} text-[#c9983a] drop-shadow-sm animate-wiggle`} />
+            <Trophy className={`${isMobile ? 'w-4 h-4' : 'w-5 h-5'} text-[#c9983a] drop-shadow-sm animate-wiggle-delayed`} />
+            <Trophy className={`${isMobile ? 'w-4 h-4' : 'w-5 h-5'} text-[#c9983a] drop-shadow-sm animate-wiggle`} />
           </div>
 
-          <div className="flex items-center justify-center gap-2 mb-10">
-            <Star className="w-4 h-4 text-[#c9983a] animate-pulse-slow" />
-            <div className={`text-[13px] font-semibold transition-colors ${
+          <div className={`flex items-center justify-center gap-2 ${isMobile ? 'mb-6' : 'mb-10'}`}>
+            <Star className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4'} text-[#c9983a] animate-pulse-slow`} />
+            <div className={`${isMobile ? 'text-[11px] md:text-[12px]' : 'text-[13px]'} font-semibold transition-colors ${
               theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
             }`}>
               Season {leaderboardType === 'contributors' ? '2025 Q1' : 'Champions'}
             </div>
-            <Star className="w-4 h-4 text-[#c9983a] animate-pulse-slow" />
+            <Star className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4'} text-[#c9983a] animate-pulse-slow`} />
           </div>
 
           {children}

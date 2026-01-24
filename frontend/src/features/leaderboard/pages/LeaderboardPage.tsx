@@ -241,17 +241,20 @@ export function LeaderboardPage() {
                 activeFilter={activeFilter}
                 isLoaded={isLoaded}
                 onUserClick={(username, userId) => {
-                  // Navigate to profile page with user identifier
-                  const identifier = userId || username;
-                  window.location.href = `/dashboard?page=profile&user=${identifier}`;
+                  // Navigate to public profile page
+                  // Use username for public profile route, or userId if username not available
+                  const identifier = username || userId;
+                  if (identifier) {
+                    window.location.href = `/profile/${identifier}`;
+                  }
                 }}
               />
               {hasMore && (
-                <div className="flex justify-center mt-6 px-4">
+                <div className="flex justify-center mt-6">
                   <button
                     onClick={loadMore}
                     disabled={isLoadingMore}
-                    className={`px-6 py-3 rounded-[14px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white font-semibold text-[14px] shadow-[0_6px_24px_rgba(162,121,44,0.4)] hover:shadow-[0_8px_28px_rgba(162,121,44,0.5)] active:scale-95 transition-all border border-white/10 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 min-h-[44px]`}
+                    className={`px-6 py-3 rounded-[14px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white font-semibold text-[14px] shadow-[0_6px_24px_rgba(162,121,44,0.4)] hover:shadow-[0_8px_28px_rgba(162,121,44,0.5)] transition-all border border-white/10 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2`}
                   >
                     {isLoadingMore ? (
                       <>

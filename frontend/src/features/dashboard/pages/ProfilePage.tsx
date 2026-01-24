@@ -149,7 +149,7 @@ export function ProfilePage({
   ];
 
   // Redirect to sign-in if not logged in and no user specified
-  // Redirect to sign-in if not logged in and no user specified
+  // Allow public profile viewing if username is in URL params
   useEffect(() => {
     if (!effectiveViewingUserLogin && !user?.github?.login) {
       navigate("/signin");

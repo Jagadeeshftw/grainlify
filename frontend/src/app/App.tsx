@@ -6,6 +6,7 @@ import { LandingPage } from "../features/landing";
 import { SignInPage, SignUpPage, AuthCallbackPage } from "../features/auth";
 import { Dashboard } from "../features/dashboard";
 import { ProfilePage } from "../features/dashboard/pages/ProfilePage";
+import { LeaderboardPage } from "../features/leaderboard/pages/LeaderboardPage";
 
 function ProtectedRoute({ children }: { children: React.ReactElement }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -25,6 +26,7 @@ export default function App() {
             <Route path="/signin" element={<SignInPage />} />
             <Route path="/signup" element={<SignUpPage />} />
             <Route path="/auth/callback" element={<AuthCallbackPage />} />
+            <Route path="/leaderboard" element={<LeaderboardPage />} />
             <Route
               path="/profile"
               element={
@@ -35,11 +37,7 @@ export default function App() {
             />
             <Route
               path="/profile/:username"
-              element={
-                <ProtectedRoute>
-                  <ProfilePage />
-                </ProtectedRoute>
-              }
+              element={<ProfilePage />}
             />
             <Route
               path="/dashboard"
