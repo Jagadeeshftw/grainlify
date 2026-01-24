@@ -7,6 +7,7 @@ import {
   updateAvatar,
   resyncGitHubProfile,
 } from "../../../../shared/api/client";
+import { toast } from "sonner";
 
 interface CurrentUser {
   id: string;
@@ -213,11 +214,11 @@ export function ProfileTab() {
               }
             : null,
         );
-        alert("GitHub profile synced successfully!");
+        toast.success("GitHub profile resynced successfully!");
       }
     } catch (error) {
       console.error("Failed to resync GitHub profile:", error);
-      alert("Failed to resync GitHub profile. Please try again.");
+      toast.error("Failed to resync GitHub profile. Please try again.");
     } finally {
       setIsResyncing(false);
     }
@@ -273,10 +274,10 @@ export function ProfileTab() {
       if (user.github?.avatar_url) {
         setAvatarUrl(user.github.avatar_url);
       }
-      alert("Profile picture updated successfully!");
+      toast.success("Profile picture updated successfully!");
     } catch (error) {
       console.error("Failed to update avatar:", error);
-      alert("Failed to update avatar. Please try again.");
+      toast.error("Failed to update avatar. Please try again.");
     } finally {
       setIsSaving(false);
     }
@@ -330,10 +331,10 @@ export function ProfileTab() {
         setAvatarUrl(user.github.avatar_url);
       }
 
-      alert("Profile updated successfully!");
+      toast.success("Profile updated successfully!");
     } catch (error) {
       console.error("Failed to update profile:", error);
-      alert("Failed to update profile. Please try again.");
+      toast.error("Failed to update profile. Please try again.");
     } finally {
       setIsSaving(false);
     }

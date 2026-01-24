@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "types": ["vite/client"]
+  },
+  "include": [
+    "src",
+    "features",
+    "shared",
+    "imports",
+    "test",
+    "vite.config.ts"
+  ], 
+  "baseUrl": ".",
+  "paths": {
+    "@/*": [
+      "./src/*"
+    ]
+  }
+}
