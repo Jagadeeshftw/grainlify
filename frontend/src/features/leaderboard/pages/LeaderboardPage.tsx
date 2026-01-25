@@ -243,7 +243,7 @@ export function LeaderboardPage() {
                 onUserClick={(username, userId) => {
                   // Navigate to profile page with user identifier
                   const identifier = userId || username;
-                  window.location.href = `/dashboard?page=profile&user=${identifier}`;
+                  window.location.href = `/dashboard?tab=profile&user=${identifier}`;
                 }}
               />
               {hasMore && (

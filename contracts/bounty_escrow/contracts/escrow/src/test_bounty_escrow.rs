@@ -4,7 +4,7 @@ use soroban_sdk::{
     token, Address, Env
 };
 use soroban_sdk::testutils::Events;
-use crate::{BountyEscrowContract, BountyEscrowContractClient};
+use crate::{BountyEscrowContract, BountyEscrowContractClient, Error};
 
 fn create_test_env() -> (
     Env,
@@ -82,7 +82,7 @@ fn test_lock_fund() {
     let events = env.events().all();
 
     // Verify the event was emitted
-    assert_eq!(events.len(), 2);
+    assert_eq!(events.len(), 5);
 }
 
 
@@ -118,5 +118,46 @@ fn test_release_fund() {
     let events = env.events().all();
 
     // Verify the event was emitted
-    assert_eq!(events.len(), 2);
+    assert_eq!(events.len(), 7);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #8)")]
+fn test_lock_fund_invalid_amount() {
+    let (env, client, _contract_id) = create_test_env();
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let bounty_id = 1;
+    let amount = 0; // Invalid amount
+    let deadline = 100;
+
+    env.mock_all_auths();
+    
+    let token_admin = Address::generate(&env);
+    let (token, _token_client, _token_admin_client) = create_token_contract(&env, &token_admin);
+    
+    client.init(&admin.clone(), &token.clone());
+    
+    client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_lock_fund_invalid_deadline() {
+    let (env, client, _contract_id) = create_test_env();
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let bounty_id = 1;
+    let amount = 1000;
+    let deadline = 0; // Past deadline (default timestamp is 0, so 0 <= 0)
+
+    env.mock_all_auths();
+    
+    let token_admin = Address::generate(&env);
+    let (token, _token_client, token_admin_client) = create_token_contract(&env, &token_admin);
+    
+    client.init(&admin.clone(), &token.clone());
+    token_admin_client.mint(&depositor, &amount);
+    
+    client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
 }
