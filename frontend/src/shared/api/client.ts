@@ -60,7 +60,7 @@ async function apiRequest<T>(
   } else if (
     method !== "GET" &&
     method !== "HEAD" &&
-    !("Content-Type" in (requestHeaders as any))
+    !("Content-Type" in requestHeaders)
   ) {
     // Non-GET/HEAD without an explicit content-type: default to JSON for our API.
     requestHeaders["Content-Type"] = "application/json";
@@ -794,3 +794,15 @@ export const applyToIssue = (
     method: "POST",
     body: JSON.stringify({ message }),
   });
+
+// Admin - Projects
+export const getAdminProjects = async (): Promise<{ projects: any[] }> => {
+  return apiRequest<{ projects: any[] }>("/admin/projects", { requiresAuth: true });
+};
+
+export const deleteAdminProject = async (projectId: string): Promise<void> => {
+  return apiRequest<void>(`/admin/projects/${projectId}`, {
+    method: "DELETE",
+    requiresAuth: true,
+  });
+};

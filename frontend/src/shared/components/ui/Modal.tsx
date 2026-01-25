@@ -55,8 +55,8 @@ export function Modal({
     >
       <div
         className={`rounded-[16px] md:rounded-[24px] border-2 shadow-[0_20px_60px_rgba(0,0,0,0.3)] ${widthClasses[width]} max-w-[95vw] sm:max-w-[90vw] max-h-[90vh] flex flex-col transition-all animate-in zoom-in-95 duration-200 ${isDark
-            ? 'bg-[#3a3228] border-white/30'
-            : 'bg-[#d4c5b0] border-white/40'
+          ? 'bg-[#3a3228] border-white/30'
+          : 'bg-[#d4c5b0] border-white/40'
           }`}
         onClick={(e) => e.stopPropagation()}
       >
@@ -65,8 +65,8 @@ export function Modal({
             <div className="flex items-center gap-3 flex-1">
               {icon && (
                 <div className={`w-8 h-8 md:w-10 md:h-10 rounded-[10px] md:rounded-[12px] flex items-center justify-center shadow-lg border-2 flex-shrink-0 ${isDark
-                    ? 'bg-gradient-to-br from-[#e8c571]/30 via-[#d4af37]/25 to-[#c9983a]/20 border-[#e8c571]/50'
-                    : 'bg-gradient-to-br from-[#c9983a]/30 via-[#d4af37]/25 to-[#c9983a]/20 border-[#c9983a]/50'
+                  ? 'bg-gradient-to-br from-[#e8c571]/30 via-[#d4af37]/25 to-[#c9983a]/20 border-[#e8c571]/50'
+                  : 'bg-gradient-to-br from-[#c9983a]/30 via-[#d4af37]/25 to-[#c9983a]/20 border-[#c9983a]/50'
                   }`}>
                   {icon}
                 </div>
@@ -82,8 +82,8 @@ export function Modal({
               <button
                 onClick={onClose}
                 className={`p-2 rounded-[10px] transition-all hover:scale-110 flex-shrink-0 ${isDark
-                    ? 'hover:bg-white/[0.1] text-[#e8c571] hover:text-[#f5d98a]'
-                    : 'hover:bg-black/[0.05] text-[#8b6f3a] hover:text-[#c9983a]'
+                  ? 'hover:bg-white/[0.1] text-[#e8c571] hover:text-[#f5d98a]'
+                  : 'hover:bg-black/[0.05] text-[#8b6f3a] hover:text-[#c9983a]'
                   }`}
               >
                 <X className="w-4 h-4" />
@@ -125,6 +125,7 @@ interface ModalButtonProps {
   type?: 'button' | 'submit' | 'reset';
   variant?: 'primary' | 'secondary';
   className?: string;
+  disabled?: boolean;
 }
 
 export function ModalButton({
@@ -132,7 +133,8 @@ export function ModalButton({
   onClick,
   type = 'button',
   variant = 'secondary',
-  className = ''
+  className = '',
+  disabled = false
 }: ModalButtonProps) {
   const { theme } = useTheme();
 
@@ -141,7 +143,8 @@ export function ModalButton({
       <button
         type={type}
         onClick={onClick}
-        className={`px-4 md:px-5 py-2.5 rounded-[10px] md:rounded-[12px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white font-medium text-[13px] md:text-[14px] shadow-[0_6px_20px_rgba(162,121,44,0.35)] hover:shadow-[0_8px_24px_rgba(162,121,44,0.5)] transition-all border border-white/10 hover:scale-[1.02] active:scale-100 flex items-center justify-center gap-2 touch-manipulation min-h-[44px] w-full sm:w-auto ${className}`}
+        disabled={disabled}
+        className={`px-4 md:px-5 py-2.5 rounded-[10px] md:rounded-[12px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white font-medium text-[13px] md:text-[14px] shadow-[0_6px_20px_rgba(162,121,44,0.35)] hover:shadow-[0_8px_24px_rgba(162,121,44,0.5)] transition-all border border-white/10 hover:scale-[1.02] active:scale-100 flex items-center justify-center gap-2 touch-manipulation min-h-[44px] w-full sm:w-auto ${disabled ? 'opacity-50 cursor-not-allowed grayscale' : ''} ${className}`}
       >
         {children}
       </button>
@@ -152,10 +155,11 @@ export function ModalButton({
     <button
       type={type}
       onClick={onClick}
+      disabled={disabled}
       className={`px-4 md:px-5 py-2.5 rounded-[10px] md:rounded-[12px] backdrop-blur-[20px] border font-medium text-[13px] md:text-[14px] transition-all hover:scale-[1.02] active:scale-100 touch-manipulation min-h-[44px] w-full sm:w-auto ${theme === 'dark'
-          ? 'bg-white/[0.08] border-white/15 text-[#d4d4d4] hover:bg-white/[0.12] active:bg-white/[0.15]'
-          : 'bg-white/[0.15] border-white/25 text-[#7a6b5a] hover:bg-white/[0.2] active:bg-white/[0.25]'
-        } ${className}`}
+        ? 'bg-white/[0.08] border-white/15 text-[#d4d4d4] hover:bg-white/[0.12] active:bg-white/[0.15]'
+        : 'bg-white/[0.15] border-white/25 text-[#7a6b5a] hover:bg-white/[0.2] active:bg-white/[0.25]'
+        } ${disabled ? 'opacity-50 cursor-not-allowed grayscale' : ''} ${className}`}
     >
       {children}
     </button>
@@ -192,12 +196,12 @@ export function ModalInput({
   const isError = !!error;
 
   const inputClasses = `w-full px-4 py-3 rounded-[14px] backdrop-blur-[30px] border focus:outline-none transition-all text-[14px] ${isError
-      ? theme === 'dark'
-        ? 'bg-red-500/10 border-red-500/40 text-[#f5f5f5] placeholder-red-300/50 focus:border-red-500/60'
-        : 'bg-red-500/5 border-red-500/40 text-[#2d2820] placeholder-red-700/50 focus:border-red-500/60'
-      : theme === 'dark'
-        ? 'bg-white/[0.08] border-white/15 text-[#f5f5f5] placeholder-[#d4d4d4] focus:bg-white/[0.12] focus:border-[#c9983a]/30'
-        : 'bg-white/[0.15] border-white/25 text-[#2d2820] placeholder-[#7a6b5a] focus:bg-white/[0.2] focus:border-[#c9983a]/30'
+    ? theme === 'dark'
+      ? 'bg-red-500/10 border-red-500/40 text-[#f5f5f5] placeholder-red-300/50 focus:border-red-500/60'
+      : 'bg-red-500/5 border-red-500/40 text-[#2d2820] placeholder-red-700/50 focus:border-red-500/60'
+    : theme === 'dark'
+      ? 'bg-white/[0.08] border-white/15 text-[#f5f5f5] placeholder-[#d4d4d4] focus:bg-white/[0.12] focus:border-[#c9983a]/30'
+      : 'bg-white/[0.15] border-white/25 text-[#2d2820] placeholder-[#7a6b5a] focus:bg-white/[0.2] focus:border-[#c9983a]/30'
     } ${className}`;
 
   return (
@@ -277,9 +281,8 @@ export function ModalSelect({
     <div className={`flex flex-col gap-1 relative ${className}`} ref={containerRef}>
       {label && (
         <label
-          className={`block text-[13px] font-medium mb-2 transition-colors ${
-            theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-          }`}
+          className={`block text-[13px] font-medium mb-2 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+            }`}
         >
           {label} {required && <span className="text-[#c9983a] ml-1">*</span>}
         </label>
@@ -288,27 +291,25 @@ export function ModalSelect({
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className={`w-full flex items-center justify-between px-4 py-3 rounded-[14px] backdrop-blur-[30px] border transition-all text-[14px] outline-none ${
-          theme === 'dark'
+        className={`w-full flex items-center justify-between px-4 py-3 rounded-[14px] backdrop-blur-[30px] border transition-all text-[14px] outline-none ${theme === 'dark'
             ? 'bg-white/[0.08] border-white/15 text-[#f5f5f5] focus:border-[#c9983a]/30'
             : 'bg-white/[0.15] border-white/25 text-[#2d2820] focus:border-[#c9983a]/30'
-        } ${isOpen ? 'border-[#c9983a]' : ''}`}
+          } ${isOpen ? 'border-[#c9983a]' : ''}`}
 
       >
         <span>{selectedOption ? selectedOption.label : 'Select...'}</span>
-        <ChevronDown 
-          className={`w-4 h-4 text-amber-500 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} 
+        <ChevronDown
+          className={`w-4 h-4 text-amber-500 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
         />
       </button>
 
-{/* Custom Dropdown Menu - FINAL THEME FIX */}
+      {/* Custom Dropdown Menu - FINAL THEME FIX */}
       {isOpen && (
         <div
-          className={`absolute z-[100] w-full mt-[80px] max-h-60 overflow-auto rounded-[14px] border shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-200 ${
-            theme === 'dark' 
+          className={`absolute z-[100] w-full mt-[80px] max-h-60 overflow-auto rounded-[14px] border shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-200 ${theme === 'dark'
               ? 'bg-[#2d241d] border-[#c9983a]/20 shadow-black/40' // Dark Brown background + Gold border
               : 'bg-[#ede3d0] border-[#c9983a]/60 shadow-amber-900/20'
-          }`}
+            }`}
         >
           <ul className="py-2">
             {options.map((option) => (
@@ -318,15 +319,14 @@ export function ModalSelect({
                   onChange(option.value);
                   setIsOpen(false);
                 }}
-                className={`px-4 py-2.5 cursor-pointer text-[14px] transition-colors flex items-center justify-between ${
-                  theme === 'dark'
+                className={`px-4 py-2.5 cursor-pointer text-[14px] transition-colors flex items-center justify-between ${theme === 'dark'
                     ? value === option.value
                       ? 'bg-[#c9983a]/20 text-[#c9983a] font-bold' // Dark mode active
                       : 'text-[#e8dfd0] hover:bg-[#c9983a]/10'     // Dark mode hover (Cream text, gold bg)
                     : value === option.value
                       ? 'bg-[#c9983a]/30 text-[#8b6b2d] font-bold'
                       : 'text-[#5c4d3c] hover:bg-[#c9983a]/20'
-                }`}
+                  }`}
               >
                 {option.label}
                 {value === option.value && (

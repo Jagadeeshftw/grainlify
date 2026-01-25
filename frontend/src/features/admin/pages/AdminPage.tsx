@@ -1,8 +1,51 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
-import { Shield, Globe, Plus, Sparkles, Trash2, ExternalLink, Calendar } from 'lucide-react';
+import { Shield, Globe, Plus, Sparkles, Trash2, ExternalLink, Calendar, Package } from 'lucide-react';
 import { Modal, ModalFooter, ModalButton, ModalInput, ModalSelect } from '../../../shared/components/ui/Modal';
-import { createEcosystem, getAdminEcosystems, deleteEcosystem, createOpenSourceWeekEvent, getAdminOpenSourceWeekEvents, deleteOpenSourceWeekEvent } from '../../../shared/api/client';
+import {
+  createEcosystem,
+  getAdminEcosystems,
+  deleteEcosystem,
+  createOpenSourceWeekEvent,
+  getAdminOpenSourceWeekEvents,
+  deleteOpenSourceWeekEvent,
+  getAdminProjects,
+  deleteAdminProject
+} from '../../../shared/api/client';
+import { ProjectCard, Project } from '../../dashboard/components/ProjectCard';
+
+// Helper functions (copied from BrowsePage for consistency)
+const formatNumber = (num: number): string => {
+  if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
+  if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
+  return num.toString();
+};
+
+const getProjectIcon = (githubFullName: string): string => {
+  const [owner] = githubFullName.split('/');
+  return `https://github.com/${owner}.png?size=40`;
+};
+
+const getProjectColor = (name: string): string => {
+  const colors = [
+    'from-blue-500 to-cyan-500',
+    'from-purple-500 to-pink-500',
+    'from-green-500 to-emerald-500',
+    'from-red-500 to-pink-500',
+    'from-orange-500 to-red-500',
+    'from-gray-600 to-gray-800',
+    'from-green-600 to-green-800',
+    'from-cyan-500 to-blue-600',
+  ];
+  const hash = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return colors[hash % colors.length];
+};
+
+const truncateDescription = (description: string | undefined | null, maxLength: number = 80): string => {
+  if (!description || description.trim() === '') return '';
+  const firstLine = description.split('\n')[0].trim();
+  return firstLine.length > maxLength ? firstLine.substring(0, maxLength).trim() + '...' : firstLine;
+};
 
 interface Ecosystem {
   id: string;
@@ -61,6 +104,40 @@ export function AdminPage() {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Project Management
+  const [adminProjects, setAdminProjects] = useState<Project[]>([]);
+  const [isAdminProjectsLoading, setIsAdminProjectsLoading] = useState(true);
+  const [projectDeleteConfirm, setProjectDeleteConfirm] = useState<{ id: string; name: string } | null>(null);
+  const [isDeletingProject, setIsDeletingProject] = useState(false);
+
+  const fetchAdminProjects = useCallback(async () => {
+    try {
+      setIsAdminProjectsLoading(true);
+      const response = await getAdminProjects();
+
+      const mappedProjects: Project[] = (response.projects || []).map((p: any) => ({
+        id: p.id,
+        name: p.github_full_name.split('/')[1] || p.github_full_name,
+        icon: getProjectIcon(p.github_full_name),
+        stars: formatNumber(p.stars_count || 0),
+        forks: formatNumber(p.forks_count || 0),
+        contributors: p.contributors_count || 0,
+        openIssues: p.open_issues_count || 0,
+        prs: p.open_prs_count || 0,
+        description: truncateDescription(p.description) || `${p.language || 'Project'} repository`,
+        tags: Array.isArray(p.tags) ? p.tags : [],
+        color: getProjectColor(p.github_full_name.split('/')[1] || p.github_full_name),
+      }));
+
+      setAdminProjects(mappedProjects);
+    } catch (error) {
+      console.error('Failed to fetch admin projects:', error);
+      setAdminProjects([]);
+    } finally {
+      setIsAdminProjectsLoading(false);
+    }
+  }, []);
+
   // Open Source Week events
   const [oswEvents, setOswEvents] = useState<Array<{
     id: string;
@@ -116,16 +193,22 @@ export function AdminPage() {
   useEffect(() => {
     fetchEcosystems();
     fetchOswEvents();
+    fetchAdminProjects();
 
     // Listen for ecosystem updates
     const handleEcosystemsUpdated = () => {
       fetchEcosystems();
     };
+    const handleProjectsUpdated = () => {
+      fetchAdminProjects();
+    };
     window.addEventListener('ecosystems-updated', handleEcosystemsUpdated);
+    window.addEventListener('projects-updated', handleProjectsUpdated);
     return () => {
       window.removeEventListener('ecosystems-updated', handleEcosystemsUpdated);
+      window.removeEventListener('projects-updated', handleProjectsUpdated);
     };
-  }, []);
+  }, [fetchAdminProjects]);
 
   const confirmDeleteOsw = (id: string, title: string) => {
     setOswDeleteConfirm({ id, title });
@@ -142,6 +225,24 @@ export function AdminPage() {
       setErrorMessage(e instanceof Error ? e.message : 'Failed to delete event.');
     } finally {
       setOswDeletingId(null);
+    }
+  };
+
+  const confirmDeleteProject = (_e: React.MouseEvent, id: string, name: string) => {
+    setProjectDeleteConfirm({ id, name });
+  };
+
+  const handleDeleteProjectConfirmed = async () => {
+    if (!projectDeleteConfirm) return;
+    setIsDeletingProject(true);
+    try {
+      await deleteAdminProject(projectDeleteConfirm.id);
+      await fetchAdminProjects();
+      setProjectDeleteConfirm(null);
+    } catch (e) {
+      setErrorMessage(e instanceof Error ? e.message : 'Failed to delete project.');
+    } finally {
+      setIsDeletingProject(false);
     }
   };
 
@@ -511,6 +612,69 @@ export function AdminPage() {
         </div>
       </div>
 
+      {/* Project Management Section */}
+      <div className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${theme === 'dark'
+        ? 'bg-white/[0.08] border-white/10'
+        : 'bg-white/[0.15] border-white/20'
+        }`}>
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className={`text-[24px] font-bold mb-2 transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
+              }`}>Project Management</h2>
+            <p className={`text-[14px] transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+              }`}>Review and manage all projects registered on the platform</p>
+          </div>
+        </div>
+
+        {isAdminProjectsLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 animate-pulse">
+            {Array.from({ length: 4 }).map((_, idx) => (
+              <div
+                key={idx}
+                className={`h-[320px] backdrop-blur-[30px] rounded-[18px] border ${theme === 'dark'
+                  ? 'bg-white/[0.06] border-white/10'
+                  : 'bg-white/[0.12] border-white/20'
+                  }`}
+              />
+            ))}
+          </div>
+        ) : adminProjects.length === 0 ? (
+          <div className={`text-center py-12 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+            }`}>
+            No projects found.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+            {adminProjects.map((project) => (
+              <ProjectCard
+                key={project.id}
+                project={project}
+                showDelete={true}
+                onDelete={confirmDeleteProject}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Info Message */}
+        <div className={`backdrop-blur-[30px] rounded-[16px] border p-5 flex items-start gap-4 transition-colors mt-6 ${theme === 'dark'
+          ? 'bg-white/[0.06] border-white/10'
+          : 'bg-white/[0.12] border-white/20'
+          }`}>
+          <div className="p-2 rounded-[10px] bg-gradient-to-br from-[#c9983a]/20 to-[#a67c2e]/10 border border-[#c9983a]/20">
+            <Package className="w-5 h-5 text-[#c9983a]" />
+          </div>
+          <div>
+            <p className={`text-[14px] font-medium mb-1 transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
+              }`}>Project Management Tips</p>
+            <p className={`text-[13px] leading-relaxed transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+              }`}>
+              Deleting a project will remove it from the public browse page and stop all synchronization. This action is irreversible from the UI.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Open Source Week Events Section */}
       <div className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${theme === 'dark'
         ? 'bg-white/[0.08] border-white/10'
@@ -781,6 +945,40 @@ export function AdminPage() {
             </ModalButton>
             <ModalButton variant="primary" onClick={handleDeleteOswConfirmed} disabled={!!oswDeletingId}>
               {oswDeletingId ? 'Deleting...' : 'Delete'}
+            </ModalButton>
+          </ModalFooter>
+        </div>
+      </Modal>
+
+      {/* Delete Project Confirmation Modal */}
+      <Modal
+        isOpen={!!projectDeleteConfirm}
+        onClose={() => setProjectDeleteConfirm(null)}
+        title="Delete Project"
+        icon={<Trash2 className="w-6 h-6 text-[#c9983a]" />}
+        width="md"
+      >
+        <div className="space-y-4">
+          <p className={`text-[14px] transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+            }`}>
+            Are you sure you want to delete <span className={theme === 'dark' ? 'text-[#f5f5f5] font-semibold' : 'text-[#2d2820] font-semibold'}>
+              {projectDeleteConfirm?.name}
+            </span>? This action will hide the project and stop synchronization.
+          </p>
+          <ModalFooter>
+            <ModalButton
+              variant="secondary"
+              onClick={() => setProjectDeleteConfirm(null)}
+              disabled={isDeletingProject}
+            >
+              Cancel
+            </ModalButton>
+            <ModalButton
+              variant="primary"
+              onClick={handleDeleteProjectConfirmed}
+              disabled={isDeletingProject}
+            >
+              {isDeletingProject ? 'Deleting...' : 'Delete Project'}
             </ModalButton>
           </ModalFooter>
         </div>

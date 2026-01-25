@@ -238,6 +238,11 @@ func New(cfg config.Config, deps Deps) *fiber.App {
 	adminGroup.Post("/open-source-week/events", auth.RequireRole("admin"), oswAdmin.Create())
 	adminGroup.Delete("/open-source-week/events/:id", auth.RequireRole("admin"), oswAdmin.Delete())
 
+	// Project Management (admin)
+	projectsAdmin := handlers.NewAdminProjectsHandler(cfg, deps.DB)
+	adminGroup.Get("/projects", auth.RequireRole("admin"), projectsAdmin.List())
+	adminGroup.Delete("/projects/:id", auth.RequireRole("admin"), projectsAdmin.Delete())
+
 	webhooks := handlers.NewGitHubWebhooksHandler(cfg, deps.DB, deps.Bus)
 	// Register webhook endpoint with explicit OPTIONS support for CORS
 	app.Options("/webhooks/github", func(c *fiber.Ctx) error {
