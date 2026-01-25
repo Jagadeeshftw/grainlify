@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   Search,
   ChevronDown,
@@ -25,7 +25,6 @@ import {
   Eye,
   Crown,
   Link,
-  ArrowLeft,
   Medal,
 } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
@@ -36,7 +35,6 @@ import {
   getProjectsContributed,
   getProfileCalendar,
   getProfileActivity,
-  getPublicProfile,
 } from "../../../shared/api/client";
 import { SkeletonLoader } from "../../../shared/components/SkeletonLoader";
 import { LanguageIcon } from "../../../shared/components/LanguageIcon";
@@ -75,30 +73,12 @@ interface Project {
   contributors_count?: number;
 }
 
-interface ProfilePageProps {
-  viewingUserId?: string | null;
-  viewingUserLogin?: string | null;
-  onBack?: () => void;
-  onIssueClick?: (issueId: string, projectId: string) => void;
-}
-
-export function ProfilePage({
-  viewingUserId,
-  viewingUserLogin,
-  onBack,
-  onIssueClick,
-}: ProfilePageProps) {
+export function ProfilePage() {
   const { theme } = useTheme();
   const { user, userRole } = useAuth();
   const navigate = useNavigate();
-  const { username } = useParams();
-  const effectiveViewingUserLogin = viewingUserLogin || username;
 
   const [profileData, setProfileData] = useState<ProfileData | null>(null);
-  const [viewingUser, setViewingUser] = useState<{
-    login: string;
-    avatar_url?: string;
-  } | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [contributionCalendar, setContributionCalendar] = useState<
     Array<{ date: string; count: number; level: number }>
@@ -142,36 +122,19 @@ export function ProfilePage({
     "Dec",
   ];
 
-  // Redirect to sign-in if not logged in and no user specified
-  // Allow public profile viewing if username is in URL params
+  // Redirect to sign-in if not logged in
   useEffect(() => {
-    if (!effectiveViewingUserLogin && !user?.github?.login) {
+    if (!user?.github?.login) {
       navigate("/signin");
     }
-  }, [effectiveViewingUserLogin, user?.github?.login, navigate]);
+  }, [user?.github?.login, navigate]);
 
   // Fetch profile data
   useEffect(() => {
     const fetchProfile = async () => {
       setIsLoadingProfile(true);
       try {
-        let data;
-        if (viewingUserId || effectiveViewingUserLogin) {
-          // Fetch public profile for another user
-          data = await getPublicProfile(
-            viewingUserId || undefined,
-            effectiveViewingUserLogin || undefined,
-          );
-          setViewingUser({
-            login: data.login,
-            avatar_url:
-              data.avatar_url ||
-              `https://github.com/${data.login}.png?size=200`,
-          });
-        } else {
-          // Fetch own profile
-          data = await getUserProfile();
-        }
+        const data = await getUserProfile();
         setProfileData(data);
         setIsLoadingProfile(false);
       } catch (error) {
@@ -181,17 +144,14 @@ export function ProfilePage({
       }
     };
     fetchProfile();
-  }, [viewingUserId, effectiveViewingUserLogin]);
+  }, []);
 
   // Fetch user's contributed projects
   useEffect(() => {
     const fetchProjects = async () => {
       setIsLoadingProjects(true);
       try {
-        const data = await getProjectsContributed(
-          viewingUserId || undefined,
-          effectiveViewingUserLogin || undefined,
-        );
+        const data = await getProjectsContributed();
         // Limit to 3 and map to Project format
         const contributedProjects = data.slice(0, 3).map((p: any) => ({
           id: p.id,
@@ -212,17 +172,14 @@ export function ProfilePage({
       }
     };
     fetchProjects();
-  }, [viewingUserId, effectiveViewingUserLogin]);
+  }, []);
 
   // Fetch contribution calendar
   useEffect(() => {
     const fetchCalendar = async () => {
       setIsLoadingCalendar(true);
       try {
-        const data = await getProfileCalendar(
-          viewingUserId || undefined,
-          effectiveViewingUserLogin || undefined,
-        );
+        const data = await getProfileCalendar();
         setContributionCalendar(data.calendar || []);
         setIsLoadingCalendar(false);
       } catch (error) {
@@ -231,19 +188,14 @@ export function ProfilePage({
       }
     };
     fetchCalendar();
-  }, [viewingUserId, effectiveViewingUserLogin]);
+  }, []);
 
   // Fetch contribution activity
   useEffect(() => {
     const fetchActivity = async () => {
       setIsLoadingActivity(true);
       try {
-        const data = await getProfileActivity(
-          100,
-          0,
-          viewingUserId || undefined,
-          effectiveViewingUserLogin || undefined,
-        );
+        const data = await getProfileActivity(100, 0);
         setContributionActivity(data.activities || []);
         // Initialize expanded months based on activity data
         const monthsSet = new Set<string>();
@@ -264,7 +216,7 @@ export function ProfilePage({
       }
     };
     fetchActivity();
-  }, [viewingUserId, effectiveViewingUserLogin]);
+  }, []);
 
   const toggleMonth = (month: string) => {
     setExpandedMonths((prev) => ({
@@ -370,20 +322,6 @@ export function ProfilePage({
   return (
     <div className="space-y-6">
       {/* Back Button (only when viewing another user's profile) */}
-      {onBack && (viewingUserId || viewingUserLogin) && (
-        <button
-          onClick={onBack}
-          className={`flex items-center gap-2 px-4 py-2 rounded-[12px] backdrop-blur-[30px] border font-medium text-[14px] hover:bg-white/[0.2] transition-all ${
-            theme === "dark"
-              ? "bg-[#3d342c]/[0.4] border-white/15 text-[#d4c5b0]"
-              : "bg-white/[0.15] border-white/25 text-[#2d2820]"
-          }`}
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Back to Leaderboard
-        </button>
-      )}
-
       {/* Profile Header */}
       <div className="backdrop-blur-[40px] bg-gradient-to-br from-white/[0.18] to-white/[0.10] rounded-[32px] border-2 border-white/30 shadow-[0_20px_60px_rgba(0,0,0,0.15),0_0_80px_rgba(201,152,58,0.08)] p-12 relative overflow-hidden group">
         {/* Ambient Background Glow - Enhanced */}
@@ -415,15 +353,15 @@ export function ProfilePage({
                 <>
                   <div className="absolute inset-0 bg-gradient-to-br from-[#c9983a]/40 to-[#d4af37]/25 rounded-full blur-2xl group-hover/avatar:blur-3xl transition-all duration-700 animate-pulse" />
                   <div className="absolute inset-0 bg-gradient-to-br from-[#ffd700]/20 to-[#c9983a]/10 rounded-full blur-xl" />
-                  {viewingUser?.avatar_url || user?.github?.avatar_url ? (
+                  {user?.github?.avatar_url ? (
                     <img
-                      src={viewingUser?.avatar_url || user?.github?.avatar_url}
-                      alt={viewingUser?.login || user?.github?.login}
+                      src={user?.github?.avatar_url}
+                      alt={user?.github?.login}
                       className="relative w-32 h-32 rounded-full border-[6px] border-white/40 shadow-[0_12px_40px_rgba(0,0,0,0.25),inset_0_2px_8px_rgba(255,255,255,0.3)] flex-shrink-0 group-hover/avatar:scale-105 transition-transform duration-500 object-cover"
                       onError={(e) => {
                         // Fallback to GitHub avatar if image fails to load
                         const target = e.target as HTMLImageElement;
-                        const login = viewingUser?.login || user?.github?.login;
+                        const login = user?.github?.login;
                         if (login) {
                           target.src = `https://github.com/${login}.png?size=200`;
                         }
@@ -457,7 +395,7 @@ export function ProfilePage({
                       : "bg-gradient-to-r from-[#1a1410] via-[#2d2820] to-[#4a3f2f] bg-clip-text text-transparent drop-shadow-[0_2px_4px_rgba(0,0,0,0.1)]"
                   }`}
                 >
-                  {viewingUser?.login || user?.github?.login || "Loading..."}
+                  {user?.github?.login || "Loading..."}
                 </h1>
               )}
 
@@ -1825,18 +1763,7 @@ export function ProfilePage({
                             <div className="absolute left-[20px] top-[36px] bottom-[-8px] w-[2px] bg-gradient-to-b from-white/25 to-white/8" />
                           )}
 
-                          <div
-                            onClick={() => {
-                              if (item.type === "issue" && onIssueClick) {
-                                onIssueClick(item.id, item.project_id);
-                              }
-                            }}
-                            className={`flex items-center gap-4 py-2.5 hover:bg-white/[0.08] -mx-2 px-2 rounded-lg transition-all group/item ${
-                              item.type === "issue"
-                                ? "cursor-pointer"
-                                : "cursor-default"
-                            }`}
-                          >
+                          <div className="flex items-center gap-4 py-2.5 hover:bg-white/[0.08] -mx-2 px-2 rounded-lg transition-all group/item cursor-default">
                             {/* Icon + Number Badge (only for issues and PRs) */}
                             {item.type !== "review" && IconComponent && (
                               <div className="relative z-10 flex items-center gap-2.5 flex-shrink-0">

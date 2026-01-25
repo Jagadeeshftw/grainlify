@@ -1,4 +1,3 @@
-import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "../shared/contexts/AuthContext";
 import { ThemeProvider } from "../shared/contexts/ThemeContext";
@@ -7,13 +6,8 @@ import { SignInPage, SignUpPage, AuthCallbackPage } from "../features/auth";
 import { Dashboard } from "../features/dashboard";
 import { ProfilePage } from "../features/dashboard/pages/ProfilePage";
 import { LeaderboardPage } from "../features/leaderboard/pages/LeaderboardPage";
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from '../shared/contexts/AuthContext';
-import { ThemeProvider } from '../shared/contexts/ThemeContext';
-import { LandingPage } from '../features/landing';
-import { SignInPage, SignUpPage, AuthCallbackPage } from '../features/auth';
-import { Dashboard } from '../features/dashboard';
-import Toast from '../shared/components/Toast';
+
+import Toast from "../shared/components/Toast";
 
 function ProtectedRoute({ children }: { children: JSX.Element }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -41,10 +35,7 @@ export default function App() {
                 </ProtectedRoute>
               }
             />
-            <Route
-              path="/profile/:username"
-              element={<ProfilePage />}
-            />
+
             <Route
               path="/dashboard"
               element={

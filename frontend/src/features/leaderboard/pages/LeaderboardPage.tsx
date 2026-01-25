@@ -240,13 +240,8 @@ export function LeaderboardPage() {
                 data={leaderboardData}
                 activeFilter={activeFilter}
                 isLoaded={isLoaded}
-                onUserClick={(username, userId) => {
-                  // Navigate to public profile page
-                  // Use username for public profile route, or userId if username not available
-                  const identifier = username || userId;
-                  if (identifier) {
-                    window.location.href = `/profile/${identifier}`;
-                  }
+                onUserClick={() => {
+                  // Navigation disabled
                 }}
               />
               {hasMore && (
