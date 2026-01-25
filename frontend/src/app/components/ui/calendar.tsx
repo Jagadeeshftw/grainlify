@@ -5,7 +5,6 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { DayPicker } from "react-day-picker";
 
 import { cn } from "./utils";
-import { buttonVariants } from "./button";
 
 function Calendar({
   className,
@@ -24,8 +23,7 @@ function Calendar({
         caption_label: "text-sm font-medium",
         nav: "flex items-center gap-1",
         nav_button: cn(
-          buttonVariants({ variant: "outline" }),
-          "size-7 bg-transparent p-0 opacity-50 hover:opacity-100",
+          "size-7 bg-transparent p-0 opacity-50 hover:opacity-100 border border-border text-foreground hover:bg-accent hover:text-accent-foreground rounded-md transition-colors",
         ),
         nav_button_previous: "absolute left-1",
         nav_button_next: "absolute right-1",
@@ -41,16 +39,15 @@ function Calendar({
             : "[&:has([aria-selected])]:rounded-md",
         ),
         day: cn(
-          buttonVariants({ variant: "ghost" }),
-          "size-8 p-0 font-normal aria-selected:opacity-100",
+          "size-8 p-0 font-normal aria-selected:opacity-100 rounded-md transition-colors hover:bg-accent hover:text-accent-foreground text-foreground",
         ),
         day_range_start:
-          "day-range-start aria-selected:bg-primary aria-selected:text-primary-foreground",
+          "day-range-start aria-selected:bg-[#c9983a] aria-selected:text-white",
         day_range_end:
-          "day-range-end aria-selected:bg-primary aria-selected:text-primary-foreground",
+          "day-range-end aria-selected:bg-[#c9983a] aria-selected:text-white",
         day_selected:
-          "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground",
-        day_today: "bg-accent text-accent-foreground",
+          "bg-[#c9983a] text-white hover:bg-[#c9983a]/90 focus:bg-[#c9983a] focus:text-white",
+        day_today: "bg-accent text-accent-foreground border border-border",
         day_outside:
           "day-outside text-muted-foreground aria-selected:text-muted-foreground",
         day_disabled: "text-muted-foreground opacity-50",
@@ -61,10 +58,10 @@ function Calendar({
       }}
       components={{
         IconLeft: ({ className, ...props }) => (
-          <ChevronLeft className={cn("size-4", className)} {...props} />
+          <ChevronLeft className={cn("size-4 text-foreground", className)} {...props} />
         ),
         IconRight: ({ className, ...props }) => (
-          <ChevronRight className={cn("size-4", className)} {...props} />
+          <ChevronRight className={cn("size-4 text-foreground", className)} {...props} />
         ),
       }}
       {...props}

@@ -249,23 +249,7 @@ export function BrowsePage({ onProjectClick }: BrowsePageProps) {
           return mappedProjects;
         } catch (err) {
           console.error('BrowsePage: Failed to fetch projects:', err);
-          // Check if it's a network error (backend down) vs other errors
-          const isNetworkError = err instanceof TypeError ||
-            (err instanceof Error && (
-              err.message.includes('fetch') ||
-              err.message.includes('network') ||
-              err.message.includes('Unable to connect') ||
-              err.message.includes('Failed to fetch')
-            ));
-
-          if (isNetworkError) {
-            // Backend is down - keep showing skeleton forever
-            console.log('BrowsePage: Network error detected, keeping skeleton loader');
-          } else {
-            // Other error (e.g., invalid response, auth error) - show empty state
-            console.log('BrowsePage: Non-network error, showing empty state');
-          }
-          return [];
+          throw err; // Re-throw to let the hook handle the error
         }
       });
     };

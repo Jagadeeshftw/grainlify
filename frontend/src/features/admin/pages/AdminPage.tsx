@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
 import { Shield, Globe, Plus, Sparkles, Trash2, ExternalLink, Calendar } from 'lucide-react';
 import { Modal, ModalFooter, ModalButton, ModalInput, ModalSelect } from '../../../shared/components/ui/Modal';
+import { DatePicker } from '../../../shared/components/ui/DatePicker';
 import { createEcosystem, getAdminEcosystems, deleteEcosystem, createOpenSourceWeekEvent, getAdminOpenSourceWeekEvents, deleteOpenSourceWeekEvent } from '../../../shared/api/client';
 
 interface Ecosystem {
@@ -716,11 +717,11 @@ export function AdminPage() {
               ]}
             />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <ModalInput
+              <DatePicker
                 label="Start date (UTC)"
-                type="date"
                 value={oswForm.startDate}
                 onChange={(value) => setOswForm({ ...oswForm, startDate: value })}
+                placeholder="Select start date"
                 required
               />
               <ModalInput
@@ -732,11 +733,11 @@ export function AdminPage() {
               />
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <ModalInput
+              <DatePicker
                 label="End date (UTC)"
-                type="date"
                 value={oswForm.endDate}
                 onChange={(value) => setOswForm({ ...oswForm, endDate: value })}
+                placeholder="Select end date"
                 required
               />
               <ModalInput

@@ -211,6 +211,7 @@ export function DiscoverPage({ onGoToBilling, onGoToOpenSourceWeek }: DiscoverPa
   // Fetch recommended issues from top projects
   useEffect(() => {
     const loadRecommendedIssues = async () => {
+      // Only fetch issues if we have projects and they're loaded
       if (isLoadingProjects || projects.length === 0) return;
 
       await fetchIssues(async () => {
@@ -245,6 +246,7 @@ export function DiscoverPage({ onGoToBilling, onGoToOpenSourceWeek }: DiscoverPa
             continue;
           }
         }
+
         return issues;
       });
     };
@@ -370,7 +372,10 @@ export function DiscoverPage({ onGoToBilling, onGoToOpenSourceWeek }: DiscoverPa
             ))}
           </div>
         ) : projects.length === 0 ? (
-          <div className={`p-8 rounded-[16px] border text-center ${theme === 'dark' ? 'bg-white/[0.08] border-white/15 text-[#d4d4d4]' : 'bg-white/[0.15] border-white/25 text-[#7a6b5a]'}`}>
+          <div className={`p-8 rounded-[16px] border text-center ${theme === 'dark'
+            ? 'bg-white/[0.08] border-white/15 text-[#d4d4d4]'
+            : 'bg-white/[0.15] border-white/25 text-[#7a6b5a]'
+            }`}>
             <p className="text-[16px] font-semibold">No recommended projects found</p>
           </div>
         ) : (
@@ -477,7 +482,10 @@ export function DiscoverPage({ onGoToBilling, onGoToOpenSourceWeek }: DiscoverPa
             ))}
           </div>
         ) : recommendedIssues.length === 0 ? (
-          <div className={`p-8 rounded-[16px] border text-center ${theme === 'dark' ? 'bg-white/[0.08] border-white/15 text-[#d4d4d4]' : 'bg-white/[0.15] border-white/25 text-[#7a6b5a]'}`}>
+          <div className={`p-8 rounded-[16px] border text-center ${theme === 'dark'
+            ? 'bg-white/[0.08] border-white/15 text-[#d4d4d4]'
+            : 'bg-white/[0.15] border-white/25 text-[#7a6b5a]'
+            }`}>
             <p className="text-[16px] font-semibold">No recommended issues found</p>
             <p className="text-[14px] mt-2">Try checking back later or explore projects manually.</p>
           </div>
