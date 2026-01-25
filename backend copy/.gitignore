@@ -1,0 +1,102 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/api
+/main
+/worker
+/migrate
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.html
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+*.env
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Air (live reload) temporary files
+tmp/
+.air.toml.bak
+
+# Build artifacts
+build/
+dist/
+bin/
+
+# Logs
+*.log
+logs/
+build-errors.log
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Migration files (keep migrations directory structure, but ignore generated files)
+migrations/*.sql.bak
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Railway deployment
+.railway/
+
+# Test files
+*_test.go.bak
+
+# Private keys and secrets (extra safety)
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+*.secret
+
+# Local development files
+run-dev.sh.bak
+Makefile.bak
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

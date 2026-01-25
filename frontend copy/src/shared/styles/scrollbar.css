@@ -1,0 +1,118 @@
+/* Custom Scrollbar Styles - Glassmorphism Golden Theme */
+/* Matching the native browser scrollbar appearance from filter modal */
+
+/* Scrollbar for Light Theme - Native-like appearance */
+.scrollbar-custom {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(123, 107, 90, 0.5) transparent;
+}
+
+.scrollbar-custom::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.scrollbar-custom::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-custom::-webkit-scrollbar-thumb {
+  background: rgba(123, 107, 90, 0.5);
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.scrollbar-custom::-webkit-scrollbar-thumb:hover {
+  background: rgba(123, 107, 90, 0.7);
+  background-clip: padding-box;
+}
+
+.scrollbar-custom::-webkit-scrollbar-thumb:active {
+  background: rgba(123, 107, 90, 0.85);
+  background-clip: padding-box;
+}
+
+/* Scrollbar for Dark Theme - Native-like appearance */
+.dark .scrollbar-custom {
+  scrollbar-color: rgba(180, 160, 130, 0.5) transparent;
+}
+
+.dark .scrollbar-custom::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dark .scrollbar-custom::-webkit-scrollbar-thumb {
+  background: rgba(180, 160, 130, 0.5);
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.dark .scrollbar-custom::-webkit-scrollbar-thumb:hover {
+  background: rgba(180, 160, 130, 0.7);
+  background-clip: padding-box;
+}
+
+.dark .scrollbar-custom::-webkit-scrollbar-thumb:active {
+  background: rgba(180, 160, 130, 0.9);
+  background-clip: padding-box;
+}
+
+/* Thin Scrollbar Variant */
+.scrollbar-custom-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(123, 107, 90, 0.4) transparent;
+}
+
+.scrollbar-custom-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollbar-custom-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-custom-thin::-webkit-scrollbar-thumb {
+  background: rgba(123, 107, 90, 0.4);
+  border-radius: 8px;
+  border: 1.5px solid transparent;
+  background-clip: padding-box;
+}
+
+.scrollbar-custom-thin::-webkit-scrollbar-thumb:hover {
+  background: rgba(123, 107, 90, 0.6);
+  background-clip: padding-box;
+}
+
+.scrollbar-custom-thin::-webkit-scrollbar-thumb:active {
+  background: rgba(123, 107, 90, 0.75);
+  background-clip: padding-box;
+}
+
+/* Dark Theme - Thin Variant */
+.dark .scrollbar-custom-thin {
+  scrollbar-color: rgba(180, 160, 130, 0.4) transparent;
+}
+
+.dark .scrollbar-custom-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dark .scrollbar-custom-thin::-webkit-scrollbar-thumb {
+  background: rgba(180, 160, 130, 0.4);
+  border-radius: 8px;
+  border: 1.5px solid transparent;
+  background-clip: padding-box;
+}
+
+.dark .scrollbar-custom-thin::-webkit-scrollbar-thumb:hover {
+  background: rgba(180, 160, 130, 0.6);
+  background-clip: padding-box;
+}
+
+.dark .scrollbar-custom-thin::-webkit-scrollbar-thumb:active {
+  background: rgba(180, 160, 130, 0.8);
+  background-clip: padding-box;
+}

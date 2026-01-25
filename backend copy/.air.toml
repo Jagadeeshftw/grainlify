@@ -1,0 +1,73 @@
+# Config file for Air - Live reload for Go apps
+# https://github.com/air-verse/air
+# 
+# Usage: air
+# This will watch for file changes and automatically restart the server
+# 
+# To install air: go install github.com/air-verse/air@latest
+# Make sure ~/go/bin is in your PATH
+
+root = "."
+testdata_dir = "testdata"
+tmp_dir = "tmp"
+
+[build]
+  # Build command - builds the API server
+  cmd = "go build -o ./tmp/main ./cmd/api"
+  # Binary output location
+  bin = "./tmp/main"
+  # Arguments to pass to the binary
+  args_bin = []
+  # Delay before restart (milliseconds)
+  delay = 1000
+  # Directories to exclude from watching
+  exclude_dir = ["assets", "tmp", "vendor", "testdata", "migrations", ".git", "node_modules", "frontend"]
+  # Files to exclude
+  exclude_file = []
+  # Regex patterns to exclude (test files)
+  exclude_regex = ["_test.go", ".*_test\\.go$"]
+  # Don't restart if file content hasn't changed
+  exclude_unchanged = false
+  # Follow symbolic links
+  follow_symlink = false
+  # Full binary path (empty = use bin)
+  full_bin = ""
+  # Directories to include (empty = all)
+  include_dir = []
+  # File extensions to watch
+  include_ext = ["go", "tpl", "tmpl", "html"]
+  # Specific files to include
+  include_file = []
+  # Delay before killing old process
+  kill_delay = "0s"
+  # Build error log file
+  log = "tmp/build-errors.log"
+  # Use polling instead of file system events (useful for some file systems)
+  poll = false
+  poll_interval = 0
+  # Rerun on exit
+  rerun = false
+  rerun_delay = 500
+  # Send interrupt signal before killing
+  send_interrupt = false
+  # Stop on build error
+  stop_on_error = false
+
+[color]
+  app = ""
+  build = "yellow"
+  main = "magenta"
+  runner = "green"
+  watcher = "cyan"
+
+[log]
+  main_only = false
+  time = false
+
+[misc]
+  clean_on_exit = false
+
+[screen]
+  clear_on_rebuild = false
+  keep_scroll = true
+

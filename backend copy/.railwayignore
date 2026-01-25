@@ -1,0 +1,57 @@
+# Railway ignore file
+# Files and directories to exclude from deployment
+
+# Development files
+.env
+.env.local
+.env.*.local
+*.log
+tmp/
+tmp/**/*
+
+# Build artifacts (Railway builds these)
+bin/
+api
+worker
+migrate
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Documentation (not needed in production)
+*.md
+!README.md
+
+# Test files
+*_test.go
+testdata/
+
+# Air config (dev only)
+.air.toml
+run-dev.sh
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

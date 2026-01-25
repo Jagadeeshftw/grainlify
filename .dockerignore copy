@@ -1,0 +1,14 @@
+.git
+.gitignore
+.elasticbeanstalk
+.DS_Store
+
+frontend/node_modules
+frontend/dist
+
+backend/tmp
+backend/.env
+
+**/*.log
+
+

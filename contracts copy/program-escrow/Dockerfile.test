@@ -1,0 +1,18 @@
+FROM rust:1.85-slim
+
+# Install required tools
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add wasm target
+RUN rustup target add wasm32-unknown-unknown
+
+WORKDIR /contract
+
+# Copy contract files
+COPY . .
+
+# Run tests
+CMD ["cargo", "test", "--", "--nocapture"]
