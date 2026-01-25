@@ -19,9 +19,10 @@ interface Project {
 interface DashboardTabProps {
   selectedProjects: Project[];
   onRefresh?: () => void;
+  onNavigateToIssue?: (issueId: string, projectId: string) => void;
 }
 
-export function DashboardTab({ selectedProjects, onRefresh }: DashboardTabProps) {
+export function DashboardTab({ selectedProjects, onRefresh, onNavigateToIssue }: DashboardTabProps) {
   const { theme } = useTheme();
   const [issues, setIssues] = useState<any[]>([]);
   const [prs, setPrs] = useState<any[]>([]);
@@ -114,7 +115,7 @@ export function DashboardTab({ selectedProjects, onRefresh }: DashboardTabProps)
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('repositories-refreshed', handleRepositoriesRefreshed);
-    
+
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('repositories-refreshed', handleRepositoriesRefreshed);
@@ -233,7 +234,7 @@ export function DashboardTab({ selectedProjects, onRefresh }: DashboardTabProps)
         number: pr.number,
         title: pr.title,
         label: pr.merged ? 'Merged' : pr.state === 'open' ? 'Open' : 'Closed',
-        timeAgo: pr.updated_at 
+        timeAgo: pr.updated_at
           ? formatTimeAgo(new Date(pr.updated_at))
           : formatTimeAgo(new Date(pr.last_seen_at)),
       });
@@ -247,7 +248,8 @@ export function DashboardTab({ selectedProjects, onRefresh }: DashboardTabProps)
         number: issue.number,
         title: issue.title,
         label: issue.comments_count > 0 ? `${issue.comments_count} comment${issue.comments_count !== 1 ? 's' : ''}` : null,
-        timeAgo: issue.updated_at 
+        projectId: issue.projectId,
+        timeAgo: issue.updated_at
           ? formatTimeAgo(new Date(issue.updated_at))
           : formatTimeAgo(new Date(issue.last_seen_at)),
       });
@@ -267,7 +269,7 @@ export function DashboardTab({ selectedProjects, onRefresh }: DashboardTabProps)
   const chartData: ChartDataPoint[] = useMemo(() => {
     const months = ['May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'];
     const now = new Date();
-    
+
     return months.map((month, index) => {
       const monthDate = new Date(now.getFullYear(), now.getMonth() - (5 - index), 1);
       const nextMonth = new Date(now.getFullYear(), now.getMonth() - (4 - index), 1);
@@ -310,18 +312,16 @@ export function DashboardTab({ selectedProjects, onRefresh }: DashboardTabProps)
       {/* Main Content: Last Activity & Applications History */}
       <div className="grid grid-cols-2 gap-6">
         {/* Last Activity */}
-        <div className={`backdrop-blur-[40px] rounded-[24px] border p-8 relative overflow-hidden group/activity transition-colors ${
-          theme === 'dark'
-            ? 'bg-[#2d2820]/[0.4] border-white/10'
-            : 'bg-white/[0.12] border-white/20'
-        }`}>
+        <div className={`backdrop-blur-[40px] rounded-[24px] border p-8 relative overflow-hidden group/activity transition-colors ${theme === 'dark'
+          ? 'bg-[#2d2820]/[0.4] border-white/10'
+          : 'bg-white/[0.12] border-white/20'
+          }`}>
           {/* Background Glow */}
           <div className="absolute bottom-0 left-0 w-80 h-80 bg-gradient-to-tr from-[#c9983a]/8 to-transparent rounded-full blur-3xl pointer-events-none group-hover/activity:scale-125 transition-transform duration-1000" />
-          
+
           <div className="relative">
-            <h2 className={`text-[20px] font-bold mb-6 transition-colors ${
-              theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
-            }`}>Last activity</h2>
+            <h2 className={`text-[20px] font-bold mb-6 transition-colors ${theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
+              }`}>Last activity</h2>
 
             {/* Activity List */}
             {isLoading ? (
@@ -338,7 +338,16 @@ export function DashboardTab({ selectedProjects, onRefresh }: DashboardTabProps)
                   </div>
                 ) : (
                   activities.map((activity, idx) => (
-                    <ActivityItem key={activity.id} activity={activity} index={idx} />
+                    <ActivityItem
+                      key={activity.id}
+                      activity={activity}
+                      index={idx}
+                      onClick={() => {
+                        if (activity.type === 'issue' && activity.projectId && onNavigateToIssue) {
+                          onNavigateToIssue(activity.id.toString(), activity.projectId);
+                        }
+                      }}
+                    />
                   ))
                 )}
               </div>
@@ -347,11 +356,10 @@ export function DashboardTab({ selectedProjects, onRefresh }: DashboardTabProps)
         </div>
 
         {/* Applications History */}
-        <div className={`backdrop-blur-[40px] rounded-[24px] border p-8 relative overflow-hidden group/chart transition-colors ${
-          theme === 'dark'
-            ? 'bg-[#2d2820]/[0.4] border-white/10'
-            : 'bg-white/[0.12] border-white/20'
-        }`}>
+        <div className={`backdrop-blur-[40px] rounded-[24px] border p-8 relative overflow-hidden group/chart transition-colors ${theme === 'dark'
+          ? 'bg-[#2d2820]/[0.4] border-white/10'
+          : 'bg-white/[0.12] border-white/20'
+          }`}>
           {isLoading ? (
             <ChartSkeleton />
           ) : (

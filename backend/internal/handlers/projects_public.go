@@ -469,6 +469,10 @@ func (h *ProjectsPublicHandler) List() fiber.Handler {
 		// Only show verified projects
 		conditions = append(conditions, "p.status = 'verified'")
 
+		// Exclude special GitHub repositories (owner/.github)
+		conditions = append(conditions, "split_part(p.github_full_name, '/', 2) != '.github'")
+
+
 		// Filter by ecosystem
 		if ecosystem != "" {
 			conditions = append(conditions, fmt.Sprintf("LOWER(TRIM(e.name)) = LOWER($%d)", argPos))
@@ -728,7 +732,7 @@ SELECT
   e.slug AS ecosystem_slug
 FROM projects p
 LEFT JOIN ecosystems e ON p.ecosystem_id = e.id
-WHERE p.status = 'verified' AND p.deleted_at IS NULL
+WHERE p.status = 'verified' AND p.deleted_at IS NULL AND split_part(p.github_full_name, '/', 2) != '.github'
 ORDER BY contributors_count DESC, p.stars_count DESC, p.created_at DESC
 LIMIT $1
 `

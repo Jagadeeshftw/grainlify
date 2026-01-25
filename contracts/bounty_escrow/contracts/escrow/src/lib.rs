@@ -1,5 +1,9 @@
 #![no_std]
-use soroban_sdk::{contract, contracterror, contractimpl, contracttype, token, Address, Env, Symbol};
+mod events;
+mod test_bounty_escrow;
+
+use soroban_sdk::{contract, contracterror, contractimpl, contracttype, token, Address, Env};
+use events::{BountyEscrowInitialized, FundsLocked, FundsReleased, FundsRefunded, emit_bounty_initialized, emit_funds_locked, emit_funds_released, emit_funds_refunded};
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -50,6 +54,16 @@ impl BountyEscrowContract {
         }
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::Token, &token);
+
+        emit_bounty_initialized(
+            &env,
+            BountyEscrowInitialized {
+                admin,
+                token,
+                timestamp: env.ledger().timestamp()
+            },
+        );
+
         Ok(())
     }
 
@@ -88,9 +102,14 @@ impl BountyEscrowContract {
         env.storage().persistent().set(&DataKey::Escrow(bounty_id), &escrow);
         
         // Emit value allows for off-chain indexing
-        env.events().publish(
-            (Symbol::new(&env, "funds_locked"), bounty_id),
-            (depositor, amount, deadline)
+        emit_funds_locked(
+            &env,
+            FundsLocked {
+                bounty_id,
+                amount,
+                depositor: depositor.clone(),
+                deadline
+            },
         );
 
         Ok(())
@@ -125,10 +144,16 @@ impl BountyEscrowContract {
         escrow.status = EscrowStatus::Released;
         env.storage().persistent().set(&DataKey::Escrow(bounty_id), &escrow);
 
-        env.events().publish(
-            (Symbol::new(&env, "funds_released"), bounty_id),
-            (contributor, escrow.amount)
+        emit_funds_released(
+            &env,
+            FundsReleased {
+                bounty_id,
+                amount: escrow.amount,
+                recipient: contributor.clone(),
+                timestamp: env.ledger().timestamp()
+            },
         );
+
 
         Ok(())
     }
@@ -165,9 +190,14 @@ impl BountyEscrowContract {
         escrow.status = EscrowStatus::Refunded;
         env.storage().persistent().set(&DataKey::Escrow(bounty_id), &escrow);
 
-        env.events().publish(
-            (Symbol::new(&env, "funds_refunded"), bounty_id),
-            (escrow.depositor, escrow.amount)
+        emit_funds_refunded(
+            &env,
+            FundsRefunded {
+                bounty_id,
+                amount: escrow.amount,
+                refund_to: escrow.depositor,
+                timestamp: env.ledger().timestamp()
+            },
         );
 
         Ok(())
@@ -191,3 +221,6 @@ impl BountyEscrowContract {
         Ok(client.balance(&env.current_contract_address()))
     }
 }
+
+#[cfg(test)]
+mod test;

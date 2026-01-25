@@ -31,6 +31,33 @@ export function AdminPage() {
     status: 'active',
     websiteUrl: ''
   });
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const validateName = (name: string) => {
+    if (!name.trim()) return 'Ecosystem name is required';
+    if (name.length < 2) return 'Ecosystem name must be at least 2 characters';
+    if (name.length > 100) return 'Ecosystem name must be less than 100 characters';
+    if (!/^[a-zA-Z0-9\s-]+$/.test(name)) return 'Name can only contain letters, numbers, spaces, and hyphens';
+    return null;
+  };
+
+  const validateDescription = (description: string) => {
+    if (!description.trim()) return 'Description is required';
+    if (description.length < 10) return 'Description must be at least 10 characters';
+    if (description.length > 500) return 'Description must be less than 500 characters';
+    return null;
+  };
+
+  const validateWebsiteUrl = (url: string) => {
+    if (!url.trim()) return 'Website URL is required';
+    try {
+      new URL(url);
+      if (!url.startsWith('http')) return 'URL must start with http:// or https://';
+      return null;
+    } catch {
+      return 'Please enter a valid URL (e.g., https://example.com)';
+    }
+  };
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -89,7 +116,7 @@ export function AdminPage() {
   useEffect(() => {
     fetchEcosystems();
     fetchOswEvents();
-    
+
     // Listen for ecosystem updates
     const handleEcosystemsUpdated = () => {
       fetchEcosystems();
@@ -178,8 +205,25 @@ export function AdminPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Validate all fields
+    const nameError = validateName(formData.name);
+    const descError = validateDescription(formData.description);
+    const urlError = validateWebsiteUrl(formData.websiteUrl);
+
+    const newErrors: Record<string, string> = {};
+    if (nameError) newErrors.name = nameError;
+    if (descError) newErrors.description = descError;
+    if (urlError) newErrors.websiteUrl = urlError;
+
+    setErrors(newErrors);
+
+    if (Object.keys(newErrors).length > 0) {
+      return;
+    }
+
     setIsSubmitting(true);
-    
+
     try {
       setErrorMessage(null);
       await createEcosystem({
@@ -188,16 +232,17 @@ export function AdminPage() {
         website_url: formData.websiteUrl || undefined,
         status: formData.status as 'active' | 'inactive',
       });
-      
+
       // Success - close modal and reset form
       setShowAddModal(false);
+      setErrors({});
       setFormData({
         name: '',
         description: '',
         status: 'active',
         websiteUrl: ''
       });
-      
+
       // Refresh ecosystems list
       await fetchEcosystems();
       // Dispatch event to update other pages
@@ -213,14 +258,13 @@ export function AdminPage() {
   return (
     <div className="space-y-6">
       {/* Admin Header */}
-      <div className={`backdrop-blur-[40px] bg-gradient-to-br rounded-[28px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-10 transition-all overflow-hidden relative ${
-        theme === 'dark'
-          ? 'from-white/[0.08] to-white/[0.04] border-white/10'
-          : 'from-white/[0.15] to-white/[0.08] border-white/20'
-      }`}>
+      <div className={`backdrop-blur-[40px] bg-gradient-to-br rounded-[28px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-10 transition-all overflow-hidden relative ${theme === 'dark'
+        ? 'from-white/[0.08] to-white/[0.04] border-white/10'
+        : 'from-white/[0.15] to-white/[0.08] border-white/20'
+        }`}>
         {/* Decorative gradient */}
         <div className="absolute -top-20 -right-20 w-80 h-80 bg-gradient-to-br from-[#c9983a]/20 to-transparent rounded-full blur-3xl"></div>
-        
+
         <div className="relative z-10">
           <div className="flex items-start justify-between">
             <div className="flex-1">
@@ -228,22 +272,19 @@ export function AdminPage() {
                 <div className="p-2 rounded-[12px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] shadow-[0_6px_20px_rgba(162,121,44,0.35)] border border-white/10">
                   <Shield className="w-6 h-6 text-white" />
                 </div>
-                <h1 className={`text-[36px] font-bold transition-colors ${
-                  theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-                }`}>Admin Panel</h1>
+                <h1 className={`text-[36px] font-bold transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
+                  }`}>Admin Panel</h1>
               </div>
-              <p className={`text-[16px] max-w-3xl transition-colors ${
-                theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-              }`}>
+              <p className={`text-[16px] max-w-3xl transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+                }`}>
                 Manage ecosystems, review requests, and oversee platform operations.
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <div className={`px-4 py-2 rounded-[12px] backdrop-blur-[20px] border transition-colors ${
-                theme === 'dark'
-                  ? 'bg-white/[0.08] border-white/15 text-[#d4d4d4]'
-                  : 'bg-white/[0.15] border-white/25 text-[#7a6b5a]'
-              }`}>
+              <div className={`px-4 py-2 rounded-[12px] backdrop-blur-[20px] border transition-colors ${theme === 'dark'
+                ? 'bg-white/[0.08] border-white/15 text-[#d4d4d4]'
+                : 'bg-white/[0.15] border-white/25 text-[#7a6b5a]'
+                }`}>
                 <span className="text-[13px] font-medium">Admin Access</span>
               </div>
             </div>
@@ -252,19 +293,16 @@ export function AdminPage() {
       </div>
 
       {/* Ecosystem Management Section */}
-      <div className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${
-        theme === 'dark'
-          ? 'bg-white/[0.08] border-white/10'
-          : 'bg-white/[0.15] border-white/20'
-      }`}>
+      <div className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${theme === 'dark'
+        ? 'bg-white/[0.08] border-white/10'
+        : 'bg-white/[0.15] border-white/20'
+        }`}>
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className={`text-[24px] font-bold mb-2 transition-colors ${
-              theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-            }`}>Ecosystem Management</h2>
-            <p className={`text-[14px] transition-colors ${
-              theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-            }`}>Add, edit, or remove ecosystems from the platform</p>
+            <h2 className={`text-[24px] font-bold mb-2 transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
+              }`}>Ecosystem Management</h2>
+            <p className={`text-[14px] transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+              }`}>Add, edit, or remove ecosystems from the platform</p>
           </div>
           <button
             onClick={() => setShowAddModal(true)}
@@ -278,11 +316,10 @@ export function AdminPage() {
 
         {/* Inline error (avoid ugly alerts) */}
         {errorMessage && (
-          <div className={`mb-4 rounded-[16px] border px-4 py-3 text-[13px] ${
-            theme === 'dark'
-              ? 'bg-red-500/10 border-red-500/20 text-red-200'
-              : 'bg-red-500/10 border-red-500/20 text-red-700'
-          }`}>
+          <div className={`mb-4 rounded-[16px] border px-4 py-3 text-[13px] ${theme === 'dark'
+            ? 'bg-red-500/10 border-red-500/20 text-red-200'
+            : 'bg-red-500/10 border-red-500/20 text-red-700'
+            }`}>
             {errorMessage}
           </div>
         )}
@@ -294,79 +331,67 @@ export function AdminPage() {
               {Array.from({ length: 6 }).map((_, idx) => (
                 <div
                   key={idx}
-                  className={`backdrop-blur-[30px] rounded-[16px] border p-5 ${
-                    theme === 'dark'
-                      ? 'bg-white/[0.06] border-white/10'
-                      : 'bg-white/[0.12] border-white/20'
-                  }`}
+                  className={`backdrop-blur-[30px] rounded-[16px] border p-5 ${theme === 'dark'
+                    ? 'bg-white/[0.06] border-white/10'
+                    : 'bg-white/[0.12] border-white/20'
+                    }`}
                 >
                   <div className="flex items-start justify-between mb-3">
                     <div
-                      className={`w-12 h-12 rounded-[12px] ${
-                        theme === 'dark' ? 'bg-white/10' : 'bg-black/10'
-                      }`}
+                      className={`w-12 h-12 rounded-[12px] ${theme === 'dark' ? 'bg-white/10' : 'bg-black/10'
+                        }`}
                     />
                     <div
-                      className={`w-8 h-8 rounded-[10px] ${
-                        theme === 'dark' ? 'bg-white/10' : 'bg-black/10'
-                      }`}
+                      className={`w-8 h-8 rounded-[10px] ${theme === 'dark' ? 'bg-white/10' : 'bg-black/10'
+                        }`}
                     />
                   </div>
                   <div
-                    className={`h-5 w-2/3 rounded ${
-                      theme === 'dark' ? 'bg-white/10' : 'bg-black/10'
-                    }`}
+                    className={`h-5 w-2/3 rounded ${theme === 'dark' ? 'bg-white/10' : 'bg-black/10'
+                      }`}
                   />
                   <div className="flex items-center gap-4 mt-3 mb-3">
                     <div className="flex-1">
                       <div
-                        className={`h-3 w-16 rounded ${
-                          theme === 'dark' ? 'bg-white/10' : 'bg-black/10'
-                        }`}
+                        className={`h-3 w-16 rounded ${theme === 'dark' ? 'bg-white/10' : 'bg-black/10'
+                          }`}
                       />
                       <div
-                        className={`h-6 w-10 rounded mt-2 ${
-                          theme === 'dark' ? 'bg-white/10' : 'bg-black/10'
-                        }`}
+                        className={`h-6 w-10 rounded mt-2 ${theme === 'dark' ? 'bg-white/10' : 'bg-black/10'
+                          }`}
                       />
                     </div>
                     <div className="flex-1">
                       <div
-                        className={`h-3 w-24 rounded ${
-                          theme === 'dark' ? 'bg-white/10' : 'bg-black/10'
-                        }`}
+                        className={`h-3 w-24 rounded ${theme === 'dark' ? 'bg-white/10' : 'bg-black/10'
+                          }`}
                       />
                       <div
-                        className={`h-6 w-10 rounded mt-2 ${
-                          theme === 'dark' ? 'bg-white/10' : 'bg-black/10'
-                        }`}
+                        className={`h-6 w-10 rounded mt-2 ${theme === 'dark' ? 'bg-white/10' : 'bg-black/10'
+                          }`}
                       />
                     </div>
                   </div>
                   <div
-                    className={`h-3 w-full rounded ${
-                      theme === 'dark' ? 'bg-white/10' : 'bg-black/10'
-                    }`}
+                    className={`h-3 w-full rounded ${theme === 'dark' ? 'bg-white/10' : 'bg-black/10'
+                      }`}
                   />
                   <div
-                    className={`h-3 w-5/6 rounded mt-2 ${
-                      theme === 'dark' ? 'bg-white/10' : 'bg-black/10'
-                    }`}
+                    className={`h-3 w-5/6 rounded mt-2 ${theme === 'dark' ? 'bg-white/10' : 'bg-black/10'
+                      }`}
                   />
                   <div className="mt-4 pt-3 border-t border-white/10">
                     <div
-                      className={`h-5 w-16 rounded ${
-                        theme === 'dark' ? 'bg-white/10' : 'bg-black/10'
-                      }`}
+                      className={`h-5 w-16 rounded ${theme === 'dark' ? 'bg-white/10' : 'bg-black/10'
+                        }`}
                     />
                   </div>
                 </div>
               ))}
             </div>
           ) : ecosystems.length === 0 ? (
-            <div className={`text-center py-12 transition-colors ${
-              theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-            }`}>
+            <div className={`text-center py-12 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+              }`}>
               No ecosystems found. Add your first ecosystem above.
             </div>
           ) : (
@@ -387,11 +412,10 @@ export function AdminPage() {
                 return (
                   <div
                     key={ecosystem.id}
-                    className={`backdrop-blur-[30px] rounded-[16px] border p-5 transition-all hover:scale-[1.02] ${
-                      theme === 'dark'
-                        ? 'bg-white/[0.06] border-white/10'
-                        : 'bg-white/[0.12] border-white/20'
-                    }`}
+                    className={`backdrop-blur-[30px] rounded-[16px] border p-5 transition-all hover:scale-[1.02] ${theme === 'dark'
+                      ? 'bg-white/[0.06] border-white/10'
+                      : 'bg-white/[0.12] border-white/20'
+                      }`}
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className={`w-12 h-12 rounded-[12px] ${bgColor} flex items-center justify-center text-white font-bold text-lg shadow-lg`}>
@@ -400,46 +424,39 @@ export function AdminPage() {
                       <button
                         onClick={() => confirmDelete(ecosystem.id, ecosystem.name)}
                         disabled={deletingId === ecosystem.id}
-                        className={`p-2 rounded-[10px] transition-all ${
-                          deletingId === ecosystem.id
-                            ? 'opacity-50 cursor-not-allowed'
-                            : theme === 'dark'
+                        className={`p-2 rounded-[10px] transition-all ${deletingId === ecosystem.id
+                          ? 'opacity-50 cursor-not-allowed'
+                          : theme === 'dark'
                             ? 'hover:bg-red-500/20 text-red-400'
                             : 'hover:bg-red-500/30 text-red-600'
-                        }`}
+                          }`}
                         title="Delete ecosystem"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
-                    
-                    <h3 className={`text-[18px] font-bold mb-2 transition-colors ${
-                      theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-                    }`}>{ecosystem.name}</h3>
-                    
+
+                    <h3 className={`text-[18px] font-bold mb-2 transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
+                      }`}>{ecosystem.name}</h3>
+
                     <div className="flex items-center gap-4 mb-3">
                       <div>
-                        <p className={`text-[11px] transition-colors ${
-                          theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-                        }`}>Projects</p>
-                        <p className={`text-[20px] font-bold transition-colors ${
-                          theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-                        }`}>{ecosystem.project_count}</p>
+                        <p className={`text-[11px] transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+                          }`}>Projects</p>
+                        <p className={`text-[20px] font-bold transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
+                          }`}>{ecosystem.project_count}</p>
                       </div>
                       <div>
-                        <p className={`text-[11px] transition-colors ${
-                          theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-                        }`}>Contributors</p>
-                        <p className={`text-[20px] font-bold transition-colors ${
-                          theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-                        }`}>{ecosystem.user_count}</p>
+                        <p className={`text-[11px] transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+                          }`}>Contributors</p>
+                        <p className={`text-[20px] font-bold transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
+                          }`}>{ecosystem.user_count}</p>
                       </div>
                     </div>
 
                     {ecosystem.description && (
-                      <p className={`text-[13px] mb-3 line-clamp-2 transition-colors ${
-                        theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-                      }`}>{ecosystem.description}</p>
+                      <p className={`text-[13px] mb-3 line-clamp-2 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+                        }`}>{ecosystem.description}</p>
                     )}
 
                     {ecosystem.website_url && (
@@ -447,9 +464,8 @@ export function AdminPage() {
                         href={ecosystem.website_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className={`flex items-center gap-2 text-[13px] transition-colors ${
-                          theme === 'dark' ? 'text-[#c9983a] hover:text-[#e8c77f]' : 'text-[#a67c2e] hover:text-[#c9983a]'
-                        }`}
+                        className={`flex items-center gap-2 text-[13px] transition-colors ${theme === 'dark' ? 'text-[#c9983a] hover:text-[#e8c77f]' : 'text-[#a67c2e] hover:text-[#c9983a]'
+                          }`}
                       >
                         <Globe className="w-4 h-4" />
                         <span>Visit Website</span>
@@ -458,15 +474,14 @@ export function AdminPage() {
                     )}
 
                     <div className="mt-3 pt-3 border-t border-white/10">
-                      <span className={`text-[11px] px-2 py-1 rounded-[6px] ${
-                        ecosystem.status === 'active'
-                          ? theme === 'dark'
-                            ? 'bg-green-500/20 text-green-400'
-                            : 'bg-green-500/30 text-green-700'
-                          : theme === 'dark'
+                      <span className={`text-[11px] px-2 py-1 rounded-[6px] ${ecosystem.status === 'active'
+                        ? theme === 'dark'
+                          ? 'bg-green-500/20 text-green-400'
+                          : 'bg-green-500/30 text-green-700'
+                        : theme === 'dark'
                           ? 'bg-gray-500/20 text-gray-400'
                           : 'bg-gray-500/30 text-gray-700'
-                      }`}>
+                        }`}>
                         {ecosystem.status}
                       </span>
                     </div>
@@ -478,21 +493,18 @@ export function AdminPage() {
         </div>
 
         {/* Info Message */}
-        <div className={`backdrop-blur-[30px] rounded-[16px] border p-5 flex items-start gap-4 transition-colors mt-6 ${
-          theme === 'dark'
-            ? 'bg-white/[0.06] border-white/10'
-            : 'bg-white/[0.12] border-white/20'
-        }`}>
+        <div className={`backdrop-blur-[30px] rounded-[16px] border p-5 flex items-start gap-4 transition-colors mt-6 ${theme === 'dark'
+          ? 'bg-white/[0.06] border-white/10'
+          : 'bg-white/[0.12] border-white/20'
+          }`}>
           <div className="p-2 rounded-[10px] bg-gradient-to-br from-[#c9983a]/20 to-[#a67c2e]/10 border border-[#c9983a]/20">
             <Sparkles className="w-5 h-5 text-[#c9983a]" />
           </div>
           <div>
-            <p className={`text-[14px] font-medium mb-1 transition-colors ${
-              theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-            }`}>Ecosystem Management Tips</p>
-            <p className={`text-[13px] leading-relaxed transition-colors ${
-              theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-            }`}>
+            <p className={`text-[14px] font-medium mb-1 transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
+              }`}>Ecosystem Management Tips</p>
+            <p className={`text-[13px] leading-relaxed transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+              }`}>
               Add ecosystems with accurate descriptions and valid website URLs. You can only delete ecosystems that have no associated projects.
             </p>
           </div>
@@ -500,19 +512,16 @@ export function AdminPage() {
       </div>
 
       {/* Open Source Week Events Section */}
-      <div className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${
-        theme === 'dark'
-          ? 'bg-white/[0.08] border-white/10'
-          : 'bg-white/[0.15] border-white/20'
-      }`}>
+      <div className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${theme === 'dark'
+        ? 'bg-white/[0.08] border-white/10'
+        : 'bg-white/[0.15] border-white/20'
+        }`}>
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className={`text-[24px] font-bold mb-2 transition-colors ${
-              theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-            }`}>Open-Source Week Events</h2>
-            <p className={`text-[14px] transition-colors ${
-              theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-            }`}>Create and manage Open-Source Week events (no hardcoded data)</p>
+            <h2 className={`text-[24px] font-bold mb-2 transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
+              }`}>Open-Source Week Events</h2>
+            <p className={`text-[14px] transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+              }`}>Create and manage Open-Source Week events (no hardcoded data)</p>
           </div>
           <button
             onClick={() => setShowAddOswModal(true)}
@@ -529,9 +538,8 @@ export function AdminPage() {
             {Array.from({ length: 3 }).map((_, idx) => (
               <div
                 key={idx}
-                className={`backdrop-blur-[30px] rounded-[16px] border p-5 ${
-                  theme === 'dark' ? 'bg-white/[0.06] border-white/10' : 'bg-white/[0.12] border-white/20'
-                }`}
+                className={`backdrop-blur-[30px] rounded-[16px] border p-5 ${theme === 'dark' ? 'bg-white/[0.06] border-white/10' : 'bg-white/[0.12] border-white/20'
+                  }`}
               >
                 <div className={`h-5 w-2/3 rounded ${theme === 'dark' ? 'bg-white/10' : 'bg-black/10'}`} />
                 <div className={`h-3 w-full rounded mt-3 ${theme === 'dark' ? 'bg-white/10' : 'bg-black/10'}`} />
@@ -540,9 +548,8 @@ export function AdminPage() {
             ))}
           </div>
         ) : oswEvents.length === 0 ? (
-          <div className={`text-center py-10 transition-colors ${
-            theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-          }`}>
+          <div className={`text-center py-10 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+            }`}>
             No Open-Source Week events yet. Create one (e.g. Feb 21–Feb 28) using “Add Event”.
           </div>
         ) : (
@@ -550,40 +557,34 @@ export function AdminPage() {
             {oswEvents.map((ev) => (
               <div
                 key={ev.id}
-                className={`backdrop-blur-[30px] rounded-[16px] border p-5 ${
-                  theme === 'dark' ? 'bg-white/[0.06] border-white/10' : 'bg-white/[0.12] border-white/20'
-                }`}
+                className={`backdrop-blur-[30px] rounded-[16px] border p-5 ${theme === 'dark' ? 'bg-white/[0.06] border-white/10' : 'bg-white/[0.12] border-white/20'
+                  }`}
               >
                 <div className="flex items-start justify-between">
                   <div>
-                    <h3 className={`text-[16px] font-bold transition-colors ${
-                      theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-                    }`}>{ev.title}</h3>
-                    <p className={`text-[12px] mt-1 transition-colors ${
-                      theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-                    }`}>
+                    <h3 className={`text-[16px] font-bold transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
+                      }`}>{ev.title}</h3>
+                    <p className={`text-[12px] mt-1 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+                      }`}>
                       {new Date(ev.start_at).toLocaleDateString()} → {new Date(ev.end_at).toLocaleDateString()}
                     </p>
                   </div>
                   <button
                     onClick={() => confirmDeleteOsw(ev.id, ev.title)}
-                    className={`p-2 rounded-[10px] transition-all ${
-                      theme === 'dark' ? 'hover:bg-red-500/20 text-red-400' : 'hover:bg-red-500/30 text-red-600'
-                    }`}
+                    className={`p-2 rounded-[10px] transition-all ${theme === 'dark' ? 'hover:bg-red-500/20 text-red-400' : 'hover:bg-red-500/30 text-red-600'
+                      }`}
                     title="Delete event"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
                 {ev.location && (
-                  <p className={`text-[12px] mt-2 transition-colors ${
-                    theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
-                  }`}>Location: {ev.location}</p>
+                  <p className={`text-[12px] mt-2 transition-colors ${theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
+                    }`}>Location: {ev.location}</p>
                 )}
                 <div className="mt-3">
-                  <span className={`text-[11px] px-2 py-1 rounded-[6px] ${
-                    theme === 'dark' ? 'bg-white/10 text-[#d4d4d4]' : 'bg-black/10 text-[#7a6b5a]'
-                  }`}>{ev.status}</span>
+                  <span className={`text-[11px] px-2 py-1 rounded-[6px] ${theme === 'dark' ? 'bg-white/10 text-[#d4d4d4]' : 'bg-black/10 text-[#7a6b5a]'
+                    }`}>{ev.status}</span>
                 </div>
               </div>
             ))}
@@ -598,27 +599,40 @@ export function AdminPage() {
         title="Add New Ecosystem"
         width="lg"
       >
-        <p className={`text-[14px] mb-6 transition-colors ${
-          theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-        }`}>Create a new ecosystem entry for the platform</p>
+        <p className={`text-[14px] mb-6 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+          }`}>Create a new ecosystem entry for the platform</p>
 
         <form onSubmit={handleSubmit}>
           <div className="space-y-4">
             <ModalInput
               label="Ecosystem Name"
               value={formData.name}
-              onChange={(value) => setFormData({ ...formData, name: value })}
+              onChange={(value) => {
+                setFormData({ ...formData, name: value });
+                if (errors.name) setErrors({ ...errors, name: '' });
+              }}
+              onBlur={() => {
+                const error = validateName(formData.name);
+                if (error) setErrors(prev => ({ ...prev, name: error }));
+              }}
               placeholder="e.g., Web3 Ecosystem"
-              required
+              error={errors.name}
             />
 
             <ModalInput
               label="Description"
               value={formData.description}
-              onChange={(value) => setFormData({ ...formData, description: value })}
+              onChange={(value) => {
+                setFormData({ ...formData, description: value });
+                if (errors.description) setErrors({ ...errors, description: '' });
+              }}
+              onBlur={() => {
+                const error = validateDescription(formData.description);
+                if (error) setErrors(prev => ({ ...prev, description: error }));
+              }}
               placeholder="Describe the ecosystem..."
               rows={4}
-              required
+              error={errors.description}
             />
 
             <ModalSelect
@@ -635,9 +649,16 @@ export function AdminPage() {
               label="Website URL"
               type="url"
               value={formData.websiteUrl}
-              onChange={(value) => setFormData({ ...formData, websiteUrl: value })}
+              onChange={(value) => {
+                setFormData({ ...formData, websiteUrl: value });
+                if (errors.websiteUrl) setErrors({ ...errors, websiteUrl: '' });
+              }}
+              onBlur={() => {
+                const error = validateWebsiteUrl(formData.websiteUrl);
+                if (error) setErrors(prev => ({ ...prev, websiteUrl: error }));
+              }}
               placeholder="https://example.com"
-              required
+              error={errors.websiteUrl}
             />
           </div>
 
@@ -748,9 +769,8 @@ export function AdminPage() {
         width="md"
       >
         <div className="space-y-4">
-          <p className={`text-[14px] transition-colors ${
-            theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-          }`}>
+          <p className={`text-[14px] transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+            }`}>
             Are you sure you want to delete <span className={theme === 'dark' ? 'text-[#f5f5f5] font-semibold' : 'text-[#2d2820] font-semibold'}>
               {oswDeleteConfirm?.title}
             </span>? This action cannot be undone.
@@ -775,18 +795,16 @@ export function AdminPage() {
         width="md"
       >
         <div className="space-y-4">
-          <p className={`text-[14px] transition-colors ${
-            theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-          }`}>
+          <p className={`text-[14px] transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+            }`}>
             Are you sure you want to delete <span className={theme === 'dark' ? 'text-[#f5f5f5] font-semibold' : 'text-[#2d2820] font-semibold'}>
               {deleteConfirm?.name}
             </span>? This action cannot be undone.
           </p>
-          <div className={`rounded-[16px] border px-4 py-3 text-[13px] ${
-            theme === 'dark'
-              ? 'bg-white/[0.06] border-white/10 text-[#d4d4d4]'
-              : 'bg-white/[0.12] border-white/20 text-[#7a6b5a]'
-          }`}>
+          <div className={`rounded-[16px] border px-4 py-3 text-[13px] ${theme === 'dark'
+            ? 'bg-white/[0.06] border-white/10 text-[#d4d4d4]'
+            : 'bg-white/[0.12] border-white/20 text-[#7a6b5a]'
+            }`}>
             You can only delete ecosystems that have <span className={theme === 'dark' ? 'text-[#f5f5f5] font-medium' : 'text-[#2d2820] font-medium'}>no associated projects</span>.
           </div>
           <ModalFooter>

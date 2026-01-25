@@ -5,6 +5,9 @@ import { Dropdown } from '../../../shared/components/ui/Dropdown';
 import { ProjectCard, Project } from '../components/ProjectCard';
 import { ProjectCardSkeleton } from '../components/ProjectCardSkeleton';
 import { getPublicProjects, getEcosystems } from '../../../shared/api/client';
+import { isValidProject, getRepoName } from '../../../shared/utils/projectFilter'
+
+import { useOptimisticData } from '../../../shared/hooks/useOptimisticData';
 
 interface BrowsePageProps {
   onProjectClick?: (id: string) => void;
@@ -48,15 +51,15 @@ const truncateDescription = (description: string | undefined | null, maxLength: 
   if (!description || description.trim() === '') {
     return '';
   }
-  
+
   // Get first line
   const firstLine = description.split('\n')[0].trim();
-  
+
   // If first line is longer than maxLength, truncate it
   if (firstLine.length > maxLength) {
     return firstLine.substring(0, maxLength).trim() + '...';
   }
-  
+
   return firstLine;
 };
 
@@ -75,9 +78,15 @@ export function BrowsePage({ onProjectClick }: BrowsePageProps) {
     categories: [],
     tags: []
   });
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [hasError, setHasError] = useState(false);
+  
+  // Use optimistic data hook for projects with 30-second cache
+  const {
+    data: projects,
+    isLoading,
+    hasError,
+    fetchData: fetchProjects,
+  } = useOptimisticData<Project[]>([], { cacheDuration: 30000 });
+
   const [ecosystems, setEcosystems] = useState<Array<{ name: string }>>([]);
   const [isLoadingEcosystems, setIsLoadingEcosystems] = useState(true);
 
@@ -117,7 +126,7 @@ export function BrowsePage({ onProjectClick }: BrowsePageProps) {
         const response = await getEcosystems();
         // Handle different response structures
         let ecosystemsArray: any[] = [];
-        
+
         if (response && Array.isArray(response)) {
           ecosystemsArray = response;
         } else if (response && response.ecosystems && Array.isArray(response.ecosystems)) {
@@ -132,12 +141,12 @@ export function BrowsePage({ onProjectClick }: BrowsePageProps) {
             }
           }
         }
-        
+
         // Filter only active ecosystems and map to expected format
         const activeEcosystems = ecosystemsArray
           .filter((eco: any) => eco.status === 'active')
           .map((eco: any) => ({ name: eco.name }));
-        
+
         setEcosystems(activeEcosystems);
       } catch (err) {
         console.error('BrowsePage: Failed to fetch ecosystems:', err);
@@ -177,99 +186,76 @@ export function BrowsePage({ onProjectClick }: BrowsePageProps) {
   // Fetch projects from API
   useEffect(() => {
     const loadProjects = async () => {
-      setIsLoading(true);
-      setHasError(false);
-      try {
-        const params: {
-          language?: string;
-          ecosystem?: string;
-          category?: string;
-          tags?: string;
-        } = {};
+      await fetchProjects(async () => {
+        try {
+          const params: {
+            language?: string;
+            ecosystem?: string;
+            category?: string;
+            tags?: string;
+          } = {};
 
-        // Apply filters
-        if (selectedFilters.languages.length > 0) {
-          params.language = selectedFilters.languages[0]; // API supports single language
-        }
-        if (selectedFilters.ecosystems.length > 0) {
-          params.ecosystem = selectedFilters.ecosystems[0]; // API supports single ecosystem
-        }
-        if (selectedFilters.categories.length > 0) {
-          params.category = selectedFilters.categories[0]; // API supports single category
-        }
-        if (selectedFilters.tags.length > 0) {
-          params.tags = selectedFilters.tags.join(','); // API supports comma-separated tags
-        }
+          // Apply filters
+          if (selectedFilters.languages.length > 0) {
+            params.language = selectedFilters.languages[0]; // API supports single language
+          }
+          if (selectedFilters.ecosystems.length > 0) {
+            params.ecosystem = selectedFilters.ecosystems[0]; // API supports single ecosystem
+          }
+          if (selectedFilters.categories.length > 0) {
+            params.category = selectedFilters.categories[0]; // API supports single category
+          }
+          if (selectedFilters.tags.length > 0) {
+            params.tags = selectedFilters.tags.join(','); // API supports comma-separated tags
+          }
 
-        const response = await getPublicProjects(params);
-        
-        console.log('BrowsePage: API response received', { response });
-        
-        // Handle response - check if it's valid
-        let projectsArray: any[] = [];
-        if (response && response.projects && Array.isArray(response.projects)) {
-          projectsArray = response.projects;
-        } else if (Array.isArray(response)) {
-          // Handle case where API returns array directly
-          projectsArray = response;
-        } else {
-          console.warn('BrowsePage: Unexpected response format', response);
-          projectsArray = [];
-        }
-        
-        // Map API response to Project interface
-        const mappedProjects: Project[] = projectsArray
-          .filter((p) => p && p.id && p.github_full_name) // Filter out invalid entries
-          .map((p) => {
-            const repoName = p.github_full_name.split('/')[1] || p.github_full_name;
-            return {
-              id: p.id || `project-${Date.now()}-${Math.random()}`, // Fallback ID if missing
-              name: repoName,
-              icon: getProjectIcon(p.github_full_name),
-              stars: formatNumber(p.stars_count || 0),
-              forks: formatNumber(p.forks_count || 0),
-              contributors: p.contributors_count || 0,
-              openIssues: p.open_issues_count || 0,
-              prs: p.open_prs_count || 0,
-              description: truncateDescription(p.description) || `${p.language || 'Project'} repository${p.category ? ` - ${p.category}` : ''}`,
-              tags: Array.isArray(p.tags) ? p.tags : [],
-              color: getProjectColor(repoName),
-            };
-          });
+          const response = await getPublicProjects(params);
 
-        console.log('BrowsePage: Mapped projects', { count: mappedProjects.length });
-        setProjects(mappedProjects);
-        setIsLoading(false);
-        setHasError(false);
-      } catch (err) {
-        console.error('BrowsePage: Failed to fetch projects:', err);
-        // Check if it's a network error (backend down) vs other errors
-        const isNetworkError = err instanceof TypeError || 
-                              (err instanceof Error && (
-                                err.message.includes('fetch') || 
-                                err.message.includes('network') ||
-                                err.message.includes('Unable to connect') ||
-                                err.message.includes('Failed to fetch')
-                              ));
-        
-        if (isNetworkError) {
-          // Backend is down - keep showing skeleton forever
-          console.log('BrowsePage: Network error detected, keeping skeleton loader');
-          setProjects([]);
-          setHasError(true);
-          // Don't set isLoading to false - keep showing skeleton
-        } else {
-          // Other error (e.g., invalid response, auth error) - show empty state
-          console.log('BrowsePage: Non-network error, showing empty state');
-          setProjects([]);
-          setIsLoading(false);
-          setHasError(true);
+          console.log('BrowsePage: API response received', { response });
+
+          // Handle response - check if it's valid
+          let projectsArray: any[] = [];
+          if (response && response.projects && Array.isArray(response.projects)) {
+            projectsArray = response.projects;
+          } else if (Array.isArray(response)) {
+            // Handle case where API returns array directly
+            projectsArray = response;
+          } else {
+            console.warn('BrowsePage: Unexpected response format', response);
+            projectsArray = [];
+          }
+
+          // Map API response to Project interface
+          const mappedProjects: Project[] = projectsArray
+            .filter(isValidProject)
+            .map((p) => {
+              const repoName = getRepoName(p.github_full_name);
+              return {
+                id: p.id || `project-${Date.now()}-${Math.random()}`, // Fallback ID if missing
+                name: repoName,
+                icon: getProjectIcon(p.github_full_name),
+                stars: formatNumber(p.stars_count || 0),
+                forks: formatNumber(p.forks_count || 0),
+                contributors: p.contributors_count || 0,
+                openIssues: p.open_issues_count || 0,
+                prs: p.open_prs_count || 0,
+                description: truncateDescription(p.description) || `${p.language || 'Project'} repository${p.category ? ` - ${p.category}` : ''}`,
+                tags: Array.isArray(p.tags) ? p.tags : [],
+                color: getProjectColor(repoName),
+              };
+            });
+
+          console.log('BrowsePage: Mapped projects', { count: mappedProjects.length });
+          return mappedProjects;
+        } catch (err) {
+          console.error('BrowsePage: Failed to fetch projects:', err);
+          throw err; // Re-throw to let the hook handle the error
         }
-      }
+      });
     };
 
     loadProjects();
-  }, [selectedFilters]);
+  }, [selectedFilters, fetchProjects]);
 
   return (
     <div className="space-y-6">
@@ -280,11 +266,10 @@ export function BrowsePage({ onProjectClick }: BrowsePageProps) {
             values.map(value => (
               <span
                 key={`${filterType}-${value}`}
-                className={`px-3.5 py-2 rounded-[10px] text-[13px] font-semibold border-[1.5px] flex items-center gap-2 transition-all hover:scale-105 shadow-lg ${
-                  theme === 'dark'
+                className={`px-3.5 py-2 rounded-[10px] text-[13px] font-semibold border-[1.5px] flex items-center gap-2 transition-all hover:scale-105 shadow-lg ${theme === 'dark'
                     ? 'bg-[#a17932] border-[#c9983a] text-white'
                     : 'bg-[#b8872f] border-[#a17932] text-white'
-                }`}
+                  }`}
               >
                 {value}
                 <button
@@ -325,11 +310,10 @@ export function BrowsePage({ onProjectClick }: BrowsePageProps) {
           ))}
         </div>
       ) : projects.length === 0 ? (
-        <div className={`p-8 rounded-[16px] border text-center ${
-          theme === 'dark'
+        <div className={`p-8 rounded-[16px] border text-center ${theme === 'dark'
             ? 'bg-white/[0.08] border-white/15 text-[#d4d4d4]'
             : 'bg-white/[0.15] border-white/25 text-[#7a6b5a]'
-        }`}>
+          }`}>
           <p className="text-[16px] font-semibold">No projects found</p>
           <p className="text-[14px] mt-2">Try adjusting your filters or check back later.</p>
         </div>

@@ -102,8 +102,8 @@ export function ApplicationsChart({ data }: ApplicationsChartProps) {
                   <stop offset="100%" stopColor="#d4af37" stopOpacity={0.6} />
                 </linearGradient>
                 <linearGradient id="mergedGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#d4af37" stopOpacity={0.9} />
-                  <stop offset="100%" stopColor="#e8c468" stopOpacity={0.6} />
+                  <stop offset="0%" stopColor="#4fb37a" stopOpacity={0.9} />
+                  <stop offset="100%" stopColor="#2e6947" stopOpacity={0.6} />
                 </linearGradient>
               </defs>
             </BarChart>
@@ -119,7 +119,7 @@ export function ApplicationsChart({ data }: ApplicationsChartProps) {
             }`}>Applications</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded-full bg-gradient-to-br from-[#d4af37] to-[#e8c468]" />
+            <div className="w-4 h-4 rounded-full bg-gradient-to-br from-[#4fb37a] to-[#2e6947]" />
             <span className={`text-[13px] font-semibold transition-colors ${
               theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
             }`}>Merged</span>

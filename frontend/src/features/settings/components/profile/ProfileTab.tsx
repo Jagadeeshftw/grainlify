@@ -1,12 +1,8 @@
-import { useState, useEffect, useRef } from "react";
-import { Github, User, Upload, Link as LinkIcon } from "lucide-react";
-import { useTheme } from "../../../../shared/contexts/ThemeContext";
-import {
-  getCurrentUser,
-  updateProfile,
-  updateAvatar,
-  resyncGitHubProfile,
-} from "../../../../shared/api/client";
+import { useState, useEffect, useRef } from 'react';
+import { Github, User, Upload, Link as LinkIcon } from 'lucide-react';
+import { useTheme } from '../../../../shared/contexts/ThemeContext';
+import { getCurrentUser, updateProfile, updateAvatar, resyncGitHubProfile } from '../../../../shared/api/client';
+import { toast } from 'sonner';
 
 interface CurrentUser {
   id: string;
@@ -33,21 +29,6 @@ interface CurrentUser {
   };
 }
 
-/* -------------------- Validation rules -------------------- */
-const NAME_REGEX = /^[a-zA-Z\s'-]{1,50}$/;
-const LOCATION_REGEX = /^[a-zA-Z0-9\s,-]{1,100}$/;
-const MAX_WEBSITE_LENGTH = 200;
-const MAX_BIO_LENGTH = 500;
-
-function isValidWebsite(url: string) {
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === "http:" || parsed.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
 export function ProfileTab() {
   const { theme } = useTheme();
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
@@ -55,72 +36,26 @@ export function ProfileTab() {
   const [isSaving, setIsSaving] = useState(false);
   const [isResyncing, setIsResyncing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
+  
   // Form state
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [location, setLocation] = useState("");
-  const [website, setWebsite] = useState("");
-  const [bio, setBio] = useState("");
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [location, setLocation] = useState('');
+  const [website, setWebsite] = useState('');
+  const [bio, setBio] = useState('');
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [telegram, setTelegram] = useState("");
-  const [linkedin, setLinkedin] = useState("");
-  const [whatsapp, setWhatsapp] = useState("");
-  const [twitter, setTwitter] = useState("");
-  const [discord, setDiscord] = useState("");
-
-  /* -------------------- Validation errors -------------------- */
-  const [errors, setErrors] = useState<{
-    firstName?: string;
-    lastName?: string;
-    location?: string;
-    website?: string;
-    bio?: string;
-  }>({});
-
-  /* -------------------- Validation helpers -------------------- */
-  const validateFirstName = (value: string) =>
-    !value
-      ? ""
-      : NAME_REGEX.test(value)
-        ? ""
-        : "Only letters, spaces, hyphens, apostrophes (max 50)";
-
-  const validateLastName = (value: string) =>
-    !value
-      ? ""
-      : NAME_REGEX.test(value)
-        ? ""
-        : "Only letters, spaces, hyphens, apostrophes (max 50)";
-
-  const validateLocation = (value: string) =>
-    !value
-      ? ""
-      : LOCATION_REGEX.test(value)
-        ? ""
-        : "Only letters, numbers, commas, hyphens (max 100)";
-
-  const validateWebsite = (value: string) => {
-    if (!value) return "";
-    if (value.length > MAX_WEBSITE_LENGTH) {
-      return "Website must be under 200 characters";
-    }
-    if (!isValidWebsite(value)) {
-      return "Website must start with http:// or https://";
-    }
-    return "";
-  };
-
-  const validateBio = (value: string) =>
-    value.length > MAX_BIO_LENGTH ? "Bio cannot exceed 500 characters" : "";
-
+  const [telegram, setTelegram] = useState('');
+  const [linkedin, setLinkedin] = useState('');
+  const [whatsapp, setWhatsapp] = useState('');
+  const [twitter, setTwitter] = useState('');
+  const [discord, setDiscord] = useState('');
   useEffect(() => {
     const fetchUser = async () => {
       setIsLoading(true);
       try {
         const user = await getCurrentUser();
         setCurrentUser(user);
-
+        
         // Prefill form fields from database (preferred) or GitHub data
         // Use database values first, then fallback to GitHub
         if (user.first_name) {
@@ -131,42 +66,42 @@ export function ProfileTab() {
             setFirstName(nameParts[0]);
           }
         }
-
+        
         if (user.last_name) {
           setLastName(user.last_name);
         } else if (user.github?.name) {
           const nameParts = user.github.name.trim().split(/\s+/);
           if (nameParts.length > 1) {
-            setLastName(nameParts.slice(1).join(" "));
+            setLastName(nameParts.slice(1).join(' '));
           }
         }
-
+        
         // Set avatar URL (database avatar_url takes precedence)
         if (user.avatar_url) {
           setAvatarUrl(user.avatar_url);
         } else if (user.github?.avatar_url) {
           setAvatarUrl(user.github.avatar_url);
         }
-
+        
         // Use database values if available, otherwise use GitHub
         if (user.location) {
           setLocation(user.location);
         } else if (user.github?.location) {
           setLocation(user.github.location);
         }
-
+        
         if (user.website) {
           setWebsite(user.website);
         } else if (user.github?.website) {
           setWebsite(user.github.website);
         }
-
+        
         if (user.bio) {
           setBio(user.bio);
         } else if (user.github?.bio) {
           setBio(user.github.bio);
         }
-
+        
         // Set social links from database
         if (user.telegram) {
           setTelegram(user.telegram);
@@ -184,7 +119,8 @@ export function ProfileTab() {
           setDiscord(user.discord);
         }
       } catch (error) {
-        console.error("Failed to fetch user data:", error);
+        console.error('Failed to fetch user data:', error);
+        toast.error('Failed to fetch user data. Please try again.');
       } finally {
         setIsLoading(false);
       }
@@ -198,22 +134,18 @@ export function ProfileTab() {
       const response = await resyncGitHubProfile();
       if (response?.github) {
         // Update current user state with fresh GitHub data
-        setCurrentUser((prev) =>
-          prev
-            ? {
-                ...prev,
-                github: {
-                  ...prev.github,
-                  ...response.github,
-                },
-              }
-            : null,
-        );
-        alert("GitHub profile synced successfully!");
+        setCurrentUser(prev => prev ? {
+          ...prev,
+          github: {
+            ...prev.github,
+            ...response.github,
+          }
+        } : null);
+        toast.success('GitHub profile synced successfully!');
       }
     } catch (error) {
-      console.error("Failed to resync GitHub profile:", error);
-      alert("Failed to resync GitHub profile. Please try again.");
+      console.error('Failed to resync GitHub profile:', error);
+      toast.error('Failed to resync GitHub profile. Please try again.');
     } finally {
       setIsResyncing(false);
     }
@@ -221,7 +153,7 @@ export function ProfileTab() {
 
   const handleEditGitHub = () => {
     // Open GitHub settings page in a new tab
-    window.open("https://github.com/settings/profile", "_blank");
+    window.open('https://github.com/settings/profile', '_blank');
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -229,21 +161,15 @@ export function ProfileTab() {
     if (!file) return;
 
     // Validate file type
-    const validTypes = [
-      "image/svg+xml",
-      "image/png",
-      "image/jpeg",
-      "image/jpg",
-      "image/gif",
-    ];
+    const validTypes = ['image/svg+xml', 'image/png', 'image/jpeg', 'image/jpg', 'image/gif'];
     if (!validTypes.includes(file.type)) {
-      alert("Please select a valid image file (SVG, PNG, JPG, or GIF)");
+      alert('Please select a valid image file (SVG, PNG, JPG, or GIF)');
       return;
     }
 
     // Validate file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
-      alert("File size must be less than 5MB");
+      alert('File size must be less than 5MB');
       return;
     }
 
@@ -259,7 +185,7 @@ export function ProfileTab() {
 
   const handleSaveAvatar = async () => {
     if (!avatarUrl) return;
-
+    
     setIsSaving(true);
     try {
       await updateAvatar(avatarUrl);
@@ -269,28 +195,16 @@ export function ProfileTab() {
       if (user.github?.avatar_url) {
         setAvatarUrl(user.github.avatar_url);
       }
-      alert("Profile picture updated successfully!");
+      toast.success('Profile picture updated successfully!');
     } catch (error) {
-      console.error("Failed to update avatar:", error);
-      alert("Failed to update avatar. Please try again.");
+      console.error('Failed to update avatar:', error);
+      toast.error('Failed to update avatar. Please try again.');
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleSave = async () => {
-    const newErrors = {
-      firstName: validateFirstName(firstName),
-      lastName: validateLastName(lastName),
-      location: validateLocation(location),
-      website: validateWebsite(website),
-      bio: validateBio(bio),
-    };
-
-    setErrors(newErrors);
-
-    if (Object.values(newErrors).some(Boolean)) return;
-
     setIsSaving(true);
     try {
       await updateProfile({
@@ -308,28 +222,28 @@ export function ProfileTab() {
       // Refetch user data to get updated profile
       const user = await getCurrentUser();
       setCurrentUser(user);
-
+      
       // Update form fields with saved data from database
-      setFirstName(user.first_name || "");
-      setLastName(user.last_name || "");
-      setLocation(user.location || user.github?.location || "");
-      setWebsite(user.website || user.github?.website || "");
-      setBio(user.bio || user.github?.bio || "");
-      setTelegram(user.telegram || "");
-      setLinkedin(user.linkedin || "");
-      setWhatsapp(user.whatsapp || "");
-      setTwitter(user.twitter || "");
-      setDiscord(user.discord || "");
+      setFirstName(user.first_name || '');
+      setLastName(user.last_name || '');
+      setLocation(user.location || user.github?.location || '');
+      setWebsite(user.website || user.github?.website || '');
+      setBio(user.bio || user.github?.bio || '');
+      setTelegram(user.telegram || '');
+      setLinkedin(user.linkedin || '');
+      setWhatsapp(user.whatsapp || '');
+      setTwitter(user.twitter || '');
+      setDiscord(user.discord || '');
       if (user.avatar_url) {
         setAvatarUrl(user.avatar_url);
       } else if (user.github?.avatar_url) {
         setAvatarUrl(user.github.avatar_url);
       }
-
-      alert("Profile updated successfully!");
+      
+      toast.success('Profile updated successfully!');
     } catch (error) {
-      console.error("Failed to update profile:", error);
-      alert("Failed to update profile. Please try again.");
+      console.error('Failed to update profile:', error);
+      toast.error('Failed to update profile. Please try again.');
     } finally {
       setIsSaving(false);
     }
@@ -338,87 +252,64 @@ export function ProfileTab() {
   return (
     <div className="space-y-6">
       {/* Profile Header */}
-      <div
-        className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${
-          theme === "dark"
-            ? "bg-[#2d2820]/[0.4] border-white/10"
-            : "bg-white/[0.12] border-white/20"
-        }`}
-      >
-        <h2
-          className={`text-[28px] font-bold mb-2 transition-colors ${
-            theme === "dark" ? "text-[#f5efe5]" : "text-[#2d2820]"
-          }`}
-        >
-          Profile
-        </h2>
-        <p
-          className={`text-[14px] transition-colors ${
-            theme === "dark" ? "text-[#b8a898]" : "text-[#7a6b5a]"
-          }`}
-        >
-          You can edit all your information here.
-        </p>
+      <div className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${
+        theme === 'dark'
+          ? 'bg-[#2d2820]/[0.4] border-white/10'
+          : 'bg-white/[0.12] border-white/20'
+      }`}>
+        <h2 className={`text-[28px] font-bold mb-2 transition-colors ${
+          theme === 'dark' ? 'text-[#f5efe5]' : 'text-[#2d2820]'
+        }`}>Profile</h2>
+        <p className={`text-[14px] transition-colors ${
+          theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
+        }`}>You can edit all your information here.</p>
       </div>
 
       {/* GitHub Account Section */}
-      <div
-        className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${
-          theme === "dark"
-            ? "bg-[#2d2820]/[0.4] border-white/10"
-            : "bg-white/[0.12] border-white/20"
-        }`}
-      >
-        <h3
-          className={`text-[20px] font-bold mb-2 transition-colors ${
-            theme === "dark" ? "text-[#f5efe5]" : "text-[#2d2820]"
-          }`}
-        >
-          GitHub account
-        </h3>
-        <p
-          className={`text-[14px] mb-6 transition-colors ${
-            theme === "dark" ? "text-[#b8a898]" : "text-[#7a6b5a]"
-          }`}
-        >
-          To change your username or email, edit your account on Github, then
-          resync your account.
+      <div className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${
+        theme === 'dark'
+          ? 'bg-[#2d2820]/[0.4] border-white/10'
+          : 'bg-white/[0.12] border-white/20'
+      }`}>
+        <h3 className={`text-[20px] font-bold mb-2 transition-colors ${
+          theme === 'dark' ? 'text-[#f5efe5]' : 'text-[#2d2820]'
+        }`}>GitHub account</h3>
+        <p className={`text-[14px] mb-6 transition-colors ${
+          theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
+        }`}>
+          To change your username or email, edit your account on Github, then resync your account.
         </p>
 
-        <div
-          className={`flex items-center justify-between p-4 rounded-[16px] backdrop-blur-[30px] border transition-colors ${
-            theme === "dark"
-              ? "bg-[#3d342c]/[0.4] border-white/15"
-              : "bg-white/[0.15] border-white/25"
-          }`}
-        >
-          <span
-            className={`text-[15px] font-medium transition-colors ${
-              theme === "dark" ? "text-[#d4c5b0]" : "text-[#2d2820]"
-            }`}
-          >
+        <div className={`flex items-center justify-between p-4 rounded-[16px] backdrop-blur-[30px] border transition-colors ${
+          theme === 'dark'
+            ? 'bg-[#3d342c]/[0.4] border-white/15'
+            : 'bg-white/[0.15] border-white/25'
+        }`}>
+          <span className={`text-[15px] font-medium transition-colors ${
+            theme === 'dark' ? 'text-[#d4c5b0]' : 'text-[#2d2820]'
+          }`}>
             {isLoading ? (
               <span className="inline-block w-32 h-4 bg-white/10 rounded animate-pulse" />
             ) : currentUser?.github ? (
-              `${currentUser.github.login} / ${currentUser.github.email || "No email"}`
+              `${currentUser.github.login} / ${currentUser.github.email || 'No email'}`
             ) : (
-              "Not connected / Not connected"
+              'Not connected / Not connected'
             )}
           </span>
           <div className="flex items-center gap-3">
-            <button
+            <button 
               onClick={handleResync}
               disabled={isResyncing || !currentUser?.github}
               className={`px-5 py-2.5 rounded-[12px] backdrop-blur-[30px] border font-medium text-[14px] hover:bg-white/[0.25] transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${
-                theme === "dark"
-                  ? "bg-[#3d342c]/[0.5] border-white/20 text-[#d4c5b0]"
-                  : "bg-white/[0.2] border-white/30 text-[#2d2820]"
+                theme === 'dark'
+                  ? 'bg-[#3d342c]/[0.5] border-white/20 text-[#d4c5b0]'
+                  : 'bg-white/[0.2] border-white/30 text-[#2d2820]'
               }`}
             >
               <Github className="w-4 h-4" />
-              {isResyncing ? "Syncing..." : "Resync"}
+              {isResyncing ? 'Syncing...' : 'Resync'}
             </button>
-            <button
+            <button 
               onClick={handleEditGitHub}
               className="px-5 py-2.5 rounded-[12px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white font-medium text-[14px] shadow-[0_4px_16px_rgba(162,121,44,0.3)] hover:shadow-[0_6px_20px_rgba(162,121,44,0.4)] transition-all border border-white/10"
             >
@@ -429,27 +320,17 @@ export function ProfileTab() {
       </div>
 
       {/* Profile Picture */}
-      <div
-        className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${
-          theme === "dark"
-            ? "bg-[#2d2820]/[0.4] border-white/10"
-            : "bg-white/[0.12] border-white/20"
-        }`}
-      >
-        <h3
-          className={`text-[16px] font-bold mb-1 transition-colors ${
-            theme === "dark" ? "text-[#f5efe5]" : "text-[#2d2820]"
-          }`}
-        >
-          Profile Picture
-        </h3>
-        <p
-          className={`text-[13px] mb-5 transition-colors ${
-            theme === "dark" ? "text-[#b8a898]" : "text-[#7a6b5a]"
-          }`}
-        >
-          SVG, PNG, JPG or GIF
-        </p>
+      <div className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${
+        theme === 'dark'
+          ? 'bg-[#2d2820]/[0.4] border-white/10'
+          : 'bg-white/[0.12] border-white/20'
+      }`}>
+        <h3 className={`text-[16px] font-bold mb-1 transition-colors ${
+          theme === 'dark' ? 'text-[#f5efe5]' : 'text-[#2d2820]'
+        }`}>Profile Picture</h3>
+        <p className={`text-[13px] mb-5 transition-colors ${
+          theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
+        }`}>SVG, PNG, JPG or GIF</p>
 
         <div className="flex items-center gap-4">
           {isLoading ? (
@@ -475,9 +356,9 @@ export function ProfileTab() {
           <button
             onClick={() => fileInputRef.current?.click()}
             className={`px-5 py-2.5 rounded-[12px] backdrop-blur-[30px] border font-medium text-[14px] hover:bg-white/[0.2] transition-all flex items-center gap-2 ${
-              theme === "dark"
-                ? "bg-[#3d342c]/[0.4] border-white/15 text-[#d4c5b0]"
-                : "bg-white/[0.15] border-white/25 text-[#2d2820]"
+              theme === 'dark'
+                ? 'bg-[#3d342c]/[0.4] border-white/15 text-[#d4c5b0]'
+                : 'bg-white/[0.15] border-white/25 text-[#2d2820]'
             }`}
           >
             <Upload className="w-4 h-4" />
@@ -489,223 +370,132 @@ export function ProfileTab() {
               disabled={isSaving}
               className={`px-5 py-2.5 rounded-[12px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white font-medium text-[14px] shadow-[0_4px_16px_rgba(162,121,44,0.3)] hover:shadow-[0_6px_20px_rgba(162,121,44,0.4)] transition-all border border-white/10 disabled:opacity-50 disabled:cursor-not-allowed`}
             >
-              {isSaving ? "Saving..." : "Save Picture"}
+              {isSaving ? 'Saving...' : 'Save Picture'}
             </button>
           )}
         </div>
       </div>
 
       {/* Personal Information */}
-      <div
-        className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${
-          theme === "dark"
-            ? "bg-[#2d2820]/[0.4] border-white/10"
-            : "bg-white/[0.12] border-white/20"
-        }`}
-      >
+      <div className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${
+        theme === 'dark'
+          ? 'bg-[#2d2820]/[0.4] border-white/10'
+          : 'bg-white/[0.12] border-white/20'
+      }`}>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* First Name */}
           <div>
-            <label
-              className={`block text-[14px] font-semibold mb-2 transition-colors ${
-                theme === "dark" ? "text-[#f5efe5]" : "text-[#2d2820]"
-              }`}
-            >
-              First Name
-            </label>
+            <label className={`block text-[14px] font-semibold mb-2 transition-colors ${
+              theme === 'dark' ? 'text-[#f5efe5]' : 'text-[#2d2820]'
+            }`}>First Name</label>
             <input
               type="text"
               placeholder="Enter your first name"
               value={firstName}
-              onChange={(e) => {
-                setFirstName(e.target.value);
-                setErrors((p) => ({
-                  ...p,
-                  firstName: validateFirstName(e.target.value),
-                }));
-              }}
-              className={`w-full px-4 py-3 rounded-[14px] backdrop-blur-[30px] border focus:outline-none focus:bg-white/[0.2] focus:border-[#c9983a]/30 transition-all text-[14px] ${
-                theme === "dark"
-                  ? "bg-[#3d342c]/[0.4] border-white/15 text-[#f5efe5] placeholder-[#b8a898]"
-                  : "bg-white/[0.15] border-white/25 text-[#2d2820] placeholder-[#7a6b5a]"
-              }`}
+              onChange={(e) => setFirstName(e.target.value)}
+                className={`w-full px-4 py-3 rounded-[14px] backdrop-blur-[30px] border focus:outline-none focus:bg-white/[0.2] focus:border-[#c9983a]/30 transition-all text-[14px] ${
+                  theme === 'dark'
+                    ? 'bg-[#3d342c]/[0.4] border-white/15 text-[#f5efe5] placeholder-[#b8a898]'
+                    : 'bg-white/[0.15] border-white/25 text-[#2d2820] placeholder-[#7a6b5a]'
+                  }`}
             />
-            {errors.firstName && (
-              <p className="mt-1 text-xs text-red-500">{errors.firstName}</p>
-            )}
           </div>
 
           {/* Last Name */}
           <div>
-            <label
-              className={`block text-[14px] font-semibold mb-2 transition-colors ${
-                theme === "dark" ? "text-[#f5efe5]" : "text-[#2d2820]"
-              }`}
-            >
-              Last Name
-            </label>
+            <label className={`block text-[14px] font-semibold mb-2 transition-colors ${
+              theme === 'dark' ? 'text-[#f5efe5]' : 'text-[#2d2820]'
+            }`}>Last Name</label>
             <input
               type="text"
               placeholder="Enter your last name"
               value={lastName}
-              onChange={(e) => {
-                setLastName(e.target.value);
-                setErrors((p) => ({
-                  ...p,
-                  lastName: validateLastName(e.target.value),
-                }));
-              }}
-              className={`w-full px-4 py-3 rounded-[14px] backdrop-blur-[30px] border focus:outline-none focus:bg-white/[0.2] focus:border-[#c9983a]/30 transition-all text-[14px] ${
-                theme === "dark"
-                  ? "bg-[#3d342c]/[0.4] border-white/15 text-[#f5efe5] placeholder-[#b8a898]"
-                  : "bg-white/[0.15] border-white/25 text-[#2d2820] placeholder-[#7a6b5a]"
-              }`}
+              onChange={(e) => setLastName(e.target.value)}
+                className={`w-full px-4 py-3 rounded-[14px] backdrop-blur-[30px] border focus:outline-none focus:bg-white/[0.2] focus:border-[#c9983a]/30 transition-all text-[14px] ${
+                  theme === 'dark'
+                    ? 'bg-[#3d342c]/[0.4] border-white/15 text-[#f5efe5] placeholder-[#b8a898]'
+                    : 'bg-white/[0.15] border-white/25 text-[#2d2820] placeholder-[#7a6b5a]'
+                  }`}
             />
-            {errors.lastName && (
-              <p className="mt-1 text-xs text-red-500">{errors.lastName}</p>
-            )}
           </div>
 
           {/* Location */}
           <div>
-            <label
-              className={`block text-[14px] font-semibold mb-2 transition-colors ${
-                theme === "dark" ? "text-[#f5efe5]" : "text-[#2d2820]"
-              }`}
-            >
-              Location
-            </label>
+            <label className={`block text-[14px] font-semibold mb-2 transition-colors ${
+              theme === 'dark' ? 'text-[#f5efe5]' : 'text-[#2d2820]'
+            }`}>Location</label>
             <input
               type="text"
               placeholder="Enter your location"
               value={location}
-              onChange={(e) => {
-                setLocation(e.target.value);
-                setErrors((p) => ({
-                  ...p,
-                  location: validateLocation(e.target.value),
-                }));
-              }}
-              className={`w-full px-4 py-3 rounded-[14px] backdrop-blur-[30px] border focus:outline-none focus:bg-white/[0.2] focus:border-[#c9983a]/30 transition-all text-[14px] ${
-                theme === "dark"
-                  ? "bg-[#3d342c]/[0.4] border-white/15 text-[#f5efe5] placeholder-[#b8a898]"
-                  : "bg-white/[0.15] border-white/25 text-[#2d2820] placeholder-[#7a6b5a]"
-              }`}
+              onChange={(e) => setLocation(e.target.value)}
+                className={`w-full px-4 py-3 rounded-[14px] backdrop-blur-[30px] border focus:outline-none focus:bg-white/[0.2] focus:border-[#c9983a]/30 transition-all text-[14px] ${
+                  theme === 'dark'
+                    ? 'bg-[#3d342c]/[0.4] border-white/15 text-[#f5efe5] placeholder-[#b8a898]'
+                    : 'bg-white/[0.15] border-white/25 text-[#2d2820] placeholder-[#7a6b5a]'
+                  }`}
             />
-            {errors.location && (
-              <p className="mt-1 text-xs text-red-500">{errors.location}</p>
-            )}
           </div>
 
           {/* Website */}
           <div>
-            <label
-              className={`block text-[14px] font-semibold mb-2 transition-colors ${
-                theme === "dark" ? "text-[#f5efe5]" : "text-[#2d2820]"
-              }`}
-            >
-              Website
-            </label>
+            <label className={`block text-[14px] font-semibold mb-2 transition-colors ${
+              theme === 'dark' ? 'text-[#f5efe5]' : 'text-[#2d2820]'
+            }`}>Website</label>
             <input
               type="text"
               placeholder="Enter your website"
               value={website}
-              onChange={(e) => {
-                setWebsite(e.target.value);
-                setErrors((p) => ({
-                  ...p,
-                  website: validateWebsite(e.target.value),
-                }));
-              }}
-              className={`w-full px-4 py-3 rounded-[14px] backdrop-blur-[30px] border focus:outline-none focus:bg-white/[0.2] focus:border-[#c9983a]/30 transition-all text-[14px] ${
-                theme === "dark"
-                  ? "bg-[#3d342c]/[0.4] border-white/15 text-[#f5efe5] placeholder-[#b8a898]"
-                  : "bg-white/[0.15] border-white/25 text-[#2d2820] placeholder-[#7a6b5a]"
-              }`}
+              onChange={(e) => setWebsite(e.target.value)}
+                className={`w-full px-4 py-3 rounded-[14px] backdrop-blur-[30px] border focus:outline-none focus:bg-white/[0.2] focus:border-[#c9983a]/30 transition-all text-[14px] ${
+                  theme === 'dark'
+                    ? 'bg-[#3d342c]/[0.4] border-white/15 text-[#f5efe5] placeholder-[#b8a898]'
+                    : 'bg-white/[0.15] border-white/25 text-[#2d2820] placeholder-[#7a6b5a]'
+                  }`}
             />
-            {errors.website && (
-              <p className="mt-1 text-xs text-red-500">{errors.website}</p>
-            )}
           </div>
         </div>
 
         {/* Bio */}
         <div className="mt-6">
-          <label
-            className={`block text-[14px] font-semibold mb-2 transition-colors ${
-              theme === "dark" ? "text-[#f5efe5]" : "text-[#2d2820]"
-            }`}
-          >
-            Bio
-          </label>
+          <label className={`block text-[14px] font-semibold mb-2 transition-colors ${
+            theme === 'dark' ? 'text-[#f5efe5]' : 'text-[#2d2820]'
+          }`}>Bio</label>
           <textarea
             placeholder="Enter your bio"
             rows={4}
             value={bio}
-            onChange={(e) => {
-              setBio(e.target.value);
-              setErrors((p) => ({ ...p, bio: validateBio(e.target.value) }));
-            }}
-            className={`w-full px-4 py-3 rounded-[14px] backdrop-blur-[30px] border focus:outline-none focus:bg-white/[0.2] focus:border-[#c9983a]/30 transition-all text-[14px] resize-none ${
-              theme === "dark"
-                ? "bg-[#3d342c]/[0.4] border-white/15 text-[#f5efe5] placeholder-[#b8a898]"
-                : "bg-white/[0.15] border-white/25 text-[#2d2820] placeholder-[#7a6b5a]"
+            onChange={(e) => setBio(e.target.value)}
+                className={`w-full px-4 py-3 rounded-[14px] backdrop-blur-[30px] border focus:outline-none focus:bg-white/[0.2] focus:border-[#c9983a]/30 transition-all text-[14px] resize-none ${
+              theme === 'dark'
+                ? 'bg-[#3d342c]/[0.4] border-white/15 text-[#f5efe5] placeholder-[#b8a898]'
+                : 'bg-white/[0.15] border-white/25 text-[#2d2820] placeholder-[#7a6b5a]'
             }`}
           />
-          <div className="flex justify-between items-start mt-1">
-            <div className="flex-1">
-              {errors.bio && (
-                <p className="text-xs text-red-500">{errors.bio}</p>
-              )}
-            </div>
-            <span
-              className={`text-xs ml-4 ${
-                bio.length > 500
-                  ? "text-red-400"
-                  : theme === "dark"
-                    ? "text-[#b8a898]"
-                    : "text-[#7a6b5a]"
-              }`}
-            >
-              {bio.length}/500
-            </span>
-          </div>
         </div>
       </div>
 
       {/* Contact Information */}
-      <div
-        className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${
-          theme === "dark"
-            ? "bg-[#2d2820]/[0.4] border-white/10"
-            : "bg-white/[0.12] border-white/20"
-        }`}
-      >
-        <h3
-          className={`text-[20px] font-bold mb-2 transition-colors ${
-            theme === "dark" ? "text-[#f5efe5]" : "text-[#2d2820]"
-          }`}
-        >
-          Contact Information
-        </h3>
-        <p
-          className={`text-[14px] mb-6 transition-colors ${
-            theme === "dark" ? "text-[#b8a898]" : "text-[#7a6b5a]"
-          }`}
-        >
+      <div className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${
+        theme === 'dark'
+          ? 'bg-[#2d2820]/[0.4] border-white/10'
+          : 'bg-white/[0.12] border-white/20'
+      }`}>
+        <h3 className={`text-[20px] font-bold mb-2 transition-colors ${
+          theme === 'dark' ? 'text-[#f5efe5]' : 'text-[#2d2820]'
+        }`}>Contact Information</h3>
+        <p className={`text-[14px] mb-6 transition-colors ${
+          theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
+        }`}>
           Please enter only your social networks handle (no links, no @ needed).
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Telegram */}
           <div>
-            <label
-              className={`block text-[14px] font-semibold mb-2 transition-colors ${
-                theme === "dark" ? "text-[#f5efe5]" : "text-[#2d2820]"
-              }`}
-            >
-              Telegram
-            </label>
+            <label className={`block text-[14px] font-semibold mb-2 transition-colors ${
+              theme === 'dark' ? 'text-[#f5efe5]' : 'text-[#2d2820]'
+            }`}>Telegram</label>
             <div className="relative">
               <input
                 type="text"
@@ -713,28 +503,22 @@ export function ProfileTab() {
                 onChange={(e) => setTelegram(e.target.value)}
                 placeholder="Enter your telegram handle"
                 className={`w-full px-4 py-3 pr-10 rounded-[14px] backdrop-blur-[30px] border focus:outline-none focus:bg-white/[0.2] focus:border-[#c9983a]/30 transition-all text-[14px] ${
-                  theme === "dark"
-                    ? "bg-[#3d342c]/[0.4] border-white/15 text-[#f5efe5] placeholder-[#b8a898]"
-                    : "bg-white/[0.15] border-white/25 text-[#2d2820] placeholder-[#7a6b5a]"
+                  theme === 'dark'
+                    ? 'bg-[#3d342c]/[0.4] border-white/15 text-[#f5efe5] placeholder-[#b8a898]'
+                    : 'bg-white/[0.15] border-white/25 text-[#2d2820] placeholder-[#7a6b5a]'
                 }`}
               />
-              <LinkIcon
-                className={`absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors ${
-                  theme === "dark" ? "text-[#8a7e70]" : "text-[#7a6b5a]"
-                }`}
-              />
+              <LinkIcon className={`absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors ${
+                theme === 'dark' ? 'text-[#8a7e70]' : 'text-[#7a6b5a]'
+              }`} />
             </div>
           </div>
 
           {/* LinkedIn */}
           <div>
-            <label
-              className={`block text-[14px] font-semibold mb-2 transition-colors ${
-                theme === "dark" ? "text-[#f5efe5]" : "text-[#2d2820]"
-              }`}
-            >
-              LinkedIn
-            </label>
+            <label className={`block text-[14px] font-semibold mb-2 transition-colors ${
+              theme === 'dark' ? 'text-[#f5efe5]' : 'text-[#2d2820]'
+            }`}>LinkedIn</label>
             <div className="relative">
               <input
                 type="text"
@@ -742,28 +526,22 @@ export function ProfileTab() {
                 onChange={(e) => setLinkedin(e.target.value)}
                 placeholder="Enter your linkedin handle"
                 className={`w-full px-4 py-3 pr-10 rounded-[14px] backdrop-blur-[30px] border focus:outline-none focus:bg-white/[0.2] focus:border-[#c9983a]/30 transition-all text-[14px] ${
-                  theme === "dark"
-                    ? "bg-[#3d342c]/[0.4] border-white/15 text-[#f5efe5] placeholder-[#b8a898]"
-                    : "bg-white/[0.15] border-white/25 text-[#2d2820] placeholder-[#7a6b5a]"
+                  theme === 'dark'
+                    ? 'bg-[#3d342c]/[0.4] border-white/15 text-[#f5efe5] placeholder-[#b8a898]'
+                    : 'bg-white/[0.15] border-white/25 text-[#2d2820] placeholder-[#7a6b5a]'
                 }`}
               />
-              <LinkIcon
-                className={`absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors ${
-                  theme === "dark" ? "text-[#b8a898]" : "text-[#7a6b5a]"
-                }`}
-              />
+              <LinkIcon className={`absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors ${
+                theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
+              }`} />
             </div>
           </div>
 
           {/* WhatsApp */}
           <div>
-            <label
-              className={`block text-[14px] font-semibold mb-2 transition-colors ${
-                theme === "dark" ? "text-[#f5efe5]" : "text-[#2d2820]"
-              }`}
-            >
-              WhatsApp
-            </label>
+            <label className={`block text-[14px] font-semibold mb-2 transition-colors ${
+              theme === 'dark' ? 'text-[#f5efe5]' : 'text-[#2d2820]'
+            }`}>WhatsApp</label>
             <div className="relative">
               <input
                 type="text"
@@ -771,28 +549,22 @@ export function ProfileTab() {
                 onChange={(e) => setWhatsapp(e.target.value)}
                 placeholder="Enter your whatsApp handle"
                 className={`w-full px-4 py-3 pr-10 rounded-[14px] backdrop-blur-[30px] border focus:outline-none focus:bg-white/[0.2] focus:border-[#c9983a]/30 transition-all text-[14px] ${
-                  theme === "dark"
-                    ? "bg-[#3d342c]/[0.4] border-white/15 text-[#f5efe5] placeholder-[#b8a898]"
-                    : "bg-white/[0.15] border-white/25 text-[#2d2820] placeholder-[#7a6b5a]"
+                  theme === 'dark'
+                    ? 'bg-[#3d342c]/[0.4] border-white/15 text-[#f5efe5] placeholder-[#b8a898]'
+                    : 'bg-white/[0.15] border-white/25 text-[#2d2820] placeholder-[#7a6b5a]'
                 }`}
               />
-              <LinkIcon
-                className={`absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors ${
-                  theme === "dark" ? "text-[#b8a898]" : "text-[#7a6b5a]"
-                }`}
-              />
+              <LinkIcon className={`absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors ${
+                theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
+              }`} />
             </div>
           </div>
 
           {/* Twitter */}
           <div>
-            <label
-              className={`block text-[14px] font-semibold mb-2 transition-colors ${
-                theme === "dark" ? "text-[#f5efe5]" : "text-[#2d2820]"
-              }`}
-            >
-              Twitter
-            </label>
+            <label className={`block text-[14px] font-semibold mb-2 transition-colors ${
+              theme === 'dark' ? 'text-[#f5efe5]' : 'text-[#2d2820]'
+            }`}>Twitter</label>
             <div className="relative">
               <input
                 type="text"
@@ -800,28 +572,22 @@ export function ProfileTab() {
                 onChange={(e) => setTwitter(e.target.value)}
                 placeholder="Enter your twitter handle"
                 className={`w-full px-4 py-3 pr-10 rounded-[14px] backdrop-blur-[30px] border focus:outline-none focus:bg-white/[0.2] focus:border-[#c9983a]/30 transition-all text-[14px] ${
-                  theme === "dark"
-                    ? "bg-[#3d342c]/[0.4] border-white/15 text-[#f5efe5] placeholder-[#b8a898]"
-                    : "bg-white/[0.15] border-white/25 text-[#2d2820] placeholder-[#7a6b5a]"
+                  theme === 'dark'
+                    ? 'bg-[#3d342c]/[0.4] border-white/15 text-[#f5efe5] placeholder-[#b8a898]'
+                    : 'bg-white/[0.15] border-white/25 text-[#2d2820] placeholder-[#7a6b5a]'
                 }`}
               />
-              <LinkIcon
-                className={`absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors ${
-                  theme === "dark" ? "text-[#b8a898]" : "text-[#7a6b5a]"
-                }`}
-              />
+              <LinkIcon className={`absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors ${
+                theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
+              }`} />
             </div>
           </div>
 
           {/* Discord - Full Width */}
           <div className="md:col-span-2">
-            <label
-              className={`block text-[14px] font-semibold mb-2 transition-colors ${
-                theme === "dark" ? "text-[#f5efe5]" : "text-[#2d2820]"
-              }`}
-            >
-              Discord
-            </label>
+            <label className={`block text-[14px] font-semibold mb-2 transition-colors ${
+              theme === 'dark' ? 'text-[#f5efe5]' : 'text-[#2d2820]'
+            }`}>Discord</label>
             <div className="relative">
               <input
                 type="text"
@@ -829,16 +595,14 @@ export function ProfileTab() {
                 onChange={(e) => setDiscord(e.target.value)}
                 placeholder="Enter your discord handle"
                 className={`w-full px-4 py-3 pr-10 rounded-[14px] backdrop-blur-[30px] border focus:outline-none focus:bg-white/[0.2] focus:border-[#c9983a]/30 transition-all text-[14px] ${
-                  theme === "dark"
-                    ? "bg-[#3d342c]/[0.4] border-white/15 text-[#f5efe5] placeholder-[#b8a898]"
-                    : "bg-white/[0.15] border-white/25 text-[#2d2820] placeholder-[#7a6b5a]"
+                  theme === 'dark'
+                    ? 'bg-[#3d342c]/[0.4] border-white/15 text-[#f5efe5] placeholder-[#b8a898]'
+                    : 'bg-white/[0.15] border-white/25 text-[#2d2820] placeholder-[#7a6b5a]'
                 }`}
               />
-              <LinkIcon
-                className={`absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors ${
-                  theme === "dark" ? "text-[#b8a898]" : "text-[#7a6b5a]"
-                }`}
-              />
+              <LinkIcon className={`absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors ${
+                theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
+              }`} />
             </div>
           </div>
         </div>
@@ -851,7 +615,7 @@ export function ProfileTab() {
           disabled={isSaving}
           className={`px-8 py-3 rounded-[16px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white font-semibold text-[15px] shadow-[0_6px_24px_rgba(162,121,44,0.4)] hover:shadow-[0_8px_28px_rgba(162,121,44,0.5)] transition-all border border-white/10 disabled:opacity-50 disabled:cursor-not-allowed`}
         >
-          {isSaving ? "Saving..." : "Save"}
+          {isSaving ? 'Saving...' : 'Save'}
         </button>
       </div>
     </div>

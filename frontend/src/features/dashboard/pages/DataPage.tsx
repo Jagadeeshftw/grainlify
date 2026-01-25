@@ -1,10 +1,31 @@
 import { useState } from 'react';
 import { ChevronDown, Info } from 'lucide-react';
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart } from 'recharts';
+import { BarChart, Bar, LineChart, Line as RechartsLine, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart } from 'recharts';
+import { ComposableMap, Geographies, Geography, Marker, ZoomableGroup, Line as MapLine } from "react-simple-maps";
 import { useTheme } from '../../../shared/contexts/ThemeContext';
 
 export function DataPage() {
   const { theme } = useTheme();
+  const [mapZoom, setMapZoom] = useState(1);
+  const [mapCenter, setMapCenter] = useState<[number, number]>([0, 0]);
+
+  const geoUrl = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
+
+  const countryCoordinates: Record<string, [number, number]> = {
+    'United Kingdom': [-3.435973, 55.378051],
+    'Germany': [10.451526, 51.165691],
+    'Canada': [-106.346771, 56.130366],
+    'India': [78.96288, 20.593684],
+    'Brazil': [-51.92528, -14.235004],
+    'Netherlands': [5.291266, 52.132633],
+    'Australia': [133.775136, -25.274398],
+    'Spain': [-3.74922, 40.463667],
+    'Italy': [12.56738, 41.87194],
+    'Poland': [19.145136, 51.919438],
+    'Sweden': [18.643501, 60.128161],
+    'Japan': [138.252924, 36.204824],
+    'China': [104.195397, 35.86166],
+  };
   const [activeTab, setActiveTab] = useState('overview');
   const [projectInterval, setProjectInterval] = useState('Monthly interval');
   const [contributorInterval, setContributorInterval] = useState('Monthly interval');
@@ -135,45 +156,38 @@ export function DataPage() {
   return (
     <div className="space-y-6">
       {/* Header Tabs */}
-      <div className={`backdrop-blur-[40px] rounded-[24px] border p-2 transition-colors ${
-        theme === 'dark'
+      <div className={`backdrop-blur-[40px] rounded-[24px] border p-2 transition-colors ${theme === 'dark'
           ? 'bg-white/[0.12] border-white/20'
           : 'bg-white/[0.12] border-white/20'
-      }`}>
+        }`}>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setActiveTab('overview')}
-            className={`px-6 py-3 rounded-[16px] font-bold text-[14px] transition-all duration-300 ${
-              activeTab === 'overview'
-                ? `bg-gradient-to-br from-[#c9983a]/30 to-[#d4af37]/20 border-2 border-[#c9983a]/50 ${
-                    theme === 'dark' ? 'text-[#f5c563]' : 'text-[#2d2820]'
-                  }`
+            className={`px-6 py-3 rounded-[16px] font-bold text-[14px] transition-all duration-300 ${activeTab === 'overview'
+                ? `bg-gradient-to-br from-[#c9983a]/30 to-[#d4af37]/20 border-2 border-[#c9983a]/50 ${theme === 'dark' ? 'text-[#f5c563]' : 'text-[#2d2820]'
+                }`
                 : `${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'} hover:bg-white/[0.08]`
-            }`}
+              }`}
           >
             Overview
           </button>
           <button
             onClick={() => setActiveTab('projects')}
-            className={`px-6 py-3 rounded-[16px] font-bold text-[14px] transition-all duration-300 ${
-              activeTab === 'projects'
-                ? `bg-gradient-to-br from-[#c9983a]/30 to-[#d4af37]/20 border-2 border-[#c9983a]/50 ${
-                    theme === 'dark' ? 'text-[#f5c563]' : 'text-[#2d2820]'
-                  }`
+            className={`px-6 py-3 rounded-[16px] font-bold text-[14px] transition-all duration-300 ${activeTab === 'projects'
+                ? `bg-gradient-to-br from-[#c9983a]/30 to-[#d4af37]/20 border-2 border-[#c9983a]/50 ${theme === 'dark' ? 'text-[#f5c563]' : 'text-[#2d2820]'
+                }`
                 : `${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'} hover:bg-white/[0.08]`
-            }`}
+              }`}
           >
             Projects
           </button>
           <button
             onClick={() => setActiveTab('contributions')}
-            className={`px-6 py-3 rounded-[16px] font-bold text-[14px] transition-all duration-300 ${
-              activeTab === 'contributions'
-                ? `bg-gradient-to-br from-[#c9983a]/30 to-[#d4af37]/20 border-2 border-[#c9983a]/50 ${
-                    theme === 'dark' ? 'text-[#f5c563]' : 'text-[#2d2820]'
-                  }`
+            className={`px-6 py-3 rounded-[16px] font-bold text-[14px] transition-all duration-300 ${activeTab === 'contributions'
+                ? `bg-gradient-to-br from-[#c9983a]/30 to-[#d4af37]/20 border-2 border-[#c9983a]/50 ${theme === 'dark' ? 'text-[#f5c563]' : 'text-[#2d2820]'
+                }`
                 : `${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'} hover:bg-white/[0.08]`
-            }`}
+              }`}
           >
             Contributions
           </button>
@@ -185,20 +199,17 @@ export function DataPage() {
         {/* Left Column - Project Activity */}
         <div className="backdrop-blur-[40px] bg-white/[0.12] rounded-[24px] border border-white/20 p-8">
           <div className="flex items-center justify-between mb-6">
-            <h2 className={`text-[18px] font-bold transition-colors ${
-              theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-            }`}>Project activity</h2>
+            <h2 className={`text-[18px] font-bold transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
+              }`}>Project activity</h2>
             <div className="relative">
               <button
                 onClick={() => setShowProjectIntervalDropdown(!showProjectIntervalDropdown)}
                 className="flex items-center gap-2 px-4 py-2 rounded-[10px] backdrop-blur-[20px] bg-white/[0.15] border border-white/25 hover:bg-white/[0.2] transition-all"
               >
-                <span className={`text-[13px] font-semibold transition-colors ${
-                  theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-                }`}>{projectInterval}</span>
-                <ChevronDown className={`w-4 h-4 transition-colors ${
-                  theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-                }`} />
+                <span className={`text-[13px] font-semibold transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
+                  }`}>{projectInterval}</span>
+                <ChevronDown className={`w-4 h-4 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+                  }`} />
               </button>
               {showProjectIntervalDropdown && (
                 <div className="absolute right-0 mt-2 w-[180px] backdrop-blur-[30px] bg-white/[0.55] border-2 border-white/30 rounded-[12px] shadow-[0_8px_32px_rgba(0,0,0,0.15)] overflow-hidden z-50">
@@ -225,11 +236,10 @@ export function DataPage() {
                       setProjectInterval('Monthly interval');
                       setShowProjectIntervalDropdown(false);
                     }}
-                    className={`w-full px-4 py-3 text-left text-[13px] font-medium transition-all ${
-                      projectInterval === 'Monthly interval'
+                    className={`w-full px-4 py-3 text-left text-[13px] font-medium transition-all ${projectInterval === 'Monthly interval'
                         ? 'bg-white/[0.35] text-[#2d2820] font-bold'
                         : 'text-[#2d2820] hover:bg-white/[0.3]'
-                    }`}
+                      }`}
                   >
                     Monthly interval
                   </button>
@@ -267,9 +277,9 @@ export function DataPage() {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(122, 107, 90, 0.1)" />
-                <XAxis 
-                  dataKey="month" 
-                  stroke="#7a6b5a" 
+                <XAxis
+                  dataKey="month"
+                  stroke="#7a6b5a"
                   tick={{ fill: '#7a6b5a', fontSize: 11, fontWeight: 600 }}
                   angle={-45}
                   textAnchor="end"
@@ -277,16 +287,16 @@ export function DataPage() {
                 />
                 <YAxis stroke="#7a6b5a" tick={{ fill: '#7a6b5a', fontSize: 11, fontWeight: 600 }} />
                 <Tooltip content={<CustomTooltip />} />
-                <Bar 
-                  dataKey="value" 
-                  fill="url(#barGradient)" 
+                <Bar
+                  dataKey="value"
+                  fill="url(#barGradient)"
                   radius={[8, 8, 0, 0]}
                   maxBarSize={40}
                 />
-                <Line 
-                  type="monotone" 
-                  dataKey="trend" 
-                  stroke="#2d2820" 
+                <RechartsLine
+                  type="monotone"
+                  dataKey="trend"
+                  stroke="#2d2820"
                   strokeWidth={3}
                   dot={false}
                 />
@@ -298,51 +308,46 @@ export function DataPage() {
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => toggleProjectFilter('new')}
-              className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${
-                projectFilters.new
+              className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${projectFilters.new
                   ? 'bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]'
                   : 'backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]'
-              }`}
+                }`}
             >
               New
             </button>
             <button
               onClick={() => toggleProjectFilter('reactivated')}
-              className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${
-                projectFilters.reactivated
+              className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${projectFilters.reactivated
                   ? 'bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]'
                   : 'backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]'
-              }`}
+                }`}
             >
               Reactivated
             </button>
             <button
               onClick={() => toggleProjectFilter('active')}
-              className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${
-                projectFilters.active
+              className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${projectFilters.active
                   ? 'bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]'
                   : 'backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]'
-              }`}
+                }`}
             >
               Active
             </button>
             <button
               onClick={() => toggleProjectFilter('churned')}
-              className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${
-                projectFilters.churned
+              className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${projectFilters.churned
                   ? 'bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]'
                   : 'backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]'
-              }`}
+                }`}
             >
               Churned
             </button>
             <button
               onClick={() => toggleProjectFilter('prMerged')}
-              className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${
-                projectFilters.prMerged
+              className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${projectFilters.prMerged
                   ? 'bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]'
                   : 'backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]'
-              }`}
+                }`}
             >
               PR merged
             </button>
@@ -351,9 +356,8 @@ export function DataPage() {
 
         {/* Right Column - Contributors Map */}
         <div className="backdrop-blur-[40px] bg-white/[0.12] rounded-[24px] border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8">
-          <h2 className={`text-[18px] font-bold mb-6 transition-colors ${
-            theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-          }`}>Contributors map</h2>
+          <h2 className={`text-[18px] font-bold mb-6 transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
+            }`}>Contributors map</h2>
 
           {/* World Map Visualization */}
           <div className="relative h-[280px] mb-6 rounded-[16px] backdrop-blur-[20px] bg-gradient-to-br from-[#2d2820]/80 via-[#1a1410]/70 to-[#2d2820]/80 border border-white/10 overflow-hidden">
@@ -362,7 +366,7 @@ export function DataPage() {
               <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
                 <defs>
                   <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
-                    <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgba(201,152,58,0.2)" strokeWidth="0.5"/>
+                    <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgba(201,152,58,0.2)" strokeWidth="0.5" />
                   </pattern>
                 </defs>
                 <rect width="100%" height="100%" fill="url(#grid)" />
@@ -370,137 +374,119 @@ export function DataPage() {
             </div>
 
             {/* World Map SVG */}
-            <svg 
-              viewBox="0 0 800 400" 
-              className="absolute inset-0 w-full h-full"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <defs>
-                <linearGradient id="mapGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#c9983a" stopOpacity="0.3" />
-                  <stop offset="50%" stopColor="#d4af37" stopOpacity="0.25" />
-                  <stop offset="100%" stopColor="#c9983a" stopOpacity="0.2" />
-                </linearGradient>
-                <filter id="glow">
-                  <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
-                  <feMerge>
-                    <feMergeNode in="coloredBlur"/>
-                    <feMergeNode in="SourceGraphic"/>
-                  </feMerge>
-                </filter>
-              </defs>
+            <div className="absolute inset-0 w-full h-full">
+              <ComposableMap
+                projection="geoMercator"
+                projectionConfig={{
+                  scale: 100,
+                }}
+                className="w-full h-full"
+              >
+                <defs>
+                  <linearGradient id="mapGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#c9983a" stopOpacity="0.3" />
+                    <stop offset="50%" stopColor="#d4af37" stopOpacity="0.25" />
+                    <stop offset="100%" stopColor="#c9983a" stopOpacity="0.2" />
+                  </linearGradient>
+                  <filter id="glow">
+                    <feGaussianBlur stdDeviation="3" result="coloredBlur" />
+                    <feMerge>
+                      <feMergeNode in="coloredBlur" />
+                      <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                  </filter>
+                </defs>
+                <ZoomableGroup
+                  zoom={mapZoom}
+                  center={mapCenter}
+                  onMoveEnd={({ coordinates, zoom }) => {
+                    setMapCenter(coordinates as [number, number]);
+                    setMapZoom(zoom);
+                  }}
+                >
+                  <Geographies geography={geoUrl}>
+                    {({ geographies }) =>
+                      geographies.map((geo) => {
+                        const isHighlighted = Object.keys(countryCoordinates).some(country =>
+                          geo.properties.name === country ||
+                          (country === "United Kingdom" && geo.properties.name === "United Kingdom") || // Add aliases if needed
+                          (country === "United States" && geo.properties.name === "United States of America")
+                        );
+                        return (
+                          <Geography
+                            key={geo.rsmKey}
+                            geography={geo}
+                            fill={isHighlighted ? "url(#mapGradient)" : "rgba(255,255,255,0.05)"}
+                            stroke="#c9983a"
+                            strokeWidth={0.5}
+                            style={{
+                              default: { outline: "none" },
+                              hover: { fill: "#d4af37", outline: "none", opacity: 0.8 },
+                              pressed: { outline: "none" },
+                            }}
+                          />
+                        );
+                      })
+                    }
+                  </Geographies>
 
-              {/* North America */}
-              <path
-                d="M 120 80 L 150 70 L 180 75 L 200 85 L 210 100 L 220 120 L 215 140 L 200 155 L 180 165 L 160 170 L 140 165 L 125 150 L 115 130 L 110 110 L 115 90 Z"
-                fill="url(#mapGradient)"
-                stroke="#c9983a"
-                strokeWidth="1"
-                opacity="0.7"
-                filter="url(#glow)"
-              />
+                  {/* Markers */}
+                  {contributorsByRegion.map((region) => {
+                    const coords = countryCoordinates[region.name];
+                    if (!coords) return null;
+                    return (
+                      <Marker key={region.name} coordinates={coords}>
+                        <circle r={4} fill="#c9983a" stroke="#fff" strokeWidth={1} style={{ filter: 'url(#glow)' }}>
+                          <animate attributeName="opacity" values="0.6;1;0.6" dur="2s" repeatCount="indefinite" />
+                        </circle>
+                      </Marker>
+                    );
+                  })}
 
-              {/* South America */}
-              <path
-                d="M 180 200 L 195 190 L 210 195 L 215 210 L 220 230 L 215 250 L 210 270 L 200 285 L 185 295 L 175 290 L 170 270 L 165 250 L 168 230 L 175 210 Z"
-                fill="url(#mapGradient)"
-                stroke="#c9983a"
-                strokeWidth="1"
-                opacity="0.7"
-                filter="url(#glow)"
-              />
+                  {/* Simple Connection Lines for visual effect */}
+                  <MapLine
+                    from={countryCoordinates['United Kingdom']}
+                    to={countryCoordinates['India']}
+                    stroke="#c9983a"
+                    strokeWidth={0.5}
+                    strokeDasharray="3,3"
+                    className="opacity-30"
+                  />
+                  <MapLine
+                    from={countryCoordinates['Canada']}
+                    to={countryCoordinates['Germany']}
+                    stroke="#d4af37"
+                    strokeWidth={0.5}
+                    strokeDasharray="3,3"
+                    className="opacity-30"
+                  />
+                  <MapLine
+                    from={countryCoordinates['Brazil']}
+                    to={countryCoordinates['Spain']}
+                    stroke="#c9983a"
+                    strokeWidth={0.5}
+                    strokeDasharray="3,3"
+                    className="opacity-30"
+                  />
 
-              {/* Europe */}
-              <path
-                d="M 380 75 L 410 70 L 430 75 L 445 85 L 450 100 L 445 115 L 430 125 L 410 130 L 390 125 L 375 110 L 372 95 L 375 80 Z"
-                fill="url(#mapGradient)"
-                stroke="#c9983a"
-                strokeWidth="1"
-                opacity="0.8"
-                filter="url(#glow)"
-              />
-
-              {/* Africa */}
-              <path
-                d="M 380 140 L 405 135 L 425 140 L 440 155 L 450 175 L 455 200 L 450 225 L 440 245 L 425 260 L 405 265 L 385 260 L 370 245 L 365 225 L 365 200 L 370 175 L 375 155 Z"
-                fill="url(#mapGradient)"
-                stroke="#c9983a"
-                strokeWidth="1"
-                opacity="0.75"
-                filter="url(#glow)"
-              />
-
-              {/* Asia */}
-              <path
-                d="M 480 60 L 520 55 L 560 60 L 590 70 L 610 85 L 625 105 L 630 125 L 625 145 L 610 160 L 585 170 L 555 175 L 525 170 L 495 160 L 475 140 L 465 115 L 465 90 L 470 70 Z"
-                fill="url(#mapGradient)"
-                stroke="#c9983a"
-                strokeWidth="1"
-                opacity="0.85"
-                filter="url(#glow)"
-              />
-
-              {/* Australia */}
-              <path
-                d="M 600 240 L 630 235 L 655 240 L 670 255 L 675 275 L 670 290 L 650 300 L 625 300 L 605 290 L 595 270 L 595 255 Z"
-                fill="url(#mapGradient)"
-                stroke="#c9983a"
-                strokeWidth="1"
-                opacity="0.7"
-                filter="url(#glow)"
-              />
-
-              {/* Golden Glow Points for Major Cities/Regions */}
-              {/* Europe */}
-              <circle cx="410" cy="95" r="5" fill="#c9983a" opacity="0.9">
-                <animate attributeName="opacity" values="0.6;1;0.6" dur="2s" repeatCount="indefinite" />
-              </circle>
-              
-              {/* North America */}
-              <circle cx="165" cy="115" r="4" fill="#d4af37" opacity="0.85">
-                <animate attributeName="opacity" values="0.5;0.95;0.5" dur="2.5s" repeatCount="indefinite" />
-              </circle>
-              
-              {/* Asia */}
-              <circle cx="560" cy="110" r="6" fill="#c9983a" opacity="0.95">
-                <animate attributeName="opacity" values="0.7;1;0.7" dur="1.8s" repeatCount="indefinite" />
-              </circle>
-              
-              {/* South America */}
-              <circle cx="195" cy="240" r="3.5" fill="#d4af37" opacity="0.8">
-                <animate attributeName="opacity" values="0.5;0.9;0.5" dur="2.2s" repeatCount="indefinite" />
-              </circle>
-              
-              {/* Australia */}
-              <circle cx="640" cy="270" r="4" fill="#c9983a" opacity="0.8">
-                <animate attributeName="opacity" values="0.6;0.95;0.6" dur="2.3s" repeatCount="indefinite" />
-              </circle>
-
-              {/* Africa */}
-              <circle cx="410" cy="200" r="3.5" fill="#d4af37" opacity="0.75">
-                <animate attributeName="opacity" values="0.5;0.85;0.5" dur="2.4s" repeatCount="indefinite" />
-              </circle>
-
-              {/* Connection Lines between regions (subtle) */}
-              <line x1="410" y1="95" x2="560" y2="110" stroke="#c9983a" strokeWidth="0.5" opacity="0.3" strokeDasharray="3,3">
-                <animate attributeName="opacity" values="0.1;0.3;0.1" dur="3s" repeatCount="indefinite" />
-              </line>
-              <line x1="165" y1="115" x2="410" y2="95" stroke="#d4af37" strokeWidth="0.5" opacity="0.3" strokeDasharray="3,3">
-                <animate attributeName="opacity" values="0.1;0.3;0.1" dur="3.5s" repeatCount="indefinite" />
-              </line>
-              <line x1="560" y1="110" x2="640" y2="270" stroke="#c9983a" strokeWidth="0.5" opacity="0.3" strokeDasharray="3,3">
-                <animate attributeName="opacity" values="0.1;0.3;0.1" dur="3.2s" repeatCount="indefinite" />
-              </line>
-            </svg>
+                </ZoomableGroup>
+              </ComposableMap>
+            </div>
 
             {/* Map Info Overlay */}
             <div className="absolute top-4 right-4 flex flex-col gap-1">
-              <div className="w-8 h-8 rounded-[8px] backdrop-blur-[25px] bg-white/[0.2] border border-white/30 flex items-center justify-center text-white font-bold text-[11px] hover:bg-white/[0.3] transition-all cursor-pointer">
+              <button
+                onClick={() => setMapZoom(z => Math.min(z * 1.5, 8))}
+                className="w-8 h-8 rounded-[8px] backdrop-blur-[25px] bg-white/[0.2] border border-white/30 flex items-center justify-center text-white font-bold text-[11px] hover:bg-white/[0.3] transition-all cursor-pointer"
+              >
                 +
-              </div>
-              <div className="w-8 h-8 rounded-[8px] backdrop-blur-[25px] bg-white/[0.2] border border-white/30 flex items-center justify-center text-white font-bold text-[11px] hover:bg-white/[0.3] transition-all cursor-pointer">
+              </button>
+              <button
+                onClick={() => setMapZoom(z => Math.max(z / 1.5, 1))}
+                className="w-8 h-8 rounded-[8px] backdrop-blur-[25px] bg-white/[0.2] border border-white/30 flex items-center justify-center text-white font-bold text-[11px] hover:bg-white/[0.3] transition-all cursor-pointer"
+              >
                 −
-              </div>
+              </button>
             </div>
           </div>
 
@@ -510,13 +496,12 @@ export function DataPage() {
               <div key={region.name} className="flex items-center gap-3 group">
                 <div className="flex-1">
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className={`text-[13px] font-semibold transition-colors ${
-                      theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-                    }`}>{region.name}</span>
+                    <span className={`text-[13px] font-semibold transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
+                      }`}>{region.name}</span>
                     <span className="text-[12px] font-bold text-[#c9983a]">{region.value}</span>
                   </div>
                   <div className="h-6 rounded-[6px] backdrop-blur-[15px] bg-white/[0.08] border border-white/15 overflow-hidden">
-                    <div 
+                    <div
                       className="h-full bg-gradient-to-r from-[#c9983a] to-[#d4af37] rounded-[6px] transition-all duration-500 group-hover:shadow-[0_0_15px_rgba(201,152,58,0.5)]"
                       style={{ width: `${region.percentage}%` }}
                     />
@@ -533,20 +518,17 @@ export function DataPage() {
         {/* Contributor Activity */}
         <div className="backdrop-blur-[40px] bg-white/[0.12] rounded-[24px] border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8">
           <div className="flex items-center justify-between mb-6">
-            <h2 className={`text-[18px] font-bold transition-colors ${
-              theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-            }`}>Contributor activity</h2>
+            <h2 className={`text-[18px] font-bold transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
+              }`}>Contributor activity</h2>
             <div className="relative">
               <button
                 onClick={() => setShowContributorIntervalDropdown(!showContributorIntervalDropdown)}
                 className="flex items-center gap-2 px-4 py-2 rounded-[10px] backdrop-blur-[20px] bg-white/[0.15] border border-white/25 hover:bg-white/[0.2] transition-all"
               >
-                <span className={`text-[13px] font-semibold transition-colors ${
-                  theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-                }`}>{contributorInterval}</span>
-                <ChevronDown className={`w-4 h-4 transition-colors ${
-                  theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-                }`} />
+                <span className={`text-[13px] font-semibold transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
+                  }`}>{contributorInterval}</span>
+                <ChevronDown className={`w-4 h-4 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+                  }`} />
               </button>
               {showContributorIntervalDropdown && (
                 <div className="absolute right-0 mt-2 w-[180px] backdrop-blur-[30px] bg-white/[0.55] border-2 border-white/30 rounded-[12px] shadow-[0_8px_32px_rgba(0,0,0,0.15)] overflow-hidden z-50">
@@ -573,11 +555,10 @@ export function DataPage() {
                       setContributorInterval('Monthly interval');
                       setShowContributorIntervalDropdown(false);
                     }}
-                    className={`w-full px-4 py-3 text-left text-[13px] font-medium transition-all ${
-                      contributorInterval === 'Monthly interval'
+                    className={`w-full px-4 py-3 text-left text-[13px] font-medium transition-all ${contributorInterval === 'Monthly interval'
                         ? 'bg-white/[0.35] text-[#2d2820] font-bold'
                         : 'text-[#2d2820] hover:bg-white/[0.3]'
-                    }`}
+                      }`}
                   >
                     Monthly interval
                   </button>
@@ -615,9 +596,9 @@ export function DataPage() {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(122, 107, 90, 0.1)" />
-                <XAxis 
-                  dataKey="month" 
-                  stroke="#7a6b5a" 
+                <XAxis
+                  dataKey="month"
+                  stroke="#7a6b5a"
                   tick={{ fill: '#7a6b5a', fontSize: 11, fontWeight: 600 }}
                   angle={-45}
                   textAnchor="end"
@@ -625,16 +606,16 @@ export function DataPage() {
                 />
                 <YAxis stroke="#7a6b5a" tick={{ fill: '#7a6b5a', fontSize: 11, fontWeight: 600 }} />
                 <Tooltip content={<CustomTooltip />} />
-                <Bar 
-                  dataKey="value" 
-                  fill="url(#contributorBarGradient)" 
+                <Bar
+                  dataKey="value"
+                  fill="url(#contributorBarGradient)"
                   radius={[8, 8, 0, 0]}
                   maxBarSize={40}
                 />
-                <Line 
-                  type="monotone" 
-                  dataKey="trend" 
-                  stroke="#2d2820" 
+                <RechartsLine
+                  type="monotone"
+                  dataKey="trend"
+                  stroke="#2d2820"
                   strokeWidth={3}
                   dot={false}
                 />
@@ -646,51 +627,46 @@ export function DataPage() {
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => toggleContributorFilter('new')}
-              className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${
-                contributorFilters.new
+              className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${contributorFilters.new
                   ? 'bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]'
                   : 'backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]'
-              }`}
+                }`}
             >
               New
             </button>
             <button
               onClick={() => toggleContributorFilter('reactivated')}
-              className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${
-                contributorFilters.reactivated
+              className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${contributorFilters.reactivated
                   ? 'bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]'
                   : 'backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]'
-              }`}
+                }`}
             >
               Reactivated
             </button>
             <button
               onClick={() => toggleContributorFilter('active')}
-              className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${
-                contributorFilters.active
+              className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${contributorFilters.active
                   ? 'bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]'
                   : 'backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]'
-              }`}
+                }`}
             >
               Active
             </button>
             <button
               onClick={() => toggleContributorFilter('churned')}
-              className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${
-                contributorFilters.churned
+              className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${contributorFilters.churned
                   ? 'bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]'
                   : 'backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]'
-              }`}
+                }`}
             >
               Churned
             </button>
             <button
               onClick={() => toggleContributorFilter('prMerged')}
-              className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${
-                contributorFilters.prMerged
+              className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${contributorFilters.prMerged
                   ? 'bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]'
                   : 'backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]'
-              }`}
+                }`}
             >
               PR merged
             </button>
@@ -699,17 +675,15 @@ export function DataPage() {
 
         {/* Information Panel */}
         <div className="backdrop-blur-[40px] bg-white/[0.12] rounded-[24px] border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8">
-          <h2 className={`text-[18px] font-bold mb-6 transition-colors ${
-            theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-          }`}>Information</h2>
+          <h2 className={`text-[18px] font-bold mb-6 transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
+            }`}>Information</h2>
 
           {/* Info Text */}
           <div className="mb-6 p-5 rounded-[16px] backdrop-blur-[20px] bg-white/[0.15] border border-white/25">
             <div className="flex items-start gap-3">
               <Info className="w-5 h-5 text-[#c9983a] flex-shrink-0 mt-0.5" />
-              <p className={`text-[14px] leading-relaxed transition-colors ${
-                theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#4a3f2f]'
-              }`}>
+              <p className={`text-[14px] leading-relaxed transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#4a3f2f]'
+                }`}>
                 Only data from contributors who have completed a KYC are included. Contributors without a completed KYC are excluded from the map.
               </p>
             </div>
@@ -719,12 +693,10 @@ export function DataPage() {
           <div className="space-y-4">
             <div className="flex items-center justify-between p-6 rounded-[16px] backdrop-blur-[25px] bg-gradient-to-br from-white/[0.2] to-white/[0.12] border-2 border-white/30 shadow-[0_6px_24px_rgba(0,0,0,0.08)] hover:shadow-[0_8px_32px_rgba(201,152,58,0.15)] transition-all group">
               <div>
-                <h3 className={`text-[14px] font-bold uppercase tracking-wider mb-2 transition-colors ${
-                  theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-                }`}>Contributors with billing profile</h3>
-                <div className={`text-[42px] font-black leading-none transition-colors ${
-                  theme === 'dark' ? 'text-[#f5f5f5]' : 'bg-gradient-to-r from-[#2d2820] to-[#c9983a] bg-clip-text text-transparent'
-                }`}>
+                <h3 className={`text-[14px] font-bold uppercase tracking-wider mb-2 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+                  }`}>Contributors with billing profile</h3>
+                <div className={`text-[42px] font-black leading-none transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'bg-gradient-to-r from-[#2d2820] to-[#c9983a] bg-clip-text text-transparent'
+                  }`}>
                   0 / 0
                 </div>
               </div>
@@ -738,20 +710,16 @@ export function DataPage() {
             {/* Additional Stats Placeholder */}
             <div className="grid grid-cols-2 gap-4">
               <div className="p-5 rounded-[14px] backdrop-blur-[20px] bg-white/[0.15] border border-white/25 hover:bg-white/[0.2] transition-all group cursor-pointer">
-                <div className={`text-[11px] font-bold uppercase tracking-wider mb-2 transition-colors ${
-                  theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-                }`}>Active</div>
-                <div className={`text-[28px] font-black transition-colors ${
-                  theme === 'dark' ? 'text-[#f5f5f5] group-hover:text-[#c9983a]' : 'text-[#2d2820] group-hover:text-[#c9983a]'
-                }`}>0</div>
+                <div className={`text-[11px] font-bold uppercase tracking-wider mb-2 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+                  }`}>Active</div>
+                <div className={`text-[28px] font-black transition-colors ${theme === 'dark' ? 'text-[#f5f5f5] group-hover:text-[#c9983a]' : 'text-[#2d2820] group-hover:text-[#c9983a]'
+                  }`}>0</div>
               </div>
               <div className="p-5 rounded-[14px] backdrop-blur-[20px] bg-white/[0.15] border border-white/25 hover:bg-white/[0.2] transition-all group cursor-pointer">
-                <div className={`text-[11px] font-bold uppercase tracking-wider mb-2 transition-colors ${
-                  theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-                }`}>Total</div>
-                <div className={`text-[28px] font-black transition-colors ${
-                  theme === 'dark' ? 'text-[#f5f5f5] group-hover:text-[#c9983a]' : 'text-[#2d2820] group-hover:text-[#c9983a]'
-                }`}>0</div>
+                <div className={`text-[11px] font-bold uppercase tracking-wider mb-2 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+                  }`}>Total</div>
+                <div className={`text-[28px] font-black transition-colors ${theme === 'dark' ? 'text-[#f5f5f5] group-hover:text-[#c9983a]' : 'text-[#2d2820] group-hover:text-[#c9983a]'
+                  }`}>0</div>
               </div>
             </div>
           </div>
