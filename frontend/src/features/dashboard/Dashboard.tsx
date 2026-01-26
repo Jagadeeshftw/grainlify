@@ -315,7 +315,7 @@ export function Dashboard() {
         {/* Toggle Arrow Button - positioned at top of sidebar aligned with header */}
         <button
           onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-          className={`absolute z-[100] backdrop-blur-[90px] rounded-full border-[0.5px] w-6 h-6 shadow-md hover:shadow-lg transition-all flex items-center justify-center ${
+          className={`absolute z-[100] backdrop-blur-[20px] rounded-full border-[0.5px] w-6 h-6 shadow-md hover:shadow-lg transition-all flex items-center justify-center ${
             isSidebarCollapsed ? "-right-3 top-[60px]" : "-right-3 top-[60px]"
           } ${
             darkTheme
@@ -329,7 +329,7 @@ export function Dashboard() {
         </button>
 
         <div
-          className={`h-full backdrop-blur-[90px] rounded-[29px] border shadow-[0px_4px_4px_0px_rgba(0,0,0,0.25)] relative overflow-y-auto scrollbar-hide transition-colors ${
+          className={`h-full backdrop-blur-[20px] rounded-[29px] border shadow-[0px_4px_4px_0px_rgba(0,0,0,0.25)] relative overflow-y-auto scrollbar-hide transition-colors ${
             darkTheme
               ? "bg-[#2d2820]/[0.4] border-white/10"
               : "bg-white/[0.35] border-white/20"
