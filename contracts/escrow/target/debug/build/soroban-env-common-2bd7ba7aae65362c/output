@@ -1,0 +1,2 @@
+cargo:rerun-if-changed=build.rs
+cargo:rustc-env=GIT_REVISION=73dee74640fd5b3f60d5e130fccdc035d80ce76c
