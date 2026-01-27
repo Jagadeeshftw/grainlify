@@ -8,6 +8,10 @@ crate-type = ["cdylib"]
 
 [dependencies]
 soroban-sdk = "21.0.0"
+base64ct = "=1.6.0"
+time = "=0.3.45"
+time-core = "=0.1.7"
+time-macros = "=0.2.25"
 
 [dev-dependencies]
 soroban-sdk = { version = "21.0.0", features = ["testutils"] }

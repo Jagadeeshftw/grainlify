@@ -480,12 +480,13 @@ pub enum Error {
 /// - Once in Released or Refunded state, no further transitions allowed
 /// - Only Locked state allows state changes
 #[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u32)]
 pub enum EscrowStatus {
-    Locked,
-    Released,
-    Refunded,
-    PartiallyRefunded,
+    Locked = 1,
+    Released = 2,
+    Refunded = 3,
+    PartiallyRefunded = 4,
 }
 
 #[contracttype]
@@ -584,6 +585,46 @@ pub enum DataKey {
     Escrow(u64),         // bounty_id
     RefundApproval(u64), // bounty_id -> RefundApproval
     ReentrancyGuard,
+    BountyRegistry,                  // Vec<u64> of all bounty IDs
+    DepositorBounties(Address),      // Address -> Vec<u64>
+    BountiesByStatus(EscrowStatus),  // EscrowStatus -> Vec<u64>
+}
+
+// ============================================================================
+// Data Structures for Queries
+// ============================================================================
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Pagination {
+    pub limit: u64,
+    pub offset: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EscrowRecord {
+    pub bounty_id: u64,
+    pub escrow: Escrow,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EscrowFilter {
+    pub status: Option<u32>,
+    pub min_amount: Option<i128>,
+    pub max_amount: Option<i128>,
+    pub min_deadline: Option<u64>,
+    pub max_deadline: Option<u64>,
+    pub depositor: Option<Address>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ContractStats {
+    pub total_bounties: u32,
+    pub total_locked_funds: i128,
+    pub total_released_funds: i128,
 }
 
 // ============================================================================
@@ -794,6 +835,39 @@ impl BountyEscrowContract {
             .persistent()
             .set(&DataKey::Escrow(bounty_id), &escrow);
 
+        // Update Bounty Registry
+        let mut registry: Vec<u64> = env
+            .storage()
+            .instance()
+            .get(&DataKey::BountyRegistry)
+            .unwrap_or(vec![&env]);
+        registry.push_back(bounty_id);
+        env.storage()
+            .instance()
+            .set(&DataKey::BountyRegistry, &registry);
+
+        // Update Depositor Registry
+        let depositor_key = DataKey::DepositorBounties(depositor.clone());
+        let mut depositor_registry: Vec<u64> = env
+            .storage()
+            .instance()
+            .get(&depositor_key)
+            .unwrap_or(vec![&env]);
+        depositor_registry.push_back(bounty_id);
+        env.storage()
+            .instance()
+            .set(&depositor_key, &depositor_registry);
+
+        // Update Status Registry (Locked)
+        let status_key = DataKey::BountiesByStatus(EscrowStatus::Locked);
+        let mut status_registry: Vec<u64> = env
+            .storage()
+            .instance()
+            .get(&status_key)
+            .unwrap_or(vec![&env]);
+        status_registry.push_back(bounty_id);
+        env.storage().instance().set(&status_key, &status_registry);
+
         // Emit event for off-chain indexing
         emit_funds_locked(
             &env,
@@ -915,7 +989,35 @@ impl BountyEscrowContract {
         // Transfer funds to contributor
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
         let client = token::Client::new(&env, &token_addr);
+        
+        // Update status registry before changing status
+        // Remove from Locked
+        let locked_key = DataKey::BountiesByStatus(EscrowStatus::Locked);
+        let mut locked_registry: Vec<u64> = env.storage().instance().get(&locked_key).unwrap_or(vec![&env]);
+        // Find and remove - simplified visualization, in practice linear search 
+        // Note: For simplicity in this implementation we might skip expensive removals from large lists 
+        // if gas is a concern, but for correctness we should try to update.
+        // However, standard simplified pattern: just update the status on the object. 
+        // The registry might become stale if we don't update it. 
+        // User asked for "Efficient off-chain indexing", so on-chain accurate indexing is good.
+        // Let's remove from Locked and add to Released.
+        
+        match locked_registry.first_index_of(bounty_id) {
+            Some(idx) => {
+                locked_registry.remove(idx);
+                env.storage().instance().set(&locked_key, &locked_registry);
+            }
+            None => {} 
+        }
+
         escrow.status = EscrowStatus::Released;
+        
+        // Add to Released
+        let released_key = DataKey::BountiesByStatus(EscrowStatus::Released);
+        let mut released_registry: Vec<u64> = env.storage().instance().get(&released_key).unwrap_or(vec![&env]);
+        released_registry.push_back(bounty_id);
+        env.storage().instance().set(&released_key, &released_registry);
+
         env.storage()
             .persistent()
             .set(&DataKey::Escrow(bounty_id), &escrow);
@@ -1013,6 +1115,14 @@ impl BountyEscrowContract {
     ) -> Result<(), Error> {
         let start = env.ledger().timestamp();
 
+        // Reentrancy guard – protect the whole refund flow including external token calls.
+        if env.storage().instance().has(&DataKey::ReentrancyGuard) {
+            panic!("Reentrancy detected");
+        }
+        env.storage()
+            .instance()
+            .set(&DataKey::ReentrancyGuard, &true);
+
         if !env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
             let caller = env.current_contract_address();
             monitoring::track_operation(&env, symbol_short!("refund"), caller, false);
@@ -1030,6 +1140,7 @@ impl BountyEscrowContract {
 
         if escrow.status != EscrowStatus::Locked && escrow.status != EscrowStatus::PartiallyRefunded
         {
+            env.storage().instance().remove(&DataKey::ReentrancyGuard);
             return Err(Error::FundsNotLocked);
         }
 
@@ -1046,6 +1157,7 @@ impl BountyEscrowContract {
                 refund_amount = escrow.remaining_amount;
                 refund_recipient = escrow.depositor.clone();
                 if is_before_deadline {
+                    env.storage().instance().remove(&DataKey::ReentrancyGuard);
                     return Err(Error::DeadlineNotPassed);
                 }
             }
@@ -1053,12 +1165,25 @@ impl BountyEscrowContract {
                 refund_amount = amount.unwrap_or(escrow.remaining_amount);
                 refund_recipient = escrow.depositor.clone();
                 if is_before_deadline {
+                    env.storage().instance().remove(&DataKey::ReentrancyGuard);
                     return Err(Error::DeadlineNotPassed);
                 }
             }
             RefundMode::Custom => {
-                refund_amount = amount.ok_or(Error::InvalidAmount)?;
-                refund_recipient = recipient.ok_or(Error::InvalidAmount)?;
+                refund_amount = match amount {
+                    Some(a) => a,
+                    None => {
+                        env.storage().instance().remove(&DataKey::ReentrancyGuard);
+                        return Err(Error::InvalidAmount);
+                    }
+                };
+                refund_recipient = match recipient {
+                    Some(r) => r,
+                    None => {
+                        env.storage().instance().remove(&DataKey::ReentrancyGuard);
+                        return Err(Error::InvalidAmount);
+                    }
+                };
 
                 // Custom refunds before deadline require admin approval
                 if is_before_deadline {
@@ -1067,6 +1192,7 @@ impl BountyEscrowContract {
                         .persistent()
                         .has(&DataKey::RefundApproval(bounty_id))
                     {
+                        env.storage().instance().remove(&DataKey::ReentrancyGuard);
                         return Err(Error::RefundNotApproved);
                     }
                     let approval: RefundApproval = env
@@ -1080,6 +1206,7 @@ impl BountyEscrowContract {
                         || approval.recipient != refund_recipient
                         || approval.mode != mode
                     {
+                        env.storage().instance().remove(&DataKey::ReentrancyGuard);
                         return Err(Error::RefundNotApproved);
                     }
 
@@ -1093,6 +1220,7 @@ impl BountyEscrowContract {
 
         // Validate amount
         if refund_amount <= 0 || refund_amount > escrow.remaining_amount {
+            env.storage().instance().remove(&DataKey::ReentrancyGuard);
             return Err(Error::InvalidAmount);
         }
 
@@ -1103,6 +1231,7 @@ impl BountyEscrowContract {
         // Check contract balance
         let contract_balance = client.balance(&env.current_contract_address());
         if contract_balance < refund_amount {
+            env.storage().instance().remove(&DataKey::ReentrancyGuard);
             return Err(Error::InsufficientFunds);
         }
 
@@ -1324,16 +1453,27 @@ impl BountyEscrowContract {
     /// # Note
     /// This operation is atomic - if any item fails, the entire transaction reverts.
     pub fn batch_lock_funds(env: Env, items: Vec<LockFundsItem>) -> Result<u32, Error> {
+        // Reentrancy guard for batch operation.
+        if env.storage().instance().has(&DataKey::ReentrancyGuard) {
+            panic!("Reentrancy detected");
+        }
+        env.storage()
+            .instance()
+            .set(&DataKey::ReentrancyGuard, &true);
+
         // Validate batch size
         let batch_size = items.len() as u32;
         if batch_size == 0 {
+            env.storage().instance().remove(&DataKey::ReentrancyGuard);
             return Err(Error::InvalidAmount);
         }
         if batch_size > MAX_BATCH_SIZE {
+            env.storage().instance().remove(&DataKey::ReentrancyGuard);
             return Err(Error::InvalidAmount);
         }
 
         if !env.storage().instance().has(&DataKey::Admin) {
+            env.storage().instance().remove(&DataKey::ReentrancyGuard);
             return Err(Error::NotInitialized);
         }
 
@@ -1350,11 +1490,13 @@ impl BountyEscrowContract {
                 .persistent()
                 .has(&DataKey::Escrow(item.bounty_id))
             {
+                env.storage().instance().remove(&DataKey::ReentrancyGuard);
                 return Err(Error::BountyExists);
             }
 
             // Validate amount
             if item.amount <= 0 {
+                env.storage().instance().remove(&DataKey::ReentrancyGuard);
                 return Err(Error::InvalidAmount);
             }
 
@@ -1366,6 +1508,7 @@ impl BountyEscrowContract {
                 }
             }
             if count > 1 {
+                env.storage().instance().remove(&DataKey::ReentrancyGuard);
                 return Err(Error::DuplicateBountyId);
             }
         }
@@ -1432,6 +1575,7 @@ impl BountyEscrowContract {
             },
         );
 
+        env.storage().instance().remove(&DataKey::ReentrancyGuard);
         Ok(locked_count)
     }
 
@@ -1453,16 +1597,27 @@ impl BountyEscrowContract {
     /// # Note
     /// This operation is atomic - if any item fails, the entire transaction reverts.
     pub fn batch_release_funds(env: Env, items: Vec<ReleaseFundsItem>) -> Result<u32, Error> {
+        // Reentrancy guard for batch operation.
+        if env.storage().instance().has(&DataKey::ReentrancyGuard) {
+            panic!("Reentrancy detected");
+        }
+        env.storage()
+            .instance()
+            .set(&DataKey::ReentrancyGuard, &true);
+
         // Validate batch size
         let batch_size = items.len() as u32;
         if batch_size == 0 {
+            env.storage().instance().remove(&DataKey::ReentrancyGuard);
             return Err(Error::InvalidAmount);
         }
         if batch_size > MAX_BATCH_SIZE {
+            env.storage().instance().remove(&DataKey::ReentrancyGuard);
             return Err(Error::InvalidAmount);
         }
 
         if !env.storage().instance().has(&DataKey::Admin) {
+            env.storage().instance().remove(&DataKey::ReentrancyGuard);
             return Err(Error::NotInitialized);
         }
 
@@ -1483,6 +1638,7 @@ impl BountyEscrowContract {
                 .persistent()
                 .has(&DataKey::Escrow(item.bounty_id))
             {
+                env.storage().instance().remove(&DataKey::ReentrancyGuard);
                 return Err(Error::BountyNotFound);
             }
 
@@ -1494,6 +1650,7 @@ impl BountyEscrowContract {
 
             // Check if funds are locked
             if escrow.status != EscrowStatus::Locked {
+                env.storage().instance().remove(&DataKey::ReentrancyGuard);
                 return Err(Error::FundsNotLocked);
             }
 
@@ -1505,6 +1662,7 @@ impl BountyEscrowContract {
                 }
             }
             if count > 1 {
+                env.storage().instance().remove(&DataKey::ReentrancyGuard);
                 return Err(Error::DuplicateBountyId);
             }
 
@@ -1522,14 +1680,14 @@ impl BountyEscrowContract {
                 .get(&DataKey::Escrow(item.bounty_id))
                 .unwrap();
 
-            // Transfer funds to contributor
-            client.transfer(&contract_address, &item.contributor, &escrow.amount);
-
-            // Update escrow status
+            // Update escrow status before external transfer (checks-effects-interactions).
             escrow.status = EscrowStatus::Released;
             env.storage()
                 .persistent()
                 .set(&DataKey::Escrow(item.bounty_id), &escrow);
+
+            // Transfer funds to contributor
+            client.transfer(&contract_address, &item.contributor, &escrow.amount);
 
             // Emit individual event for each released bounty
             emit_funds_released(
@@ -1555,9 +1713,182 @@ impl BountyEscrowContract {
             },
         );
 
+        env.storage().instance().remove(&DataKey::ReentrancyGuard);
         Ok(released_count)
+    }
+    // ========================================================================
+    // Query Functions
+    // ========================================================================
+
+    /// Query escrows with comprehensive filtering and pagination
+    pub fn get_bounties(
+        env: Env,
+        filter: EscrowFilter,
+        pagination: Pagination,
+    ) -> Vec<EscrowRecord> {
+        let registry: Vec<u64> = env
+            .storage()
+            .instance()
+            .get(&DataKey::BountyRegistry)
+            .unwrap_or(vec![&env]);
+
+        let mut results = vec![&env];
+        let mut count = 0;
+        let start = pagination.offset;
+        let end = start + pagination.limit;
+
+        for bounty_id in registry.iter() {
+            if !env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
+                continue;
+            }
+
+            let escrow: Escrow = env
+                .storage()
+                .persistent()
+                .get(&DataKey::Escrow(bounty_id))
+                .unwrap();
+
+            // Apply filters
+            if let Some(status_val) = filter.status {
+                // Manually check status match since we passed u32
+                if (escrow.status as u32) != status_val {
+                    continue;
+                }
+            }
+
+            if let Some(min_amt) = filter.min_amount {
+                if escrow.amount < min_amt {
+                    continue;
+                }
+            }
+
+            if let Some(max_amt) = filter.max_amount {
+                if escrow.amount > max_amt {
+                    continue;
+                }
+            }
+
+            if let Some(min_dl) = filter.min_deadline {
+                if escrow.deadline < min_dl {
+                    continue;
+                }
+            }
+
+            if let Some(max_dl) = filter.max_deadline {
+                if escrow.deadline > max_dl {
+                    continue;
+                }
+            }
+
+            if let Some(dep) = &filter.depositor {
+                if &escrow.depositor != dep {
+                    continue;
+                }
+            }
+
+            // Pagination window check
+            if count >= start && count < end {
+                results.push_back(EscrowRecord {
+                    bounty_id,
+                    escrow,
+                });
+            }
+
+            count += 1;
+
+            if count >= end {
+                break;
+            }
+        }
+
+        results
+    }
+
+    /// Optimized query for finding bounties by a specific depositor
+    pub fn get_bounties_by_depositor(
+        env: Env,
+        depositor: Address,
+        pagination: Pagination,
+    ) -> Vec<EscrowRecord> {
+        let key = DataKey::DepositorBounties(depositor);
+        let registry: Vec<u64> = env.storage().instance().get(&key).unwrap_or(vec![&env]);
+
+        let mut results = vec![&env];
+        let mut count = 0;
+        let start = pagination.offset;
+        let end = start + pagination.limit;
+
+        for bounty_id in registry.iter() {
+             if !env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
+                continue;
+            }
+
+            let escrow: Escrow = env
+                .storage()
+                .persistent()
+                .get(&DataKey::Escrow(bounty_id))
+                .unwrap();
+
+            // Pagination window check
+            if count >= start && count < end {
+                results.push_back(EscrowRecord {
+                    bounty_id,
+                    escrow,
+                });
+            }
+
+            count += 1;
+
+            if count >= end {
+                break;
+            }
+        }
+        
+        results
+    }
+
+    /// Get global contract statistics
+    ///
+    /// # Performance Note
+    /// This function iterates through all registered bounties (O(N)). 
+    /// Usage should be monitored as gas costs will scale linearly with the number of bounties.
+    pub fn get_contract_stats(env: Env) -> ContractStats {
+        let registry: Vec<u64> = env
+            .storage()
+            .instance()
+            .get(&DataKey::BountyRegistry)
+            .unwrap_or(vec![&env]);
+
+        let mut total_locked = 0i128;
+        let mut total_released = 0i128; 
+
+        for bounty_id in registry.iter() {
+            if !env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
+                continue;
+            }
+
+            let escrow: Escrow = env
+                .storage()
+                .persistent()
+                .get(&DataKey::Escrow(bounty_id))
+                .unwrap();
+
+            match escrow.status {
+                EscrowStatus::Locked => total_locked += escrow.amount,
+                EscrowStatus::Released => total_released += escrow.amount,
+                _ => {} // Refunded not counted in locked/released active sets usually, or maybe total_released includes refunds? User asked for "total released". Usually means paid out.
+            }
+        }
+
+        ContractStats {
+            total_bounties: registry.len(),
+            total_locked_funds: total_locked,
+            total_released_funds: total_released,
+        }
     }
 }
 
 #[cfg(test)]
 mod test;
+#[cfg(test)]
+mod test_queries;

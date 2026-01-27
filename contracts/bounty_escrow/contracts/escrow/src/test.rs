@@ -22,18 +22,18 @@ fn create_escrow_contract<'a>(e: &Env) -> BountyEscrowContractClient<'a> {
     BountyEscrowContractClient::new(e, &contract_id)
 }
 
-struct TestSetup<'a> {
-    env: Env,
-    admin: Address,
-    depositor: Address,
-    contributor: Address,
-    token: token::Client<'a>,
-    token_admin: token::StellarAssetClient<'a>,
-    escrow: BountyEscrowContractClient<'a>,
+pub struct TestSetup<'a> {
+    pub env: Env,
+    pub admin: Address,
+    pub depositor: Address,
+    pub contributor: Address,
+    pub token: token::Client<'a>,
+    pub token_admin: token::StellarAssetClient<'a>,
+    pub escrow: BountyEscrowContractClient<'a>,
 }
 
 impl<'a> TestSetup<'a> {
-    fn new() -> Self {
+    pub fn new() -> Self {
         let env = Env::default();
         env.mock_all_auths();
 
@@ -935,8 +935,6 @@ fn test_batch_lock_funds_duplicate_bounty_id() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #10)")] // DuplicateBountyId
-#[test]
 #[should_panic(expected = "Error(Contract, #11)")] // DuplicateBountyId
 fn test_batch_lock_funds_duplicate_in_batch() {
     let setup = TestSetup::new();
@@ -1076,8 +1074,6 @@ fn test_batch_release_funds_already_released() {
     setup.escrow.batch_release_funds(&items);
 }
 
-#[test]
-#[should_panic(expected = "Error(Contract, #10)")] // DuplicateBountyId
 #[test]
 #[should_panic(expected = "Error(Contract, #11)")] // DuplicateBountyId
 fn test_batch_release_funds_duplicate_in_batch() {

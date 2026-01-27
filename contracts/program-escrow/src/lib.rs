@@ -573,6 +573,44 @@ pub struct ProgramData {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
     Program(String), // program_id -> ProgramData
+    ProgramsByAuth(Address), // authorized_payout_key -> Vec<String> (List of Program IDs)
+}
+
+// ============================================================================
+// Data Structures for Queries
+// ============================================================================
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GlobalStats {
+    pub total_programs: u32,
+    pub total_value_locked: i128,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Pagination {
+    pub limit: u64,
+    pub offset: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProgramFilter {
+    pub authorized_payout_key: Option<Address>,
+    pub min_total_funds: Option<i128>,
+    pub min_remaining_balance: Option<i128>,
+    pub token_address: Option<Address>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PayoutFilter {
+    pub recipient: Option<Address>,
+    pub min_amount: Option<i128>,
+    pub max_amount: Option<i128>,
+    pub min_timestamp: Option<u64>,
+    pub max_timestamp: Option<u64>,
 }
 
 // ============================================================================
@@ -701,6 +739,16 @@ impl ProgramEscrowContract {
             .unwrap_or(vec![&env]);
         registry.push_back(program_id.clone());
         env.storage().instance().set(&PROGRAM_REGISTRY, &registry);
+
+        // Update secondary index (ProgramsByAuth)
+        let auth_key = DataKey::ProgramsByAuth(authorized_payout_key.clone());
+        let mut auth_programs: Vec<String> = env
+            .storage()
+            .instance()
+            .get(&auth_key)
+            .unwrap_or(vec![&env]);
+        auth_programs.push_back(program_id.clone());
+        env.storage().instance().set(&auth_key, &auth_programs);
 
         // Emit registration event
         env.events().publish(
@@ -1357,6 +1405,198 @@ impl ProgramEscrowContract {
     pub fn get_rate_limit_config(env: Env) -> anti_abuse::AntiAbuseConfig {
         anti_abuse::get_config(&env)
     }
+    // ========================================================================
+    // Query Functions
+    // ========================================================================
+
+    /// Query programs with filtering and pagination
+    pub fn query_programs(
+        env: Env,
+        filter: ProgramFilter,
+        pagination: Pagination,
+    ) -> Vec<ProgramData> {
+        // Optimization: Use index if filtering by authorized key
+        let registry: Vec<String> = if let Some(auth_key) = &filter.authorized_payout_key {
+             env.storage()
+                .instance()
+                .get(&DataKey::ProgramsByAuth(auth_key.clone()))
+                .unwrap_or(vec![&env])
+        } else {
+             env.storage()
+                .instance()
+                .get(&PROGRAM_REGISTRY)
+                .unwrap_or(vec![&env]) 
+        };
+
+        let mut results = vec![&env];
+        let mut count = 0;
+        let start = pagination.offset;
+        let end = start + pagination.limit;
+
+        for program_id in registry.iter() {
+            let key = DataKey::Program(program_id);
+            if !env.storage().instance().has(&key) {
+                continue;
+            }
+
+            let program: ProgramData = env.storage().instance().get(&key).unwrap();
+
+            // Apply filters
+            if let Some(auth_key) = &filter.authorized_payout_key {
+                if &program.authorized_payout_key != auth_key {
+                    continue;
+                }
+            }
+
+            if let Some(min_funds) = filter.min_total_funds {
+                if program.total_funds < min_funds {
+                    continue;
+                }
+            }
+
+            if let Some(min_bal) = filter.min_remaining_balance {
+                if program.remaining_balance < min_bal {
+                    continue;
+                }
+            }
+
+             if let Some(token) = &filter.token_address {
+                if &program.token_address != token {
+                    continue;
+                }
+            }
+
+            // Pagination
+            if count >= start && count < end {
+                results.push_back(program);
+            }
+
+            count += 1;
+            if count >= end {
+                break;
+            }
+        }
+
+        results
+    }
+
+    /// Get global program statistics
+    ///
+    /// # Performance Note
+    /// This function iterates through all registered programs (O(N)).
+    /// Usage should be monitored as gas costs will scale linearly with the number of programs.
+    pub fn get_global_stats(env: Env) -> GlobalStats {
+         let registry: Vec<String> = env
+            .storage()
+            .instance()
+            .get(&PROGRAM_REGISTRY)
+            .unwrap_or(vec![&env]);
+        
+        let mut total_locked = 0i128;
+
+        for program_id in registry.iter() {
+            let key = DataKey::Program(program_id);
+            if let Some(program) = env.storage().instance().get::<_, ProgramData>(&key) {
+                 total_locked += program.total_funds;
+            }
+        }
+
+        GlobalStats {
+            total_programs: registry.len(),
+            total_value_locked: total_locked,
+        }
+    }
+
+    /// Query payouts for a specific program with filtering
+    pub fn get_payouts(
+        env: Env,
+        program_id: String,
+        filter: PayoutFilter,
+        pagination: Pagination,
+    ) -> Vec<PayoutRecord> {
+        let program_key = DataKey::Program(program_id);
+        if !env.storage().instance().has(&program_key) {
+             return vec![&env]; // Return empty if program not found, safe approach
+        }
+
+        let program: ProgramData = env.storage().instance().get(&program_key).unwrap();
+        let mut results = vec![&env];
+        let mut count = 0;
+        let start = pagination.offset;
+        let end = start + pagination.limit;
+
+        // Iterate through payout history
+        // Note: payout_history is ordered by time (append-only)
+        for payout in program.payout_history.iter() {
+            // Apply filters
+            if let Some(recipient) = &filter.recipient {
+                if &payout.recipient != recipient {
+                    continue;
+                }
+            }
+
+            if let Some(min_amt) = filter.min_amount {
+                if payout.amount < min_amt {
+                    continue;
+                }
+            }
+
+            if let Some(max_amt) = filter.max_amount {
+                if payout.amount > max_amt {
+                    continue;
+                }
+            }
+
+            if let Some(min_ts) = filter.min_timestamp {
+                if payout.timestamp < min_ts {
+                    continue;
+                }
+            }
+
+            if let Some(max_ts) = filter.max_timestamp {
+                if payout.timestamp > max_ts {
+                    continue;
+                }
+            }
+
+            // Pagination
+            if count >= start && count < end {
+                results.push_back(payout);
+            }
+
+            count += 1;
+            if count >= end {
+                break;
+            }
+        }
+
+        results
+    }
+    
+    /// Get programs managed by a specific authorized key
+    pub fn get_programs_by_manager(env: Env, manager: Address) -> Vec<ProgramData> {
+         let registry: Vec<String> = env
+            .storage()
+            .instance()
+            .get(&PROGRAM_REGISTRY)
+            .unwrap_or(vec![&env]);
+
+        let mut results = vec![&env];
+
+        for program_id in registry.iter() {
+            let key = DataKey::Program(program_id);
+             if !env.storage().instance().has(&key) {
+                continue;
+            }
+            let program: ProgramData = env.storage().instance().get(&key).unwrap();
+            
+            if program.authorized_payout_key == manager {
+                results.push_back(program);
+            }
+        }
+        
+        results
+    }
 }
 
 /// ============================================================================
@@ -1364,10 +1604,13 @@ impl ProgramEscrowContract {
 // ============================================================================
 
 #[cfg(test)]
+mod test_queries;
+
+#[cfg(test)]
 mod test {
     use super::*;
     use soroban_sdk::{
-        testutils::{Address as _},
+        testutils::{Address as _, Ledger},
         token, Address, Env, String,
     };
 
