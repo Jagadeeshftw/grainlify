@@ -601,7 +601,6 @@ pub enum DataKey {
     Escrow(u64),         // bounty_id
     FeeConfig,           // Fee configuration
     RefundApproval(u64), // bounty_id -> RefundApproval
-    ReentrancyGuard,
 }
 
 // ============================================================================
@@ -1028,7 +1027,7 @@ impl BountyEscrowContract {
 
         // Verify admin authorization
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
-
+        
         // Apply rate limiting
         anti_abuse::check_rate_limit(&env, admin.clone());
 
@@ -1142,14 +1141,9 @@ impl BountyEscrowContract {
             return Err(Error::BountyNotFound);
         }
 
-        let escrow: Escrow = env
-            .storage()
-            .persistent()
-            .get(&DataKey::Escrow(bounty_id))
-            .unwrap();
+        let escrow: Escrow = env.storage().persistent().get(&DataKey::Escrow(bounty_id)).unwrap();
 
-        if escrow.status != EscrowStatus::Locked && escrow.status != EscrowStatus::PartiallyRefunded
-        {
+        if escrow.status != EscrowStatus::Locked && escrow.status != EscrowStatus::PartiallyRefunded {
             return Err(Error::FundsNotLocked);
         }
 
@@ -1166,9 +1160,7 @@ impl BountyEscrowContract {
             approved_at: env.ledger().timestamp(),
         };
 
-        env.storage()
-            .persistent()
-            .set(&DataKey::RefundApproval(bounty_id), &approval);
+        env.storage().persistent().set(&DataKey::RefundApproval(bounty_id), &approval);
 
         Ok(())
     }
@@ -1184,8 +1176,6 @@ impl BountyEscrowContract {
         recipient: Option<Address>,
         mode: RefundMode,
     ) -> Result<(), Error> {
-        let start = env.ledger().timestamp();
-
         if !env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
             let caller = env.current_contract_address();
             monitoring::track_operation(&env, symbol_short!("refund"), caller, false);
@@ -1201,8 +1191,7 @@ impl BountyEscrowContract {
             .unwrap();
         let caller = escrow.depositor.clone();
 
-        if escrow.status != EscrowStatus::Locked && escrow.status != EscrowStatus::PartiallyRefunded
-        {
+        if escrow.status != EscrowStatus::Locked && escrow.status != EscrowStatus::PartiallyRefunded {
             return Err(Error::FundsNotLocked);
         }
 
@@ -1232,34 +1221,26 @@ impl BountyEscrowContract {
             RefundMode::Custom => {
                 refund_amount = amount.ok_or(Error::InvalidAmount)?;
                 refund_recipient = recipient.ok_or(Error::InvalidAmount)?;
-
+                
                 // Custom refunds before deadline require admin approval
                 if is_before_deadline {
-                    if !env
-                        .storage()
-                        .persistent()
-                        .has(&DataKey::RefundApproval(bounty_id))
-                    {
+                    if !env.storage().persistent().has(&DataKey::RefundApproval(bounty_id)) {
                         return Err(Error::RefundNotApproved);
                     }
-                    let approval: RefundApproval = env
-                        .storage()
+                    let approval: RefundApproval = env.storage()
                         .persistent()
                         .get(&DataKey::RefundApproval(bounty_id))
                         .unwrap();
-
+                    
                     // Verify approval matches request
-                    if approval.amount != refund_amount
-                        || approval.recipient != refund_recipient
-                        || approval.mode != mode
-                    {
+                    if approval.amount != refund_amount 
+                        || approval.recipient != refund_recipient 
+                        || approval.mode != mode {
                         return Err(Error::RefundNotApproved);
                     }
-
+                    
                     // Clear approval after use
-                    env.storage()
-                        .persistent()
-                        .remove(&DataKey::RefundApproval(bounty_id));
+                    env.storage().persistent().remove(&DataKey::RefundApproval(bounty_id));
                 }
             }
         }
@@ -1280,15 +1261,11 @@ impl BountyEscrowContract {
         }
 
         // Transfer funds
-        client.transfer(
-            &env.current_contract_address(),
-            &refund_recipient,
-            &refund_amount,
-        );
+        client.transfer(&env.current_contract_address(), &refund_recipient, &refund_amount);
 
         // Update escrow state
         escrow.remaining_amount -= refund_amount;
-
+        
         // Add to refund history
         let refund_record = RefundRecord {
             amount: refund_amount,
@@ -1305,9 +1282,7 @@ impl BountyEscrowContract {
             escrow.status = EscrowStatus::PartiallyRefunded;
         }
 
-        env.storage()
-            .persistent()
-            .set(&DataKey::Escrow(bounty_id), &escrow);
+        env.storage().persistent().set(&DataKey::Escrow(bounty_id), &escrow);
 
         // Emit refund event
         emit_funds_refunded(
@@ -1400,100 +1375,20 @@ impl BountyEscrowContract {
         Ok(client.balance(&env.current_contract_address()))
     }
 
-    /// Retrieves the refund history for a specific bounty.
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `bounty_id` - The bounty to query
-    ///
-    /// # Returns
-    /// * `Ok(Vec<RefundRecord>)` - The refund history
-    /// * `Err(Error::BountyNotFound)` - Bounty doesn't exist
-    pub fn get_refund_history(env: Env, bounty_id: u64) -> Result<Vec<RefundRecord>, Error> {
-        if !env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
-            return Err(Error::BountyNotFound);
-        }
-        let escrow: Escrow = env
-            .storage()
-            .persistent()
-            .get(&DataKey::Escrow(bounty_id))
-            .unwrap();
-        Ok(escrow.refund_history)
-    }
-
-    /// Gets refund eligibility information for a bounty.
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `bounty_id` - The bounty to query
-    ///
-    /// # Returns
-    /// * `Ok((bool, bool, i128, Option<RefundApproval>))` - Tuple containing:
-    ///   - can_refund: Whether refund is possible
-    ///   - deadline_passed: Whether the deadline has passed
-    ///   - remaining: Remaining amount in escrow
-    ///   - approval: Optional refund approval if exists
-    /// * `Err(Error::BountyNotFound)` - Bounty doesn't exist
-    pub fn get_refund_eligibility(
-        env: Env,
-        bounty_id: u64,
-    ) -> Result<(bool, bool, i128, Option<RefundApproval>), Error> {
-        if !env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
-            return Err(Error::BountyNotFound);
-        }
-        let escrow: Escrow = env
-            .storage()
-            .persistent()
-            .get(&DataKey::Escrow(bounty_id))
-            .unwrap();
-
-        let now = env.ledger().timestamp();
-        let deadline_passed = now >= escrow.deadline;
-
-        let approval = if env
-            .storage()
-            .persistent()
-            .has(&DataKey::RefundApproval(bounty_id))
-        {
-            Some(
-                env.storage()
-                    .persistent()
-                    .get(&DataKey::RefundApproval(bounty_id))
-                    .unwrap(),
-            )
-        } else {
-            None
-        };
-
-        // can_refund is true if:
-        // 1. Status is Locked or PartiallyRefunded AND
-        // 2. (deadline has passed OR there's an approval)
-        let can_refund = (escrow.status == EscrowStatus::Locked
-            || escrow.status == EscrowStatus::PartiallyRefunded)
-            && (deadline_passed || approval.is_some());
-
-        Ok((
-            can_refund,
-            deadline_passed,
-            escrow.remaining_amount,
-            approval,
-        ))
-    }
-
     /// Batch lock funds for multiple bounties in a single transaction.
     /// This improves gas efficiency by reducing transaction overhead.
-    ///
+    /// 
     /// # Arguments
     /// * `items` - Vector of LockFundsItem containing bounty_id, depositor, amount, and deadline
-    ///
+    /// 
     /// # Returns
     /// Number of successfully locked bounties
-    ///
+    /// 
     /// # Errors
     /// * InvalidBatchSize - if batch size exceeds MAX_BATCH_SIZE or is zero
     /// * BountyExists - if any bounty_id already exists
     /// * NotInitialized - if contract is not initialized
-    ///
+    /// 
     /// # Note
     /// This operation is atomic - if any item fails, the entire transaction reverts.
     pub fn batch_lock_funds(env: Env, items: Vec<LockFundsItem>) -> Result<u32, Error> {
@@ -1518,17 +1413,13 @@ impl BountyEscrowContract {
         // Validate all items before processing (all-or-nothing approach)
         for item in items.iter() {
             // Check if bounty already exists
-            if env
-                .storage()
-                .persistent()
-                .has(&DataKey::Escrow(item.bounty_id))
-            {
+            if env.storage().persistent().has(&DataKey::Escrow(item.bounty_id)) {
                 return Err(Error::BountyExists);
             }
 
             // Validate amount
             if item.amount <= 0 {
-                return Err(Error::InvalidAmount);
+                return Err(Error::InvalidBatchSize);
             }
 
             // Check for duplicate bounty_ids in the batch
@@ -1572,14 +1463,10 @@ impl BountyEscrowContract {
                 amount: item.amount,
                 status: EscrowStatus::Locked,
                 deadline: item.deadline,
-                refund_history: vec![&env],
-                remaining_amount: item.amount,
             };
 
             // Store escrow
-            env.storage()
-                .persistent()
-                .set(&DataKey::Escrow(item.bounty_id), &escrow);
+            env.storage().persistent().set(&DataKey::Escrow(item.bounty_id), &escrow);
 
             // Emit individual event for each locked bounty
             emit_funds_locked(
@@ -1610,19 +1497,19 @@ impl BountyEscrowContract {
 
     /// Batch release funds to multiple contributors in a single transaction.
     /// This improves gas efficiency by reducing transaction overhead.
-    ///
+    /// 
     /// # Arguments
     /// * `items` - Vector of ReleaseFundsItem containing bounty_id and contributor address
-    ///
+    /// 
     /// # Returns
     /// Number of successfully released bounties
-    ///
+    /// 
     /// # Errors
     /// * InvalidBatchSize - if batch size exceeds MAX_BATCH_SIZE or is zero
     /// * BountyNotFound - if any bounty_id doesn't exist
     /// * FundsNotLocked - if any bounty is not in Locked status
     /// * Unauthorized - if caller is not admin
-    ///
+    /// 
     /// # Note
     /// This operation is atomic - if any item fails, the entire transaction reverts.
     pub fn batch_release_funds(env: Env, items: Vec<ReleaseFundsItem>) -> Result<u32, Error> {
@@ -1651,16 +1538,11 @@ impl BountyEscrowContract {
         let mut total_amount: i128 = 0;
         for item in items.iter() {
             // Check if bounty exists
-            if !env
-                .storage()
-                .persistent()
-                .has(&DataKey::Escrow(item.bounty_id))
-            {
+            if !env.storage().persistent().has(&DataKey::Escrow(item.bounty_id)) {
                 return Err(Error::BountyNotFound);
             }
 
-            let escrow: Escrow = env
-                .storage()
+            let escrow: Escrow = env.storage()
                 .persistent()
                 .get(&DataKey::Escrow(item.bounty_id))
                 .unwrap();
@@ -1683,14 +1565,13 @@ impl BountyEscrowContract {
 
             total_amount = total_amount
                 .checked_add(escrow.amount)
-                .ok_or(Error::InvalidAmount)?;
+                .ok_or(Error::InvalidBatchSize)?;
         }
 
         // Process all items (atomic - all succeed or all fail)
         let mut released_count = 0u32;
         for item in items.iter() {
-            let mut escrow: Escrow = env
-                .storage()
+            let mut escrow: Escrow = env.storage()
                 .persistent()
                 .get(&DataKey::Escrow(item.bounty_id))
                 .unwrap();
@@ -1700,9 +1581,7 @@ impl BountyEscrowContract {
 
             // Update escrow status
             escrow.status = EscrowStatus::Released;
-            env.storage()
-                .persistent()
-                .set(&DataKey::Escrow(item.bounty_id), &escrow);
+            env.storage().persistent().set(&DataKey::Escrow(item.bounty_id), &escrow);
 
             // Emit individual event for each released bounty
             emit_funds_released(

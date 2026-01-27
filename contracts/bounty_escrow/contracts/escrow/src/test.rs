@@ -941,7 +941,7 @@ fn test_batch_lock_funds_duplicate_bounty_id() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #12)")] // DuplicateBountyId
+#[should_panic(expected = "Error(Contract, #11)")] // DuplicateBountyId
 fn test_batch_lock_funds_duplicate_in_batch() {
     let setup = TestSetup::new();
     let deadline = setup.env.ledger().timestamp() + 1000;
@@ -1081,7 +1081,7 @@ fn test_batch_release_funds_already_released() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #12)")] // DuplicateBountyId
+#[should_panic(expected = "Error(Contract, #11)")] // DuplicateBountyId
 fn test_batch_release_funds_duplicate_in_batch() {
     let setup = TestSetup::new();
     let deadline = setup.env.ledger().timestamp() + 1000;
