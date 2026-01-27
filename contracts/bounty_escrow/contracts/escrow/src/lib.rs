@@ -96,9 +96,10 @@ use events::{
     BountyEscrowInitialized, FundsLocked, FundsRefunded, FundsReleased,
 };
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, token, Address, Env, String,
-    Symbol, Vec,
+    contract, contracterror, contractimpl, contracttype, symbol_short, token, vec, Address, Env,
+    String, Symbol, Vec,
 };
+
 
 // ==================== MONITORING MODULE ====================
 mod monitoring {
@@ -444,13 +445,26 @@ pub enum Error {
 
     /// Returned when caller lacks required authorization for the operation
     Unauthorized = 7,
-    InvalidBatchSize = 8,
-    BatchSizeMismatch = 9,
-    DuplicateBountyId = 10,
-    InvalidAmount = 11,
-    InvalidDeadline = 12,
-    RefundNotApproved = 13,
-    InsufficientFunds = 14,
+    /// Returned when amount is invalid (zero, negative, or exceeds available)
+    InvalidAmount = 8,
+
+    /// Returned when deadline is invalid (in the past or too far in the future)
+    InvalidDeadline = 9,
+
+    /// Returned when batch size or data is invalid
+    InvalidBatchSize = 10,
+
+    /// Returned when batch input lengths don't match
+    BatchSizeMismatch = 11,
+
+    /// Returned when a duplicate bounty ID is found within a batch
+    DuplicateBountyId = 12,
+
+    /// Returned when contract has insufficient funds for the operation
+    InsufficientFunds = 13,
+
+    /// Returned when refund is attempted without admin approval
+    RefundNotApproved = 14,
 }
 
 // ============================================================================
@@ -577,8 +591,8 @@ pub enum DataKey {
     Admin,
     Token,
     Escrow(u64), // bounty_id
-    ReentrancyGuard,
     RefundApproval(u64), // bounty_id -> RefundApproval
+    ReentrancyGuard,
 }
 
 // ============================================================================
@@ -969,7 +983,8 @@ impl BountyEscrowContract {
             .get(&DataKey::Escrow(bounty_id))
             .unwrap();
 
-        if escrow.status != EscrowStatus::Locked && escrow.status != EscrowStatus::PartiallyRefunded {
+        if escrow.status != EscrowStatus::Locked && escrow.status != EscrowStatus::PartiallyRefunded
+        {
             return Err(Error::FundsNotLocked);
         }
 
@@ -1020,7 +1035,8 @@ impl BountyEscrowContract {
             .unwrap();
         let caller = escrow.depositor.clone();
 
-        if escrow.status != EscrowStatus::Locked && escrow.status != EscrowStatus::PartiallyRefunded {
+        if escrow.status != EscrowStatus::Locked && escrow.status != EscrowStatus::PartiallyRefunded
+        {
             return Err(Error::FundsNotLocked);
         }
 
@@ -1187,62 +1203,6 @@ impl BountyEscrowContract {
             .unwrap())
     }
 
-    /// Retrieves refund history for a specific bounty.
-    pub fn get_refund_history(env: Env, bounty_id: u64) -> Result<Vec<RefundRecord>, Error> {
-        if !env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
-            return Err(Error::BountyNotFound);
-        }
-        let escrow: Escrow = env
-            .storage()
-            .persistent()
-            .get(&DataKey::Escrow(bounty_id))
-            .unwrap();
-        Ok(escrow.refund_history)
-    }
-
-    /// Checks if a bounty is eligible for refund and returns status details.
-    /// Returns: (can_refund, deadline_passed, remaining_amount, approval)
-    pub fn get_refund_eligibility(
-        env: Env,
-        bounty_id: u64,
-    ) -> Result<(bool, bool, i128, Option<RefundApproval>), Error> {
-        if !env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
-            return Err(Error::BountyNotFound);
-        }
-        let escrow: Escrow = env
-            .storage()
-            .persistent()
-            .get(&DataKey::Escrow(bounty_id))
-            .unwrap();
-
-        let now = env.ledger().timestamp();
-        let deadline_passed = now >= escrow.deadline;
-
-        // Check for approval
-        let approval: Option<RefundApproval> = if env
-            .storage()
-            .persistent()
-            .has(&DataKey::RefundApproval(bounty_id))
-        {
-            Some(
-                env.storage()
-                    .persistent()
-                    .get(&DataKey::RefundApproval(bounty_id))
-                    .unwrap(),
-            )
-        } else {
-            None
-        };
-
-        let can_refund = deadline_passed || approval.is_some();
-
-        Ok((
-            can_refund,
-            deadline_passed,
-            escrow.remaining_amount,
-            approval,
-        ))
-    }
 
     /// Returns the current token balance held by the contract.
     ///
@@ -1273,6 +1233,86 @@ impl BountyEscrowContract {
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
         let client = token::Client::new(&env, &token_addr);
         Ok(client.balance(&env.current_contract_address()))
+    }
+
+    /// Retrieves the refund history for a specific bounty.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `bounty_id` - The bounty to query
+    ///
+    /// # Returns
+    /// * `Ok(Vec<RefundRecord>)` - The refund history
+    /// * `Err(Error::BountyNotFound)` - Bounty doesn't exist
+    pub fn get_refund_history(env: Env, bounty_id: u64) -> Result<Vec<RefundRecord>, Error> {
+        if !env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
+            return Err(Error::BountyNotFound);
+        }
+        let escrow: Escrow = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Escrow(bounty_id))
+            .unwrap();
+        Ok(escrow.refund_history)
+    }
+
+    /// Gets refund eligibility information for a bounty.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `bounty_id` - The bounty to query
+    ///
+    /// # Returns
+    /// * `Ok((bool, bool, i128, Option<RefundApproval>))` - Tuple containing:
+    ///   - can_refund: Whether refund is possible
+    ///   - deadline_passed: Whether the deadline has passed
+    ///   - remaining: Remaining amount in escrow
+    ///   - approval: Optional refund approval if exists
+    /// * `Err(Error::BountyNotFound)` - Bounty doesn't exist
+    pub fn get_refund_eligibility(
+        env: Env,
+        bounty_id: u64,
+    ) -> Result<(bool, bool, i128, Option<RefundApproval>), Error> {
+        if !env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
+            return Err(Error::BountyNotFound);
+        }
+        let escrow: Escrow = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Escrow(bounty_id))
+            .unwrap();
+
+        let now = env.ledger().timestamp();
+        let deadline_passed = now >= escrow.deadline;
+
+        let approval = if env
+            .storage()
+            .persistent()
+            .has(&DataKey::RefundApproval(bounty_id))
+        {
+            Some(
+                env.storage()
+                    .persistent()
+                    .get(&DataKey::RefundApproval(bounty_id))
+                    .unwrap(),
+            )
+        } else {
+            None
+        };
+
+        // can_refund is true if:
+        // 1. Status is Locked or PartiallyRefunded AND
+        // 2. (deadline has passed OR there's an approval)
+        let can_refund = (escrow.status == EscrowStatus::Locked
+            || escrow.status == EscrowStatus::PartiallyRefunded)
+            && (deadline_passed || approval.is_some());
+
+        Ok((
+            can_refund,
+            deadline_passed,
+            escrow.remaining_amount,
+            approval,
+        ))
     }
 
     /// Batch lock funds for multiple bounties in a single transaction.
@@ -1323,7 +1363,7 @@ impl BountyEscrowContract {
 
             // Validate amount
             if item.amount <= 0 {
-                return Err(Error::InvalidBatchSize);
+                return Err(Error::InvalidAmount);
             }
 
             // Check for duplicate bounty_ids in the batch
@@ -1478,7 +1518,7 @@ impl BountyEscrowContract {
 
             total_amount = total_amount
                 .checked_add(escrow.amount)
-                .ok_or(Error::InvalidBatchSize)?;
+                .ok_or(Error::InvalidAmount)?;
         }
 
         // Process all items (atomic - all succeed or all fail)

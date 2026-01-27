@@ -1,11 +1,11 @@
 #![cfg(test)]
 
-use soroban_sdk::{ vec,
-    testutils::{Address as _},
-    token, Address, Env
+use soroban_sdk::{
+    testutils::{Address as _, Events},
+    token, vec, Address, Env,
 };
+
 use crate::{BountyEscrowContract, BountyEscrowContractClient};
-use soroban_sdk::testutils::Events;
 
 fn create_test_env() -> (Env, BountyEscrowContractClient<'static>, Address) {
     let env = Env::default();
@@ -114,7 +114,7 @@ fn test_release_fund() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #11)")]
+#[should_panic(expected = "Error(Contract, #8)")]
 fn test_lock_fund_invalid_amount() {
     let (env, client, _contract_id) = create_test_env();
     let admin = Address::generate(&env);
@@ -134,7 +134,7 @@ fn test_lock_fund_invalid_amount() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #12)")]
+#[should_panic(expected = "Error(Contract, #9)")]
 fn test_lock_fund_invalid_deadline() {
     let (env, client, _contract_id) = create_test_env();
     let admin = Address::generate(&env);

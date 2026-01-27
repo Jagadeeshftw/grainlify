@@ -1,5 +1,6 @@
 import React, { ReactNode, useState, useRef, useEffect } from 'react';
-import { X, ChevronDown } from 'lucide-react';
+import { X, ChevronDown, Check } from 'lucide-react';
+import * as Select from '@radix-ui/react-select';
 import { useTheme } from '../../contexts/ThemeContext';
 
 interface ModalProps {
@@ -262,79 +263,64 @@ export function ModalSelect({
   className = '',
 }: ModalSelectProps) {
   const { theme } = useTheme();
-  const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const selectedOption = options.find((opt) => opt.value === value);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  const isDark = theme === 'dark';
 
   return (
     <div className={`flex flex-col gap-1 relative ${className}`} ref={containerRef}>
       {label && (
-        <label
-          className={`block text-[13px] font-medium mb-2 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-            }`}
-        >
-          {label} {required && <span className="text-[#c9983a] ml-1">*</span>}
+        <label className={`block text-[13px] font-medium mb-2 transition-colors ${
+          isDark ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+        }`}>
+          {label}
+          {required && <span className="text-[#c9983a] ml-1">*</span>}
         </label>
       )}
-
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className={`w-full flex items-center justify-between px-4 py-3 rounded-[14px] backdrop-blur-[30px] border transition-all text-[14px] outline-none ${theme === 'dark'
-            ? 'bg-white/[0.08] border-white/15 text-[#f5f5f5] focus:border-[#c9983a]/30'
-            : 'bg-white/[0.15] border-white/25 text-[#2d2820] focus:border-[#c9983a]/30'
-          } ${isOpen ? 'border-[#c9983a]' : ''}`}
-      >
-        <span>{selectedOption ? selectedOption.label : 'Select...'}</span>
-        <ChevronDown
-          className={`w-4 h-4 text-amber-500 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
-        />
-      </button>
-
-      {isOpen && (
-        <div
-          className={`absolute z-[100] w-full mt-[80px] max-h-60 overflow-auto rounded-[14px] border shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-200 ${theme === 'dark'
-              ? 'bg-[#2d241d] border-[#c9983a]/20 shadow-black/40'
-              : 'bg-[#ede3d0] border-[#c9983a]/60 shadow-amber-900/20'
-            }`}
+      
+      <Select.Root value={value} onValueChange={onChange} required={required}>
+        <Select.Trigger 
+          className={`w-full px-4 py-3 rounded-[14px] backdrop-blur-[30px] border focus:outline-none transition-all text-[14px] flex items-center justify-between group ${
+            isDark
+              ? 'bg-white/[0.08] border-white/15 text-[#f5f5f5] hover:bg-white/[0.12] data-[state=open]:border-[#c9983a]/50'
+              : 'bg-white/[0.15] border-white/25 text-[#2d2820] hover:bg-white/[0.2] data-[state=open]:border-[#c9983a]/50'
+          }`}
         >
-          <ul className="py-2">
-            {options.map((option) => (
-              <li
-                key={option.value}
-                onClick={() => {
-                  onChange(option.value);
-                  setIsOpen(false);
-                }}
-                className={`px-4 py-2.5 cursor-pointer text-[14px] transition-colors flex items-center justify-between ${theme === 'dark'
-                    ? value === option.value
-                      ? 'bg-[#c9983a]/20 text-[#c9983a] font-bold'
-                      : 'text-[#e8dfd0] hover:bg-[#c9983a]/10'
-                    : value === option.value
-                      ? 'bg-[#c9983a]/30 text-[#8b6b2d] font-bold'
-                      : 'text-[#5c4d3c] hover:bg-[#c9983a]/20'
+          <Select.Value placeholder="Select an option" />
+          <Select.Icon>
+            <ChevronDown className={`w-4 h-4 text-amber-500 transition-transform duration-200 group-data-[state=open]:rotate-180`} />
+          </Select.Icon>
+        </Select.Trigger>
+
+        <Select.Portal>
+          <Select.Content 
+            className={`z-[10001] min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-[14px] border shadow-[0_10px_40px_rgba(0,0,0,0.2)] backdrop-blur-[30px] animate-in fade-in zoom-in-95 duration-200 ${
+              isDark
+                ? 'bg-[#2d241d] border-[#c9983a]/20 shadow-black/40'
+                : 'bg-[#ede3d0] border-[#c9983a]/20 shadow-amber-900/10'
+            }`}
+            position="popper"
+            sideOffset={8}
+          >
+            <Select.Viewport className="p-1">
+              {options.map((option) => (
+                <Select.Item
+                  key={option.value}
+                  value={option.value}
+                  className={`relative flex w-full cursor-default select-none items-center rounded-[10px] py-2.5 pl-3 pr-8 text-[14px] outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50 ${
+                    isDark
+                      ? 'text-[#d4d4d4] focus:bg-white/[0.08] focus:text-[#f5f5f5] data-[state=checked]:bg-white/[0.08] data-[state=checked]:text-[#f5f5f5]'
+                      : 'text-[#7a6b5a] focus:bg-black/[0.05] focus:text-[#2d2820] data-[state=checked]:bg-black/[0.05] data-[state=checked]:text-[#2d2820]'
                   }`}
-              >
-                {option.label}
-                {value === option.value && (
-                  <div className="w-2 h-2 rounded-full bg-[#c9983a] shadow-[0_0_8px_#c9983a]" />
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+                >
+                  <Select.ItemText>{option.label}</Select.ItemText>
+                  <Select.ItemIndicator className="absolute right-2.5 flex items-center justify-center text-[#c9983a]">
+                    <Check className="h-4 w-4" />
+                  </Select.ItemIndicator>
+                </Select.Item>
+              ))}
+            </Select.Viewport>
+          </Select.Content>
+        </Select.Portal>
+      </Select.Root>
     </div>
   );
 }

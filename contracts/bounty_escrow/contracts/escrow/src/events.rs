@@ -296,7 +296,7 @@ pub struct BatchFundsLocked {
 }
 
 pub fn emit_batch_funds_locked(env: &Env, event: BatchFundsLocked) {
-    let topics = (symbol_short!("b_lock"), );
+    let topics = (symbol_short!("b_lock"),);
     env.events().publish(topics, event.clone());
 }
 
@@ -309,6 +309,6 @@ pub struct BatchFundsReleased {
 }
 
 pub fn emit_batch_funds_released(env: &Env, event: BatchFundsReleased) {
-    let topics = (symbol_short!("b_rel"), );
+    let topics = (symbol_short!("b_rel"),);
     env.events().publish(topics, event.clone());
 }

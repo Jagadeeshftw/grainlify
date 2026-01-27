@@ -18,31 +18,31 @@ on:
 jobs:
   contracts-ci:
     name: Format, Build, Test, and Stellar Build Check
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     
     defaults:
       run:
-        working-directory: soroban
+        working-directory: contracts/bounty_escrow
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-          targets: wasm32-unknown-unknown
+      - name: Install Rust
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          source $HOME/.cargo/env
 
-      - name: Install Soroban CLI
-        uses: stellar/actions/soroban-cli@v1
-        with:
-          version: latest
+      - name: Install Rust target for Soroban
+        run: |
+          source $HOME/.cargo/env
+          rustup target add wasm32v1-none
 
-      - name: Install Stellar CLI
-        uses: stellar/actions/stellar-cli@v1
-        with:
-          version: latest
+      - name: Install Stellar CLI with Homebrew
+        run: |
+          brew update
+          brew install stellar-cli
+          stellar --version
 
       - name: Cache Cargo dependencies
         uses: actions/cache@v4
@@ -52,40 +52,51 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            soroban/target/
+            target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
       - name: Check code formatting
-        run: cargo fmt --check --all
+        run: |
+          source $HOME/.cargo/env
+          cd contracts/escrow
+          cargo fmt --check --all
 
       - name: Build contracts
-        run: cargo build --release --target wasm32-unknown-unknown
+        run: |
+          source $HOME/.cargo/env
+          cd contracts/escrow
+          cargo build --release --target wasm32v1-none
 
       - name: Run tests
-        run: cargo test --all
+        run: |
+          source $HOME/.cargo/env
+          cd contracts/escrow
+          cargo test --verbose --lib
+
+      - name: Build Soroban contract
+        run: |
+          source $HOME/.cargo/env
+          cd contracts/escrow
+          stellar contract build --verbose
 
       - name: Stellar build check
         run: |
-          # Verify WASM files were generated for all contracts
+          source $HOME/.cargo/env
+          # Verify WASM files were generated
           echo "Checking for generated WASM files..."
-          for contract_dir in contracts/*/; do
-            if [ -f "$contract_dir/Cargo.toml" ]; then
-              contract_name=$(grep '^name =' "$contract_dir/Cargo.toml" | cut -d'"' -f2)
-              wasm_file="target/wasm32-unknown-unknown/release/${contract_name}.wasm"
-              if [ ! -f "$wasm_file" ]; then
-                echo "Error: WASM file not found for contract: $contract_name"
-                echo "Expected: $wasm_file"
-                exit 1
-              fi
-              echo "✓ Found WASM file for $contract_name"
-              # Verify WASM file is not empty
-              if [ ! -s "$wasm_file" ]; then
-                echo "Error: WASM file is empty for contract: $contract_name"
-                exit 1
-              fi
-            fi
-          done
-          echo "All contracts built successfully for Stellar/Soroban deployment"
+          wasm_file="target/wasm32v1-none/release/bounty_escrow.wasm"
+          if [ ! -f "$wasm_file" ]; then
+            echo "Error: WASM file not found"
+            echo "Expected: $wasm_file"
+            exit 1
+          fi
+          echo "✓ Found WASM file"
+          # Verify WASM file is not empty
+          if [ ! -s "$wasm_file" ]; then
+            echo "Error: WASM file is empty"
+            exit 1
+          fi
+          echo "Contract built successfully for Stellar/Soroban deployment"
 
