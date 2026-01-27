@@ -668,7 +668,7 @@ fn test_batch_release_funds() {
 // ============================================================================
 
 #[test]
-#[should_panic(expected = "Error(Contract, #11)")]
+#[should_panic(expected = "Error(Contract, #12)")]
 fn test_batch_lock_duplicate_bounty_id() {
     let (env, client, _contract_id) = create_test_env();
     env.mock_all_auths();
