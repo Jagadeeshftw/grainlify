@@ -37,48 +37,35 @@ export function ContributorsTable({
         isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
       }`}
     >
-      {/* Mobile View (Cards) */}
-      <div className="md:hidden space-y-4">
+      {/* Mobile View (Compact List) */}
+      <div className="md:hidden space-y-3">
         {data.map((leader, index) => (
           <div
             key={leader.rank}
             onClick={() => handleRowClick(leader)}
-            className="backdrop-blur-[40px] bg-white/[0.12] rounded-[20px] border border-white/20 p-5 shadow-sm active:scale-95 transition-all duration-200"
+            className="backdrop-blur-[40px] bg-white/[0.12] rounded-[16px] border border-white/20 p-4 shadow-sm active:scale-95 transition-all duration-200"
             style={{
               animation: isLoaded
                 ? `slideInLeft 0.5s ease-out ${1.1 + index * 0.1}s both`
                 : "none",
             }}
           >
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center justify-center w-8 h-8 rounded-[10px] bg-gradient-to-br from-white/[0.15] to-white/[0.08] border border-white/20 shadow-sm">
-                  <span
-                    className={`text-[14px] font-bold ${
-                      theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"
-                    }`}
-                  >
-                    #{leader.rank}
-                  </span>
-                </div>
-                <div className="flex items-center justify-center w-8 h-8 rounded-[10px] bg-gradient-to-br from-white/[0.15] to-white/[0.08] border border-white/20 shadow-sm">
-                  {getTrendIcon(leader.trend)}
-                </div>
-              </div>
-              <div className="px-4 py-1.5 rounded-[10px] bg-gradient-to-br from-[#c9983a]/20 to-[#d4af37]/10 border border-[#c9983a]/30">
+            <div className="flex items-center gap-3">
+              {/* Rank & Trend */}
+              <div className="flex flex-col items-center gap-1 min-w-[24px]">
                 <span
-                  className={`text-[15px] font-black ${
+                  className={`text-[12px] font-bold ${
                     theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"
                   }`}
                 >
-                  {leader.score}
+                  #{leader.rank}
                 </span>
+                {getTrendIcon(leader.trend)}
               </div>
-            </div>
 
-            <div className="flex items-center gap-4 mb-4">
+              {/* Avatar */}
               <div
-                className={`relative w-14 h-14 rounded-full bg-gradient-to-br ${getAvatarGradient(index)} flex items-center justify-center text-white font-bold text-[20px] shadow-md border-2 border-white/25 overflow-hidden`}
+                className={`relative w-10 h-10 flex-shrink-0 rounded-full bg-gradient-to-br ${getAvatarGradient(index)} flex items-center justify-center text-white font-bold text-[14px] shadow-sm border border-white/25 overflow-hidden`}
               >
                 {leader.avatar &&
                 (leader.avatar.startsWith("http") ||
@@ -93,14 +80,14 @@ export function ContributorsTable({
                     }}
                   />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center">
-                    {leader.username.substring(0, 2).toUpperCase()}
-                  </div>
+                  <div>{leader.username.substring(0, 2).toUpperCase()}</div>
                 )}
               </div>
-              <div>
+
+              {/* Name & Stats */}
+              <div className="flex-1 min-w-0">
                 <div
-                  className={`text-[16px] font-bold mb-1 ${
+                  className={`text-[14px] font-bold truncate ${
                     theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"
                   }`}
                 >
@@ -108,7 +95,7 @@ export function ContributorsTable({
                 </div>
                 {activeFilter === "contributions" && leader.contributions && (
                   <div
-                    className={`text-[13px] ${
+                    className={`text-[11px] truncate ${
                       theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"
                     }`}
                   >
@@ -116,29 +103,37 @@ export function ContributorsTable({
                   </div>
                 )}
                 {activeFilter === "ecosystems" && leader.ecosystems && (
-                  <div className="flex flex-wrap gap-1.5 mt-1">
-                    {leader.ecosystems.map((eco, idx) => (
+                  <div className="flex flex-wrap gap-1 mt-0.5">
+                    {leader.ecosystems.slice(0, 2).map((eco, idx) => (
                       <span
                         key={idx}
-                        className="px-2 py-0.5 bg-[#c9983a]/20 border border-[#c9983a]/30 rounded-[6px] text-[10px] font-semibold text-[#8b6f3a]"
+                        className="px-1.5 py-0.5 bg-[#c9983a]/20 border border-[#c9983a]/30 rounded-[4px] text-[9px] font-semibold text-[#8b6f3a]"
                       >
                         {eco}
                       </span>
                     ))}
+                    {leader.ecosystems.length > 2 && (
+                      <span className="text-[9px] text-[#8b6f3a]">
+                        +{leader.ecosystems.length - 2}
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
-            </div>
 
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleRowClick(leader);
-              }}
-              className="w-full py-3 rounded-[12px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white text-[14px] font-semibold shadow-md border border-white/10 active:scale-95 transition-transform"
-            >
-              View Profile
-            </button>
+              {/* Score */}
+              <div className="text-right">
+                <div className="px-3 py-1 rounded-[8px] bg-gradient-to-br from-[#c9983a]/20 to-[#d4af37]/10 border border-[#c9983a]/30">
+                  <span
+                    className={`text-[13px] font-black ${
+                      theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"
+                    }`}
+                  >
+                    {leader.score}
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
         ))}
       </div>

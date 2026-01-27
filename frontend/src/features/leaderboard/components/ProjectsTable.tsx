@@ -29,105 +29,110 @@ export function ProjectsTable({
         isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
       }`}
     >
-      {/* Mobile View (Cards) */}
-      <div className="md:hidden space-y-4">
-        {data.map((project, index) => (
-          <div
-            key={project.rank}
-            className="backdrop-blur-[40px] bg-white/[0.12] rounded-[20px] border border-white/20 p-5 shadow-sm active:scale-95 transition-all duration-200"
-            style={{
-              animation: isLoaded
-                ? `slideInLeft 0.5s ease-out ${1.1 + index * 0.1}s both`
-                : "none",
-            }}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center justify-center w-8 h-8 rounded-[10px] bg-gradient-to-br from-white/[0.15] to-white/[0.08] border border-white/20 shadow-sm">
-                  <span
-                    className={`text-[14px] font-bold ${
-                      theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"
-                    }`}
-                  >
-                    #{project.rank}
-                  </span>
-                </div>
-                <div className="flex items-center justify-center w-8 h-8 rounded-[10px] bg-gradient-to-br from-white/[0.15] to-white/[0.08] border border-white/20 shadow-sm">
-                  {getTrendIcon(project.trend)}
-                </div>
-              </div>
-              <div className="px-4 py-1.5 rounded-[10px] bg-gradient-to-br from-[#c9983a]/20 to-[#d4af37]/10 border border-[#c9983a]/30">
-                <span
-                  className={`text-[15px] font-black ${
-                    theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"
-                  }`}
-                >
-                  {project.score}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-4 mb-4">
-              <div
-                className={`relative w-14 h-14 rounded-full bg-gradient-to-br ${getAvatarGradient(index)} flex items-center justify-center text-white font-bold text-[20px] shadow-md border-2 border-white/25`}
-              >
-                {project.logo}
-              </div>
-              <div>
-                <div
-                  className={`text-[16px] font-bold mb-1 ${
-                    theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"
-                  }`}
-                >
-                  {project.name}
-                </div>
-                {activeFilter === "contributions" && project.contributors && (
-                  <div
-                    className={`text-[13px] ${
-                      theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"
-                    }`}
-                  >
-                    {project.contributors} contributors
-                  </div>
-                )}
-                {project.ecosystems && (
-                  <div className="flex flex-wrap gap-1.5 mt-1">
-                    {project.ecosystems.map((eco, idx) => (
-                      <span
-                        key={idx}
-                        className="px-2 py-0.5 bg-[#c9983a]/20 border border-[#c9983a]/30 rounded-[6px] text-[10px] font-semibold text-[#8b6f3a]"
-                      >
-                        {eco}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 mb-4">
-              {project.activity && (
-                <div
-                  className={`px-3 py-1.5 rounded-[8px] text-[11px] font-semibold w-full text-center ${
-                    project.activity === "Very High"
-                      ? "bg-green-500/20 text-green-700 border border-green-500/30"
-                      : project.activity === "High"
-                        ? "bg-blue-500/20 text-blue-700 border border-blue-500/30"
-                        : project.activity === "Medium"
-                          ? "bg-yellow-500/20 text-yellow-700 border border-yellow-500/30"
-                          : "bg-gray-500/20 text-gray-700 border border-gray-500/30"
-                  }`}
-                >
-                  Activity: {project.activity}
-                </div>
-              )}
-            </div>
-
-            <button className="w-full py-3 rounded-[12px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white text-[14px] font-semibold shadow-md border border-white/10 active:scale-95 transition-transform">
-              View Project
-            </button>
+      {/* Mobile View (Table Style) */}
+      <div className="md:hidden">
+        <div className="backdrop-blur-[40px] bg-white/[0.12] rounded-[20px] border border-white/20 shadow-sm overflow-hidden">
+          {/* Mobile Header (Optional - kept simple or removed, assuming just rows) */}
+          <div className="grid grid-cols-[auto_1fr_auto] gap-3 px-4 py-3 border-b border-white/10 bg-white/[0.05] text-[11px] font-bold uppercase tracking-wider opacity-70">
+            <div className="w-8 text-center">Rank</div>
+            <div>Project</div>
+            <div className="text-right">Score</div>
           </div>
-        ))}
+
+          <div className="divide-y divide-white/10">
+            {data.map((project, index) => (
+              <div
+                key={project.rank}
+                className="p-4 active:bg-white/[0.05] transition-colors"
+                style={{
+                  animation: isLoaded
+                    ? `slideInLeft 0.5s ease-out ${1.1 + index * 0.1}s both`
+                    : "none",
+                }}
+              >
+                <div className="flex items-center gap-3">
+                  {/* Rank & Trend */}
+                  <div className="flex flex-col items-center gap-1 min-w-[24px] w-8">
+                    <span
+                      className={`text-[12px] font-bold ${
+                        theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"
+                      }`}
+                    >
+                      #{project.rank}
+                    </span>
+                    {getTrendIcon(project.trend)}
+                  </div>
+
+                  {/* Logo */}
+                  <div
+                    className={`relative w-10 h-10 flex-shrink-0 rounded-full bg-gradient-to-br ${getAvatarGradient(index)} flex items-center justify-center text-white font-bold text-[14px] shadow-sm border border-white/25`}
+                  >
+                    {project.logo}
+                  </div>
+
+                  {/* Name & Stats */}
+                  <div className="flex-1 min-w-0">
+                    <div
+                      className={`text-[14px] font-bold truncate ${
+                        theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"
+                      }`}
+                    >
+                      {project.name}
+                    </div>
+                    {activeFilter === "contributions" &&
+                      project.contributors && (
+                        <div
+                          className={`text-[11px] truncate ${
+                            theme === "dark"
+                              ? "text-[#d4d4d4]"
+                              : "text-[#7a6b5a]"
+                          }`}
+                        >
+                          {project.contributors} contributors
+                        </div>
+                      )}
+                    <div className="flex flex-wrap gap-1 mt-0.5">
+                      {project.ecosystems?.slice(0, 2).map((eco, idx) => (
+                        <span
+                          key={idx}
+                          className="px-1.5 py-0.5 bg-[#c9983a]/20 border border-[#c9983a]/30 rounded-[4px] text-[9px] font-semibold text-[#8b6f3a]"
+                        >
+                          {eco}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Score */}
+                  <div className="text-right flex flex-col items-end gap-1">
+                    <div className="px-2.5 py-1 rounded-[8px] bg-gradient-to-br from-[#c9983a]/20 to-[#d4af37]/10 border border-[#c9983a]/30">
+                      <span
+                        className={`text-[13px] font-black ${
+                          theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"
+                        }`}
+                      >
+                        {project.score}
+                      </span>
+                    </div>
+                    {project.activity && (
+                      <div
+                        className={`text-[9px] px-1.5 py-0.5 rounded ${
+                          project.activity === "Very High"
+                            ? "bg-green-500/10 text-green-600"
+                            : project.activity === "High"
+                              ? "bg-blue-500/10 text-blue-600"
+                              : "bg-gray-500/10 text-gray-600"
+                        }`}
+                      >
+                        {project.activity}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Desktop View (Table) */}
