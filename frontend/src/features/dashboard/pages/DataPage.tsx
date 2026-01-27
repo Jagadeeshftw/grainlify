@@ -1,13 +1,39 @@
+import { useState, useEffect } from 'react';
+import { ChevronDown, Info, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { ChevronDown, Info, Sun, Moon } from 'lucide-react';
 import { BarChart, Bar, LineChart, Line as RechartsLine, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart } from 'recharts';
 import { ComposableMap, Geographies, Geography, Marker, ZoomableGroup, Line as MapLine } from "react-simple-maps";
 import { useTheme } from '../../../shared/contexts/ThemeContext';
+import { getContributorStats, ContributorStats } from '../../../shared/api/client';
 
 export function DataPage() {
   const { theme, toggleTheme } = useTheme();
   const [mapZoom, setMapZoom] = useState(1);
   const [mapCenter, setMapCenter] = useState<[number, number]>([0, 0]);
+
+  // Contributor stats state
+  const [contributorStats, setContributorStats] = useState<ContributorStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [statsError, setStatsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        setStatsLoading(true);
+        const data = await getContributorStats();
+        setContributorStats(data);
+        setStatsError(null);
+      } catch (err) {
+        console.error('Failed to fetch contributor stats:', err);
+        setStatsError('Failed to load stats');
+      } finally {
+        setStatsLoading(false);
+      }
+    };
+
+    fetchStats();
+  }, []);
 
   const geoUrl = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
 
@@ -182,6 +208,10 @@ export function DataPage() {
       {/* Content with top padding to account for fixed navbar */}
       <div className="pt-20">
       {/* Header Tabs */}
+      <div className={`backdrop-blur-[40px] rounded-[24px] border p-2 transition-colors ${theme === 'dark'
+        ? 'bg-white/[0.12] border-white/20'
+        : 'bg-white/[0.12] border-white/20'
+        }`}>
       <div className={`backdrop-blur-[40px] rounded-[24px] border p-2 transition-colors ${
         theme === 'dark'
           ? 'bg-white/[0.08] border-white/20'
@@ -191,9 +221,9 @@ export function DataPage() {
           <button
             onClick={() => setActiveTab('overview')}
             className={`px-6 py-3 rounded-[16px] font-bold text-[14px] transition-all duration-300 ${activeTab === 'overview'
-                ? `bg-gradient-to-br from-[#c9983a]/30 to-[#d4af37]/20 border-2 border-[#c9983a]/50 ${theme === 'dark' ? 'text-[#f5c563]' : 'text-[#2d2820]'
-                }`
-                : `${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'} hover:bg-white/[0.08]`
+              ? `bg-gradient-to-br from-[#c9983a]/30 to-[#d4af37]/20 border-2 border-[#c9983a]/50 ${theme === 'dark' ? 'text-[#f5c563]' : 'text-[#2d2820]'
+              }`
+              : `${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'} hover:bg-white/[0.08]`
               }`}
           >
             Overview
@@ -201,9 +231,9 @@ export function DataPage() {
           <button
             onClick={() => setActiveTab('projects')}
             className={`px-6 py-3 rounded-[16px] font-bold text-[14px] transition-all duration-300 ${activeTab === 'projects'
-                ? `bg-gradient-to-br from-[#c9983a]/30 to-[#d4af37]/20 border-2 border-[#c9983a]/50 ${theme === 'dark' ? 'text-[#f5c563]' : 'text-[#2d2820]'
-                }`
-                : `${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'} hover:bg-white/[0.08]`
+              ? `bg-gradient-to-br from-[#c9983a]/30 to-[#d4af37]/20 border-2 border-[#c9983a]/50 ${theme === 'dark' ? 'text-[#f5c563]' : 'text-[#2d2820]'
+              }`
+              : `${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'} hover:bg-white/[0.08]`
               }`}
           >
             Projects
@@ -211,9 +241,9 @@ export function DataPage() {
           <button
             onClick={() => setActiveTab('contributions')}
             className={`px-6 py-3 rounded-[16px] font-bold text-[14px] transition-all duration-300 ${activeTab === 'contributions'
-                ? `bg-gradient-to-br from-[#c9983a]/30 to-[#d4af37]/20 border-2 border-[#c9983a]/50 ${theme === 'dark' ? 'text-[#f5c563]' : 'text-[#2d2820]'
-                }`
-                : `${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'} hover:bg-white/[0.08]`
+              ? `bg-gradient-to-br from-[#c9983a]/30 to-[#d4af37]/20 border-2 border-[#c9983a]/50 ${theme === 'dark' ? 'text-[#f5c563]' : 'text-[#2d2820]'
+              }`
+              : `${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'} hover:bg-white/[0.08]`
               }`}
           >
             Contributions
@@ -285,6 +315,10 @@ export function DataPage() {
                       setProjectInterval('Monthly interval');
                       setShowProjectIntervalDropdown(false);
                     }}
+                    className={`w-full px-4 py-3 text-left text-[13px] font-medium transition-all ${projectInterval === 'Monthly interval'
+                      ? 'bg-white/[0.35] text-[#2d2820] font-bold'
+                      : 'text-[#2d2820] hover:bg-white/[0.3]'
+                      }`}
                     className={`w-full px-4 py-3 text-left text-[13px] font-medium transition-all ${
                       projectInterval === 'Monthly interval'
                         ? theme === 'dark'
@@ -371,8 +405,8 @@ export function DataPage() {
             <button
               onClick={() => toggleProjectFilter('new')}
               className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${projectFilters.new
-                  ? 'bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]'
-                  : 'backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]'
+                ? 'bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]'
+                : 'backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]'
                 }`}
             >
               New
@@ -380,8 +414,8 @@ export function DataPage() {
             <button
               onClick={() => toggleProjectFilter('reactivated')}
               className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${projectFilters.reactivated
-                  ? 'bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]'
-                  : 'backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]'
+                ? 'bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]'
+                : 'backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]'
                 }`}
             >
               Reactivated
@@ -389,8 +423,8 @@ export function DataPage() {
             <button
               onClick={() => toggleProjectFilter('active')}
               className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${projectFilters.active
-                  ? 'bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]'
-                  : 'backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]'
+                ? 'bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]'
+                : 'backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]'
                 }`}
             >
               Active
@@ -398,8 +432,8 @@ export function DataPage() {
             <button
               onClick={() => toggleProjectFilter('churned')}
               className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${projectFilters.churned
-                  ? 'bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]'
-                  : 'backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]'
+                ? 'bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]'
+                : 'backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]'
                 }`}
             >
               Churned
@@ -407,8 +441,8 @@ export function DataPage() {
             <button
               onClick={() => toggleProjectFilter('prMerged')}
               className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${projectFilters.prMerged
-                  ? 'bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]'
-                  : 'backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]'
+                ? 'bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]'
+                : 'backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]'
                 }`}
             >
               PR merged
@@ -643,6 +677,10 @@ export function DataPage() {
                       setContributorInterval('Monthly interval');
                       setShowContributorIntervalDropdown(false);
                     }}
+                    className={`w-full px-4 py-3 text-left text-[13px] font-medium transition-all ${contributorInterval === 'Monthly interval'
+                      ? 'bg-white/[0.35] text-[#2d2820] font-bold'
+                      : 'text-[#2d2820] hover:bg-white/[0.3]'
+                      }`}
                     className={`w-full px-4 py-3 text-left text-[13px] font-medium transition-all ${
                       contributorInterval === 'Monthly interval'
                         ? theme === 'dark'
@@ -729,8 +767,8 @@ export function DataPage() {
             <button
               onClick={() => toggleContributorFilter('new')}
               className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${contributorFilters.new
-                  ? 'bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]'
-                  : 'backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]'
+                ? 'bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]'
+                : 'backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]'
                 }`}
             >
               New
@@ -738,8 +776,8 @@ export function DataPage() {
             <button
               onClick={() => toggleContributorFilter('reactivated')}
               className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${contributorFilters.reactivated
-                  ? 'bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]'
-                  : 'backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]'
+                ? 'bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]'
+                : 'backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]'
                 }`}
             >
               Reactivated
@@ -747,8 +785,8 @@ export function DataPage() {
             <button
               onClick={() => toggleContributorFilter('active')}
               className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${contributorFilters.active
-                  ? 'bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]'
-                  : 'backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]'
+                ? 'bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]'
+                : 'backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]'
                 }`}
             >
               Active
@@ -756,8 +794,8 @@ export function DataPage() {
             <button
               onClick={() => toggleContributorFilter('churned')}
               className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${contributorFilters.churned
-                  ? 'bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]'
-                  : 'backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]'
+                ? 'bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]'
+                : 'backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]'
                 }`}
             >
               Churned
@@ -765,8 +803,8 @@ export function DataPage() {
             <button
               onClick={() => toggleContributorFilter('prMerged')}
               className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${contributorFilters.prMerged
-                  ? 'bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]'
-                  : 'backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]'
+                ? 'bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]'
+                : 'backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]'
                 }`}
             >
               PR merged
@@ -798,7 +836,11 @@ export function DataPage() {
                   }`}>Contributors with billing profile</h3>
                 <div className={`text-[42px] font-black leading-none transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'bg-gradient-to-r from-[#2d2820] to-[#c9983a] bg-clip-text text-transparent'
                   }`}>
-                  0 / 0
+                  {statsLoading ? (
+                    <Loader2 className="w-8 h-8 animate-spin text-[#c9983a]" />
+                  ) : (
+                    `${contributorStats?.kyc_verified_count ?? 0} / ${contributorStats?.total_with_kyc_started ?? 0}`
+                  )}
                 </div>
               </div>
               <div className="w-16 h-16 rounded-[16px] bg-gradient-to-br from-[#c9983a]/30 to-[#d4af37]/20 border-2 border-[#c9983a]/50 flex items-center justify-center shadow-[0_4px_16px_rgba(201,152,58,0.25)] group-hover:scale-110 group-hover:shadow-[0_6px_24px_rgba(201,152,58,0.4)] transition-all duration-300">
@@ -808,19 +850,31 @@ export function DataPage() {
               </div>
             </div>
 
-            {/* Additional Stats Placeholder */}
+            {/* Additional Stats */}
             <div className="grid grid-cols-2 gap-4">
               <div className="p-5 rounded-[14px] backdrop-blur-[20px] bg-white/[0.15] border border-white/25 hover:bg-white/[0.2] transition-all group cursor-pointer">
                 <div className={`text-[11px] font-bold uppercase tracking-wider mb-2 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
                   }`}>Active</div>
                 <div className={`text-[28px] font-black transition-colors ${theme === 'dark' ? 'text-[#f5f5f5] group-hover:text-[#c9983a]' : 'text-[#2d2820] group-hover:text-[#c9983a]'
-                  }`}>0</div>
+                  }`}>
+                  {statsLoading ? (
+                    <Loader2 className="w-6 h-6 animate-spin text-[#c9983a]" />
+                  ) : (
+                    contributorStats?.active_users_count ?? 0
+                  )}
+                </div>
               </div>
               <div className="p-5 rounded-[14px] backdrop-blur-[20px] bg-white/[0.15] border border-white/25 hover:bg-white/[0.2] transition-all group cursor-pointer">
                 <div className={`text-[11px] font-bold uppercase tracking-wider mb-2 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
                   }`}>Total</div>
                 <div className={`text-[28px] font-black transition-colors ${theme === 'dark' ? 'text-[#f5f5f5] group-hover:text-[#c9983a]' : 'text-[#2d2820] group-hover:text-[#c9983a]'
-                  }`}>0</div>
+                  }`}>
+                  {statsLoading ? (
+                    <Loader2 className="w-6 h-6 animate-spin text-[#c9983a]" />
+                  ) : (
+                    contributorStats?.total_signed_users_count ?? 0
+                  )}
+                </div>
               </div>
             </div>
           </div>

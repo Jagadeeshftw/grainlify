@@ -167,6 +167,17 @@ export type LandingStats = {
 
 export const getLandingStats = () => apiRequest<LandingStats>("/stats/landing");
 
+// Contributor stats (Data page)
+export type ContributorStats = {
+  kyc_verified_count: number;
+  total_with_kyc_started: number;
+  active_users_count: number;
+  total_signed_users_count: number;
+};
+
+export const getContributorStats = () =>
+  apiRequest<ContributorStats>("/stats/contributors");
+
 // Authentication
 export const getCurrentUser = () =>
   apiRequest<{

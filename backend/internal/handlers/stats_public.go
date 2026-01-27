@@ -67,3 +67,51 @@ SELECT
 		return c.Status(fiber.StatusOK).JSON(resp)
 	}
 }
+
+// ContributorStatsResponse holds stats for the Data page
+type ContributorStatsResponse struct {
+	KYCVerifiedCount      int64 `json:"kyc_verified_count"`
+	TotalWithKYCStarted   int64 `json:"total_with_kyc_started"`
+	ActiveUsersCount      int64 `json:"active_users_count"`
+	TotalSignedUsersCount int64 `json:"total_signed_users_count"`
+}
+
+// GetContributorStats returns contributor statistics for the Data page
+func (h *LandingStatsHandler) GetContributorStats() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		if h.db == nil || h.db.Pool == nil {
+			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "db_not_configured"})
+		}
+
+		var resp ContributorStatsResponse
+
+		// Fetch all stats in a single query or transaction for consistency
+		// 1. Total signed users: count from users table
+		// 2. Users with verified KYC: kyc_status = 'verified'
+		// 3. Users with billing profiles (proxy: any kyc_status): kyc_status IS NOT NULL
+		// 4. Active users: users with contributions in last 30 days
+		//    We define active as users who have created issues or PRs in the last 30 days
+		err := h.db.Pool.QueryRow(c.Context(), `
+WITH active_users AS (
+	SELECT DISTINCT author_login
+	FROM (
+		SELECT author_login FROM github_issues WHERE created_at > NOW() - INTERVAL '30 days' AND author_login IS NOT NULL
+		UNION
+		SELECT author_login FROM github_pull_requests WHERE created_at > NOW() - INTERVAL '30 days' AND author_login IS NOT NULL
+	) AS recent_activity
+)
+SELECT
+	(SELECT COUNT(*) FROM users WHERE kyc_status = 'verified') AS kyc_verified_count,
+	(SELECT COUNT(*) FROM users WHERE kyc_status IS NOT NULL) AS total_with_kyc_started,
+	(SELECT COUNT(*) FROM active_users) AS active_users_count,
+	(SELECT COUNT(*) FROM users) AS total_signed_users_count
+`).Scan(&resp.KYCVerifiedCount, &resp.TotalWithKYCStarted, &resp.ActiveUsersCount, &resp.TotalSignedUsersCount)
+
+		if err != nil {
+			slog.Error("failed to fetch contributor stats", "error", err)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "stats_fetch_failed"})
+		}
+
+		return c.Status(fiber.StatusOK).JSON(resp)
+	}
+}
