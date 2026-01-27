@@ -710,8 +710,8 @@ export function ProjectDetailPage({ onBack, onIssueClick, projectId: propProject
                   pre: ({node, ...props}: any) => (
                     <pre className={`mb-4 overflow-x-auto rounded-[12px] p-4 transition-colors ${
                       theme === 'dark'
-                        ? 'bg-white/[0.12] border border-white/20'
-                        : 'bg-white/[0.20] border border-white/30'
+                        ? 'bg-white/[0.12] border border-white/20 text-[#e8dfd0]'
+                        : 'bg-white/[0.20] border border-white/30 text-[#2d2820]'
                     }`} {...props} />
                   ),
                   ul: ({node, ...props}: any) => (

@@ -27,10 +27,13 @@ export function DashboardTab({ selectedProjects, onRefresh, onNavigateToIssue }:
   const [issues, setIssues] = useState<any[]>([]);
   const [prs, setPrs] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [showAllActivities, setShowAllActivities] = useState(false);
 
   // Fetch data from selected projects
   useEffect(() => {
     loadData();
+    // Reset expanded state when projects change
+    setShowAllActivities(false);
   }, [selectedProjects]);
 
   const loadData = async () => {
@@ -262,7 +265,7 @@ export function DashboardTab({ selectedProjects, onRefresh, onNavigateToIssue }:
       return timeB - timeA;
     });
 
-    return combined.slice(0, 5); // Top 5 most recent
+    return combined; // Return all activities (will be sliced in render based on state)
   }, [issues, prs, formatTimeAgo, parseTimeAgo]);
 
   // Generate chart data from real data (last 6 months)
@@ -331,26 +334,41 @@ export function DashboardTab({ selectedProjects, onRefresh, onNavigateToIssue }:
                 ))}
               </div>
             ) : (
-              <div className="space-y-3">
-                {activities.length === 0 ? (
-                  <div className={`text-center py-8 ${theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'}`}>
-                    No recent activity found.
+              <>
+                <div className="space-y-3">
+                  {activities.length === 0 ? (
+                    <div className={`text-center py-8 ${theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'}`}>
+                      No recent activity found.
+                    </div>
+                  ) : (
+                    (showAllActivities ? activities : activities.slice(0, 5)).map((activity, idx) => (
+                      <ActivityItem
+                        key={activity.id}
+                        activity={activity}
+                        index={idx}
+                        onClick={() => {
+                          if (activity.type === 'issue' && activity.projectId && onNavigateToIssue) {
+                            onNavigateToIssue(activity.id.toString(), activity.projectId);
+                          }
+                        }}
+                      />
+                    ))
+                  )}
+                </div>
+                {/* View More / Show Less Button */}
+                {activities.length > 5 && (
+                  <div className="flex justify-center mt-6">
+                    <button
+                      onClick={() => setShowAllActivities(!showAllActivities)}
+                      className={`px-6 py-2.5 rounded-[10px] backdrop-blur-[25px] bg-gradient-to-br from-[#c9983a]/25 to-[#d4af37]/20 border border-[#c9983a]/40 text-[13px] font-semibold text-[#c9983a] hover:from-[#c9983a]/35 hover:to-[#d4af37]/30 hover:scale-105 transition-all duration-200 ${
+                        theme === 'dark' ? 'hover:border-[#c9983a]/60' : 'hover:border-[#c9983a]/50'
+                      }`}
+                    >
+                      {showAllActivities ? 'Show less' : 'View more'}
+                    </button>
                   </div>
-                ) : (
-                  activities.map((activity, idx) => (
-                    <ActivityItem
-                      key={activity.id}
-                      activity={activity}
-                      index={idx}
-                      onClick={() => {
-                        if (activity.type === 'issue' && activity.projectId && onNavigateToIssue) {
-                          onNavigateToIssue(activity.id.toString(), activity.projectId);
-                        }
-                      }}
-                    />
-                  ))
                 )}
-              </div>
+              </>
             )}
           </div>
         </div>

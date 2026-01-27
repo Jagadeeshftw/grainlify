@@ -1,0 +1,9 @@
+# This directory stores deployment records.
+# JSON files in this directory track deployed contract addresses.
+#
+# Files:
+#   - testnet.json: Testnet deployment history
+#   - mainnet.json: Mainnet deployment history
+#
+# SECURITY: Do not commit files containing sensitive deployment data
+# to public repositories without review.

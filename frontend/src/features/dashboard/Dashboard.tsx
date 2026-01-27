@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Search,
   Bell,
@@ -28,6 +28,8 @@ import {
   Sun,
   Shield,
   Code,
+  X,
+  Menu
 } from "lucide-react";
 import { useAuth } from "../../shared/contexts/AuthContext";
 import grainlifyLogo from "../../assets/grainlify_log.svg";
@@ -84,7 +86,8 @@ export function Dashboard() {
   const [selectedEventName, setSelectedEventName] = useState<string | null>(
     null,
   );
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(
+     typeof window !== 'undefined' ? window.innerWidth < 768 : false);
   const [activeRole, setActiveRole] = useState<
     "contributor" | "maintainer" | "admin"
   >("contributor");
@@ -93,7 +96,19 @@ export function Dashboard() {
   const [viewingUserLogin, setViewingUserLogin] = useState<string | null>(null);
   const [settingsInitialTab, setSettingsInitialTab] =
     useState<SettingsTabType>("profile");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [deviceWidth, setDeviceWidth] = useState(
+    typeof window !== 'undefined' ? window.innerWidth : null
+  );
 
+  useEffect(() => { 
+    const handleResize = () => {
+      setDeviceWidth(window.innerWidth);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   // ******************************************
 
   // Persist current tab across reload
@@ -281,6 +296,13 @@ export function Dashboard() {
   ];
 
   const darkTheme = theme === "dark";
+    const closeMobileNav = () => {
+     if (showMobileNav){
+          setMobileMenuOpen(false);
+     }
+  }
+  const isSmallDevice = deviceWidth && deviceWidth < 1024;
+  const showMobileNav = mobileMenuOpen&& isSmallDevice;
 
   return (
     <div
@@ -435,23 +457,49 @@ export function Dashboard() {
         <div className="max-w-[1400px] mx-auto">
           {/* Premium Pill-Style Header - Greatest of All Time */}
           <div
-            className={`fixed top-2 right-2 left-auto z-[9999] flex items-center gap-3 h-[52px] py-3 rounded-[26px] shadow-[0px_4px_4px_0px_rgba(0,0,0,0.25)] backdrop-blur-[90px] border transition-all duration-300 ${
+            className={`fixed top-2 right-2 left-auto z-[9999] flex items-center gap-1 md:gap-2 lg:gap-3 lg:h-[52px] py-3 rounded-[26px] shadow-[0px_4px_4px_0px_rgba(0,0,0,0.25)] backdrop-blur-[90px] border transition-all duration-300 ${
               isSidebarCollapsed ? "ml-[81px]" : "ml-[240px]"
             } ${
               darkTheme
                 ? "bg-[#2d2820]/[0.4] border-white/10 shadow-[inset_0px_0px_9px_0px_rgba(201,152,58,0.1)]"
                 : "bg-white/[0.35] border-white shadow-[inset_0px_0px_9px_0px_rgba(255,255,255,0.5)]"
-            }`}
+            }
+          ${showMobileNav? "h-screen flex-col":"" } 
+          `}
             style={{
               width: `calc(100vw - ${isSidebarCollapsed ? "81px" : "240px"} - 8px - 8px)`,
             }}
           >
+          
+          {/* opened mobile nav view header  */}
+         {showMobileNav &&  
+          <div className="flex items-center justify-between w-full px-4"> 
+         <Link to="/" className="flex items-center space-x-3 mr-auto">
+            <img src={grainlifyLogo} alt="Grainlify" className="w-8 h-8 grainlify-logo" />
+            <span className={`text-xl font-semibold transition-colors ${
+                 theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
+               }`}>Grainlify</span>
+          </Link>
+
+          {/* mobile nav close button */}
+          <button
+            className={`lg:hidden transition-colors self-end ${showMobileNav ? 'block' : 'hidden'} ${
+                 theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
+               }`}
+               onClick={() => setMobileMenuOpen(false)}
+               >
+            <X size={24} />
+          </button>
+          </div>
+          }
+
             {/* Search - Premium Pill Style */}
             <button
-              onClick={() => setCurrentPage("search")}
-              className={`relative h-[46px] flex-1 rounded-[23px] overflow-visible backdrop-blur-[40px] shadow-[0px_6px_6.5px_-1px_rgba(0,0,0,0.36),0px_0px_4.2px_0px_rgba(0,0,0,0.69)] ml-[3px] transition-all hover:scale-[1.01] cursor-pointer ${
+              onClick={() => {setCurrentPage("search");closeMobileNav();}}
+              className={`relative h-[46px] lg:flex-1 rounded-[23px] overflow-visible backdrop-blur-[40px] shadow-[0px_6px_6.5px_-1px_rgba(0,0,0,0.36),0px_0px_4.2px_0px_rgba(0,0,0,0.69)] ml-[3px] transition-all hover:scale-[1.01] cursor-pointer ${
                 darkTheme ? "bg-[#2d2820]" : "bg-[#d4c5b0]"
-              }`}
+              } ${showMobileNav ? 'min-h-[46px] w-[80%] max-w-[800px] block': 'lg:block hidden'}
+              `}
             >
               <div
                 className={`absolute inset-0 pointer-events-none rounded-[23px] ${
@@ -460,7 +508,7 @@ export function Dashboard() {
                     : "shadow-[inset_1px_-1px_1px_0px_rgba(0,0,0,0.15),inset_-2px_2px_1px_-1px_rgba(255,255,255,0.35)]"
                 }`}
               />
-              <div className="relative h-full flex items-center px-5 justify-between">
+              <div className="relative h-full flex items-center px-2 lg:px-5 justify-between">
                 <div className="flex items-center flex-1">
                   <Search
                     className={`w-4 h-4 mr-3 flex-shrink-0 transition-colors ${
@@ -490,7 +538,7 @@ export function Dashboard() {
                 </div>
 
                 <div
-                  className="flex items-center gap-1.5 px-2 py-1 rounded border"
+                  className="hidden lg:flex  items-center gap-1.5 px-2 py-1 rounded border"
                   style={{
                     backgroundColor: darkTheme
                       ? "rgba(255, 255, 255, 0.08)"
@@ -523,27 +571,35 @@ export function Dashboard() {
                 </div>
               </div>
             </button>
-
+               
+          
             {/* Role Switcher */}
             <RoleSwitcher
               currentRole={activeRole}
+              isSmallDevice={!!isSmallDevice}
+              showMobileNav={!!showMobileNav}
+              closeMobileNav={closeMobileNav}
               onRoleChange={handleRoleChange}
             />
 
             {/* Theme Toggle - Separate Pill Button */}
             <button
-              onClick={toggleTheme}
-              className={`h-[46px] w-[46px] rounded-full overflow-clip relative flex items-center justify-center backdrop-blur-[40px] transition-all hover:scale-105 shadow-[0px_6px_6.5px_-1px_rgba(0,0,0,0.36),0px_0px_4.2px_0px_rgba(0,0,0,0.69)] ${
-                darkTheme ? "bg-[#2d2820]" : "bg-[#d4c5b0]"
-              }`}
+              onClick={() => {
+               toggleTheme()
+               closeMobileNav(); 
+              }}
+              className={`h-[46px] lg:w-[46px]  overflow-clip relative items-center justify-center backdrop-blur-[40px] transition-all hover:scale-105 shadow-[0px_6px_6.5px_-1px_rgba(0,0,0,0.36),0px_0px_4.2px_0px_rgba(0,0,0,0.69)] ${
+                darkTheme ? "bg-[#2d2820] text-[#e8dfd0]" : "bg-[#d4c5b0] text-[#2d2820]"
+              }
+              ${showMobileNav ? ' flex rounded-sm w-[80%] max-w-[800px] ' : ' hidden lg:flex rounded-full '}`}
               title={darkTheme ? "Switch to light mode" : "Switch to dark mode"}
             >
               <div
-                className={`absolute inset-0 pointer-events-none rounded-full ${
+                className={`absolute inset-0 pointer-events-none ${
                   darkTheme
                     ? "shadow-[inset_1px_-1px_1px_0px_rgba(0,0,0,0.5),inset_-2px_2px_1px_-1px_rgba(255,255,255,0.11)]"
                     : "shadow-[inset_1px_-1px_1px_0px_rgba(0,0,0,0.15),inset_-2px_2px_1px_-1px_rgba(255,255,255,0.35)]"
-                }`}
+                } ${showMobileNav? 'rounded-sm': 'rounded-full'}`}
               />
               {darkTheme ? (
                 <Sun
@@ -562,13 +618,28 @@ export function Dashboard() {
                   }`}
                 />
               )}
+               <span className='ml-2 lg:hidden'>
+              {
+
+               showMobileNav && darkTheme ?"Light Mode" :"Dark Mode"
+               }
+               </span>
             </button>
 
             {/* Notifications Dropdown */}
-            <NotificationsDropdown />
+            <NotificationsDropdown showMobileNav={!!showMobileNav} closeMobileNav={closeMobileNav}/>
 
             {/* User Profile Dropdown - Shows profile when authenticated, Sign In when not */}
-            <UserProfileDropdown onPageChange={handleNavigation} />
+            <UserProfileDropdown onPageChange={handleNavigation} showMobileNav={!!showMobileNav} />
+            {/* mobile nav open button  */}
+             <button
+            className={`lg:hidden transition-colors ml-auto mr-[8px] ${showMobileNav? 'hidden' : 'block'} ${
+              theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
+            }`}
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          >
+            {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+          </button>
           </div>
 
           {/* Page Content */}

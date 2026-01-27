@@ -4,3 +4,18 @@
 !.elasticbeanstalk/*.cfg.yml
 !.elasticbeanstalk/*.global.yml
 wasm_hash.txt
+
+# Deployment Scripts - Sensitive Files
+# Keep templates, ignore local overrides
+contracts/scripts/config/*.env.local
+contracts/scripts/config/.env
+
+# Deployment Records (may contain contract addresses)
+# Review before committing to public repos
+contracts/deployments/*.json
+!contracts/deployments/.gitkeep
+
+# Soroban Local Data
+.soroban/
+soroban/.soroban/identity/
+soroban/.soroban/network/

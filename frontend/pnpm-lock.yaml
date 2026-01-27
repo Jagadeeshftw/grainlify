@@ -115,6 +115,9 @@ importers:
       cmdk:
         specifier: 1.1.1
         version: 1.1.1(@types/react-dom@18.3.1)(@types/react@18.3.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      d3-geo:
+        specifier: ^3.1.1
+        version: 3.1.1
       date-fns:
         specifier: 3.6.0
         version: 3.6.0
@@ -1700,6 +1703,10 @@ packages:
 
   d3-geo@2.0.2:
     resolution: {integrity: sha512-8pM1WGMLGFuhq9S+FpPURxic+gKzjluCD/CHTuUF3mXMeiCo0i6R0tO1s4+GArRFde96SLcW/kOFRjoAosPsFA==}
+
+  d3-geo@3.1.1:
+    resolution: {integrity: sha512-637ln3gXKXOwhalDzinUgY83KzNWZRKbYubaG+fGVuc/dxO64RRljtCTnf5ecMyE1RIdtqpkVcq0IbtU2S8j2Q==}
+    engines: {node: '>=12'}
 
   d3-interpolate@2.0.1:
     resolution: {integrity: sha512-c5UhwwTs/yybcmTpAVqwSFl6vrQ8JZJoT5F7xNFK9pymv5C0Ymcc9/LIJHtYIggg/yS9YHw8i8O8tgb9pupjeQ==}
@@ -4042,6 +4049,10 @@ snapshots:
   d3-geo@2.0.2:
     dependencies:
       d3-array: 2.12.1
+
+  d3-geo@3.1.1:
+    dependencies:
+      d3-array: 3.2.4
 
   d3-interpolate@2.0.1:
     dependencies:

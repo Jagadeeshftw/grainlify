@@ -592,6 +592,29 @@ export const deleteEcosystem = (id: string) =>
     method: 'DELETE',
   });
 
+export const updateEcosystem = (id: string, data: {
+  name: string;
+  description?: string;
+  website_url?: string;
+  status: 'active' | 'inactive';
+}) =>
+  apiRequest<{
+    id: string;
+    slug: string;
+    name: string;
+    description: string;
+    website_url: string;
+    status: string;
+    project_count: number;
+    user_count: number;
+    created_at: string;
+    updated_at: string;
+  }>(`/admin/ecosystems/${id}`, {
+    requiresAuth: true,
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+
 // Leaderboard
 export const getLeaderboard = (limit = 10, offset = 0, ecosystem?: string) =>
   apiRequest<Array<{
