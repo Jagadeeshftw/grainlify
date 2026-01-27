@@ -411,11 +411,7 @@
                         "symbol": "status"
                       },
                       "val": {
-                        "vec": [
-                          {
-                            "symbol": "PartiallyRefunded"
-                          }
-                        ]
+                        "u32": 4
                       }
                     }
                   ]
@@ -870,6 +866,60 @@
                         },
                         "val": {
                           "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "BountiesByStatus"
+                            },
+                            {
+                              "u32": 1
+                            }
+                          ]
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "u64": 1
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "BountyRegistry"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "u64": 1
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "DepositorBounties"
+                            },
+                            {
+                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "u64": 1
+                            }
+                          ]
                         }
                       },
                       {
@@ -2491,11 +2541,7 @@
                     "symbol": "status"
                   },
                   "val": {
-                    "vec": [
-                      {
-                        "symbol": "PartiallyRefunded"
-                      }
-                    ]
+                    "u32": 4
                   }
                 }
               ]

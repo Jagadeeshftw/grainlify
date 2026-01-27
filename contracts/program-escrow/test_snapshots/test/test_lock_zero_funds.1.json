@@ -312,6 +312,25 @@
                             }
                           ]
                         }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "ProgramsByAuth"
+                            },
+                            {
+                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "string": "Hackathon2024"
+                            }
+                          ]
+                        }
                       }
                     ]
                   }
@@ -708,7 +727,7 @@
             "data": {
               "vec": [
                 {
-                  "string": "caught panic 'Amount must be greater than zero' from contract function 'Symbol(obj#99)'"
+                  "string": "caught panic 'Amount must be greater than zero' from contract function 'Symbol(obj#111)'"
                 },
                 {
                   "string": "Hackathon2024"

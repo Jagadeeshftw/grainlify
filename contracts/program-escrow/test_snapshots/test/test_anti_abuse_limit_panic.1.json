@@ -461,6 +461,28 @@
                             }
                           ]
                         }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "ProgramsByAuth"
+                            },
+                            {
+                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "string": "P1"
+                            },
+                            {
+                              "string": "P2"
+                            }
+                          ]
+                        }
                       }
                     ]
                   }
@@ -1222,7 +1244,7 @@
             "data": {
               "vec": [
                 {
-                  "string": "caught panic 'Rate limit exceeded' from contract function 'Symbol(obj#291)'"
+                  "string": "caught panic 'Rate limit exceeded' from contract function 'Symbol(obj#325)'"
                 },
                 {
                   "string": "P3"

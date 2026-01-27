@@ -575,11 +575,7 @@
                         "symbol": "status"
                       },
                       "val": {
-                        "vec": [
-                          {
-                            "symbol": "Locked"
-                          }
-                        ]
+                        "u32": 1
                       }
                     }
                   ]
@@ -679,11 +675,7 @@
                         "symbol": "status"
                       },
                       "val": {
-                        "vec": [
-                          {
-                            "symbol": "Locked"
-                          }
-                        ]
+                        "u32": 1
                       }
                     }
                   ]
@@ -783,11 +775,7 @@
                         "symbol": "status"
                       },
                       "val": {
-                        "vec": [
-                          {
-                            "symbol": "Locked"
-                          }
-                        ]
+                        "u32": 1
                       }
                     }
                   ]
@@ -2561,11 +2549,7 @@
                     "symbol": "status"
                   },
                   "val": {
-                    "vec": [
-                      {
-                        "symbol": "Locked"
-                      }
-                    ]
+                    "u32": 1
                   }
                 }
               ]
@@ -2669,11 +2653,7 @@
                     "symbol": "status"
                   },
                   "val": {
-                    "vec": [
-                      {
-                        "symbol": "Locked"
-                      }
-                    ]
+                    "u32": 1
                   }
                 }
               ]
@@ -2777,11 +2757,7 @@
                     "symbol": "status"
                   },
                   "val": {
-                    "vec": [
-                      {
-                        "symbol": "Locked"
-                      }
-                    ]
+                    "u32": 1
                   }
                 }
               ]

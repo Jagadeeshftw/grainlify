@@ -553,6 +553,25 @@
                             }
                           ]
                         }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "ProgramsByAuth"
+                            },
+                            {
+                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "string": "Test"
+                            }
+                          ]
+                        }
                       }
                     ]
                   }
@@ -1390,7 +1409,7 @@
             "data": {
               "vec": [
                 {
-                  "string": "caught panic 'Insufficient balance: requested 100000000000, available 50000000000' from contract function 'Symbol(obj#309)'"
+                  "string": "caught panic 'Insufficient balance: requested 100000000000, available 50000000000' from contract function 'Symbol(obj#331)'"
                 },
                 {
                   "string": "Test"

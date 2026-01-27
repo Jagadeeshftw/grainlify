@@ -463,6 +463,31 @@
                             }
                           ]
                         }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "ProgramsByAuth"
+                            },
+                            {
+                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "string": "P1"
+                            },
+                            {
+                              "string": "P2"
+                            },
+                            {
+                              "string": "P3"
+                            }
+                          ]
+                        }
                       }
                     ]
                   }

@@ -387,6 +387,25 @@
                             }
                           ]
                         }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "ProgramsByAuth"
+                            },
+                            {
+                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "string": "P1"
+                            }
+                          ]
+                        }
                       }
                     ]
                   }
@@ -894,7 +913,7 @@
             "data": {
               "vec": [
                 {
-                  "string": "caught panic 'Operation in cooldown period' from contract function 'Symbol(obj#149)'"
+                  "string": "caught panic 'Operation in cooldown period' from contract function 'Symbol(obj#161)'"
                 },
                 {
                   "string": "P2"
