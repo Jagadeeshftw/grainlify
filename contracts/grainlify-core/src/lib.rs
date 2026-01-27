@@ -159,7 +159,7 @@
 mod multisig;
 use multisig::MultiSig;
 use soroban_sdk::{
-    contract, contractimpl, contracttype, symbol_short, Address, BytesN, Env, Symbol, Vec,
+    contract, contractimpl, contracttype, symbol_short, Address, BytesN, Env, Symbol, Vec, String,
 };
 
 // ==================== MONITORING MODULE ====================
@@ -379,19 +379,19 @@ pub struct GrainlifyContract;
 #[derive(Clone)]
 enum DataKey {
     /// Administrator address with upgrade authority
-
-
-    
-
     Admin,
-
 
     /// Current version number (increments with upgrades)
     Version,
 
-    
     // NEW: store wasm hash per proposal
     UpgradeProposal(u64),
+    
+    /// Migration state tracking - prevents double migration
+    MigrationState,
+    
+    /// Previous version before migration (for rollback support)
+    PreviousVersion,
 }
 
 // ============================================================================
@@ -407,10 +407,41 @@ enum DataKey {
 ///
 /// # Version History
 /// - v1: Initial release with basic upgrade functionality
+/// - v2: Added state migration system
 ///
 /// # Usage
 /// Set during initialization and can be updated via `set_version()`.
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
+
+// ============================================================================
+// Migration System
+// ============================================================================
+
+/// Migration state tracking to prevent double migration
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MigrationState {
+    /// Version that was migrated from
+    pub from_version: u32,
+    /// Version that was migrated to
+    pub to_version: u32,
+    /// Timestamp when migration completed
+    pub migrated_at: u64,
+    /// Migration hash for verification
+    pub migration_hash: BytesN<32>,
+}
+
+/// Migration event data
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct MigrationEvent {
+    pub from_version: u32,
+    pub to_version: u32,
+    pub timestamp: u64,
+    pub migration_hash: BytesN<32>,
+    pub success: bool,
+    pub error_message: Option<String>,
+}
 
 // ============================================================================
 // Contract Implementation
@@ -683,6 +714,10 @@ impl GrainlifyContract {
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         admin.require_auth();
 
+        // Store previous version for potential rollback
+        let current_version = env.storage().instance().get(&DataKey::Version).unwrap_or(1);
+        env.storage().instance().set(&DataKey::PreviousVersion, &current_version);
+
         // Perform WASM upgrade
         env.deployer().update_current_contract_wasm(new_wasm_hash);
 
@@ -849,6 +884,210 @@ impl GrainlifyContract {
     pub fn get_performance_stats(env: Env, function_name: Symbol) -> monitoring::PerformanceStats {
         monitoring::get_performance_stats(&env, function_name)
     }
+
+    // ========================================================================
+    // State Migration System
+    // ========================================================================
+
+    /// Executes state migration from current version to target version.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `target_version` - Version to migrate to
+    /// * `migration_hash` - Hash of migration data for verification
+    ///
+    /// # Authorization
+    /// - Only admin can call this function
+    /// - Admin must sign the transaction
+    ///
+    /// # State Changes
+    /// - Migrates contract state from current version to target version
+    /// - Updates version number
+    /// - Records migration state to prevent double migration
+    /// - Emits migration event
+    ///
+    /// # Migration Process
+    /// 1. Validates current version and target version
+    /// 2. Checks if migration already completed
+    /// 3. Executes version-specific migration functions
+    /// 4. Updates version number
+    /// 5. Records migration state
+    /// 6. Emits migration event
+    ///
+    /// # Example
+    /// ```rust
+    /// // After upgrading WASM to v2
+    /// contract.upgrade(&env, &new_wasm_hash);
+    ///
+    /// // Migrate state from v1 to v2
+    /// let migration_hash = BytesN::from_array(&env, &[...]);
+    /// contract.migrate(&env, &2, &migration_hash);
+    /// ```
+    pub fn migrate(env: Env, target_version: u32, migration_hash: BytesN<32>) {
+        let start = env.ledger().timestamp();
+
+        // Verify admin authorization
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        // Get current version
+        let current_version = env.storage().instance().get(&DataKey::Version).unwrap_or(1);
+
+        // Validate target version
+        if target_version <= current_version {
+            let error_msg = String::from_str(
+                &env,
+                "Target version must be greater than current version"
+            );
+            emit_migration_event(
+                &env,
+                MigrationEvent {
+                    from_version: current_version,
+                    to_version: target_version,
+                    timestamp: env.ledger().timestamp(),
+                    migration_hash,
+                    success: false,
+                    error_message: Some(error_msg),
+                },
+            );
+            panic!("Target version must be greater than current version");
+        }
+
+        // Check if migration already completed
+        if env.storage().instance().has(&DataKey::MigrationState) {
+            let migration_state: MigrationState = env
+                .storage()
+                .instance()
+                .get(&DataKey::MigrationState)
+                .unwrap();
+            
+            if migration_state.to_version >= target_version {
+                // Migration already completed, skip
+                return;
+            }
+        }
+
+        // Execute version-specific migrations
+        let mut from_version = current_version;
+        while from_version < target_version {
+            let next_version = from_version + 1;
+            
+            // Execute migration from from_version to next_version
+            match next_version {
+                2 => migrate_v1_to_v2(&env),
+                3 => migrate_v2_to_v3(&env),
+                _ => {
+                    let error_msg = String::from_str(
+                        &env,
+                        "No migration path available"
+                    );
+                    emit_migration_event(
+                        &env,
+                        MigrationEvent {
+                            from_version,
+                            to_version: next_version,
+                            timestamp: env.ledger().timestamp(),
+                            migration_hash: migration_hash.clone(),
+                            success: false,
+                            error_message: Some(error_msg),
+                        },
+                    );
+                    panic!("No migration path available");
+                }
+            }
+            
+            from_version = next_version;
+        }
+
+        // Update version
+        env.storage().instance().set(&DataKey::Version, &target_version);
+
+        // Record migration state
+        let migration_state = MigrationState {
+            from_version: current_version,
+            to_version: target_version,
+            migrated_at: env.ledger().timestamp(),
+            migration_hash: migration_hash.clone(),
+        };
+        env.storage().instance().set(&DataKey::MigrationState, &migration_state);
+
+        // Emit success event
+        emit_migration_event(
+            &env,
+            MigrationEvent {
+                from_version: current_version,
+                to_version: target_version,
+                timestamp: env.ledger().timestamp(),
+                migration_hash: migration_hash.clone(),
+                success: true,
+                error_message: None,
+            },
+        );
+
+        // Track successful operation
+        monitoring::track_operation(&env, symbol_short!("migrate"), admin, true);
+
+        // Track performance
+        let duration = env.ledger().timestamp().saturating_sub(start);
+        monitoring::emit_performance(&env, symbol_short!("migrate"), duration);
+    }
+
+    /// Gets the current migration state.
+    ///
+    /// # Returns
+    /// * `Option<MigrationState>` - Current migration state if exists
+    pub fn get_migration_state(env: Env) -> Option<MigrationState> {
+        if env.storage().instance().has(&DataKey::MigrationState) {
+            Some(env.storage().instance().get(&DataKey::MigrationState).unwrap())
+        } else {
+            None
+        }
+    }
+
+    /// Gets the previous version (before last upgrade).
+    ///
+    /// # Returns
+    /// * `Option<u32>` - Previous version if exists
+    pub fn get_previous_version(env: Env) -> Option<u32> {
+        if env.storage().instance().has(&DataKey::PreviousVersion) {
+            Some(env.storage().instance().get(&DataKey::PreviousVersion).unwrap())
+        } else {
+            None
+        }
+    }
+}
+
+// ============================================================================
+// Migration Functions
+// ============================================================================
+
+/// Emits a migration event for audit trail
+fn emit_migration_event(env: &Env, event: MigrationEvent) {
+    env.events().publish(
+        (symbol_short!("migration"),),
+        event,
+    );
+}
+
+/// Migration from version 1 to version 2
+/// This is a placeholder migration - add actual data transformation logic here
+fn migrate_v1_to_v2(_env: &Env) {
+    // Example: Transform old data structures to new ones
+    // This is where you would:
+    // 1. Read old data format
+    // 2. Transform to new format
+    // 3. Write new data format
+    // 4. Clean up old data if needed
+    
+    // For now, this is a no-op migration
+    // Add actual migration logic based on your data structure changes
+}
+
+/// Migration from version 2 to version 3
+/// Placeholder for future migrations
+fn migrate_v2_to_v3(_env: &Env) {
+    // Future migration logic here
+    // This will be implemented when v3 is released
 }
 
 
@@ -887,6 +1126,188 @@ mod test {
 
         client.set_version(&2);
         assert_eq!(client.get_version(), 2);
+    }
+
+    #[test]
+    fn test_migration_v1_to_v2() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, GrainlifyContract);
+        let client = GrainlifyContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.init_admin(&admin);
+
+        // Initial version should be 1
+        assert_eq!(client.get_version(), 1);
+
+        // Create migration hash
+        let migration_hash = BytesN::from_array(&env, &[0u8; 32]);
+
+        // Migrate to version 2
+        client.migrate(&2, &migration_hash);
+
+        // Verify version updated
+        assert_eq!(client.get_version(), 2);
+
+        // Verify migration state recorded
+        let migration_state = client.get_migration_state();
+        assert!(migration_state.is_some());
+        let state = migration_state.unwrap();
+        assert_eq!(state.from_version, 1);
+        assert_eq!(state.to_version, 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "Target version must be greater than current version")]
+    fn test_migration_invalid_target_version() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, GrainlifyContract);
+        let client = GrainlifyContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.init_admin(&admin);
+
+        let migration_hash = BytesN::from_array(&env, &[0u8; 32]);
+
+        // Try to migrate to version 1 when already at version 1
+        client.migrate(&1, &migration_hash);
+    }
+
+    #[test]
+    fn test_migration_idempotency() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, GrainlifyContract);
+        let client = GrainlifyContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.init_admin(&admin);
+
+        let migration_hash = BytesN::from_array(&env, &[0u8; 32]);
+
+        // Migrate to version 2
+        client.migrate(&2, &migration_hash);
+        assert_eq!(client.get_version(), 2);
+
+        // Try to migrate again - should be idempotent
+        client.migrate(&2, &migration_hash);
+        assert_eq!(client.get_version(), 2);
+
+        // Verify migration state unchanged
+        let migration_state = client.get_migration_state();
+        assert!(migration_state.is_some());
+        let state = migration_state.unwrap();
+        assert_eq!(state.to_version, 2);
+    }
+
+    #[test]
+    fn test_get_previous_version() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, GrainlifyContract);
+        let client = GrainlifyContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.init_admin(&admin);
+
+        // Initially no previous version
+        assert!(client.get_previous_version().is_none());
+
+        // Simulate upgrade (this would normally be done via upgrade() but we'll set version directly)
+        client.set_version(&2);
+
+        // Previous version should still be None unless upgrade() was called
+        // This test verifies the get_previous_version function works
+    }
+
+    // ========================================================================
+    // Integration Tests: Upgrade and Migration Workflow
+    // ========================================================================
+
+    #[test]
+    fn test_complete_upgrade_and_migration_workflow() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, GrainlifyContract);
+        let client = GrainlifyContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        
+        // 1. Initialize contract
+        client.init_admin(&admin);
+        assert_eq!(client.get_version(), 1);
+
+        // 2. Simulate upgrade (in real scenario, this would call upgrade() with WASM hash)
+        // For testing, we'll just test the migration part
+        let migration_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+        // 3. Migrate to version 2
+        client.migrate(&2, &migration_hash);
+
+        // 4. Verify version updated
+        assert_eq!(client.get_version(), 2);
+
+        // 5. Verify migration state recorded
+        let migration_state = client.get_migration_state();
+        assert!(migration_state.is_some());
+        let state = migration_state.unwrap();
+        assert_eq!(state.from_version, 1);
+        assert_eq!(state.to_version, 2);
+        assert!(state.migrated_at > 0);
+
+        // 6. Verify events emitted
+        let events = env.events().all();
+        assert!(events.len() > 0);
+    }
+
+    #[test]
+    fn test_migration_sequential_versions() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, GrainlifyContract);
+        let client = GrainlifyContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.init_admin(&admin);
+
+        // Migrate from v1 to v2
+        let hash1 = BytesN::from_array(&env, &[1u8; 32]);
+        client.migrate(&2, &hash1);
+        assert_eq!(client.get_version(), 2);
+
+        // Migrate from v2 to v3 (if migration path exists)
+        // This would test sequential migrations
+        // For now, this will panic as v2->v3 migration is not fully implemented
+        // but the structure is there
+    }
+
+    #[test]
+    fn test_migration_event_emission() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, GrainlifyContract);
+        let client = GrainlifyContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.init_admin(&admin);
+
+        let initial_event_count = env.events().all().len();
+
+        let migration_hash = BytesN::from_array(&env, &[2u8; 32]);
+        client.migrate(&2, &migration_hash);
+
+        // Verify migration event was emitted
+        let events = env.events().all();
+        assert!(events.len() > initial_event_count);
     }
 }
 

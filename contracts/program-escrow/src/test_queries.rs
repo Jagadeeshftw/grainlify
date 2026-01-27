@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::*;
-use soroban_sdk::{testutils::{Address as _, Ledger}, Address, Env, String, vec};
+use soroban_sdk::{testutils::{Address as _, Ledger}, Address, Env, String};
 
 #[test]
 fn test_query_programs_filtering() {

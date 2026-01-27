@@ -516,6 +516,91 @@ pub struct PayoutRecord {
     pub timestamp: u64,
 }
 
+/// Time-based release schedule for program funds.
+///
+/// # Fields
+/// * `schedule_id` - Unique identifier for this schedule
+/// * `amount` - Amount to release (in token's smallest denomination)
+/// * `release_timestamp` - Unix timestamp when funds become available for release
+/// * `recipient` - Address that will receive the funds
+/// * `released` - Whether this schedule has been executed
+/// * `released_at` - Timestamp when the schedule was executed (None if not released)
+/// * `released_by` - Address that triggered the release (None if not released)
+///
+/// # Usage
+/// Used to implement milestone-based payouts and scheduled distributions for programs.
+/// Multiple schedules can be created per program for complex vesting patterns.
+///
+/// # Example
+/// ```rust
+/// let schedule = ProgramReleaseSchedule {
+///     schedule_id: 1,
+///     amount: 500_0000000, // 500 tokens
+///     release_timestamp: current_time + (30 * 24 * 60 * 60), // 30 days
+///     recipient: winner_address,
+///     released: false,
+///     released_at: None,
+///     released_by: None,
+/// };
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProgramReleaseSchedule {
+    pub schedule_id: u64,
+    pub amount: i128,
+    pub release_timestamp: u64,
+    pub recipient: Address,
+    pub released: bool,
+    pub released_at: Option<u64>,
+    pub released_by: Option<Address>,
+}
+
+/// History record for executed program release schedules.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProgramReleaseHistory {
+    pub schedule_id: u64,
+    pub program_id: String,
+    pub amount: i128,
+    pub recipient: Address,
+    pub released_at: u64,
+    pub released_by: Address,
+    pub release_type: ReleaseType,
+}
+
+/// Type of release execution for programs.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ReleaseType {
+    Automatic,  // Released automatically after timestamp
+    Manual,     // Released manually by authorized party
+}
+
+/// Event emitted when a program release schedule is created.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProgramScheduleCreated {
+    pub program_id: String,
+    pub schedule_id: u64,
+    pub amount: i128,
+    pub release_timestamp: u64,
+    pub recipient: Address,
+    pub created_by: Address,
+}
+
+/// Event emitted when a program release schedule is executed.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProgramScheduleReleased {
+    pub program_id: String,
+    pub schedule_id: u64,
+    pub amount: i128,
+    pub recipient: Address,
+    pub released_at: u64,
+    pub released_by: Address,
+    pub release_type: ReleaseType,
+}
+
 /// Complete program state and configuration.
 ///
 /// # Fields
@@ -574,6 +659,9 @@ pub struct ProgramData {
 pub enum DataKey {
     Program(String), // program_id -> ProgramData
     ProgramsByAuth(Address), // authorized_payout_key -> Vec<String> (List of Program IDs)
+    ReleaseSchedule(String, u64), // program_id, schedule_id -> ProgramReleaseSchedule
+    ReleaseHistory(String), // program_id -> Vec<ProgramReleaseHistory>
+    NextScheduleId(String), // program_id -> next schedule_id
 }
 
 // ============================================================================
@@ -619,6 +707,10 @@ pub struct PayoutFilter {
 
 #[contract]
 pub struct ProgramEscrowContract;
+
+// Event symbols for program release schedules
+const PROG_SCHEDULE_CREATED: soroban_sdk::Symbol = soroban_sdk::symbol_short!("prg_sch_c");
+const PROG_SCHEDULE_RELEASED: soroban_sdk::Symbol = soroban_sdk::symbol_short!("prg_sch_r");
 
 #[contractimpl]
 impl ProgramEscrowContract {
@@ -1249,6 +1341,413 @@ impl ProgramEscrowContract {
     }
 
     // ========================================================================
+    // Release Schedule Functions
+    // ========================================================================
+
+    /// Creates a time-based release schedule for a program.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `program_id` - The program to create schedule for
+    /// * `amount` - Amount to release (in token's smallest denomination)
+    /// * `release_timestamp` - Unix timestamp when funds become available
+    /// * `recipient` - Address that will receive the funds
+    ///
+    /// # Returns
+    /// * `ProgramData` - Updated program data
+    ///
+    /// # Panics
+    /// * If program is not initialized
+    /// * If caller is not authorized payout key
+    /// * If amount is invalid
+    /// * If timestamp is in the past
+    /// * If amount exceeds remaining balance
+    ///
+    /// # State Changes
+    /// - Creates ProgramReleaseSchedule record
+    /// - Updates next schedule ID
+    /// - Emits ScheduleCreated event
+    ///
+    /// # Authorization
+    /// - Only authorized payout key can call this function
+    ///
+    /// # Example
+    /// ```rust
+    /// let now = env.ledger().timestamp();
+    /// let release_time = now + (30 * 24 * 60 * 60); // 30 days from now
+    /// escrow_client.create_program_release_schedule(
+    ///     &"Hackathon2024",
+    ///     &500_0000000, // 500 tokens
+    ///     &release_time,
+    ///     &winner_address
+    /// );
+    /// ```
+    pub fn create_program_release_schedule(
+        env: Env,
+        program_id: String,
+        amount: i128,
+        release_timestamp: u64,
+        recipient: Address,
+    ) -> ProgramData {
+        let start = env.ledger().timestamp();
+
+        // Get program data
+        let program_key = DataKey::Program(program_id.clone());
+        let program_data: ProgramData = env
+            .storage()
+            .instance()
+            .get(&program_key)
+            .unwrap_or_else(|| panic!("Program not found"));
+
+        // Apply rate limiting to the authorized payout key
+        anti_abuse::check_rate_limit(&env, program_data.authorized_payout_key.clone());
+
+        // Verify authorization
+        program_data.authorized_payout_key.require_auth();
+
+        // Validate amount
+        if amount <= 0 {
+            panic!("Amount must be greater than zero");
+        }
+
+        // Validate timestamp
+        if release_timestamp <= env.ledger().timestamp() {
+            panic!("Release timestamp must be in the future");
+        }
+
+        // Check sufficient remaining balance
+        let scheduled_total = get_program_total_scheduled_amount(&env, &program_id);
+        if scheduled_total + amount > program_data.remaining_balance {
+            panic!("Insufficient balance for scheduled amount");
+        }
+
+        // Get next schedule ID
+        let schedule_id: u64 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::NextScheduleId(program_id.clone()))
+            .unwrap_or(1);
+
+        // Create release schedule
+        let schedule = ProgramReleaseSchedule {
+            schedule_id,
+            amount,
+            release_timestamp,
+            recipient: recipient.clone(),
+            released: false,
+            released_at: None,
+            released_by: None,
+        };
+
+        // Store schedule
+        env.storage()
+            .persistent()
+            .set(&DataKey::ReleaseSchedule(program_id.clone(), schedule_id), &schedule);
+
+        // Update next schedule ID
+        env.storage()
+            .persistent()
+            .set(&DataKey::NextScheduleId(program_id.clone()), &(schedule_id + 1));
+
+        // Emit program schedule created event
+        env.events().publish(
+            (PROG_SCHEDULE_CREATED,),
+            ProgramScheduleCreated {
+                program_id: program_id.clone(),
+                schedule_id,
+                amount,
+                release_timestamp,
+                recipient: recipient.clone(),
+                created_by: program_data.authorized_payout_key.clone(),
+            },
+        );
+
+        // Track successful operation
+        monitoring::track_operation(&env, symbol_short!("create_p"), program_data.authorized_payout_key, true);
+
+        // Track performance
+        let duration = env.ledger().timestamp().saturating_sub(start);
+        monitoring::emit_performance(&env, symbol_short!("create_p"), duration);
+
+        // Return updated program data
+        let updated_data: ProgramData = env
+            .storage()
+            .instance()
+            .get(&program_key)
+            .unwrap();
+        updated_data
+    }
+
+    /// Automatically releases funds for program schedules that are due.
+    /// Can be called by anyone after the release timestamp has passed.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `program_id` - The program to check for due schedules
+    /// * `schedule_id` - The specific schedule to release
+    ///
+    /// # Panics
+    /// * If program doesn't exist
+    /// * If schedule doesn't exist
+    /// * If schedule is already released
+    /// * If schedule is not yet due
+    ///
+    /// # State Changes
+    /// - Transfers tokens to recipient
+    /// - Updates schedule status to released
+    /// - Adds to release history
+    /// - Updates program remaining balance
+    /// - Emits ScheduleReleased event
+    ///
+    /// # Example
+    /// ```rust
+    /// // Anyone can call this after the timestamp
+    /// escrow_client.release_program_schedule_automatic(&"Hackathon2024", &1);
+    /// ```
+    pub fn release_prog_schedule_automatic(
+        env: Env,
+        program_id: String,
+        schedule_id: u64,
+    ) {
+        let start = env.ledger().timestamp();
+        let caller = env.current_contract_address();
+
+        // Get program data
+        let program_key = DataKey::Program(program_id.clone());
+        let program_data: ProgramData = env
+            .storage()
+            .instance()
+            .get(&program_key)
+            .unwrap_or_else(|| panic!("Program not found"));
+
+        // Get schedule
+        if !env
+            .storage()
+            .persistent()
+            .has(&DataKey::ReleaseSchedule(program_id.clone(), schedule_id))
+        {
+            panic!("Schedule not found");
+        }
+
+        let mut schedule: ProgramReleaseSchedule = env
+            .storage()
+            .persistent()
+            .get(&DataKey::ReleaseSchedule(program_id.clone(), schedule_id))
+            .unwrap();
+
+        // Check if already released
+        if schedule.released {
+            panic!("Schedule already released");
+        }
+
+        // Check if due for release
+        let now = env.ledger().timestamp();
+        if now < schedule.release_timestamp {
+            panic!("Schedule not yet due for release");
+        }
+
+        // Get token client
+        let contract_address = env.current_contract_address();
+        let token_client = token::Client::new(&env, &program_data.token_address);
+
+        // Transfer funds
+        token_client.transfer(&contract_address, &schedule.recipient, &schedule.amount);
+
+        // Update schedule
+        schedule.released = true;
+        schedule.released_at = Some(now);
+        schedule.released_by = Some(env.current_contract_address());
+
+        // Update program data
+        let mut updated_data = program_data.clone();
+        updated_data.remaining_balance -= schedule.amount;
+
+        // Add to release history
+        let history_entry = ProgramReleaseHistory {
+            schedule_id,
+            program_id: program_id.clone(),
+            amount: schedule.amount,
+            recipient: schedule.recipient.clone(),
+            released_at: now,
+            released_by: env.current_contract_address(),
+            release_type: ReleaseType::Automatic,
+        };
+
+        let mut history: Vec<ProgramReleaseHistory> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::ReleaseHistory(program_id.clone()))
+            .unwrap_or(vec![&env]);
+        history.push_back(history_entry);
+
+        // Store updates
+        env.storage()
+            .persistent()
+            .set(&DataKey::ReleaseSchedule(program_id.clone(), schedule_id), &schedule);
+        env.storage().instance().set(&program_key, &updated_data);
+        env.storage()
+            .persistent()
+            .set(&DataKey::ReleaseHistory(program_id.clone()), &history);
+
+        // Emit program schedule released event
+        env.events().publish(
+            (PROG_SCHEDULE_RELEASED,),
+            ProgramScheduleReleased {
+                program_id: program_id.clone(),
+                schedule_id,
+                amount: schedule.amount,
+                recipient: schedule.recipient.clone(),
+                released_at: now,
+                released_by: env.current_contract_address(),
+                release_type: ReleaseType::Automatic,
+            },
+        );
+
+        // Track successful operation
+        monitoring::track_operation(&env, symbol_short!("rel_auto"), caller, true);
+
+        // Track performance
+        let duration = env.ledger().timestamp().saturating_sub(start);
+        monitoring::emit_performance(&env, symbol_short!("rel_auto"), duration);
+    }
+
+    /// Manually releases funds for a program schedule (authorized payout key only).
+    /// Can be called before the release timestamp by authorized key.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `program_id` - The program containing the schedule
+    /// * `schedule_id` - The schedule to release
+    ///
+    /// # Panics
+    /// * If program doesn't exist
+    /// * If caller is not authorized payout key
+    /// * If schedule doesn't exist
+    /// * If schedule is already released
+    ///
+    /// # State Changes
+    /// - Transfers tokens to recipient
+    /// - Updates schedule status to released
+    /// - Adds to release history
+    /// - Updates program remaining balance
+    /// - Emits ScheduleReleased event
+    ///
+    /// # Authorization
+    /// - Only authorized payout key can call this function
+    ///
+    /// # Example
+    /// ```rust
+    /// // Authorized key can release early
+    /// escrow_client.release_prog_schedule_manual(&"Hackathon2024", &1);
+    /// ```
+    pub fn release_prog_schedule_manual(
+        env: Env,
+        program_id: String,
+        schedule_id: u64,
+    ) {
+        let start = env.ledger().timestamp();
+
+        // Get program data
+        let program_key = DataKey::Program(program_id.clone());
+        let program_data: ProgramData = env
+            .storage()
+            .instance()
+            .get(&program_key)
+            .unwrap_or_else(|| panic!("Program not found"));
+
+        // Apply rate limiting to the authorized payout key
+        anti_abuse::check_rate_limit(&env, program_data.authorized_payout_key.clone());
+
+        // Verify authorization
+        program_data.authorized_payout_key.require_auth();
+
+        // Get schedule
+        if !env
+            .storage()
+            .persistent()
+            .has(&DataKey::ReleaseSchedule(program_id.clone(), schedule_id))
+        {
+            panic!("Schedule not found");
+        }
+
+        let mut schedule: ProgramReleaseSchedule = env
+            .storage()
+            .persistent()
+            .get(&DataKey::ReleaseSchedule(program_id.clone(), schedule_id))
+            .unwrap();
+
+        // Check if already released
+        if schedule.released {
+            panic!("Schedule already released");
+        }
+
+        // Get token client
+        let contract_address = env.current_contract_address();
+        let token_client = token::Client::new(&env, &program_data.token_address);
+
+        // Transfer funds
+        token_client.transfer(&contract_address, &schedule.recipient, &schedule.amount);
+
+        // Update schedule
+        let now = env.ledger().timestamp();
+        schedule.released = true;
+        schedule.released_at = Some(now);
+        schedule.released_by = Some(program_data.authorized_payout_key.clone());
+
+        // Update program data
+        let mut updated_data = program_data.clone();
+        updated_data.remaining_balance -= schedule.amount;
+
+        // Add to release history
+        let history_entry = ProgramReleaseHistory {
+            schedule_id,
+            program_id: program_id.clone(),
+            amount: schedule.amount,
+            recipient: schedule.recipient.clone(),
+            released_at: now,
+            released_by: program_data.authorized_payout_key.clone(),
+            release_type: ReleaseType::Manual,
+        };
+
+        let mut history: Vec<ProgramReleaseHistory> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::ReleaseHistory(program_id.clone()))
+            .unwrap_or(vec![&env]);
+        history.push_back(history_entry);
+
+        // Store updates
+        env.storage()
+            .persistent()
+            .set(&DataKey::ReleaseSchedule(program_id.clone(), schedule_id), &schedule);
+        env.storage().instance().set(&program_key, &updated_data);
+        env.storage()
+            .persistent()
+            .set(&DataKey::ReleaseHistory(program_id.clone()), &history);
+
+        // Emit program schedule released event
+        env.events().publish(
+            (PROG_SCHEDULE_RELEASED,),
+            ProgramScheduleReleased {
+                program_id: program_id.clone(),
+                schedule_id,
+                amount: schedule.amount,
+                recipient: schedule.recipient.clone(),
+                released_at: now,
+                released_by: program_data.authorized_payout_key.clone(),
+                release_type: ReleaseType::Manual,
+            },
+        );
+
+        // Track successful operation
+        monitoring::track_operation(&env, symbol_short!("rel_man"), program_data.authorized_payout_key, true);
+
+        // Track performance
+        let duration = env.ledger().timestamp().saturating_sub(start);
+        monitoring::emit_performance(&env, symbol_short!("rel_man"), duration);
+    }
+
+    // ========================================================================
     // View Functions (Read-only)
     // ========================================================================
 
@@ -1597,6 +2096,153 @@ impl ProgramEscrowContract {
         
         results
     }
+    // ========================================================================
+    // Schedule View Functions
+    // ========================================================================
+
+    /// Retrieves a specific program release schedule.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `program_id` - The program containing the schedule
+    /// * `schedule_id` - The schedule ID to retrieve
+    ///
+    /// # Returns
+    /// * `ProgramReleaseSchedule` - The schedule details
+    ///
+    /// # Panics
+    /// * If schedule doesn't exist
+    pub fn get_program_release_schedule(
+        env: Env,
+        program_id: String,
+        schedule_id: u64,
+    ) -> ProgramReleaseSchedule {
+        env.storage()
+            .persistent()
+            .get(&DataKey::ReleaseSchedule(program_id, schedule_id))
+            .unwrap_or_else(|| panic!("Schedule not found"))
+    }
+
+    /// Retrieves all release schedules for a program.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `program_id` - The program to query
+    ///
+    /// # Returns
+    /// * `Vec<ProgramReleaseSchedule>` - All schedules for the program
+    pub fn get_all_prog_release_schedules(env: Env, program_id: String) -> Vec<ProgramReleaseSchedule> {
+        let mut schedules = Vec::new(&env);
+        let next_id: u64 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::NextScheduleId(program_id.clone()))
+            .unwrap_or(1);
+
+        for schedule_id in 1..next_id {
+            if env
+                .storage()
+                .persistent()
+                .has(&DataKey::ReleaseSchedule(program_id.clone(), schedule_id))
+            {
+                let schedule: ProgramReleaseSchedule = env
+                    .storage()
+                    .persistent()
+                    .get(&DataKey::ReleaseSchedule(program_id.clone(), schedule_id))
+                    .unwrap();
+                schedules.push_back(schedule);
+            }
+        }
+
+        schedules
+    }
+
+    /// Retrieves pending (unreleased) schedules for a program.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `program_id` - The program to query
+    ///
+    /// # Returns
+    /// * `Vec<ProgramReleaseSchedule>` - All pending schedules
+    pub fn get_pending_program_schedules(env: Env, program_id: String) -> Vec<ProgramReleaseSchedule> {
+        let all_schedules = Self::get_all_prog_release_schedules(env.clone(), program_id.clone());
+        let mut pending = Vec::new(&env);
+        
+        for schedule in all_schedules.iter() {
+            if !schedule.released {
+                pending.push_back(schedule.clone());
+            }
+        }
+        
+        pending
+    }
+
+    /// Retrieves due schedules (timestamp passed but not released) for a program.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `program_id` - The program to query
+    ///
+    /// # Returns
+    /// * `Vec<ProgramReleaseSchedule>` - All due but unreleased schedules
+    pub fn get_due_program_schedules(env: Env, program_id: String) -> Vec<ProgramReleaseSchedule> {
+        let pending = Self::get_pending_program_schedules(env.clone(), program_id.clone());
+        let mut due = Vec::new(&env);
+        let now = env.ledger().timestamp();
+        
+        for schedule in pending.iter() {
+            if schedule.release_timestamp <= now {
+                due.push_back(schedule.clone());
+            }
+        }
+        
+        due
+    }
+
+    /// Retrieves release history for a program.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `program_id` - The program to query
+    ///
+    /// # Returns
+    /// * `Vec<ProgramReleaseHistory>` - Complete release history
+    pub fn get_program_release_history(env: Env, program_id: String) -> Vec<ProgramReleaseHistory> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::ReleaseHistory(program_id))
+            .unwrap_or(vec![&env])
+    }
+}
+
+/// Helper function to calculate total scheduled amount for a program.
+fn get_program_total_scheduled_amount(env: &Env, program_id: &String) -> i128 {
+    let next_id: u64 = env
+        .storage()
+        .persistent()
+        .get(&DataKey::NextScheduleId(program_id.clone()))
+        .unwrap_or(1);
+
+    let mut total = 0i128;
+    for schedule_id in 1..next_id {
+        if env
+            .storage()
+            .persistent()
+            .has(&DataKey::ReleaseSchedule(program_id.clone(), schedule_id))
+        {
+            let schedule: ProgramReleaseSchedule = env
+                .storage()
+                .persistent()
+                .get(&DataKey::ReleaseSchedule(program_id.clone(), schedule_id))
+                .unwrap();
+            if !schedule.released {
+                total += schedule.amount;
+            }
+        }
+    }
+
+    total
 }
 
 /// ============================================================================
@@ -1623,6 +2269,413 @@ mod test {
     // ========================================================================
     // Program Registration Tests
     // ========================================================================
+
+    fn setup_program_with_schedule(
+        env: &Env,
+        client: &ProgramEscrowContractClient<'static>,
+        authorized_key: &Address,
+        _token: &Address,
+        program_id: &String,
+        total_amount: i128,
+        winner: &Address,
+        release_timestamp: u64,
+    ) {
+        // Create and fund token
+        let token_client = create_token_contract(env, authorized_key);
+        let token_admin = token::StellarAssetClient::new(env, &token_client.address);
+        token_admin.mint(authorized_key, &total_amount);
+
+        // Register program
+        client.initialize_program(program_id, authorized_key, &token_client.address);
+        
+        // Lock funds for program
+        token_client.transfer(authorized_key, &client.address, &total_amount);
+        client.lock_program_funds(program_id, &total_amount);
+        
+        // Create release schedule
+        client.create_program_release_schedule(
+            program_id,
+            &total_amount,
+            &release_timestamp,
+            &winner.clone(),
+        );
+    }
+
+    #[test]
+    fn test_single_program_release_schedule() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, ProgramEscrowContract);
+        let client = ProgramEscrowContractClient::new(&env, &contract_id);
+        
+        let authorized_key = Address::generate(&env);
+        let winner = Address::generate(&env);
+        let token = Address::generate(&env);
+        let program_id = String::from_str(&env, "Hackathon2024");
+        let amount = 1000_0000000;
+        let release_timestamp = 1000;
+        
+        env.mock_all_auths();
+        
+        // Setup program with schedule
+        setup_program_with_schedule(
+            &env,
+            &client,
+            &authorized_key,
+            &token,
+            &program_id,
+            amount,
+            &winner,
+            release_timestamp,
+        );
+        
+        // Verify schedule was created
+        let schedule = client.get_program_release_schedule(&program_id, &1);
+        assert_eq!(schedule.schedule_id, 1);
+        assert_eq!(schedule.amount, amount);
+        assert_eq!(schedule.release_timestamp, release_timestamp);
+        assert_eq!(schedule.recipient, winner);
+        assert!(!schedule.released);
+        
+        // Check pending schedules
+        let pending = client.get_pending_program_schedules(&program_id);
+        assert_eq!(pending.len(), 1);
+        
+        // Event verification can be added later - focusing on core functionality
+    }
+
+    #[test]
+    fn test_multiple_program_release_schedules() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, ProgramEscrowContract);
+        let client = ProgramEscrowContractClient::new(&env, &contract_id);
+        
+        let authorized_key = Address::generate(&env);
+        let winner1 = Address::generate(&env);
+        let winner2 = Address::generate(&env);
+        let _token = Address::generate(&env);
+        let program_id = String::from_str(&env, "Hackathon2024");
+        let amount1 = 600_0000000;
+        let amount2 = 400_0000000;
+        let total_amount = amount1 + amount2;
+        
+        env.mock_all_auths();
+        
+        // Create and fund token
+        let token_client = create_token_contract(&env, &authorized_key);
+        let token_admin = token::StellarAssetClient::new(&env, &token_client.address);
+        token_admin.mint(&authorized_key, &total_amount);
+
+        // Register program
+        client.initialize_program(&program_id, &authorized_key, &token_client.address);
+        
+        // Lock funds for program
+        token_client.transfer(&authorized_key, &client.address, &total_amount);
+        client.lock_program_funds(&program_id, &total_amount);
+        
+        // Create first release schedule
+        client.create_program_release_schedule(
+            &program_id,
+            &amount1,
+            &1000,
+            &winner1.clone(),
+        );
+        
+        // Create second release schedule
+        client.create_program_release_schedule(
+            &program_id,
+            &amount2,
+            &2000,
+            &winner2.clone(),
+        );
+        
+        // Verify both schedules exist
+        let all_schedules = client.get_all_prog_release_schedules(&program_id);
+        assert_eq!(all_schedules.len(), 2);
+        
+        // Verify schedule IDs
+        let schedule1 = client.get_program_release_schedule(&program_id, &1);
+        let schedule2 = client.get_program_release_schedule(&program_id, &2);
+        assert_eq!(schedule1.schedule_id, 1);
+        assert_eq!(schedule2.schedule_id, 2);
+        
+        // Verify amounts
+        assert_eq!(schedule1.amount, amount1);
+        assert_eq!(schedule2.amount, amount2);
+        
+        // Verify recipients
+        assert_eq!(schedule1.recipient, winner1);
+        assert_eq!(schedule2.recipient, winner2);
+        
+        // Check pending schedules
+        let pending = client.get_pending_program_schedules(&program_id);
+        assert_eq!(pending.len(), 2);
+        
+        // Event verification can be added later - focusing on core functionality
+    }
+
+    #[test]
+    fn test_program_automatic_release_at_timestamp() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, ProgramEscrowContract);
+        let client = ProgramEscrowContractClient::new(&env, &contract_id);
+        
+        let authorized_key = Address::generate(&env);
+        let winner = Address::generate(&env);
+        let token = Address::generate(&env);
+        let program_id = String::from_str(&env, "Hackathon2024");
+        let amount = 1000_0000000;
+        let release_timestamp = 1000;
+        
+        env.mock_all_auths();
+        
+        // Setup program with schedule
+        setup_program_with_schedule(
+            &env,
+            &client,
+            &authorized_key,
+            &token,
+            &program_id,
+            amount,
+            &winner,
+            release_timestamp,
+        );
+        
+        // Try to release before timestamp (should fail)
+        env.ledger().set_timestamp(999);
+        let result = client.try_release_prog_schedule_automatic(&program_id, &1);
+        assert!(result.is_err());
+        
+        // Advance time to after release timestamp
+        env.ledger().set_timestamp(1001);
+        
+        // Release automatically
+        client.release_prog_schedule_automatic(&program_id, &1);
+        
+        // Verify schedule was released
+        let schedule = client.get_program_release_schedule(&program_id, &1);
+        assert!(schedule.released);
+        assert_eq!(schedule.released_at, Some(1001));
+        assert_eq!(schedule.released_by, Some(client.address.clone()));
+        
+        // Check no pending schedules
+        let pending = client.get_pending_program_schedules(&program_id);
+        assert_eq!(pending.len(), 0);
+        
+        // Verify release history
+        let history = client.get_program_release_history(&program_id);
+        assert_eq!(history.len(), 1);
+        assert_eq!(history.get(0).unwrap().release_type, ReleaseType::Automatic);
+        
+        // Event verification can be added later - focusing on core functionality
+    }
+
+    #[test]
+    fn test_program_manual_trigger_before_after_timestamp() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, ProgramEscrowContract);
+        let client = ProgramEscrowContractClient::new(&env, &contract_id);
+        
+        let authorized_key = Address::generate(&env);
+        let winner = Address::generate(&env);
+        let token = Address::generate(&env);
+        let program_id = String::from_str(&env, "Hackathon2024");
+        let amount = 1000_0000000;
+        let release_timestamp = 1000;
+        
+        env.mock_all_auths();
+        
+        // Setup program with schedule
+        setup_program_with_schedule(
+            &env,
+            &client,
+            &authorized_key,
+            &token,
+            &program_id,
+            amount,
+            &winner,
+            release_timestamp,
+        );
+        
+        // Manually release before timestamp (authorized key can do this)
+        env.ledger().set_timestamp(999);
+        client.release_prog_schedule_manual(&program_id, &1);
+        
+        // Verify schedule was released
+        let schedule = client.get_program_release_schedule(&program_id, &1);
+        assert!(schedule.released);
+        assert_eq!(schedule.released_at, Some(999));
+        assert_eq!(schedule.released_by, Some(authorized_key.clone()));
+        
+        // Verify release history
+        let history = client.get_program_release_history(&program_id);
+        assert_eq!(history.len(), 1);
+        assert_eq!(history.get(0).unwrap().release_type, ReleaseType::Manual);
+        
+        // Event verification can be added later - focusing on core functionality
+    }
+
+    #[test]
+    fn test_verify_program_schedule_tracking_and_history() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, ProgramEscrowContract);
+        let client = ProgramEscrowContractClient::new(&env, &contract_id);
+        
+        let authorized_key = Address::generate(&env);
+        let winner1 = Address::generate(&env);
+        let winner2 = Address::generate(&env);
+        let _token = Address::generate(&env);
+        let program_id = String::from_str(&env, "Hackathon2024");
+        let amount1 = 600_0000000;
+        let amount2 = 400_0000000;
+        let total_amount = amount1 + amount2;
+        
+        env.mock_all_auths();
+        
+        // Create and fund token
+        let token_client = create_token_contract(&env, &authorized_key);
+        let token_admin = token::StellarAssetClient::new(&env, &token_client.address);
+        token_admin.mint(&authorized_key, &total_amount);
+
+        // Register program
+        client.initialize_program(&program_id, &authorized_key, &token_client.address);
+        
+        // Lock funds for program
+        token_client.transfer(&authorized_key, &client.address, &total_amount);
+        client.lock_program_funds(&program_id, &total_amount);
+        
+        // Create first schedule
+        client.create_program_release_schedule(
+            &program_id,
+            &amount1,
+            &1000,
+            &winner1.clone(),
+        );
+        
+        // Create second schedule
+        client.create_program_release_schedule(
+            &program_id,
+            &amount2,
+            &2000,
+            &winner2.clone(),
+        );
+        
+        // Release first schedule manually
+        client.release_prog_schedule_manual(&program_id, &1);
+        
+        // Advance time and release second schedule automatically
+        env.ledger().set_timestamp(2001);
+        client.release_prog_schedule_automatic(&program_id, &2);
+        
+        // Verify complete history
+        let history = client.get_program_release_history(&program_id);
+        assert_eq!(history.len(), 2);
+        
+        // Check first release (manual)
+        let first_release = history.get(0).unwrap();
+        assert_eq!(first_release.schedule_id, 1);
+        assert_eq!(first_release.amount, amount1);
+        assert_eq!(first_release.recipient, winner1);
+        assert_eq!(first_release.release_type, ReleaseType::Manual);
+        
+        // Check second release (automatic)
+        let second_release = history.get(1).unwrap();
+        assert_eq!(second_release.schedule_id, 2);
+        assert_eq!(second_release.amount, amount2);
+        assert_eq!(second_release.recipient, winner2);
+        assert_eq!(second_release.release_type, ReleaseType::Automatic);
+        
+        // Verify no pending schedules
+        let pending = client.get_pending_program_schedules(&program_id);
+        assert_eq!(pending.len(), 0);
+        
+        // Verify all schedules are marked as released
+        let all_schedules = client.get_all_prog_release_schedules(&program_id);
+        assert_eq!(all_schedules.len(), 2);
+        assert!(all_schedules.get(0).unwrap().released);
+        assert!(all_schedules.get(1).unwrap().released);
+    }
+
+    #[test]
+    fn test_program_overlapping_schedules() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, ProgramEscrowContract);
+        let client = ProgramEscrowContractClient::new(&env, &contract_id);
+        
+        let authorized_key = Address::generate(&env);
+        let winner1 = Address::generate(&env);
+        let winner2 = Address::generate(&env);
+        let winner3 = Address::generate(&env);
+        let token = Address::generate(&env);
+        let program_id = String::from_str(&env, "Hackathon2024");
+        let amount1 = 300_0000000;
+        let amount2 = 300_0000000;
+        let amount3 = 400_0000000;
+        let total_amount = amount1 + amount2 + amount3;
+        let base_timestamp = 1000;
+        
+        env.mock_all_auths();
+        
+        // Create and fund token
+        let token_client = create_token_contract(&env, &authorized_key);
+        let token_admin = token::StellarAssetClient::new(&env, &token_client.address);
+        token_admin.mint(&authorized_key, &total_amount);
+
+        // Register program
+        client.initialize_program(&program_id, &authorized_key, &token_client.address);
+        
+        // Lock funds for program
+        token_client.transfer(&authorized_key, &client.address, &total_amount);
+        client.lock_program_funds(&program_id, &total_amount);
+        
+        // Create overlapping schedules (all at same timestamp)
+        client.create_program_release_schedule(
+            &program_id,
+            &amount1,
+            &base_timestamp,
+            &winner1.clone(),
+        );
+        
+        client.create_program_release_schedule(
+            &program_id,
+            &amount2,
+            &base_timestamp,
+            &winner2.clone(),
+        );
+        
+        client.create_program_release_schedule(
+            &program_id,
+            &amount3,
+            &base_timestamp,
+            &winner3.clone(),
+        );
+        
+        // Advance time to after release timestamp
+        env.ledger().set_timestamp(base_timestamp + 1);
+        
+        // Check due schedules (should be all 3)
+        let due = client.get_due_program_schedules(&program_id);
+        assert_eq!(due.len(), 3);
+        
+        // Release schedules one by one
+        client.release_prog_schedule_automatic(&program_id, &1);
+        client.release_prog_schedule_automatic(&program_id, &2);
+        client.release_prog_schedule_automatic(&program_id, &3);
+        
+        // Verify all schedules are released
+        let pending = client.get_pending_program_schedules(&program_id);
+        assert_eq!(pending.len(), 0);
+        
+        // Verify complete history
+        let history = client.get_program_release_history(&program_id);
+        assert_eq!(history.len(), 3);
+        
+        // Verify all were automatic releases
+        for release in history.iter() {
+            assert_eq!(release.release_type, ReleaseType::Automatic);
+        }
+        
+        // Event verification can be added later - focusing on core functionality
+    }
 
     #[test]
     fn test_register_single_program() {
