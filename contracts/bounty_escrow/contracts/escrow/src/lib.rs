@@ -89,11 +89,13 @@
 #![no_std]
 mod events;
 mod test_bounty_escrow;
+mod test_event_queries;
 
 use events::{
     emit_batch_funds_locked, emit_batch_funds_released, emit_bounty_initialized, emit_funds_locked,
     emit_funds_refunded, emit_funds_released, BatchFundsLocked, BatchFundsReleased,
-    BountyEscrowInitialized, FundsLocked, FundsRefunded, FundsReleased,
+    BountyEscrowInitialized, EventFilter, EventIndex, EventQueryResult, EventType, FundsLocked,
+    FundsRefunded, FundsReleased,
 };
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, token, vec, Address, Env,
@@ -584,6 +586,10 @@ pub enum DataKey {
     Escrow(u64),         // bounty_id
     RefundApproval(u64), // bounty_id -> RefundApproval
     ReentrancyGuard,
+    EventIndex(u64),     // sequence_id -> EventIndex
+    EventCounter,        // Total event count for indexing
+    BountyIndex(Address, u64), // (address, bounty_id) for user-specific queries
+    TimeIndex(u64, u64), // (timestamp_bucket, sequence_id) for time-based queries
 }
 
 // ============================================================================
@@ -655,10 +661,15 @@ impl BountyEscrowContract {
             &env,
             BountyEscrowInitialized {
                 admin: admin.clone(),
-                token,
+                token: token.clone(),
                 timestamp: env.ledger().timestamp(),
+                version: 2,
+                contract_version: String::from_str(&env, "1.0.0"),
             },
         );
+
+        // Index event
+        Self::index_event(&env, EventType::Initialized, 0, admin.clone(), 0);
 
         // Track successful operation
         monitoring::track_operation(&env, symbol_short!("init"), caller, true);
@@ -802,8 +813,14 @@ impl BountyEscrowContract {
                 amount,
                 depositor: depositor.clone(),
                 deadline,
+                timestamp: env.ledger().timestamp(),
+                version: 2,
+                metadata: String::from_str(&env, "Funds locked in escrow"),
             },
         );
+
+        // Index event
+        Self::index_event(&env, EventType::Locked, bounty_id, depositor.clone(), amount);
 
         env.storage().instance().remove(&DataKey::ReentrancyGuard);
 
@@ -935,8 +952,14 @@ impl BountyEscrowContract {
                 amount: escrow.amount,
                 recipient: contributor.clone(),
                 timestamp: env.ledger().timestamp(),
+                depositor: escrow.depositor.clone(),
+                version: 2,
+                metadata: String::from_str(&env, "Funds released to contributor"),
             },
         );
+
+        // Index event
+        Self::index_event(&env, EventType::Released, bounty_id, contributor.clone(), escrow.amount);
 
         env.storage().instance().remove(&DataKey::ReentrancyGuard);
 
@@ -1142,12 +1165,17 @@ impl BountyEscrowContract {
             FundsRefunded {
                 bounty_id,
                 amount: refund_amount,
-                refund_to: refund_recipient,
+                refund_to: refund_recipient.clone(),
                 timestamp: env.ledger().timestamp(),
                 refund_mode: mode.clone(),
                 remaining_amount: escrow.remaining_amount,
+                version: 2,
+                metadata: String::from_str(&env, "Funds refunded to depositor"),
             },
         );
+
+        // Index event
+        Self::index_event(&env, EventType::Refunded, bounty_id, refund_recipient, refund_amount);
 
         env.storage().instance().remove(&DataKey::ReentrancyGuard);
 
@@ -1416,8 +1444,14 @@ impl BountyEscrowContract {
                     amount: item.amount,
                     depositor: item.depositor.clone(),
                     deadline: item.deadline,
+                    timestamp: env.ledger().timestamp(),
+                    version: 2,
+                    metadata: String::from_str(&env, "Batch lock"),
                 },
             );
+
+            // Index event
+            Self::index_event(&env, EventType::Locked, item.bounty_id, item.depositor.clone(), item.amount);
 
             locked_count += 1;
         }
@@ -1429,6 +1463,8 @@ impl BountyEscrowContract {
                 count: locked_count,
                 total_amount: items.iter().map(|i| i.amount).sum(),
                 timestamp,
+                version: 2,
+                batch_id: String::from_str(&env, "batch"),
             },
         );
 
@@ -1539,8 +1575,14 @@ impl BountyEscrowContract {
                     amount: escrow.amount,
                     recipient: item.contributor.clone(),
                     timestamp,
+                    depositor: escrow.depositor.clone(),
+                    version: 2,
+                    metadata: String::from_str(&env, "Batch release"),
                 },
             );
+
+            // Index event
+            Self::index_event(&env, EventType::Released, item.bounty_id, item.contributor.clone(), escrow.amount);
 
             released_count += 1;
         }
@@ -1552,10 +1594,339 @@ impl BountyEscrowContract {
                 count: released_count,
                 total_amount,
                 timestamp,
+                version: 2,
+                batch_id: String::from_str(&env, "batch"),
             },
         );
 
         Ok(released_count)
+    }
+
+    // ========================================================================
+    // Event Indexing Functions
+    // ========================================================================
+
+    /// Internal helper to add an event to the index
+    fn index_event(
+        env: &Env,
+        event_type: EventType,
+        bounty_id: u64,
+        address: Address,
+        amount: i128,
+    ) {
+        // Get next sequence ID
+        let counter_key = DataKey::EventCounter;
+        let sequence_id: u64 = env.storage().persistent().get(&counter_key).unwrap_or(0);
+        env.storage()
+            .persistent()
+            .set(&counter_key, &(sequence_id + 1));
+
+        // Create index entry
+        let timestamp = env.ledger().timestamp();
+        let block_height = env.ledger().sequence();
+        
+        let index = EventIndex {
+            event_type: event_type.clone(),
+            bounty_id,
+            address: address.clone(),
+            timestamp,
+            amount,
+            block_height,
+        };
+
+        // Store in event index
+        env.storage()
+            .persistent()
+            .set(&DataKey::EventIndex(sequence_id), &index);
+
+        // Create bounty-specific index for faster queries
+        if bounty_id > 0 {
+            env.storage()
+                .persistent()
+                .set(&DataKey::BountyIndex(address.clone(), bounty_id), &sequence_id);
+        }
+
+        // Create time-based index (bucket by hour for efficient time-range queries)
+        let time_bucket = timestamp / 3600; // Hour buckets
+        env.storage()
+            .persistent()
+            .set(&DataKey::TimeIndex(time_bucket, sequence_id), &true);
+
+        // Extend TTL for all indexed data (30 days)
+        let ttl: u32 = 2592000 / 5; // ~30 days in ledgers
+        env.storage()
+            .persistent()
+            .extend_ttl(&DataKey::EventIndex(sequence_id), ttl, ttl);
+    }
+
+    // ========================================================================
+    // Query Functions
+    // ========================================================================
+
+    /// Query events with filtering and pagination
+    ///
+    /// # Arguments
+    /// * `filter` - Optional filter criteria for events
+    /// * `limit` - Maximum number of results to return (max 100)
+    /// * `cursor` - Optional cursor for pagination (sequence_id to start from)
+    ///
+    /// # Returns
+    /// * `EventQueryResult` - Paginated list of matching events
+    ///
+    /// # Example
+    /// ```rust
+    /// // Query all events for a specific bounty
+    /// let filter = EventFilter {
+    ///     bounty_id: Some(42),
+    ///     event_types: None,
+    ///     address: None,
+    ///     from_timestamp: None,
+    ///     to_timestamp: None,
+    ///     min_amount: None,
+    ///     max_amount: None,
+    /// };
+    /// let result = escrow_client.query_events(&filter, &50, &None);
+    /// ```
+    pub fn query_events(
+        env: Env,
+        filter: Option<EventFilter>,
+        limit: u32,
+        cursor: Option<u64>,
+    ) -> EventQueryResult {
+        let effective_limit = limit.min(100); // Cap at 100 for performance
+        let start_seq = cursor.unwrap_or(0);
+        let total_events: u64 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::EventCounter)
+            .unwrap_or(0);
+
+        let mut results = vec![&env];
+        let mut count = 0u32;
+        let mut next_cursor = None;
+
+        // Iterate through event index
+        for seq_id in start_seq..total_events {
+            if count >= effective_limit {
+                next_cursor = Some(seq_id);
+                break;
+            }
+
+            let event_key = DataKey::EventIndex(seq_id);
+            if let Some(event) = env.storage().persistent().get::<DataKey, EventIndex>(&event_key)
+            {
+                // Apply filters
+                if let Some(ref f) = filter {
+                    // Filter by event type
+                    if let Some(ref types) = f.event_types {
+                        let mut type_match = false;
+                        for t in types.iter() {
+                            if t == event.event_type {
+                                type_match = true;
+                                break;
+                            }
+                        }
+                        if !type_match {
+                            continue;
+                        }
+                    }
+
+                    // Filter by bounty_id
+                    if let Some(bid) = f.bounty_id {
+                        if event.bounty_id != bid {
+                            continue;
+                        }
+                    }
+
+                    // Filter by address
+                    if let Some(ref addr) = f.address {
+                        if event.address != *addr {
+                            continue;
+                        }
+                    }
+
+                    // Filter by timestamp range
+                    if let Some(from_ts) = f.from_timestamp {
+                        if event.timestamp < from_ts {
+                            continue;
+                        }
+                    }
+                    if let Some(to_ts) = f.to_timestamp {
+                        if event.timestamp > to_ts {
+                            continue;
+                        }
+                    }
+
+                    // Filter by amount range
+                    if let Some(min_amt) = f.min_amount {
+                        if event.amount < min_amt {
+                            continue;
+                        }
+                    }
+                    if let Some(max_amt) = f.max_amount {
+                        if event.amount > max_amt {
+                            continue;
+                        }
+                    }
+                }
+
+                // Event matches all filters
+                results.push_back(event);
+                count += 1;
+            }
+        }
+
+        EventQueryResult {
+            events: results,
+            total_count: count,
+            has_more: next_cursor.is_some(),
+            next_cursor,
+        }
+    }
+
+    /// Get all events for a specific bounty
+    ///
+    /// # Arguments
+    /// * `bounty_id` - The bounty identifier
+    ///
+    /// # Returns
+    /// * `Vec<EventIndex>` - All events related to the bounty in chronological order
+    pub fn get_bounty_history(env: Env, bounty_id: u64) -> soroban_sdk::Vec<EventIndex> {
+        let filter = EventFilter {
+            event_types: None,
+            bounty_id: Some(bounty_id),
+            address: None,
+            from_timestamp: None,
+            to_timestamp: None,
+            min_amount: None,
+            max_amount: None,
+        };
+
+        let result = Self::query_events(env, Some(filter), 1000, None);
+        result.events
+    }
+
+    /// Get all events for a specific address (depositor or recipient)
+    ///
+    /// # Arguments
+    /// * `address` - The address to query
+    /// * `limit` - Maximum number of results
+    ///
+    /// # Returns
+    /// * `EventQueryResult` - Paginated events for the address
+    pub fn get_address_history(
+        env: Env,
+        address: Address,
+        limit: u32,
+        cursor: Option<u64>,
+    ) -> EventQueryResult {
+        let filter = EventFilter {
+            event_types: None,
+            bounty_id: None,
+            address: Some(address),
+            from_timestamp: None,
+            to_timestamp: None,
+            min_amount: None,
+            max_amount: None,
+        };
+
+        Self::query_events(env, Some(filter), limit, cursor)
+    }
+
+    /// Get events within a specific time range
+    ///
+    /// # Arguments
+    /// * `from_timestamp` - Start of time range (Unix timestamp)
+    /// * `to_timestamp` - End of time range (Unix timestamp)
+    /// * `limit` - Maximum number of results
+    ///
+    /// # Returns
+    /// * `EventQueryResult` - Paginated events in the time range
+    pub fn get_events_by_timerange(
+        env: Env,
+        from_timestamp: u64,
+        to_timestamp: u64,
+        limit: u32,
+        cursor: Option<u64>,
+    ) -> EventQueryResult {
+        let filter = EventFilter {
+            event_types: None,
+            bounty_id: None,
+            address: None,
+            from_timestamp: Some(from_timestamp),
+            to_timestamp: Some(to_timestamp),
+            min_amount: None,
+            max_amount: None,
+        };
+
+        Self::query_events(env, Some(filter), limit, cursor)
+    }
+
+    /// Get events by status (locked, released, refunded)
+    ///
+    /// # Arguments
+    /// * `event_types` - List of event types to filter by
+    /// * `limit` - Maximum number of results
+    ///
+    /// # Returns
+    /// * `EventQueryResult` - Paginated events matching the status
+    pub fn get_events_by_type(
+        env: Env,
+        event_types: soroban_sdk::Vec<EventType>,
+        limit: u32,
+        cursor: Option<u64>,
+    ) -> EventQueryResult {
+        let filter = EventFilter {
+            event_types: Some(event_types),
+            bounty_id: None,
+            address: None,
+            from_timestamp: None,
+            to_timestamp: None,
+            min_amount: None,
+            max_amount: None,
+        };
+
+        Self::query_events(env, Some(filter), limit, cursor)
+    }
+
+    /// Get total count of events
+    ///
+    /// # Returns
+    /// * `u64` - Total number of indexed events
+    pub fn get_event_count(env: Env) -> u64 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::EventCounter)
+            .unwrap_or(0)
+    }
+
+    /// Get events with amount filter
+    ///
+    /// # Arguments
+    /// * `min_amount` - Minimum amount (inclusive)
+    /// * `max_amount` - Maximum amount (inclusive)
+    /// * `limit` - Maximum number of results
+    ///
+    /// # Returns
+    /// * `EventQueryResult` - Paginated events matching amount criteria
+    pub fn get_events_by_amount(
+        env: Env,
+        min_amount: Option<i128>,
+        max_amount: Option<i128>,
+        limit: u32,
+        cursor: Option<u64>,
+    ) -> EventQueryResult {
+        let filter = EventFilter {
+            event_types: None,
+            bounty_id: None,
+            address: None,
+            from_timestamp: None,
+            to_timestamp: None,
+            min_amount,
+            max_amount,
+        };
+
+        Self::query_events(env, Some(filter), limit, cursor)
     }
 }
 

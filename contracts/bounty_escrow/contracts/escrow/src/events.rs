@@ -22,8 +22,21 @@
 //! │       └─────→ Refund  → FundsRefunded                       │
 //! └─────────────────────────────────────────────────────────────┘
 //! ```
+//!
+//! ## Event Versioning
+//!
+//! All events include a version field to support backward compatibility:
+//! - v1: Initial implementation
+//! - v2: Added metadata and enhanced indexing
+//!
+//! ## Indexing Strategy
+//!
+//! Events are designed for efficient off-chain indexing:
+//! - Primary index: bounty_id (in topic for O(1) lookups)
+//! - Secondary indexes: depositor, recipient, status, timestamp
+//! - Full-text search: event_type, contract_address
 
-use soroban_sdk::{contracttype, symbol_short, Address, Env};
+use soroban_sdk::{contracttype, symbol_short, Address, Env, String};
 
 // ============================================================================
 // Contract Initialization Event
@@ -35,6 +48,8 @@ use soroban_sdk::{contracttype, symbol_short, Address, Env};
 /// * `admin` - The administrator address with release authorization
 /// * `token` - The token contract address (typically XLM/USDC)
 /// * `timestamp` - Unix timestamp of initialization
+/// * `version` - Event schema version (for backward compatibility)
+/// * `contract_version` - Contract implementation version
 ///
 /// # Event Topic
 /// Symbol: `init`
@@ -62,6 +77,8 @@ pub struct BountyEscrowInitialized {
     pub admin: Address,
     pub token: Address,
     pub timestamp: u64,
+    pub version: u32,
+    pub contract_version: String,
 }
 
 /// Emits a BountyEscrowInitialized event.
@@ -89,6 +106,9 @@ pub fn emit_bounty_initialized(env: &Env, event: BountyEscrowInitialized) {
 /// * `amount` - Amount of tokens locked (in stroops for XLM)
 /// * `depositor` - Address that deposited the funds
 /// * `deadline` - Unix timestamp after which refunds are allowed
+/// * `timestamp` - Unix timestamp when funds were locked
+/// * `version` - Event schema version
+/// * `metadata` - Additional context (bounty title, description, etc.)
 ///
 /// # Event Topic
 /// Symbol: `f_lock`
@@ -123,6 +143,9 @@ pub struct FundsLocked {
     pub amount: i128,
     pub depositor: Address,
     pub deadline: u64,
+    pub timestamp: u64,
+    pub version: u32,
+    pub metadata: String,
 }
 
 /// Emits a FundsLocked event.
@@ -153,6 +176,9 @@ pub fn emit_funds_locked(env: &Env, event: FundsLocked) {
 /// * `amount` - Amount transferred to recipient
 /// * `recipient` - Address receiving the funds (contributor)
 /// * `timestamp` - Unix timestamp of release
+/// * `depositor` - Original depositor address (for tracking)
+/// * `version` - Event schema version
+/// * `metadata` - Release notes or reason
 ///
 /// # Event Topic
 /// Symbol: `f_rel`
@@ -193,6 +219,9 @@ pub struct FundsReleased {
     pub amount: i128,
     pub recipient: Address,
     pub timestamp: u64,
+    pub depositor: Address,
+    pub version: u32,
+    pub metadata: String,
 }
 
 /// Emits a FundsReleased event.
@@ -271,6 +300,8 @@ pub struct FundsRefunded {
     pub timestamp: u64,
     pub refund_mode: crate::RefundMode,
     pub remaining_amount: i128,
+    pub version: u32,
+    pub metadata: String,
 }
 
 /// Emits a FundsRefunded event.
@@ -293,6 +324,8 @@ pub struct BatchFundsLocked {
     pub count: u32,
     pub total_amount: i128,
     pub timestamp: u64,
+    pub version: u32,
+    pub batch_id: String,
 }
 
 pub fn emit_batch_funds_locked(env: &Env, event: BatchFundsLocked) {
@@ -306,9 +339,71 @@ pub struct BatchFundsReleased {
     pub count: u32,
     pub total_amount: i128,
     pub timestamp: u64,
+    pub version: u32,
+    pub batch_id: String,
 }
 
 pub fn emit_batch_funds_released(env: &Env, event: BatchFundsReleased) {
     let topics = (symbol_short!("b_rel"),);
     env.events().publish(topics, event.clone());
 }
+
+// ============================================================================
+// Event Indexing Support
+// ============================================================================
+
+/// Event index record for efficient querying
+///
+/// # Fields
+/// * `event_type` - Type of event (Init, Lock, Release, Refund)
+/// * `bounty_id` - Bounty identifier (0 for non-bounty events)
+/// * `address` - Primary address involved (depositor/recipient)
+/// * `timestamp` - Event timestamp for chronological ordering
+/// * `amount` - Amount involved in transaction
+/// * `status` - Status after event
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct EventIndex {
+    pub event_type: EventType,
+    pub bounty_id: u64,
+    pub address: Address,
+    pub timestamp: u64,
+    pub amount: i128,
+    pub block_height: u32,
+}
+
+/// Event types for indexing
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EventType {
+    Initialized,
+    Locked,
+    Released,
+    Refunded,
+    BatchLocked,
+    BatchReleased,
+}
+
+/// Query filter for event searches
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct EventFilter {
+    pub event_types: Option<soroban_sdk::Vec<EventType>>,
+    pub bounty_id: Option<u64>,
+    pub address: Option<Address>,
+    pub from_timestamp: Option<u64>,
+    pub to_timestamp: Option<u64>,
+    pub min_amount: Option<i128>,
+    pub max_amount: Option<i128>,
+}
+
+/// Paginated query result
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct EventQueryResult {
+    pub events: soroban_sdk::Vec<EventIndex>,
+    pub total_count: u32,
+    pub has_more: bool,
+    pub next_cursor: Option<u64>,
+}
+
