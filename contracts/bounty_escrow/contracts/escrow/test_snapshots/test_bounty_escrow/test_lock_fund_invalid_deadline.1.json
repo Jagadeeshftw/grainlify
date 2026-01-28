@@ -126,197 +126,6 @@
         {
           "contract_data": {
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-            "key": {
-              "symbol": "op_count"
-            },
-            "durability": "persistent"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-                "key": {
-                  "symbol": "op_count"
-                },
-                "durability": "persistent",
-                "val": {
-                  "u64": 1
-                }
-              }
-            },
-            "ext": "v0"
-          },
-          4095
-        ]
-      ],
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-            "key": {
-              "vec": [
-                {
-                  "symbol": "State"
-                },
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                }
-              ]
-            },
-            "durability": "persistent"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-                "key": {
-                  "vec": [
-                    {
-                      "symbol": "State"
-                    },
-                    {
-                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                    }
-                  ]
-                },
-                "durability": "persistent",
-                "val": {
-                  "map": [
-                    {
-                      "key": {
-                        "symbol": "last_operation_timestamp"
-                      },
-                      "val": {
-                        "u64": 0
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "operation_count"
-                      },
-                      "val": {
-                        "u32": 1
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "window_start_timestamp"
-                      },
-                      "val": {
-                        "u64": 0
-                      }
-                    }
-                  ]
-                }
-              }
-            },
-            "ext": "v0"
-          },
-          17280
-        ]
-      ],
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-            "key": {
-              "vec": [
-                {
-                  "symbol": "perf_cnt"
-                },
-                {
-                  "symbol": "init"
-                }
-              ]
-            },
-            "durability": "persistent"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-                "key": {
-                  "vec": [
-                    {
-                      "symbol": "perf_cnt"
-                    },
-                    {
-                      "symbol": "init"
-                    }
-                  ]
-                },
-                "durability": "persistent",
-                "val": {
-                  "u64": 1
-                }
-              }
-            },
-            "ext": "v0"
-          },
-          4095
-        ]
-      ],
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-            "key": {
-              "vec": [
-                {
-                  "symbol": "perf_time"
-                },
-                {
-                  "symbol": "init"
-                }
-              ]
-            },
-            "durability": "persistent"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-                "key": {
-                  "vec": [
-                    {
-                      "symbol": "perf_time"
-                    },
-                    {
-                      "symbol": "init"
-                    }
-                  ]
-                },
-                "durability": "persistent",
-                "val": {
-                  "u64": 0
-                }
-              }
-            },
-            "ext": "v0"
-          },
-          4095
-        ]
-      ],
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
             "key": "ledger_key_contract_instance",
             "durability": "persistent"
           }
@@ -814,110 +623,6 @@
       "event": {
         "ext": "v0",
         "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
-        "type_": "contract",
-        "body": {
-          "v0": {
-            "topics": [
-              {
-                "symbol": "metric"
-              },
-              {
-                "symbol": "op"
-              }
-            ],
-            "data": {
-              "map": [
-                {
-                  "key": {
-                    "symbol": "caller"
-                  },
-                  "val": {
-                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "operation"
-                  },
-                  "val": {
-                    "symbol": "init"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "success"
-                  },
-                  "val": {
-                    "bool": true
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "timestamp"
-                  },
-                  "val": {
-                    "u64": 0
-                  }
-                }
-              ]
-            }
-          }
-        }
-      },
-      "failed_call": false
-    },
-    {
-      "event": {
-        "ext": "v0",
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
-        "type_": "contract",
-        "body": {
-          "v0": {
-            "topics": [
-              {
-                "symbol": "metric"
-              },
-              {
-                "symbol": "perf"
-              }
-            ],
-            "data": {
-              "map": [
-                {
-                  "key": {
-                    "symbol": "duration"
-                  },
-                  "val": {
-                    "u64": 0
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "function"
-                  },
-                  "val": {
-                    "symbol": "init"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "timestamp"
-                  },
-                  "val": {
-                    "u64": 0
-                  }
-                }
-              ]
-            }
-          }
-        }
-      },
-      "failed_call": false
-    },
-    {
-      "event": {
-        "ext": "v0",
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
         "type_": "diagnostic",
         "body": {
           "v0": {
@@ -1070,62 +775,6 @@
       "event": {
         "ext": "v0",
         "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
-        "type_": "contract",
-        "body": {
-          "v0": {
-            "topics": [
-              {
-                "symbol": "metric"
-              },
-              {
-                "symbol": "op"
-              }
-            ],
-            "data": {
-              "map": [
-                {
-                  "key": {
-                    "symbol": "caller"
-                  },
-                  "val": {
-                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "operation"
-                  },
-                  "val": {
-                    "symbol": "lock"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "success"
-                  },
-                  "val": {
-                    "bool": false
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "timestamp"
-                  },
-                  "val": {
-                    "u64": 0
-                  }
-                }
-              ]
-            }
-          }
-        }
-      },
-      "failed_call": true
-    },
-    {
-      "event": {
-        "ext": "v0",
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
         "type_": "diagnostic",
         "body": {
           "v0": {
@@ -1139,7 +788,7 @@
             ],
             "data": {
               "error": {
-                "contract": 9
+                "contract": 12
               }
             }
           }
@@ -1160,7 +809,7 @@
               },
               {
                 "error": {
-                  "contract": 9
+                  "contract": 12
                 }
               }
             ],
@@ -1185,7 +834,7 @@
               },
               {
                 "error": {
-                  "contract": 9
+                  "contract": 12
                 }
               }
             ],
@@ -1236,7 +885,7 @@
               },
               {
                 "error": {
-                  "contract": 9
+                  "contract": 12
                 }
               }
             ],

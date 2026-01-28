@@ -143,12 +143,12 @@
 //!
 //! ## Common Pitfalls
 //!
-//! - ❌ Not testing upgrades on testnet
-//! - ❌ Losing admin private key
-//! - ❌ Breaking state compatibility between versions
-//! - ❌ Not documenting migration steps
-//! - ❌ Upgrading without proper testing
-//! - ❌ Not having a rollback plan
+//! -  Not testing upgrades on testnet
+//! -  Losing admin private key
+//! -  Breaking state compatibility between versions
+//! -  Not documenting migration steps
+//! -  Upgrading without proper testing
+//! -  Not having a rollback plan
 
 
 
@@ -157,7 +157,11 @@
 #![no_std]
 
 mod multisig;
+mod state_verifier;
+mod test_audit;
+
 use multisig::MultiSig;
+use grainlify_common::AuditReport;
 use soroban_sdk::{
     contract, contractimpl, contracttype, symbol_short, Address, BytesN, Env, Symbol, Vec,
 };
@@ -451,7 +455,7 @@ const VERSION: u32 = 1;
     /// contract.init(&env, &admin);
     ///
     /// // Subsequent init attempts will panic
-    /// // contract.init(&env, &another_admin); // ❌ Panics!
+    /// // contract.init(&env, &another_admin); // Panics!
     /// ```
     ///
     /// # Gas Cost
@@ -848,6 +852,17 @@ impl GrainlifyContract {
     /// Get performance stats for a function
     pub fn get_performance_stats(env: Env, function_name: Symbol) -> monitoring::PerformanceStats {
         monitoring::get_performance_stats(&env, function_name)
+    }
+
+    /// Returns an audit report of the contract state.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    ///
+    /// # Returns
+    /// * `AuditReport` - Detailed report of state integrity
+    pub fn audit_state(env: Env) -> AuditReport {
+        state_verifier::audit_global_state(&env)
     }
 }
 

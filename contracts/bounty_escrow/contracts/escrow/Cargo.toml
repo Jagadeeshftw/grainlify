@@ -9,7 +9,8 @@ crate-type = ["lib", "cdylib"]
 doctest = false
 
 [dependencies]
-soroban-sdk = { workspace = true }
+soroban-sdk = "21.0.0"
+grainlify-common = { path = "../../../common" }
 
 [dev-dependencies]
-soroban-sdk = { workspace = true, features = ["alloc", "testutils"] }
+soroban-sdk = { version = "21.0.0", features = ["testutils"] }

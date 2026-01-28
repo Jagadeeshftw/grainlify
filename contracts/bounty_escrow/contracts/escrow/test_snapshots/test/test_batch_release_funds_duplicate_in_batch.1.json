@@ -24,7 +24,6 @@
       ]
     ],
     [],
-    [],
     [
       [
         "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
@@ -108,7 +107,7 @@
     []
   ],
   "ledger": {
-    "protocol_version": 22,
+    "protocol_version": 21,
     "sequence_number": 0,
     "timestamp": 0,
     "network_id": "0000000000000000000000000000000000000000000000000000000000000000",
@@ -310,6 +309,25 @@
                     },
                     {
                       "key": {
+                        "symbol": "refund_history"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "remaining_amount"
+                      },
+                      "val": {
+                        "i128": {
+                          "hi": 0,
+                          "lo": 1000
+                        }
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "status"
                       },
                       "val": {
@@ -362,6 +380,22 @@
                         },
                         "val": {
                           "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "BountyIds"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "u64": 1
+                            }
+                          ]
                         }
                       },
                       {
@@ -667,5 +701,750 @@
       ]
     ]
   },
-  "events": []
+  "events": [
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": null,
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "fn_call"
+              },
+              {
+                "bytes": "8011bbf4cdf04e5bc6ac886935b99aa4b2c0cabde133f9d7fb3e656799f0a896"
+              },
+              {
+                "symbol": "init_asset"
+              }
+            ],
+            "data": {
+              "bytes": "0000000161616100000000000000000000000000000000000000000000000000000000000000000000000004"
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "8011bbf4cdf04e5bc6ac886935b99aa4b2c0cabde133f9d7fb3e656799f0a896",
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "fn_return"
+              },
+              {
+                "symbol": "init_asset"
+              }
+            ],
+            "data": "void"
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": null,
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "fn_call"
+              },
+              {
+                "bytes": "8011bbf4cdf04e5bc6ac886935b99aa4b2c0cabde133f9d7fb3e656799f0a896"
+              },
+              {
+                "symbol": "set_admin"
+              }
+            ],
+            "data": {
+              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "8011bbf4cdf04e5bc6ac886935b99aa4b2c0cabde133f9d7fb3e656799f0a896",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "set_admin"
+              },
+              {
+                "address": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJXFF"
+              },
+              {
+                "string": "aaa:GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJXFF"
+              }
+            ],
+            "data": {
+              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "8011bbf4cdf04e5bc6ac886935b99aa4b2c0cabde133f9d7fb3e656799f0a896",
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "fn_return"
+              },
+              {
+                "symbol": "set_admin"
+              }
+            ],
+            "data": "void"
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": null,
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "fn_call"
+              },
+              {
+                "bytes": "0000000000000000000000000000000000000000000000000000000000000005"
+              },
+              {
+                "symbol": "init"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                },
+                {
+                  "address": "CCABDO7UZXYE4W6GVSEGSNNZTKSLFQGKXXQTH6OX7M7GKZ4Z6CUJNGZN"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000005",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "init"
+              }
+            ],
+            "data": {
+              "map": [
+                {
+                  "key": {
+                    "symbol": "admin"
+                  },
+                  "val": {
+                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "timestamp"
+                  },
+                  "val": {
+                    "u64": 0
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "token"
+                  },
+                  "val": {
+                    "address": "CCABDO7UZXYE4W6GVSEGSNNZTKSLFQGKXXQTH6OX7M7GKZ4Z6CUJNGZN"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000005",
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "fn_return"
+              },
+              {
+                "symbol": "init"
+              }
+            ],
+            "data": "void"
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": null,
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "fn_call"
+              },
+              {
+                "bytes": "8011bbf4cdf04e5bc6ac886935b99aa4b2c0cabde133f9d7fb3e656799f0a896"
+              },
+              {
+                "symbol": "mint"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                },
+                {
+                  "i128": {
+                    "hi": 0,
+                    "lo": 1000000
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "8011bbf4cdf04e5bc6ac886935b99aa4b2c0cabde133f9d7fb3e656799f0a896",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "mint"
+              },
+              {
+                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+              },
+              {
+                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+              },
+              {
+                "string": "aaa:GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJXFF"
+              }
+            ],
+            "data": {
+              "i128": {
+                "hi": 0,
+                "lo": 1000000
+              }
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "8011bbf4cdf04e5bc6ac886935b99aa4b2c0cabde133f9d7fb3e656799f0a896",
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "fn_return"
+              },
+              {
+                "symbol": "mint"
+              }
+            ],
+            "data": "void"
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": null,
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "fn_call"
+              },
+              {
+                "bytes": "0000000000000000000000000000000000000000000000000000000000000005"
+              },
+              {
+                "symbol": "lock_funds"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                },
+                {
+                  "u64": 1
+                },
+                {
+                  "i128": {
+                    "hi": 0,
+                    "lo": 1000
+                  }
+                },
+                {
+                  "u64": 1000
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000005",
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "fn_call"
+              },
+              {
+                "bytes": "8011bbf4cdf04e5bc6ac886935b99aa4b2c0cabde133f9d7fb3e656799f0a896"
+              },
+              {
+                "symbol": "transfer"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+                },
+                {
+                  "i128": {
+                    "hi": 0,
+                    "lo": 1000
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "8011bbf4cdf04e5bc6ac886935b99aa4b2c0cabde133f9d7fb3e656799f0a896",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "transfer"
+              },
+              {
+                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+              },
+              {
+                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+              },
+              {
+                "string": "aaa:GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJXFF"
+              }
+            ],
+            "data": {
+              "i128": {
+                "hi": 0,
+                "lo": 1000
+              }
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "8011bbf4cdf04e5bc6ac886935b99aa4b2c0cabde133f9d7fb3e656799f0a896",
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "fn_return"
+              },
+              {
+                "symbol": "transfer"
+              }
+            ],
+            "data": "void"
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000005",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "f_lock"
+              },
+              {
+                "u64": 1
+              }
+            ],
+            "data": {
+              "map": [
+                {
+                  "key": {
+                    "symbol": "amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 1000
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "bounty_id"
+                  },
+                  "val": {
+                    "u64": 1
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "deadline"
+                  },
+                  "val": {
+                    "u64": 1000
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "depositor"
+                  },
+                  "val": {
+                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000005",
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "fn_return"
+              },
+              {
+                "symbol": "lock_funds"
+              }
+            ],
+            "data": "void"
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": null,
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "fn_call"
+              },
+              {
+                "bytes": "0000000000000000000000000000000000000000000000000000000000000005"
+              },
+              {
+                "symbol": "batch_release_funds"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "map": [
+                    {
+                      "key": {
+                        "symbol": "bounty_id"
+                      },
+                      "val": {
+                        "u64": 1
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "contributor"
+                      },
+                      "val": {
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "map": [
+                    {
+                      "key": {
+                        "symbol": "bounty_id"
+                      },
+                      "val": {
+                        "u64": 1
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "contributor"
+                      },
+                      "val": {
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000005",
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "fn_return"
+              },
+              {
+                "symbol": "batch_release_funds"
+              }
+            ],
+            "data": {
+              "error": {
+                "contract": 10
+              }
+            }
+          }
+        }
+      },
+      "failed_call": true
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000005",
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "error"
+              },
+              {
+                "error": {
+                  "contract": 10
+                }
+              }
+            ],
+            "data": {
+              "string": "escalating Ok(ScErrorType::Contract) frame-exit to Err"
+            }
+          }
+        }
+      },
+      "failed_call": true
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": null,
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "error"
+              },
+              {
+                "error": {
+                  "contract": 10
+                }
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "string": "contract call failed"
+                },
+                {
+                  "symbol": "batch_release_funds"
+                },
+                {
+                  "vec": [
+                    {
+                      "vec": [
+                        {
+                          "map": [
+                            {
+                              "key": {
+                                "symbol": "bounty_id"
+                              },
+                              "val": {
+                                "u64": 1
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "contributor"
+                              },
+                              "val": {
+                                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+                              }
+                            }
+                          ]
+                        },
+                        {
+                          "map": [
+                            {
+                              "key": {
+                                "symbol": "bounty_id"
+                              },
+                              "val": {
+                                "u64": 1
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "contributor"
+                              },
+                              "val": {
+                                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+                              }
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": null,
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "error"
+              },
+              {
+                "error": {
+                  "contract": 10
+                }
+              }
+            ],
+            "data": {
+              "string": "escalating error to panic"
+            }
+          }
+        }
+      },
+      "failed_call": false
+    }
+  ]
 }

@@ -415,7 +415,7 @@ fn test_refund_custom_after_deadline() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #9)")] // RefundNotApproved
+#[should_panic(expected = "Error(Contract, #13)")] // RefundNotApproved
 fn test_refund_custom_before_deadline_without_approval() {
     let setup = TestSetup::new();
     let bounty_id = 1;
@@ -501,7 +501,7 @@ fn test_refund_approval_workflow() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #9)")] // RefundNotApproved
+#[should_panic(expected = "Error(Contract, #13)")] // RefundNotApproved
 fn test_refund_approval_mismatch() {
     let setup = TestSetup::new();
     let bounty_id = 1;
@@ -665,7 +665,7 @@ fn test_refund_history_with_custom_recipients() {
 // ============================================================================
 
 #[test]
-#[should_panic(expected = "Error(Contract, #8)")] // InvalidAmount
+#[should_panic(expected = "Error(Contract, #11)")] // InvalidAmount
 fn test_refund_invalid_amount_zero() {
     let setup = TestSetup::new();
     let bounty_id = 1;
@@ -686,7 +686,7 @@ fn test_refund_invalid_amount_zero() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #8)")] // InvalidAmount
+#[should_panic(expected = "Error(Contract, #11)")] // InvalidAmount
 fn test_refund_invalid_amount_exceeds_remaining() {
     let setup = TestSetup::new();
     let bounty_id = 1;
@@ -708,7 +708,7 @@ fn test_refund_invalid_amount_exceeds_remaining() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #8)")] // InvalidAmount
+#[should_panic(expected = "Error(Contract, #11)")] // InvalidAmount
 fn test_refund_custom_missing_amount() {
     let setup = TestSetup::new();
     let bounty_id = 1;
@@ -730,7 +730,7 @@ fn test_refund_custom_missing_amount() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #8)")] // InvalidAmount
+#[should_panic(expected = "Error(Contract, #11)")] // InvalidAmount
 fn test_refund_custom_missing_recipient() {
     let setup = TestSetup::new();
     let bounty_id = 1;
