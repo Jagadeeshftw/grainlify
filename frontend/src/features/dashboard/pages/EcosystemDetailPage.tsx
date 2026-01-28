@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChevronRight, ExternalLink, Users, FolderGit2, AlertCircle, GitPullRequest } from 'lucide-react';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
 import { ProjectCard, Project } from '../components/ProjectCard';
 import { SearchWithFilter } from '../components/SearchWithFilter';
+import { getEcosystemById } from '../../../shared/api/client';
+import type { Language, KeyArea } from '../../../shared/api/client';
 
 interface EcosystemDetailPageProps {
   ecosystemId: string;
@@ -17,42 +19,50 @@ export function EcosystemDetailPage({ ecosystemId, ecosystemName, onBack, onProj
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLanguages, setSelectedLanguages] = useState<string[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [ecosystemData, setEcosystemData] = useState<{
+    name: string;
+    description: string | null;
+    short_description: string | null;
+    languages: Language[];
+    key_areas: KeyArea[];
+    technologies: string[];
+  } | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Mock data - in real app this would come from API
-  const ecosystemData = {
-    name: ecosystemName,
-    logo: ecosystemName.charAt(0).toUpperCase(),
-    description: 'Projects building decentralized protocols, tooling, and infrastructure.',
-    languages: [
-      { name: 'Q#', percentage: 0 },
-      { name: 'M', percentage: 0 },
-    ],
-    links: [
-      { label: 'Official Website', url: 'web3.ecosystem.example', icon: 'website' },
-      { label: 'Discord Community', url: 'discord.gg', icon: 'discord' },
-      { label: 'Twitter', url: 'twitter.com', icon: 'twitter' },
-    ],
-    stats: {
-      activeContributors: { value: 260, change: '+12' },
-      activeProjects: { value: 24, change: '+3' },
-      availableIssues: { value: 180, change: '-5' },
-      mergedPullRequests: { value: 920, change: '+45' },
-    },
-    about: `The ${ecosystemName} ecosystem represents a paradigm shift towards decentralized applications, protocols, and infrastructure. This ecosystem brings together innovative projects that are building the next generation of the internet.`,
-    keyAreas: [
-      { title: 'Blockchain Protocols', description: 'Core blockchain technologies and consensus mechanisms' },
-      { title: 'DeFi (Decentralized Finance)', description: 'Financial applications built on blockchain' },
-      { title: 'NFTs & Digital Assets', description: 'Tokenization and digital ownership' },
-      { title: `${ecosystemName} Infrastructure`, description: 'Wallets, nodes, and developer tools' },
-      { title: 'DAOs', description: 'Decentralized autonomous organizations' },
-    ],
-    technologies: [
-      'TypeScript for smart contract development and tooling',
-      'Rust for high-performance blockchain infrastructure',
-      'Solidity for Ethereum smart contracts',
-      'JavaScript/TypeScript for dApp frontends',
-    ],
-  };
+  // Fetch ecosystem data on mount
+  useEffect(() => {
+    const fetchEcosystem = async () => {
+      try {
+        setIsLoading(true);
+        const data = await getEcosystemById(ecosystemId);
+        setEcosystemData({
+          name: data.name,
+          description: data.description,
+          short_description: data.short_description,
+          languages: data.languages || [],
+          key_areas: data.key_areas || [],
+          technologies: data.technologies || [],
+        });
+      } catch (error) {
+        console.error('Failed to fetch ecosystem:', error);
+        // Set fallback data
+        setEcosystemData({
+          name: ecosystemName,
+          description: null,
+          short_description: null,
+          languages: [],
+          key_areas: [],
+          technologies: [],
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchEcosystem();
+  }, [ecosystemId, ecosystemName]);
+
+
 
   const projectsData: Project[] = [
     {
@@ -116,6 +126,18 @@ export function EcosystemDetailPage({ ecosystemId, ecosystemName, onBack, onProj
 
   const isDark = theme === 'dark';
 
+  if (isLoading) {
+    return (
+      <div className={`min-h-screen transition-colors ${isDark ? 'bg-[#1a1a1a]' : 'bg-[#f5f0e8]'}`}>
+        <div className="flex items-center justify-center min-h-screen">
+          <p className={`text-[14px] ${isDark ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'}`}>
+            Loading ecosystem data...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-full overflow-y-auto px-4 md:px-0">
       {/* Breadcrumb Navigation */}
@@ -151,13 +173,13 @@ export function EcosystemDetailPage({ ecosystemId, ecosystemName, onBack, onProj
           <div className="backdrop-blur-[40px] rounded-[16px] md:rounded-[24px] border bg-white/[0.12] border-white/20 p-4 md:p-6">
             <div className="flex items-center gap-3 md:gap-4 mb-3 md:mb-4">
               <div className="w-12 h-12 md:w-16 md:h-16 rounded-full bg-gradient-to-br from-[#c9983a] to-[#d4af37] flex items-center justify-center flex-shrink-0">
-                <span className="text-[18px] md:text-[24px] font-bold text-white">{ecosystemData.logo}</span>
+                <span className="text-[18px] md:text-[24px] font-bold text-white">{ecosystemData?.name?.charAt(0).toUpperCase() || ecosystemName.charAt(0).toUpperCase()}</span>
               </div>
               <div className="flex-1 min-w-0">
                 <h1 className={`text-[16px] md:text-[20px] font-bold transition-colors ${
                   isDark ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
                 }`}>
-                  {ecosystemData.name} Ecosystem
+                  {ecosystemData?.name || ecosystemName} Ecosystem
                 </h1>
                 <div className="flex items-center gap-3 md:gap-4 mt-1">
                   <div className="flex items-center gap-1.5 md:gap-2">
@@ -169,7 +191,7 @@ export function EcosystemDetailPage({ ecosystemId, ecosystemName, onBack, onProj
                   <div className="flex items-center gap-1.5 md:gap-2">
                     <FolderGit2 className={`w-3 h-3 md:w-3.5 md:h-3.5 flex-shrink-0 ${isDark ? 'text-[#c9983a]' : 'text-[#8b6914]'}`} />
                     <span className={`text-[11px] md:text-[13px] font-bold ${isDark ? 'text-[#c9983a]' : 'text-[#8b6914]'}`}>
-                      {ecosystemData.stats.activeProjects.value}
+                      24
                     </span>
                   </div>
                 </div>
@@ -187,7 +209,7 @@ export function EcosystemDetailPage({ ecosystemId, ecosystemName, onBack, onProj
             <p className={`text-[12px] md:text-[13px] leading-relaxed transition-colors ${
               isDark ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
             }`}>
-              {ecosystemData.description}
+              {ecosystemData?.short_description || ecosystemData?.description || "No description available"}
             </p>
           </div>
 
@@ -199,7 +221,7 @@ export function EcosystemDetailPage({ ecosystemId, ecosystemName, onBack, onProj
               Languages
             </h2>
             <div className="flex flex-wrap gap-2 md:gap-3">
-              {ecosystemData.languages.map((lang, idx) => (
+              {(ecosystemData?.languages && ecosystemData.languages.length > 0) ? ecosystemData.languages.map((lang, idx) => (
                 <div
                   key={idx}
                   className="px-2.5 md:px-3 py-1 md:py-1.5 rounded-[6px] md:rounded-[8px] backdrop-blur-[20px] border border-white/25 bg-white/[0.08]"
@@ -209,7 +231,11 @@ export function EcosystemDetailPage({ ecosystemId, ecosystemName, onBack, onProj
                     {lang.percentage}%
                   </span>
                 </div>
-              ))}
+              )) : (
+                <p className={`text-[12px] md:text-[13px] ${isDark ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'}`}>
+                  No languages specified
+                </p>
+              )}
             </div>
           </div>
 
@@ -221,7 +247,8 @@ export function EcosystemDetailPage({ ecosystemId, ecosystemName, onBack, onProj
               Links
             </h2>
             <div className="space-y-2 md:space-y-3">
-              {ecosystemData.links.map((link, idx) => (
+              {/* Links section temporarily disabled - no data from API */}
+              {[].map((link: any, idx: number) => (
                 <a
                   key={idx}
                   href={`https://${link.url}`}
@@ -305,7 +332,7 @@ export function EcosystemDetailPage({ ecosystemId, ecosystemName, onBack, onProj
                   </div>
                   <div className="flex items-end gap-2">
                     <span className={`text-[20px] md:text-[28px] font-bold ${isDark ? 'text-[#c9983a]' : 'text-[#a67c2a]'}`}>
-                      {ecosystemData.stats.activeContributors.value}
+                      260
                     </span>
                   </div>
                 </div>
@@ -321,7 +348,7 @@ export function EcosystemDetailPage({ ecosystemId, ecosystemName, onBack, onProj
                   </div>
                   <div className="flex items-end gap-2">
                     <span className={`text-[20px] md:text-[28px] font-bold ${isDark ? 'text-[#c9983a]' : 'text-[#a67c2a]'}`}>
-                      {ecosystemData.stats.activeProjects.value}
+                      24
                     </span>
                   </div>
                 </div>
@@ -337,7 +364,7 @@ export function EcosystemDetailPage({ ecosystemId, ecosystemName, onBack, onProj
                   </div>
                   <div className="flex items-end gap-2">
                     <span className={`text-[20px] md:text-[28px] font-bold ${isDark ? 'text-[#c9983a]' : 'text-[#a67c2a]'}`}>
-                      {ecosystemData.stats.availableIssues.value}
+                      180
                     </span>
                   </div>
                 </div>
@@ -353,7 +380,7 @@ export function EcosystemDetailPage({ ecosystemId, ecosystemName, onBack, onProj
                   </div>
                   <div className="flex items-end gap-2">
                     <span className={`text-[20px] md:text-[28px] font-bold ${isDark ? 'text-[#c9983a]' : 'text-[#a67c2a]'}`}>
-                      {ecosystemData.stats.mergedPullRequests.value}
+                      920
                     </span>
                   </div>
                 </div>
@@ -381,7 +408,7 @@ export function EcosystemDetailPage({ ecosystemId, ecosystemName, onBack, onProj
                   Key Areas
                 </h2>
                 <ul className="space-y-2 md:space-y-3">
-                  {ecosystemData.keyAreas.map((area, idx) => (
+                  {(ecosystemData?.key_areas && ecosystemData.key_areas.length > 0) ? ecosystemData.key_areas.map((area, idx) => (
                     <li key={idx} className="flex gap-2 md:gap-3">
                       <span className={`mt-0.5 md:mt-1 flex-shrink-0 ${isDark ? 'text-[#c9983a]' : 'text-[#a67c2a]'}`}>•</span>
                       <div className="flex-1 min-w-0">
@@ -397,7 +424,11 @@ export function EcosystemDetailPage({ ecosystemId, ecosystemName, onBack, onProj
                         </span>
                       </div>
                     </li>
-                  ))}
+                  )) : (
+                    <p className={`text-[12px] md:text-[13px] ${isDark ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'}`}>
+                      No key areas specified
+                    </p>
+                  )}
                 </ul>
               </div>
 
@@ -412,14 +443,18 @@ export function EcosystemDetailPage({ ecosystemId, ecosystemName, onBack, onProj
                   Supported technologies for ecosystem projects:
                 </p>
                 <ul className="space-y-1.5 md:space-y-2">
-                  {ecosystemData.technologies.map((tech, idx) => (
+                  {(ecosystemData?.technologies && ecosystemData.technologies.length > 0) ? ecosystemData.technologies.map((tech, idx) => (
                     <li key={idx} className="flex gap-2 md:gap-3">
                       <span className={`mt-0.5 md:mt-1 flex-shrink-0 ${isDark ? 'text-[#c9983a]' : 'text-[#a67c2a]'}`}>•</span>
                       <span className={`text-[12px] md:text-[14px] ${isDark ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'}`}>
                         {tech}
                       </span>
                     </li>
-                  ))}
+                  )) : (
+                    <p className={`text-[12px] md:text-[13px] ${isDark ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'}`}>
+                      No technologies specified
+                    </p>
+                  )}
                 </ul>
               </div>
             </div>

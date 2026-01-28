@@ -480,7 +480,18 @@ export const getProjectFilters = () =>
     languages: string[];
     categories: string[];
     tags: string[];
-  }>("/projects/filters");
+  }>(" /projects/filters");
+
+// Ecosystem types
+export type Language = {
+  name: string;
+  percentage: number;
+};
+
+export type KeyArea = {
+  title: string;
+  description: string;
+};
 
 // Ecosystems
 export const getEcosystems = () =>
@@ -490,14 +501,36 @@ export const getEcosystems = () =>
       slug: string;
       name: string;
       description: string | null;
+      short_description: string | null;
       website_url: string | null;
       status: string;
+      languages: Language[];
+      key_areas: KeyArea[];
+      technologies: string[];
       project_count: number;
       user_count: number;
       created_at: string;
       updated_at: string;
     }>;
   }>("/ecosystems");
+
+export const getEcosystemById = (id: string) =>
+  apiRequest<{
+    id: string;
+    slug: string;
+    name: string;
+    description: string | null;
+    short_description: string | null;
+    website_url: string | null;
+    status: string;
+    languages: Language[];
+    key_areas: KeyArea[];
+    technologies: string[];
+    project_count: number;
+    user_count: number;
+    created_at: string;
+    updated_at: string;
+  }>(`/ecosystems/${id}`);
 
 // Open Source Week
 export const getOpenSourceWeekEvents = () =>
@@ -568,16 +601,24 @@ export const deleteOpenSourceWeekEvent = (id: string) =>
 export const createEcosystem = (data: {
   name: string;
   description?: string;
+  short_description?: string;
   website_url?: string;
   status: "active" | "inactive";
+  languages?: Language[];
+  key_areas?: KeyArea[];
+  technologies?: string[];
 }) =>
   apiRequest<{
     id: string;
     slug: string;
     name: string;
     description: string;
+    short_description: string;
     website_url: string;
     status: string;
+    languages: Language[];
+    key_areas: KeyArea[];
+    technologies: string[];
     project_count: number;
     user_count: number;
     created_at: string;
@@ -595,8 +636,12 @@ export const getAdminEcosystems = () =>
       slug: string;
       name: string;
       description: string | null;
+      short_description: string | null;
       website_url: string | null;
       status: string;
+      languages: Language[];
+      key_areas: KeyArea[];
+      technologies: string[];
       project_count: number;
       user_count: number;
       created_at: string;
@@ -618,16 +663,24 @@ export const deleteEcosystem = (id: string) =>
 export const updateEcosystem = (id: string, data: {
   name: string;
   description?: string;
+  short_description?: string;
   website_url?: string;
   status: 'active' | 'inactive';
+  languages?: Language[];
+  key_areas?: KeyArea[];
+  technologies?: string[];
 }) =>
   apiRequest<{
     id: string;
     slug: string;
     name: string;
     description: string;
+    short_description: string;
     website_url: string;
     status: string;
+    languages: Language[];
+    key_areas: KeyArea[];
+    technologies: string[];
     project_count: number;
     user_count: number;
     created_at: string;

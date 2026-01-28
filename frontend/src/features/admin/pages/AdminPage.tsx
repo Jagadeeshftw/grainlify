@@ -4,15 +4,19 @@ import { Shield, Globe, Plus, Sparkles, Trash2, ExternalLink, Calendar, Pencil }
 import { toast } from 'sonner';
 import { Modal, ModalFooter, ModalButton, ModalInput, ModalSelect } from '../../../shared/components/ui/Modal';
 import { DatePicker } from '../../../shared/components/ui/DatePicker';
-import { createEcosystem, getAdminEcosystems, deleteEcosystem, updateEcosystem, createOpenSourceWeekEvent, getAdminOpenSourceWeekEvents, deleteOpenSourceWeekEvent } from '../../../shared/api/client';
+import { createEcosystem, getAdminEcosystems, deleteEcosystem, updateEcosystem, createOpenSourceWeekEvent, getAdminOpenSourceWeekEvents, deleteOpenSourceWeekEvent, Language, KeyArea } from '../../../shared/api/client';
 
 interface Ecosystem {
   id: string;
   slug: string;
   name: string;
   description: string | null;
+  short_description: string | null;
   website_url: string | null;
   status: string;
+  languages: Language[];
+  key_areas: KeyArea[];
+  technologies: string[];
   project_count: number;
   user_count: number;
   created_at: string;
@@ -31,14 +35,22 @@ export function AdminPage() {
   const [editFormData, setEditFormData] = useState({
     name: '',
     description: '',
+    shortDescription: '',
     status: 'active',
-    websiteUrl: ''
+    websiteUrl: '',
+    languages: [] as Language[],
+    keyAreas: [] as KeyArea[],
+    technologies: [] as string[]
   });
   const [formData, setFormData] = useState({
     name: '',
     description: '',
+    shortDescription: '',
     status: 'active',
-    websiteUrl: ''
+    websiteUrl: '',
+    languages: [] as Language[],
+    keyAreas: [] as KeyArea[],
+    technologies: [] as string[]
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -386,8 +398,12 @@ export function AdminPage() {
       await createEcosystem({
         name: formData.name,
         description: formData.description || undefined,
+        short_description: formData.shortDescription || undefined,
         website_url: formData.websiteUrl || undefined,
         status: formData.status as 'active' | 'inactive',
+        languages: formData.languages,
+        key_areas: formData.keyAreas,
+        technologies: formData.technologies,
       });
 
       // Success - close modal and reset form
@@ -396,8 +412,12 @@ export function AdminPage() {
       setFormData({
         name: '',
         description: '',
+        shortDescription: '',
         status: 'active',
-        websiteUrl: ''
+        websiteUrl: '',
+        languages: [],
+        keyAreas: [],
+        technologies: []
       });
 
       // Refresh ecosystems list
@@ -416,8 +436,12 @@ export function AdminPage() {
     setEditFormData({
       name: ecosystem.name,
       description: ecosystem.description || '',
+      shortDescription: ecosystem.short_description || '',
       status: ecosystem.status,
-      websiteUrl: ecosystem.website_url || ''
+      websiteUrl: ecosystem.website_url || '',
+      languages: ecosystem.languages || [],
+      keyAreas: ecosystem.key_areas || [],
+      technologies: ecosystem.technologies || []
     });
     setEditingEcosystem(ecosystem);
     setErrors({});
@@ -450,8 +474,12 @@ export function AdminPage() {
       await updateEcosystem(editingEcosystem.id, {
         name: editFormData.name,
         description: editFormData.description || undefined,
+        short_description: editFormData.shortDescription || undefined,
         website_url: editFormData.websiteUrl || undefined,
         status: editFormData.status as 'active' | 'inactive',
+        languages: editFormData.languages,
+        key_areas: editFormData.keyAreas,
+        technologies: editFormData.technologies,
       });
 
       // Success - close modal and reset form
@@ -460,8 +488,12 @@ export function AdminPage() {
       setEditFormData({
         name: '',
         description: '',
+        shortDescription: '',
         status: 'active',
-        websiteUrl: ''
+        websiteUrl: '',
+        languages: [],
+        keyAreas: [],
+        technologies: []
       });
 
       toast.success('Ecosystem updated successfully');
@@ -897,6 +929,204 @@ export function AdminPage() {
               placeholder="https://example.com"
               error={errors.websiteUrl}
             />
+
+            <ModalInput
+              label="Short Description (Optional)"
+              value={formData.shortDescription}
+              onChange={(value) => setFormData({ ...formData, shortDescription: value })}
+              placeholder="Brief 1-2 sentence description..."
+              rows={2}
+            />
+
+            {/* Languages Section */}
+            <div className="space-y-2">
+              <label className={`block text-[13px] font-medium transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'}`}>
+                Languages (Optional)
+              </label>
+              {formData.languages.map((lang, index) => (
+                <div key={index} className="flex gap-2 items-start">
+                  <input
+                    type="text"
+                    value={lang.name}
+                    onChange={(e) => {
+                      const newLanguages = [...formData.languages];
+                      newLanguages[index].name = e.target.value;
+                      setFormData({ ...formData, languages: newLanguages });
+                    }}
+                    placeholder="Language name"
+                    className={`flex-1 px-3 py-2 rounded-[12px] border text-[14px] transition-colors ${
+                      theme === 'dark'
+                        ? 'bg-white/[0.06] border-white/10 text-[#f5f5f5] placeholder-[#888]'
+                        : 'bg-white/[0.12] border-white/20 text-[#2d2820] placeholder-[#7a6b5a]'
+                    }`}
+                  />
+                  <input
+                    type="number"
+                    value={lang.percentage}
+                    onChange={(e) => {
+                      const newLanguages = [...formData.languages];
+                      newLanguages[index].percentage = parseFloat(e.target.value) || 0;
+                      setFormData({ ...formData, languages: newLanguages });
+                    }}
+                    placeholder="%"
+                    min="0"
+                    max="100"
+                    className={`w-20 px-3 py-2 rounded-[12px] border text-[14px] transition-colors ${
+                      theme === 'dark'
+                        ? 'bg-white/[0.06] border-white/10 text-[#f5f5f5] placeholder-[#888]'
+                        : 'bg-white/[0.12] border-white/20 text-[#2d2820] placeholder-[#7a6b5a]'
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newLanguages = formData.languages.filter((_, i) => i !== index);
+                      setFormData({ ...formData, languages: newLanguages });
+                    }}
+                    className={`p-2 rounded-[12px] transition-colors ${
+                      theme === 'dark'
+                        ? 'hover:bg-white/[0.06] text-[#d4d4d4]'
+                        : 'hover:bg-white/[0.12] text-[#7a6b5a]'
+                    }`}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, languages: [...formData.languages, { name: '', percentage: 0 }] })}
+                className={`w-full px-3 py-2 rounded-[12px] border border-dashed text-[13px] transition-colors ${
+                  theme === 'dark'
+                    ? 'border-white/10 text-[#d4d4d4] hover:bg-white/[0.06]'
+                    : 'border-white/20 text-[#7a6b5a] hover:bg-white/[0.12]'
+                }`}
+              >
+                <Plus className="w-4 h-4 inline mr-1" />
+                Add Language
+              </button>
+            </div>
+
+            {/* Key Areas Section */}
+            <div className="space-y-2">
+              <label className={`block text-[13px] font-medium transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'}`}>
+                Key Areas (Optional)
+              </label>
+              {formData.keyAreas.map((area, index) => (
+                <div key={index} className="space-y-2 p-3 rounded-[12px] border border-dashed border-white/10">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={area.title}
+                      onChange={(e) => {
+                        const newAreas = [...formData.keyAreas];
+                        newAreas[index].title = e.target.value;
+                        setFormData({ ...formData, keyAreas: newAreas });
+                      }}
+                      placeholder="Area title"
+                      className={`flex-1 px-3 py-2 rounded-[12px] border text-[14px] transition-colors ${
+                        theme === 'dark'
+                          ? 'bg-white/[0.06] border-white/10 text-[#f5f5f5] placeholder-[#888]'
+                          : 'bg-white/[0.12] border-white/20 text-[#2d2820] placeholder-[#7a6b5a]'
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newAreas = formData.keyAreas.filter((_, i) => i !== index);
+                        setFormData({ ...formData, keyAreas: newAreas });
+                      }}
+                      className={`p-2 rounded-[12px] transition-colors ${
+                        theme === 'dark'
+                          ? 'hover:bg-white/[0.06] text-[#d4d4d4]'
+                          : 'hover:bg-white/[0.12] text-[#7a6b5a]'
+                      }`}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <textarea
+                    value={area.description}
+                    onChange={(e) => {
+                      const newAreas = [...formData.keyAreas];
+                      newAreas[index].description = e.target.value;
+                      setFormData({ ...formData, keyAreas: newAreas });
+                    }}
+                    placeholder="Area description"
+                    rows={2}
+                    className={`w-full px-3 py-2 rounded-[12px] border text-[14px] transition-colors ${
+                      theme === 'dark'
+                        ? 'bg-white/[0.06] border-white/10 text-[#f5f5f5] placeholder-[#888]'
+                        : 'bg-white/[0.12] border-white/20 text-[#2d2820] placeholder-[#7a6b5a]'
+                    }`}
+                  />
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, keyAreas: [...formData.keyAreas, { title: '', description: '' }] })}
+                className={`w-full px-3 py-2 rounded-[12px] border border-dashed text-[13px] transition-colors ${
+                  theme === 'dark'
+                    ? 'border-white/10 text-[#d4d4d4] hover:bg-white/[0.06]'
+                    : 'border-white/20 text-[#7a6b5a] hover:bg-white/[0.12]'
+                }`}
+              >
+                <Plus className="w-4 h-4 inline mr-1" />
+                Add Key Area
+              </button>
+            </div>
+
+            {/* Technologies Section */}
+            <div className="space-y-2">
+              <label className={`block text-[13px] font-medium transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'}`}>
+                Technologies (Optional)
+              </label>
+              {formData.technologies.map((tech, index) => (
+                <div key={index} className="flex gap-2">
+                  <input
+                    type="text"
+                    value={tech}
+                    onChange={(e) => {
+                      const newTech = [...formData.technologies];
+                      newTech[index] = e.target.value;
+                      setFormData({ ...formData, technologies: newTech });
+                    }}
+                    placeholder="Technology description"
+                    className={`flex-1 px-3 py-2 rounded-[12px] border text-[14px] transition-colors ${
+                      theme === 'dark'
+                        ? 'bg-white/[0.06] border-white/10 text-[#f5f5f5] placeholder-[#888]'
+                        : 'bg-white/[0.12] border-white/20 text-[#2d2820] placeholder-[#7a6b5a]'
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newTech = formData.technologies.filter((_, i) => i !== index);
+                      setFormData({ ...formData, technologies: newTech });
+                    }}
+                    className={`p-2 rounded-[12px] transition-colors ${
+                      theme === 'dark'
+                        ? 'hover:bg-white/[0.06] text-[#d4d4d4]'
+                        : 'hover:bg-white/[0.12] text-[#7a6b5a]'
+                    }`}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, technologies: [...formData.technologies, ''] })}
+                className={`w-full px-3 py-2 rounded-[12px] border border-dashed text-[13px] transition-colors ${
+                  theme === 'dark'
+                    ? 'border-white/10 text-[#d4d4d4] hover:bg-white/[0.06]'
+                    : 'border-white/20 text-[#7a6b5a] hover:bg-white/[0.12]'
+                }`}
+              >
+                <Plus className="w-4 h-4 inline mr-1" />
+                Add Technology
+              </button>
+            </div>
           </div>
 
           <ModalFooter>
@@ -980,6 +1210,204 @@ export function AdminPage() {
               placeholder="https://example.com"
               error={errors.websiteUrl}
             />
+
+            <ModalInput
+              label="Short Description (Optional)"
+              value={editFormData.shortDescription}
+              onChange={(value) => setEditFormData({ ...editFormData, shortDescription: value })}
+              placeholder="Brief 1-2 sentence description..."
+              rows={2}
+            />
+
+            {/* Languages Section */}
+            <div className="space-y-2">
+              <label className={`block text-[13px] font-medium transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'}`}>
+                Languages (Optional)
+              </label>
+              {editFormData.languages.map((lang, index) => (
+                <div key={index} className="flex gap-2 items-start">
+                  <input
+                    type="text"
+                    value={lang.name}
+                    onChange={(e) => {
+                      const newLanguages = [...editFormData.languages];
+                      newLanguages[index].name = e.target.value;
+                      setEditFormData({ ...editFormData, languages: newLanguages });
+                    }}
+                    placeholder="Language name"
+                    className={`flex-1 px-3 py-2 rounded-[12px] border text-[14px] transition-colors ${
+                      theme === 'dark'
+                        ? 'bg-white/[0.06] border-white/10 text-[#f5f5f5] placeholder-[#888]'
+                        : 'bg-white/[0.12] border-white/20 text-[#2d2820] placeholder-[#7a6b5a]'
+                    }`}
+                  />
+                  <input
+                    type="number"
+                    value={lang.percentage}
+                    onChange={(e) => {
+                      const newLanguages = [...editFormData.languages];
+                      newLanguages[index].percentage = parseFloat(e.target.value) || 0;
+                      setEditFormData({ ...editFormData, languages: newLanguages });
+                    }}
+                    placeholder="%"
+                    min="0"
+                    max="100"
+                    className={`w-20 px-3 py-2 rounded-[12px] border text-[14px] transition-colors ${
+                      theme === 'dark'
+                        ? 'bg-white/[0.06] border-white/10 text-[#f5f5f5] placeholder-[#888]'
+                        : 'bg-white/[0.12] border-white/20 text-[#2d2820] placeholder-[#7a6b5a]'
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newLanguages = editFormData.languages.filter((_, i) => i !== index);
+                      setEditFormData({ ...editFormData, languages: newLanguages });
+                    }}
+                    className={`p-2 rounded-[12px] transition-colors ${
+                      theme === 'dark'
+                        ? 'hover:bg-white/[0.06] text-[#d4d4d4]'
+                        : 'hover:bg-white/[0.12] text-[#7a6b5a]'
+                    }`}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => setEditFormData({ ...editFormData, languages: [...editFormData.languages, { name: '', percentage: 0 }] })}
+                className={`w-full px-3 py-2 rounded-[12px] border border-dashed text-[13px] transition-colors ${
+                  theme === 'dark'
+                    ? 'border-white/10 text-[#d4d4d4] hover:bg-white/[0.06]'
+                    : 'border-white/20 text-[#7a6b5a] hover:bg-white/[0.12]'
+                }`}
+              >
+                <Plus className="w-4 h-4 inline mr-1" />
+                Add Language
+              </button>
+            </div>
+
+            {/* Key Areas Section */}
+            <div className="space-y-2">
+              <label className={`block text-[13px] font-medium transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'}`}>
+                Key Areas (Optional)
+              </label>
+              {editFormData.keyAreas.map((area, index) => (
+                <div key={index} className="space-y-2 p-3 rounded-[12px] border border-dashed border-white/10">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={area.title}
+                      onChange={(e) => {
+                        const newAreas = [...editFormData.keyAreas];
+                        newAreas[index].title = e.target.value;
+                        setEditFormData({ ...editFormData, keyAreas: newAreas });
+                      }}
+                      placeholder="Area title"
+                      className={`flex-1 px-3 py-2 rounded-[12px] border text-[14px] transition-colors ${
+                        theme === 'dark'
+                          ? 'bg-white/[0.06] border-white/10 text-[#f5f5f5] placeholder-[#888]'
+                          : 'bg-white/[0.12] border-white/20 text-[#2d2820] placeholder-[#7a6b5a]'
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newAreas = editFormData.keyAreas.filter((_, i) => i !== index);
+                        setEditFormData({ ...editFormData, keyAreas: newAreas });
+                      }}
+                      className={`p-2 rounded-[12px] transition-colors ${
+                        theme === 'dark'
+                          ? 'hover:bg-white/[0.06] text-[#d4d4d4]'
+                          : 'hover:bg-white/[0.12] text-[#7a6b5a]'
+                      }`}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <textarea
+                    value={area.description}
+                    onChange={(e) => {
+                      const newAreas = [...editFormData.keyAreas];
+                      newAreas[index].description = e.target.value;
+                      setEditFormData({ ...editFormData, keyAreas: newAreas });
+                    }}
+                    placeholder="Area description"
+                    rows={2}
+                    className={`w-full px-3 py-2 rounded-[12px] border text-[14px] transition-colors ${
+                      theme === 'dark'
+                        ? 'bg-white/[0.06] border-white/10 text-[#f5f5f5] placeholder-[#888]'
+                        : 'bg-white/[0.12] border-white/20 text-[#2d2820] placeholder-[#7a6b5a]'
+                    }`}
+                  />
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => setEditFormData({ ...editFormData, keyAreas: [...editFormData.keyAreas, { title: '', description: '' }] })}
+                className={`w-full px-3 py-2 rounded-[12px] border border-dashed text-[13px] transition-colors ${
+                  theme === 'dark'
+                    ? 'border-white/10 text-[#d4d4d4] hover:bg-white/[0.06]'
+                    : 'border-white/20 text-[#7a6b5a] hover:bg-white/[0.12]'
+                }`}
+              >
+                <Plus className="w-4 h-4 inline mr-1" />
+                Add Key Area
+              </button>
+            </div>
+
+            {/* Technologies Section */}
+            <div className="space-y-2">
+              <label className={`block text-[13px] font-medium transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'}`}>
+                Technologies (Optional)
+              </label>
+              {editFormData.technologies.map((tech, index) => (
+                <div key={index} className="flex gap-2">
+                  <input
+                    type="text"
+                    value={tech}
+                    onChange={(e) => {
+                      const newTech = [...editFormData.technologies];
+                      newTech[index] = e.target.value;
+                      setEditFormData({ ...editFormData, technologies: newTech });
+                    }}
+                    placeholder="Technology description"
+                    className={`flex-1 px-3 py-2 rounded-[12px] border text-[14px] transition-colors ${
+                      theme === 'dark'
+                        ? 'bg-white/[0.06] border-white/10 text-[#f5f5f5] placeholder-[#888]'
+                        : 'bg-white/[0.12] border-white/20 text-[#2d2820] placeholder-[#7a6b5a]'
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newTech = editFormData.technologies.filter((_, i) => i !== index);
+                      setEditFormData({ ...editFormData, technologies: newTech });
+                    }}
+                    className={`p-2 rounded-[12px] transition-colors ${
+                      theme === 'dark'
+                        ? 'hover:bg-white/[0.06] text-[#d4d4d4]'
+                        : 'hover:bg-white/[0.12] text-[#7a6b5a]'
+                    }`}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => setEditFormData({ ...editFormData, technologies: [...editFormData.technologies, ''] })}
+                className={`w-full px-3 py-2 rounded-[12px] border border-dashed text-[13px] transition-colors ${
+                  theme === 'dark'
+                    ? 'border-white/10 text-[#d4d4d4] hover:bg-white/[0.06]'
+                    : 'border-white/20 text-[#7a6b5a] hover:bg-white/[0.12]'
+                }`}
+              >
+                <Plus className="w-4 h-4 inline mr-1" />
+                Add Technology
+              </button>
+            </div>
           </div>
 
           <ModalFooter>

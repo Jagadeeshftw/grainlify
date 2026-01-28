@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -32,8 +33,12 @@ SELECT
   e.slug,
   e.name,
   e.description,
+  e.short_description,
   e.website_url,
   e.status,
+  e.languages,
+  e.key_areas,
+  e.technologies,
   e.created_at,
   e.updated_at,
   COUNT(p.id) AS project_count,
@@ -53,24 +58,44 @@ LIMIT 200
 		for rows.Next() {
 			var id uuid.UUID
 			var slug, name, status string
-			var desc, website *string
+			var desc, shortDesc, website *string
+			var languagesJSON, keyAreasJSON, technologiesJSON []byte
 			var createdAt, updatedAt time.Time
 			var projectCnt int64
 			var userCnt int64
-			if err := rows.Scan(&id, &slug, &name, &desc, &website, &status, &createdAt, &updatedAt, &projectCnt, &userCnt); err != nil {
+			if err := rows.Scan(&id, &slug, &name, &desc, &shortDesc, &website, &status, &languagesJSON, &keyAreasJSON, &technologiesJSON, &createdAt, &updatedAt, &projectCnt, &userCnt); err != nil {
 				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "ecosystems_list_failed"})
 			}
+
+			// Parse JSONB fields
+			var languages []Language
+			var keyAreas []KeyArea
+			var technologies []string
+			if len(languagesJSON) > 0 {
+				json.Unmarshal(languagesJSON, &languages)
+			}
+			if len(keyAreasJSON) > 0 {
+				json.Unmarshal(keyAreasJSON, &keyAreas)
+			}
+			if len(technologiesJSON) > 0 {
+				json.Unmarshal(technologiesJSON, &technologies)
+			}
+
 			out = append(out, fiber.Map{
-				"id":          id.String(),
-				"slug":        slug,
-				"name":        name,
-				"description": desc,
-				"website_url": website,
-				"status":      status,
-				"created_at":  createdAt,
-				"updated_at":  updatedAt,
-				"project_count": projectCnt,
-				"user_count": userCnt,
+				"id":                id.String(),
+				"slug":              slug,
+				"name":              name,
+				"description":       desc,
+				"short_description": shortDesc,
+				"website_url":       website,
+				"status":            status,
+				"languages":         languages,
+				"key_areas":         keyAreas,
+				"technologies":      technologies,
+				"created_at":        createdAt,
+				"updated_at":        updatedAt,
+				"project_count":     projectCnt,
+				"user_count":        userCnt,
 			})
 		}
 
@@ -78,12 +103,26 @@ LIMIT 200
 	}
 }
 
-type ecosystemUpsertRequest struct {
-	Slug       string `json:"slug"`
-	Name       string `json:"name"`
+type Language struct {
+	Name       string  `json:"name"`
+	Percentage float64 `json:"percentage"`
+}
+
+type KeyArea struct {
+	Title       string `json:"title"`
 	Description string `json:"description"`
-	WebsiteURL string `json:"website_url"`
-	Status     string `json:"status"` // active|inactive
+}
+
+type ecosystemUpsertRequest struct {
+	Slug             string     `json:"slug"`
+	Name             string     `json:"name"`
+	Description      string     `json:"description"`
+	ShortDescription string     `json:"short_description"`
+	WebsiteURL       string     `json:"website_url"`
+	Status           string     `json:"status"` // active|inactive
+	Languages        []Language `json:"languages"`
+	KeyAreas         []KeyArea  `json:"key_areas"`
+	Technologies     []string   `json:"technologies"`
 }
 
 func (h *EcosystemsAdminHandler) Create() fiber.Handler {
@@ -112,12 +151,17 @@ func (h *EcosystemsAdminHandler) Create() fiber.Handler {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_status"})
 		}
 
+		// Marshal JSONB fields
+		languagesJSON, _ := json.Marshal(req.Languages)
+		keyAreasJSON, _ := json.Marshal(req.KeyAreas)
+		technologiesJSON, _ := json.Marshal(req.Technologies)
+
 		var id uuid.UUID
 		err := h.db.Pool.QueryRow(c.Context(), `
-INSERT INTO ecosystems (slug, name, description, website_url, status)
-VALUES ($1, $2, NULLIF($3,''), NULLIF($4,''), $5)
+INSERT INTO ecosystems (slug, name, description, short_description, website_url, status, languages, key_areas, technologies)
+VALUES ($1, $2, NULLIF($3,''), NULLIF($4,''), NULLIF($5,''), $6, $7, $8, $9)
 RETURNING id
-`, slug, name, strings.TrimSpace(req.Description), strings.TrimSpace(req.WebsiteURL), status).Scan(&id)
+`, slug, name, strings.TrimSpace(req.Description), strings.TrimSpace(req.ShortDescription), strings.TrimSpace(req.WebsiteURL), status, languagesJSON, keyAreasJSON, technologiesJSON).Scan(&id)
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "ecosystem_create_failed"})
 		}
@@ -156,16 +200,25 @@ func (h *EcosystemsAdminHandler) Update() fiber.Handler {
 			slugVal = &slug
 		}
 
+		// Marshal JSONB fields
+		languagesJSON, _ := json.Marshal(req.Languages)
+		keyAreasJSON, _ := json.Marshal(req.KeyAreas)
+		technologiesJSON, _ := json.Marshal(req.Technologies)
+
 		ct, err := h.db.Pool.Exec(c.Context(), `
 UPDATE ecosystems
 SET slug = COALESCE($2, slug),
     name = COALESCE(NULLIF($3,''), name),
     description = COALESCE(NULLIF($4,''), description),
-    website_url = COALESCE(NULLIF($5,''), website_url),
-    status = COALESCE(NULLIF($6,''), status),
+    short_description = COALESCE(NULLIF($5,''), short_description),
+    website_url = COALESCE(NULLIF($6,''), website_url),
+    status = COALESCE(NULLIF($7,''), status),
+    languages = COALESCE($8, languages),
+    key_areas = COALESCE($9, key_areas),
+    technologies = COALESCE($10, technologies),
     updated_at = now()
 WHERE id = $1
-`, ecoID, slugVal, name, strings.TrimSpace(req.Description), strings.TrimSpace(req.WebsiteURL), status)
+`, ecoID, slugVal, name, strings.TrimSpace(req.Description), strings.TrimSpace(req.ShortDescription), strings.TrimSpace(req.WebsiteURL), status, languagesJSON, keyAreasJSON, technologiesJSON)
 		if errors.Is(err, pgx.ErrNoRows) || ct.RowsAffected() == 0 {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "ecosystem_not_found"})
 		}
