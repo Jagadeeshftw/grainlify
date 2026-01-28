@@ -14,7 +14,7 @@ interface FiltersSectionProps {
   isLoaded: boolean;
 }
 
-interface EcosystemOption {
+export interface EcosystemOption {
   label: string;
   value: string;
 }

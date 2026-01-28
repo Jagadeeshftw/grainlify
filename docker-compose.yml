@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: grainlify-postgres
+    environment:
+      POSTGRES_USER: grainlify
+      POSTGRES_PASSWORD: grainlify_dev_password
+      POSTGRES_DB: grainlify
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U grainlify"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

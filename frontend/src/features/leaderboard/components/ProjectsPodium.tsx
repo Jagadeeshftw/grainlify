@@ -1,3 +1,4 @@
+import React from 'react';
 import { Medal, Trophy, Crown, Sparkles } from 'lucide-react';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
 import { ProjectData } from '../types';
