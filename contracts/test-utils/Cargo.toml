@@ -1,0 +1,15 @@
+[package]
+name = "test-utils"
+version = "0.1.0"
+edition = "2021"
+description = "Test utilities for Grainlify smart contracts"
+license = "MIT"
+
+[dependencies]
+soroban-sdk = { version = "23", features = ["testutils"] }
+rand = "0.8"
+hex = "0.4"
+
+[lib]
+name = "grainlify_test_utils"
+path = "src/lib.rs"

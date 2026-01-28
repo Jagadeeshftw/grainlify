@@ -1137,6 +1137,7 @@ fn migrate_v2_to_v3(_env: &Env) {
 mod test {
     use super::*;
     use soroban_sdk::{testutils::Address as _, Env};
+    use test_utils::{TestEnv, assert_invocation};
 
     #[test]
     fn multisig_init_works() {
@@ -1153,10 +1154,12 @@ mod test {
     }
 
     #[test]
+    #[test]
     fn test_set_version() {
-        let env = Env::default();
-        env.mock_all_auths();
-
+        let test_env = TestEnv::new();
+        let env = &test_env.env;
+        
+        // Register contract manually since TestEnv generic contract setup might need adjustment for specific contract types
         let contract_id = env.register_contract(None, GrainlifyContract);
         let client = GrainlifyContractClient::new(&env, &contract_id);
 
@@ -1218,8 +1221,8 @@ mod test {
 
     #[test]
     fn test_migration_idempotency() {
-        let env = Env::default();
-        env.mock_all_auths();
+        let test_env = TestEnv::new();
+        let env = &test_env.env;
 
         let contract_id = env.register_contract(None, GrainlifyContract);
         let client = GrainlifyContractClient::new(&env, &contract_id);
