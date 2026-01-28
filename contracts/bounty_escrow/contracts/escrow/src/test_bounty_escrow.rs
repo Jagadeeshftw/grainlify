@@ -4,7 +4,7 @@ use soroban_sdk::{
     testutils::{Address as _, Events, Ledger},
     token, vec, Address, Env,
 };
-use test_utils::{TestEnv, assert_events_match};
+use test_utils::{assert_events_match, TestEnv};
 
 use crate::{BountyEscrowContract, BountyEscrowContractClient};
 

@@ -7,9 +7,11 @@ pub fn assert_invocation(
     args: std::vec::Vec<Val>,
 ) {
     let calls = env.auths();
-    let found = calls.iter().any(|(auth_contract_id, auth_func, auth_args, _)| {
-        auth_contract_id == contract_id && auth_func == function_name && auth_args == &args
-    });
+    let found = calls
+        .iter()
+        .any(|(auth_contract_id, auth_func, auth_args, _)| {
+            auth_contract_id == contract_id && auth_func == function_name && auth_args == &args
+        });
     assert!(found, "Expected invocation of {} not found", function_name);
 }
 

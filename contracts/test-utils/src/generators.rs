@@ -1,5 +1,5 @@
-use soroban_sdk::{Env, Address, BytesN};
 use rand::Rng;
+use soroban_sdk::{Address, BytesN, Env};
 
 pub fn generate_random_bytes(env: &Env) -> BytesN<32> {
     let mut rng = rand::thread_rng();
