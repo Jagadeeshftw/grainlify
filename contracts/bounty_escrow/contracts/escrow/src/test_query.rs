@@ -137,8 +137,8 @@ fn test_get_stats() {
     assert_eq!(stats.total_locked_amount, 300);
     assert_eq!(stats.total_released_amount, 0);
 
-    // Release one (full amount)
-    client.release_funds(&1, &Address::generate(&env), &None);
+    // Release one (release all remaining by passing None)
+    client.release_funds(&1, &Address::generate(&env), &None::<i128>);
 
     let stats_after = client.get_stats();
     assert_eq!(stats_after.total_locked_amount, 200);

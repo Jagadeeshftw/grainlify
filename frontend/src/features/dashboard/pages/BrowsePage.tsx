@@ -54,7 +54,7 @@ const getProjectColor = (name: string): string => {
 // Helper function to truncate description to first line or first 80 characters
 const truncateDescription = (
   description: string | undefined | null,
-  maxLength: number = 80,
+  maxLength: number = 80
 ): string => {
   if (!description || description.trim() === "") {
     return "";
@@ -208,22 +208,26 @@ export function BrowsePage({ onProjectClick }: BrowsePageProps) {
             params.category = selectedFilters.categories[0]; // API supports single category
           }
           if (selectedFilters.tags.length > 0) {
-            params.tags = selectedFilters.tags.join(','); // API supports comma-separated tags
+            params.tags = selectedFilters.tags.join(","); // API supports comma-separated tags
           }
 
           const response = await getPublicProjects(params);
 
-          console.log('BrowsePage: API response received', { response });
+          console.log("BrowsePage: API response received", { response });
 
           // Handle response - check if it's valid
           let projectsArray: any[] = [];
-          if (response && response.projects && Array.isArray(response.projects)) {
+          if (
+            response &&
+            response.projects &&
+            Array.isArray(response.projects)
+          ) {
             projectsArray = response.projects;
           } else if (Array.isArray(response)) {
             // Handle case where API returns array directly
             projectsArray = response;
           } else {
-            console.warn('BrowsePage: Unexpected response format', response);
+            console.warn("BrowsePage: Unexpected response format", response);
             projectsArray = [];
           }
 
@@ -233,7 +237,7 @@ export function BrowsePage({ onProjectClick }: BrowsePageProps) {
             .map((p) => {
               const repoName = getRepoName(p.github_full_name);
               return {
-                id: p.id || `project-${Date.now()}-${Math.random()}`, // Fallback ID if missing
+                id: p.id || `project-${Date.now()}-${Math.random()}`,
                 name: repoName,
                 icon: getProjectIcon(p.github_full_name),
                 stars: formatNumber(p.stars_count || 0),
@@ -241,15 +245,21 @@ export function BrowsePage({ onProjectClick }: BrowsePageProps) {
                 contributors: p.contributors_count || 0,
                 openIssues: p.open_issues_count || 0,
                 prs: p.open_prs_count || 0,
-                description: truncateDescription(p.description) || `${p.language || 'Project'} repository${p.category ? ` - ${p.category}` : ''}`,
+                description:
+                  truncateDescription(p.description) ||
+                  `${p.language || "Project"} repository${
+                    p.category ? ` - ${p.category}` : ""
+                  }`,
                 tags: Array.isArray(p.tags) ? p.tags : [],
                 color: getProjectColor(repoName),
+                languages: Array.isArray(p.languages) ? p.languages : [],
               };
             });
-
           // Simulation: Inject a dummy project if no real projects are found
           if (mappedProjects.length === 0) {
-            console.log('BrowsePage: No real projects found, injecting dummy project for simulation');
+            console.log(
+              "BrowsePage: No real projects found, injecting dummy project for simulation"
+            );
             mappedProjects.push({
               id: "dummy-project-id",
               name: "Grainlify-Test-Project",
@@ -259,16 +269,19 @@ export function BrowsePage({ onProjectClick }: BrowsePageProps) {
               contributors: 25,
               openIssues: 12,
               prs: 5,
-              description: "A simulated project to test navigation features. Click me to see project details and then navigate to Issues!",
+              description:
+                "A simulated project to test navigation features. Click me to see project details and then navigate to Issues!",
               tags: ["test", "simulation"],
               color: "from-blue-500 to-cyan-500",
             });
           }
 
-          console.log('BrowsePage: Final project list', { count: mappedProjects.length });
+          console.log("BrowsePage: Final project list", {
+            count: mappedProjects.length,
+          });
           return mappedProjects;
         } catch (err) {
-          console.error('BrowsePage: Failed to fetch projects:', err);
+          console.error("BrowsePage: Failed to fetch projects:", err);
           throw err; // Re-throw to let the hook handle the error
         }
       });
@@ -300,7 +313,7 @@ export function BrowsePage({ onProjectClick }: BrowsePageProps) {
                   <X className="w-3.5 h-3.5" />
                 </button>
               </span>
-            )),
+            ))
           )}
         </div>
       )}
