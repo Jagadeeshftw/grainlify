@@ -11,6 +11,8 @@ import { InstallGitHubAppModal } from '../components/InstallGitHubAppModal';
 
 interface MaintainersPageProps {
   onNavigate: (page: string) => void;
+  initialProjectId?: string;
+  onClearTargetProject?: () => void;
 }
 
 interface Project {
@@ -33,7 +35,7 @@ interface GroupedRepository {
   }>;
 }
 
-export function MaintainersPage({ onNavigate }: MaintainersPageProps) {
+export function MaintainersPage({ onNavigate, initialProjectId, onClearTargetProject }: MaintainersPageProps) {
   const { theme } = useTheme();
   const [activeTab, setActiveTab] = useState<TabType>('Dashboard');
   const [isRepoDropdownOpen, setIsRepoDropdownOpen] = useState(false);
@@ -81,6 +83,15 @@ export function MaintainersPage({ onNavigate }: MaintainersPageProps) {
     }
   }, []);
 
+  useEffect(() => {
+    if (initialProjectId) {
+      setTargetProjectId(initialProjectId);
+      setSelectedRepoIds(new Set([initialProjectId])); // Auto-select the project in the main selector
+      setActiveTab('Issues');
+      onClearTargetProject?.();
+    }
+  }, [initialProjectId, onClearTargetProject]);
+
   // Expose refresh function for child components
   const refreshAll = () => {
     loadProjects();
@@ -96,7 +107,25 @@ export function MaintainersPage({ onNavigate }: MaintainersPageProps) {
     const data = await getMyProjects();
 
     // Ensure data is an array
-    const projectsArray = Array.isArray(data) ? data : [];
+    let projectsArray = Array.isArray(data) ? (data as Project[]) : [];
+
+    // Simulation: Inject dummy project if it's the target or if no projects found
+    if (initialProjectId === 'dummy-project-id' || projectsArray.length === 0) {
+      const dummyProject: Project = {
+        id: 'dummy-project-id',
+        github_full_name: 'Grainlify/Grainlify-Test-Project',
+        status: 'verified',
+        ecosystem_name: 'Grainlify',
+        language: 'TypeScript',
+        tags: ['Simulation'],
+        category: 'Full Stack'
+      };
+      
+      // Only add if not already present
+      if (!projectsArray.find(p => p.id === 'dummy-project-id')) {
+        projectsArray = [dummyProject, ...projectsArray];
+      }
+    }
 
     setProjects(projectsArray);
     setError(null);

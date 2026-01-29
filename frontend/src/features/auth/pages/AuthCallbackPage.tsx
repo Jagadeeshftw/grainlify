@@ -27,6 +27,7 @@ export function AuthCallbackPage() {
     
     const handleCallback = async () => {
       hasProcessed.current = true;
+      
       try {
         // Get the token from URL parameters
         const params = new URLSearchParams(window.location.search);
@@ -39,11 +40,7 @@ export function AuthCallbackPage() {
 
         if (errorParam) {
           console.error('OAuth Error:', errorParam);
-          if (errorParam === 'access_denied') {
-            setError('Login was cancelled. Please try again.');
-          } else {
-            setError(errorParam || 'An unexpected error occurred');
-          }
+          setError(errorParam);
           setIsProcessing(false);
           // Redirect to signin after 3 seconds
           setTimeout(() => navigate('/signin'), 3000);
@@ -71,7 +68,7 @@ export function AuthCallbackPage() {
         setTimeout(() => navigate('/signin'), 3000);
       }
     };
-  
+
     handleCallback();
   }, [login, navigate]);
 

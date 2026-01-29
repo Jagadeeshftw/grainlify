@@ -92,6 +92,8 @@ export function Dashboard() {
     "contributor" | "maintainer" | "admin"
   >("contributor");
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [viewingUserId, setViewingUserId] = useState<string | null>(null);
   const [viewingUserLogin, setViewingUserLogin] = useState<string | null>(null);
   const [settingsInitialTab, setSettingsInitialTab] =
@@ -100,6 +102,7 @@ export function Dashboard() {
   const [deviceWidth, setDeviceWidth] = useState(
     typeof window !== 'undefined' ? window.innerWidth : null
   );
+  const [targetProjectIdForIssues, setTargetProjectIdForIssues] = useState<string | null>(null);
 
   useEffect(() => { 
     const handleResize = () => {
@@ -186,6 +189,17 @@ export function Dashboard() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  // Mobile detection
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 1024);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Close mobile menu on page change
   const handleNavigation = (page: string) => {
     setCurrentPage(page);
     setSelectedProjectId(null);
@@ -194,6 +208,9 @@ export function Dashboard() {
     setSelectedEcosystemName(null);
     setSelectedEventId(null);
     setSelectedEventName(null);
+    if (isMobile) {
+      setIsMobileMenuOpen(false);
+    }
   };
 
   const handleLogout = () => {
@@ -329,6 +346,14 @@ export function Dashboard() {
           }`}
         />
       </div>
+
+      {/* Mobile Sidebar Overlay Backdrop */}
+      {isMobile && isMobileMenuOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] transition-opacity duration-300"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
 
       {/* Sidebar */}
       <aside
@@ -643,7 +668,9 @@ export function Dashboard() {
           </div>
 
           {/* Page Content */}
+       
           <div className="pt-[68px]">
+            
             {selectedIssue ? (
               <IssueDetailPage
                 issueId={selectedIssue.issueId}
@@ -651,9 +678,16 @@ export function Dashboard() {
                 onClose={() => setSelectedIssue(null)}
               />
             ) : selectedProjectId ? (
+              
               <ProjectDetailPage
                 projectId={selectedProjectId}
                 onBack={() => setSelectedProjectId(null)}
+                onNavigateToIssues={(id) => {
+                  setTargetProjectIdForIssues(id);
+                  setCurrentPage("maintainers");
+                  setSelectedProjectId(null); // Clear selected project to allow dashboard to switch pages
+                  setSelectedIssue(null); // Clear selected issue if any
+                }}
                 onIssueClick={(issueId, projectId) =>
                   setSelectedIssue({ issueId, projectId })
                 }
@@ -708,7 +742,13 @@ export function Dashboard() {
                     />
                   )}
                 {currentPage === "contributors" && <ContributorsPage />}
-                {currentPage === "maintainers" && <MaintainersPage />}
+                {currentPage === "maintainers" && (
+                  <MaintainersPage 
+                    onNavigate={handleNavigation} 
+                    initialProjectId={targetProjectIdForIssues || undefined}
+                    onClearTargetProject={() => setTargetProjectIdForIssues(null)}
+                  />
+                )}
                 {currentPage === "profile" && (
                   <ProfilePage
                     viewingUserId={viewingUserId}

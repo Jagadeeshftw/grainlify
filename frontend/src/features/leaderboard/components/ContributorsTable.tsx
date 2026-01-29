@@ -37,8 +37,8 @@ export function ContributorsTable({
         isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
       }`}
     >
-      {/* Table Header */}
-      <div className="grid grid-cols-12 gap-4 px-8 py-4 border-b border-white/10 backdrop-blur-[30px] bg-white/[0.08]">
+      {/* Table Header - Hidden on Mobile */}
+      <div className="hidden md:grid grid-cols-12 gap-4 px-8 py-4 border-b border-white/10 backdrop-blur-[30px] bg-white/[0.08]">
         <div
           className={`col-span-1 text-[12px] font-bold uppercase tracking-wider transition-colors ${
             theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"
@@ -71,21 +71,23 @@ export function ContributorsTable({
         <div className="col-span-2"></div>
       </div>
 
-      {/* Table Rows */}
-      <div className="divide-y divide-white/10">
+      {/* Table Rows - Cards on Mobile, Grid on Desktop */}
+      <div className="flex flex-col divide-y divide-white/10">
         {data.map((leader, index) => (
           <div
             key={leader.rank}
             onClick={() => handleRowClick(leader)}
-            className="grid grid-cols-12 gap-4 px-8 py-5 hover:bg-white/[0.08] transition-all duration-300 cursor-pointer group"
+            className={`relative flex flex-col md:grid md:grid-cols-12 gap-3 md:gap-4 px-4 py-4 md:px-8 md:py-5 md:rounded-none hover:bg-white/[0.08] transition-all duration-300 cursor-pointer group shadow-sm md:shadow-none ${
+              isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
+            }`}
             style={{
               animation: isLoaded
                 ? `slideInLeft 0.5s ease-out ${1.1 + index * 0.1}s both`
                 : "none",
             }}
           >
-            {/* Rank */}
-            <div className="col-span-1 flex items-center">
+            {/* Rank - Top Left on Mobile */}
+            <div className="absolute top-4 left-4 md:static md:col-span-1 flex items-center">
               <div className="flex items-center justify-center w-8 h-8 rounded-[10px] bg-gradient-to-br from-white/[0.15] to-white/[0.08] border border-white/20 shadow-sm group-hover:scale-110 group-hover:shadow-md transition-all duration-300">
                 <span
                   className={`text-[15px] font-bold transition-colors ${
@@ -97,17 +99,17 @@ export function ContributorsTable({
               </div>
             </div>
 
-            {/* Trend */}
-            <div className="col-span-1 flex items-center">
+            {/* Trend - Top Right on Mobile */}
+            <div className="absolute top-4 right-4 md:static md:col-span-1 flex items-center justify-end md:justify-start">
               <div className="flex items-center justify-center w-8 h-8 rounded-[10px] bg-gradient-to-br from-white/[0.15] to-white/[0.08] border border-white/20 shadow-sm group-hover:scale-110 transition-all duration-300">
                 {getTrendIcon(leader.trend)}
               </div>
             </div>
 
-            {/* Contributor */}
-            <div className="col-span-6 flex items-center gap-3">
+            {/* Contributor - Centered Column on Mobile */}
+            <div className="mt-8 md:mt-0 md:col-span-6 flex flex-col items-center md:flex-row md:items-center gap-3">
               <div
-                className={`relative w-12 h-12 rounded-full bg-gradient-to-br ${getAvatarGradient(index)} flex items-center justify-center text-white font-bold text-[18px] shadow-md border-2 border-white/25 group-hover:scale-125 group-hover:shadow-lg group-hover:rotate-12 transition-all duration-300 overflow-hidden`}
+                className={`relative w-16 h-16 md:w-12 md:h-12 rounded-full bg-gradient-to-br ${getAvatarGradient(index)} flex items-center justify-center text-white font-bold text-[18px] shadow-md border-2 border-white/25 group-hover:scale-125 group-hover:shadow-lg group-hover:rotate-12 transition-all duration-300 overflow-hidden`}
               >
                 {leader.avatar &&
                 (leader.avatar.startsWith("http") ||
@@ -130,7 +132,7 @@ export function ContributorsTable({
                 {/* Glow ring on hover */}
                 <div className="absolute inset-0 rounded-full border-2 border-[#c9983a]/0 group-hover:border-[#c9983a]/50 transition-all duration-300 animate-ping-on-hover" />
               </div>
-              <div>
+              <div className="text-center md:text-left">
                 <div
                   className={`text-[15px] font-bold group-hover:text-[#c9983a] transition-colors duration-300 ${
                     theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"
@@ -148,7 +150,7 @@ export function ContributorsTable({
                   </div>
                 )}
                 {activeFilter === "ecosystems" && leader.ecosystems && (
-                  <div className="flex gap-1.5 mt-1">
+                  <div className="flex flex-wrap justify-center md:justify-start gap-1.5 mt-1">
                     {leader.ecosystems.map((eco, idx) => (
                       <span
                         key={idx}
@@ -162,8 +164,8 @@ export function ContributorsTable({
               </div>
             </div>
 
-            {/* Score */}
-            <div className="col-span-2 flex items-center justify-end">
+            {/* Score - Centered on Mobile */}
+            <div className="md:col-span-2 flex items-center justify-center md:justify-end">
               <div className="relative px-5 py-2.5 rounded-[12px] bg-gradient-to-br from-[#c9983a]/25 to-[#d4af37]/15 border border-[#c9983a]/40 shadow-sm group-hover:shadow-lg group-hover:border-[#c9983a]/70 group-hover:from-[#c9983a]/35 group-hover:to-[#d4af37]/25 group-hover:scale-110 transition-all duration-300">
                 <div
                   className={`text-[17px] font-black transition-colors ${
@@ -175,14 +177,17 @@ export function ContributorsTable({
               </div>
             </div>
 
-            {/* Action */}
-            <div className="col-span-2 flex items-center justify-end opacity-0 group-hover:opacity-100 transition-all duration-300">
+            {/* Action - Always visible button style on mobile for better touch interpretation? Or keep as hover?
+               On mobile, hover doesn't work well. Better to always show button or make whole card clickable (which it is).
+               Let's show button to give affordance, or maybe just styling is enough?
+               "View Profile" button can be always visible on mobile at bottom. */}
+            <div className="md:col-span-2 flex items-center justify-center md:justify-end opacity-100 md:opacity-0 group-hover:opacity-100 transition-all duration-300 mt-2 md:mt-0">
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   handleRowClick(leader);
                 }}
-                className="px-4 py-2 rounded-[10px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white text-[12px] font-semibold shadow-md hover:shadow-lg hover:scale-105 transition-all duration-300 border border-white/10"
+                className="w-full md:w-auto px-4 py-2 rounded-[10px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white text-[12px] font-semibold shadow-md hover:shadow-lg hover:scale-105 transition-all duration-300 border border-white/10"
               >
                 View Profile
               </button>

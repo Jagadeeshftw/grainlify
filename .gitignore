@@ -1,9 +1,11 @@
-
 # Elastic Beanstalk Files
 .elasticbeanstalk/*
 !.elasticbeanstalk/*.cfg.yml
 !.elasticbeanstalk/*.global.yml
 wasm_hash.txt
+
+# Node modules
+node_modules/
 
 # Deployment Scripts - Sensitive Files
 # Keep templates, ignore local overrides

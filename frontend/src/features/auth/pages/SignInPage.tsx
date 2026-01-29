@@ -29,15 +29,13 @@ export function SignInPage() {
     }
   }, [navigate]);
 
-  const handleGitHubSignIn = async () => {
+  const handleGitHubSignIn = () => {
+    console.log('Sign in button clicked');
     setIsRedirecting(true);
-    try {
-      const loginUrl = getGitHubLoginUrl();
-      window.location.href = loginUrl;
-    } catch (error) {
-      console.error("Error starting GitHub login:", error);
-      setIsRedirecting(false);
-    }
+    const githubUrl = getGitHubLoginUrl();
+    console.log('Redirecting to:', githubUrl);
+    // Redirect to GitHub OAuth
+    window.location.href = githubUrl;
   };
 
   return (
