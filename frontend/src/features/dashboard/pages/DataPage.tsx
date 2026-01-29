@@ -1,11 +1,233 @@
 import { useState } from 'react';
-import { ChevronDown, Info, Sun, Moon } from 'lucide-react';
+import { ChevronDown, Info } from 'lucide-react';
 import { BarChart, Bar, LineChart, Line as RechartsLine, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart } from 'recharts';
 import { ComposableMap, Geographies, Geography, Marker, ZoomableGroup, Line as MapLine } from "react-simple-maps";
 import { useTheme } from '../../../shared/contexts/ThemeContext';
 
+const DATA_YEAR = 2025;
+
+const MONTHS = [
+  { name: 'January', short: 'Jan', days: 31 },
+  { name: 'February', short: 'Feb', days: 28 },
+  { name: 'March', short: 'Mar', days: 31 },
+  { name: 'April', short: 'Apr', days: 30 },
+  { name: 'May', short: 'May', days: 31 },
+  { name: 'June', short: 'Jun', days: 30 },
+  { name: 'July', short: 'Jul', days: 31 },
+  { name: 'August', short: 'Aug', days: 31 },
+  { name: 'September', short: 'Sep', days: 30 },
+  { name: 'October', short: 'Oct', days: 31 },
+  { name: 'November', short: 'Nov', days: 30 },
+  { name: 'December', short: 'Dec', days: 31 },
+];
+
+const monthIndexByName = MONTHS.reduce<Record<string, number>>((acc, month, index) => {
+  acc[month.name] = index;
+  return acc;
+}, {});
+
+const METRIC_KEYS = ['value', 'trend', 'new', 'reactivated', 'active', 'churned', 'rewarded', 'prMerged'] as const;
+
+type MetricKey = typeof METRIC_KEYS[number];
+
+type BaseActivityPoint = {
+  month: string;
+  value: number;
+  trend: number;
+  new: number;
+  reactivated: number;
+  active: number;
+  churned: number;
+  rewarded: number;
+  prMerged: number;
+};
+
+type ChartActivityPoint = {
+  label: string;
+  tooltipLabel: string;
+} & Record<MetricKey, number>;
+
+type IntervalKey = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+
+const createEmptyMetrics = (): Record<MetricKey, number> => ({
+  value: 0,
+  trend: 0,
+  new: 0,
+  reactivated: 0,
+  active: 0,
+  churned: 0,
+  rewarded: 0,
+  prMerged: 0,
+});
+
+const normalizeMetrics = (entry: BaseActivityPoint): Record<MetricKey, number> => ({
+  value: entry.value,
+  trend: entry.trend,
+  new: entry.new,
+  reactivated: entry.reactivated,
+  active: entry.active,
+  churned: entry.churned,
+  rewarded: entry.rewarded,
+  prMerged: entry.prMerged,
+});
+
+const addMetrics = (target: Record<MetricKey, number>, source: Record<MetricKey, number>): void => {
+  METRIC_KEYS.forEach((key) => {
+    target[key] += source[key];
+  });
+};
+
+const scaleMetrics = (metrics: Record<MetricKey, number>, factor: number): Record<MetricKey, number> => {
+  const scaled = createEmptyMetrics();
+  METRIC_KEYS.forEach((key) => {
+    scaled[key] = metrics[key] * factor;
+  });
+  return scaled;
+};
+
+const buildDayWeights = (days: number): number[] => Array.from({ length: days }, (_, index) => 1 + (index % 7) / 10);
+
+const parseInterval = (intervalLabel: string): IntervalKey => {
+  const normalized = intervalLabel.toLowerCase().split(' ')[0];
+  if (normalized === 'daily' || normalized === 'weekly' || normalized === 'monthly' || normalized === 'quarterly' || normalized === 'yearly') {
+    return normalized;
+  }
+  return 'monthly';
+};
+
+const buildMonthlyData = (data: BaseActivityPoint[]): ChartActivityPoint[] => data.map((entry) => {
+  const metrics = normalizeMetrics(entry);
+  return {
+    label: entry.month,
+    tooltipLabel: `${entry.month} ${DATA_YEAR}`,
+    ...metrics,
+  };
+});
+
+const buildDailyData = (data: BaseActivityPoint[]): ChartActivityPoint[] => {
+  const daily: ChartActivityPoint[] = [];
+
+  data.forEach((entry) => {
+    const monthMeta = MONTHS.find((month) => month.name === entry.month);
+    if (!monthMeta) {
+      return;
+    }
+    const metrics = normalizeMetrics(entry);
+    const weights = buildDayWeights(monthMeta.days);
+    const weightSum = weights.reduce((sum, weight) => sum + weight, 0);
+
+    for (let dayIndex = 0; dayIndex < monthMeta.days; dayIndex += 1) {
+      const factor = weights[dayIndex] / weightSum;
+      const scaled = scaleMetrics(metrics, factor);
+      const dayNumber = dayIndex + 1;
+      daily.push({
+        label: `${monthMeta.short} ${dayNumber}`,
+        tooltipLabel: `${monthMeta.name} ${dayNumber}, ${DATA_YEAR}`,
+        ...scaled,
+      });
+    }
+  });
+
+  return daily;
+};
+
+const buildWeeklyData = (data: BaseActivityPoint[]): ChartActivityPoint[] => {
+  const weekly: ChartActivityPoint[] = [];
+
+  data.forEach((entry) => {
+    const monthMeta = MONTHS.find((month) => month.name === entry.month);
+    if (!monthMeta) {
+      return;
+    }
+    const metrics = normalizeMetrics(entry);
+    const weights = buildDayWeights(monthMeta.days);
+    const weightSum = weights.reduce((sum, weight) => sum + weight, 0);
+    const weeksInMonth = Math.ceil(monthMeta.days / 7);
+    const weekBuckets = Array.from({ length: weeksInMonth }, (_, weekIndex) => {
+      const startDay = weekIndex * 7 + 1;
+      const endDay = Math.min(startDay + 6, monthMeta.days);
+      return {
+        label: `${monthMeta.short} ${startDay}-${endDay}`,
+        tooltipLabel: `${monthMeta.name} ${startDay}-${endDay}, ${DATA_YEAR}`,
+        metrics: createEmptyMetrics(),
+      };
+    });
+
+    for (let dayIndex = 0; dayIndex < monthMeta.days; dayIndex += 1) {
+      const factor = weights[dayIndex] / weightSum;
+      const dailyMetrics = scaleMetrics(metrics, factor);
+      const weekIndex = Math.floor(dayIndex / 7);
+      addMetrics(weekBuckets[weekIndex].metrics, dailyMetrics);
+    }
+
+    weekBuckets.forEach((bucket) => {
+      weekly.push({
+        label: bucket.label,
+        tooltipLabel: bucket.tooltipLabel,
+        ...bucket.metrics,
+      });
+    });
+  });
+
+  return weekly;
+};
+
+const buildQuarterlyData = (data: BaseActivityPoint[]): ChartActivityPoint[] => {
+  const quarterBuckets = ['Q1', 'Q2', 'Q3', 'Q4'].map((label) => ({
+    label,
+    tooltipLabel: `${label} ${DATA_YEAR}`,
+    metrics: createEmptyMetrics(),
+  }));
+
+  data.forEach((entry) => {
+    const monthIndex = monthIndexByName[entry.month];
+    const quarterIndex = typeof monthIndex === 'number' ? Math.floor(monthIndex / 3) : 0;
+    addMetrics(quarterBuckets[quarterIndex].metrics, normalizeMetrics(entry));
+  });
+
+  return quarterBuckets.map((bucket) => ({
+    label: bucket.label,
+    tooltipLabel: bucket.tooltipLabel,
+    ...bucket.metrics,
+  }));
+};
+
+const buildYearlyData = (data: BaseActivityPoint[]): ChartActivityPoint[] => {
+  const metrics = createEmptyMetrics();
+
+  data.forEach((entry) => {
+    addMetrics(metrics, normalizeMetrics(entry));
+  });
+
+  return [
+    {
+      label: `${DATA_YEAR}`,
+      tooltipLabel: `${DATA_YEAR}`,
+      ...metrics,
+    },
+  ];
+};
+
+const buildProjectActivityDataset = (data: BaseActivityPoint[], intervalLabel: string): ChartActivityPoint[] => {
+  const interval = parseInterval(intervalLabel);
+
+  switch (interval) {
+    case 'daily':
+      return buildDailyData(data);
+    case 'weekly':
+      return buildWeeklyData(data);
+    case 'quarterly':
+      return buildQuarterlyData(data);
+    case 'yearly':
+      return buildYearlyData(data);
+    case 'monthly':
+    default:
+      return buildMonthlyData(data);
+  }
+};
+
 export function DataPage() {
-  const { theme, toggleTheme } = useTheme();
+  const { theme } = useTheme();
   const [mapZoom, setMapZoom] = useState(1);
   const [mapCenter, setMapCenter] = useState<[number, number]>([0, 0]);
 
@@ -47,20 +269,25 @@ export function DataPage() {
   });
 
   // Sample data for project activity (monthly data)
-  const projectActivityData = [
-    { month: 'January', value: 45, trend: 40, new: 12, reactivated: 5, active: 28, churned: -8, rewarded: 15420 },
-    { month: 'February', value: 38, trend: 42, new: 8, reactivated: 4, active: 26, churned: -6, rewarded: 12300 },
-    { month: 'March', value: 52, trend: 45, new: 15, reactivated: 7, active: 30, churned: -5, rewarded: 18650 },
-    { month: 'April', value: 48, trend: 50, new: 11, reactivated: 6, active: 31, churned: -7, rewarded: 16800 },
-    { month: 'May', value: 58, trend: 52, new: 18, reactivated: 8, active: 32, churned: -4, rewarded: 22100 },
-    { month: 'June', value: 55, trend: 55, new: 14, reactivated: 6, active: 35, churned: -9, rewarded: 20500 },
-    { month: 'July', value: 42, trend: 54, new: 9, reactivated: 5, active: 28, churned: -10, rewarded: 14200 },
-    { month: 'August', value: 48, trend: 50, new: 12, reactivated: 7, active: 29, churned: -6, rewarded: 17300 },
-    { month: 'September', value: 62, trend: 52, new: 20, reactivated: 9, active: 33, churned: -5, rewarded: 24800 },
-    { month: 'October', value: 58, trend: 58, new: 16, reactivated: 8, active: 34, churned: -7, rewarded: 21900 },
-    { month: 'November', value: 45, trend: 56, new: 10, reactivated: 6, active: 29, churned: -8, rewarded: 15600 },
-    { month: 'December', value: 52, trend: 52, new: 13, reactivated: 7, active: 32, churned: -10, rewarded: 18900 },
-  ];
+  const projectActivityData = useMemo<BaseActivityPoint[]>(() => [
+    { month: 'January', value: 45, trend: 40, new: 12, reactivated: 5, active: 28, churned: -8, rewarded: 15420, prMerged: 22 },
+    { month: 'February', value: 38, trend: 42, new: 8, reactivated: 4, active: 26, churned: -6, rewarded: 12300, prMerged: 18 },
+    { month: 'March', value: 52, trend: 45, new: 15, reactivated: 7, active: 30, churned: -5, rewarded: 18650, prMerged: 26 },
+    { month: 'April', value: 48, trend: 50, new: 11, reactivated: 6, active: 31, churned: -7, rewarded: 16800, prMerged: 24 },
+    { month: 'May', value: 58, trend: 52, new: 18, reactivated: 8, active: 32, churned: -4, rewarded: 22100, prMerged: 30 },
+    { month: 'June', value: 55, trend: 55, new: 14, reactivated: 6, active: 35, churned: -9, rewarded: 20500, prMerged: 28 },
+    { month: 'July', value: 42, trend: 54, new: 9, reactivated: 5, active: 28, churned: -10, rewarded: 14200, prMerged: 20 },
+    { month: 'August', value: 48, trend: 50, new: 12, reactivated: 7, active: 29, churned: -6, rewarded: 17300, prMerged: 23 },
+    { month: 'September', value: 62, trend: 52, new: 20, reactivated: 9, active: 33, churned: -5, rewarded: 24800, prMerged: 34 },
+    { month: 'October', value: 58, trend: 58, new: 16, reactivated: 8, active: 34, churned: -7, rewarded: 21900, prMerged: 31 },
+    { month: 'November', value: 45, trend: 56, new: 10, reactivated: 6, active: 29, churned: -8, rewarded: 15600, prMerged: 21 },
+    { month: 'December', value: 52, trend: 52, new: 13, reactivated: 7, active: 32, churned: -10, rewarded: 18900, prMerged: 25 },
+  ], []);
+
+  const projectChartData = useMemo(
+    () => buildProjectActivityDataset(projectActivityData, projectInterval),
+    [projectActivityData, projectInterval],
+  );
 
   // Sample data for contributor activity
   const contributorActivityData = [
@@ -106,9 +333,10 @@ export function DataPage() {
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
+      const tooltipLabel = data.tooltipLabel ?? data.label ?? (data.month ? `${data.month} ${DATA_YEAR}` : '');
       return (
         <div className="backdrop-blur-[30px] bg-[#1a1410]/95 border-2 border-white/20 rounded-[12px] px-5 py-4 min-w-[200px]">
-          <p className="text-[13px] font-bold text-white mb-3">{data.month} 2025</p>
+          <p className="text-[13px] font-bold text-white mb-3">{tooltipLabel}</p>
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -154,39 +382,12 @@ export function DataPage() {
   };
 
   return (
-    <div className={`min-h-screen space-y-6 ${theme === 'dark' ? 'bg-[#1a1612]' : 'bg-gray-50'}`}>
-      {/* Navbar */}
-      <div className={`fixed top-0 left-0 right-0 z-50 backdrop-blur-[40px] border-b p-4 transition-colors ${
-        theme === 'dark'
-          ? 'bg-[#2d2820]/[0.95] border-white/20'
-          : 'bg-white/[0.55] border-white/20'
-      }`}>
-        <div className="flex justify-between items-center">
-          <h1 className={`text-xl font-bold ${theme === 'dark' ? 'text-white' : 'text-[#2d2820]'}`}>
-            DataPage
-          </h1>
-          <button
-            onClick={toggleTheme}
-            className={`p-2 rounded-full transition-colors ${
-              theme === 'dark'
-                ? 'bg-white/[0.1] hover:bg-white/[0.2] text-white'
-                : 'bg-black/[0.1] hover:bg-black/[0.2] text-black'
-            }`}
-            title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
-          >
-            {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
-          </button>
-        </div>
-      </div>
-
-      {/* Content with top padding to account for fixed navbar */}
-      <div className="pt-20">
+    <div className="space-y-6">
       {/* Header Tabs */}
-      <div className={`backdrop-blur-[40px] rounded-[24px] border p-2 transition-colors ${
-        theme === 'dark'
-          ? 'bg-white/[0.08] border-white/20'
+      <div className={`backdrop-blur-[40px] rounded-[24px] border p-2 transition-colors ${theme === 'dark'
+          ? 'bg-white/[0.12] border-white/20'
           : 'bg-white/[0.12] border-white/20'
-      }`}>
+        }`}>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setActiveTab('overview')}
@@ -224,46 +425,28 @@ export function DataPage() {
       {/* Main Content Grid */}
       <div className="grid grid-cols-2 gap-6">
         {/* Left Column - Project Activity */}
-        <div className={`backdrop-blur-[40px] rounded-[24px] border border-white/20 p-8 transition-colors ${
-          theme === 'dark'
-            ? 'bg-white/[0.15] shadow-[0_8px_32px_rgba(0,0,0,0.12)]'
-            : 'bg-white/[0.12] shadow-[0_8px_32px_rgba(0,0,0,0.08)]'
-        }`}>
+        <div className="backdrop-blur-[40px] bg-white/[0.12] rounded-[24px] border border-white/20 p-8">
           <div className="flex items-center justify-between mb-6">
             <h2 className={`text-[18px] font-bold transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
               }`}>Project activity</h2>
             <div className="relative">
               <button
                 onClick={() => setShowProjectIntervalDropdown(!showProjectIntervalDropdown)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-[10px] backdrop-blur-[20px] border transition-all ${
-                  theme === 'dark'
-                    ? 'bg-white/[0.08] border-white/20 hover:bg-white/[0.12] text-[#f5f5f5]'
-                    : 'bg-white/[0.15] border-white/25 hover:bg-white/[0.2] text-[#2d2820]'
-                }`}
+                className="flex items-center gap-2 px-4 py-2 rounded-[10px] backdrop-blur-[20px] bg-white/[0.15] border border-white/25 hover:bg-white/[0.2] transition-all"
               >
-                <span className={`text-[13px] font-semibold transition-colors ${
-                  theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-                }`}>{projectInterval}</span>
-                <ChevronDown className={`w-4 h-4 transition-colors ${
-                  theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-                }`} />
+                <span className={`text-[13px] font-semibold transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
+                  }`}>{projectInterval}</span>
+                <ChevronDown className={`w-4 h-4 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+                  }`} />
               </button>
               {showProjectIntervalDropdown && (
-                <div className={`absolute right-0 mt-2 w-[180px] backdrop-blur-[30px] rounded-[12px] shadow-[0_8px_32px_rgba(0,0,0,0.15)] overflow-hidden z-50 ${
-                  theme === 'dark'
-                    ? 'bg-[#2d2820]/[0.95] border-2 border-[#c9983a]/30'
-                    : 'bg-white/[0.55] border-2 border-white/30'
-                }`}>
+                <div className="absolute right-0 mt-2 w-[180px] backdrop-blur-[30px] bg-white/[0.55] border-2 border-white/30 rounded-[12px] shadow-[0_8px_32px_rgba(0,0,0,0.15)] overflow-hidden z-50">
                   <button
                     onClick={() => {
                       setProjectInterval('Daily interval');
                       setShowProjectIntervalDropdown(false);
                     }}
-                    className={`w-full px-4 py-3 text-left text-[13px] font-medium transition-all ${
-                      theme === 'dark'
-                        ? 'text-[#f5f5f5] hover:bg-white/[0.05]'
-                        : 'text-[#2d2820] hover:bg-white/[0.3]'
-                    }`}
+                    className="w-full px-4 py-3 text-left text-[13px] font-medium text-[#2d2820] hover:bg-white/[0.3] transition-all"
                   >
                     Daily interval
                   </button>
@@ -272,11 +455,7 @@ export function DataPage() {
                       setProjectInterval('Weekly interval');
                       setShowProjectIntervalDropdown(false);
                     }}
-                    className={`w-full px-4 py-3 text-left text-[13px] font-medium transition-all ${
-                      theme === 'dark'
-                        ? 'text-[#f5f5f5] hover:bg-white/[0.05]'
-                        : 'text-[#2d2820] hover:bg-white/[0.3]'
-                    }`}
+                    className="w-full px-4 py-3 text-left text-[13px] font-medium text-[#2d2820] hover:bg-white/[0.3] transition-all"
                   >
                     Weekly interval
                   </button>
@@ -285,15 +464,10 @@ export function DataPage() {
                       setProjectInterval('Monthly interval');
                       setShowProjectIntervalDropdown(false);
                     }}
-                    className={`w-full px-4 py-3 text-left text-[13px] font-medium transition-all ${
-                      projectInterval === 'Monthly interval'
-                        ? theme === 'dark'
-                          ? 'bg-[#c9983a]/[0.15] text-[#f5c563] font-bold'
-                          : 'bg-white/[0.35] text-[#2d2820] font-bold'
-                        : theme === 'dark'
-                        ? 'text-[#f5f5f5] hover:bg-white/[0.05]'
+                    className={`w-full px-4 py-3 text-left text-[13px] font-medium transition-all ${projectInterval === 'Monthly interval'
+                        ? 'bg-white/[0.35] text-[#2d2820] font-bold'
                         : 'text-[#2d2820] hover:bg-white/[0.3]'
-                    }`}
+                      }`}
                   >
                     Monthly interval
                   </button>
@@ -302,11 +476,7 @@ export function DataPage() {
                       setProjectInterval('Quarterly interval');
                       setShowProjectIntervalDropdown(false);
                     }}
-                    className={`w-full px-4 py-3 text-left text-[13px] font-medium transition-all ${
-                      theme === 'dark'
-                        ? 'text-[#f5f5f5] hover:bg-white/[0.05]'
-                        : 'text-[#2d2820] hover:bg-white/[0.3]'
-                    }`}
+                    className="w-full px-4 py-3 text-left text-[13px] font-medium text-[#2d2820] hover:bg-white/[0.3] transition-all"
                   >
                     Quarterly interval
                   </button>
@@ -315,11 +485,7 @@ export function DataPage() {
                       setProjectInterval('Yearly interval');
                       setShowProjectIntervalDropdown(false);
                     }}
-                    className={`w-full px-4 py-3 text-left text-[13px] font-medium transition-all ${
-                      theme === 'dark'
-                        ? 'text-[#f5f5f5] hover:bg-white/[0.05]'
-                        : 'text-[#2d2820] hover:bg-white/[0.3]'
-                    }`}
+                    className="w-full px-4 py-3 text-left text-[13px] font-medium text-[#2d2820] hover:bg-white/[0.3] transition-all"
                   >
                     Yearly interval
                   </button>
@@ -331,7 +497,7 @@ export function DataPage() {
           {/* Chart */}
           <div className="h-[280px] mb-6">
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={projectActivityData}>
+              <ComposedChart data={projectChartData}>
                 <defs>
                   <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#c9983a" stopOpacity={0.8} />
@@ -340,7 +506,7 @@ export function DataPage() {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(122, 107, 90, 0.1)" />
                 <XAxis
-                  dataKey="month"
+                  dataKey="label"
                   stroke="#7a6b5a"
                   tick={{ fill: '#7a6b5a', fontSize: 11, fontWeight: 600 }}
                   angle={-45}
@@ -417,11 +583,7 @@ export function DataPage() {
         </div>
 
         {/* Right Column - Contributors Map */}
-        <div className={`backdrop-blur-[40px] rounded-[24px] border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${
-          theme === 'dark'
-            ? 'bg-white/[0.15]'
-            : 'bg-white/[0.12]'
-        }`}>
+        <div className="backdrop-blur-[40px] bg-white/[0.12] rounded-[24px] border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8">
           <h2 className={`text-[18px] font-bold mb-6 transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
             }`}>Contributors map</h2>
 
@@ -582,46 +744,28 @@ export function DataPage() {
       {/* Bottom Grid */}
       <div className="grid grid-cols-2 gap-6">
         {/* Contributor Activity */}
-        <div className={`backdrop-blur-[40px] rounded-[24px] border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${
-          theme === 'dark'
-            ? 'bg-white/[0.15]'
-            : 'bg-white/[0.12]'
-        }`}>
+        <div className="backdrop-blur-[40px] bg-white/[0.12] rounded-[24px] border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8">
           <div className="flex items-center justify-between mb-6">
             <h2 className={`text-[18px] font-bold transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
               }`}>Contributor activity</h2>
             <div className="relative">
               <button
                 onClick={() => setShowContributorIntervalDropdown(!showContributorIntervalDropdown)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-[10px] backdrop-blur-[20px] border transition-all ${
-                  theme === 'dark'
-                    ? 'bg-white/[0.08] border-white/20 hover:bg-white/[0.12] text-[#f5f5f5]'
-                    : 'bg-white/[0.15] border-white/25 hover:bg-white/[0.2] text-[#2d2820]'
-                }`}
+                className="flex items-center gap-2 px-4 py-2 rounded-[10px] backdrop-blur-[20px] bg-white/[0.15] border border-white/25 hover:bg-white/[0.2] transition-all"
               >
-                <span className={`text-[13px] font-semibold transition-colors ${
-                  theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-                }`}>{contributorInterval}</span>
-                <ChevronDown className={`w-4 h-4 transition-colors ${
-                  theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-                }`} />
+                <span className={`text-[13px] font-semibold transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
+                  }`}>{contributorInterval}</span>
+                <ChevronDown className={`w-4 h-4 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+                  }`} />
               </button>
               {showContributorIntervalDropdown && (
-                <div className={`absolute right-0 mt-2 w-[180px] backdrop-blur-[30px] rounded-[12px] shadow-[0_8px_32px_rgba(0,0,0,0.15)] overflow-hidden z-50 ${
-                  theme === 'dark'
-                    ? 'bg-[#2d2820]/[0.95] border-2 border-[#c9983a]/30'
-                    : 'bg-white/[0.55] border-2 border-white/30'
-                }`}>
+                <div className="absolute right-0 mt-2 w-[180px] backdrop-blur-[30px] bg-white/[0.55] border-2 border-white/30 rounded-[12px] shadow-[0_8px_32px_rgba(0,0,0,0.15)] overflow-hidden z-50">
                   <button
                     onClick={() => {
                       setContributorInterval('Daily interval');
                       setShowContributorIntervalDropdown(false);
                     }}
-                    className={`w-full px-4 py-3 text-left text-[13px] font-medium transition-all ${
-                      theme === 'dark'
-                        ? 'text-[#f5f5f5] hover:bg-white/[0.05]'
-                        : 'text-[#2d2820] hover:bg-white/[0.3]'
-                    }`}
+                    className="w-full px-4 py-3 text-left text-[13px] font-medium text-[#2d2820] hover:bg-white/[0.3] transition-all"
                   >
                     Daily interval
                   </button>
@@ -630,11 +774,7 @@ export function DataPage() {
                       setContributorInterval('Weekly interval');
                       setShowContributorIntervalDropdown(false);
                     }}
-                    className={`w-full px-4 py-3 text-left text-[13px] font-medium transition-all ${
-                      theme === 'dark'
-                        ? 'text-[#f5f5f5] hover:bg-white/[0.05]'
-                        : 'text-[#2d2820] hover:bg-white/[0.3]'
-                    }`}
+                    className="w-full px-4 py-3 text-left text-[13px] font-medium text-[#2d2820] hover:bg-white/[0.3] transition-all"
                   >
                     Weekly interval
                   </button>
@@ -643,15 +783,10 @@ export function DataPage() {
                       setContributorInterval('Monthly interval');
                       setShowContributorIntervalDropdown(false);
                     }}
-                    className={`w-full px-4 py-3 text-left text-[13px] font-medium transition-all ${
-                      contributorInterval === 'Monthly interval'
-                        ? theme === 'dark'
-                          ? 'bg-[#c9983a]/[0.15] text-[#f5c563] font-bold'
-                          : 'bg-white/[0.35] text-[#2d2820] font-bold'
-                        : theme === 'dark'
-                        ? 'text-[#f5f5f5] hover:bg-white/[0.05]'
+                    className={`w-full px-4 py-3 text-left text-[13px] font-medium transition-all ${contributorInterval === 'Monthly interval'
+                        ? 'bg-white/[0.35] text-[#2d2820] font-bold'
                         : 'text-[#2d2820] hover:bg-white/[0.3]'
-                    }`}
+                      }`}
                   >
                     Monthly interval
                   </button>
@@ -660,11 +795,7 @@ export function DataPage() {
                       setContributorInterval('Quarterly interval');
                       setShowContributorIntervalDropdown(false);
                     }}
-                    className={`w-full px-4 py-3 text-left text-[13px] font-medium transition-all ${
-                      theme === 'dark'
-                        ? 'text-[#f5f5f5] hover:bg-white/[0.05]'
-                        : 'text-[#2d2820] hover:bg-white/[0.3]'
-                    }`}
+                    className="w-full px-4 py-3 text-left text-[13px] font-medium text-[#2d2820] hover:bg-white/[0.3] transition-all"
                   >
                     Quarterly interval
                   </button>
@@ -673,11 +804,7 @@ export function DataPage() {
                       setContributorInterval('Yearly interval');
                       setShowContributorIntervalDropdown(false);
                     }}
-                    className={`w-full px-4 py-3 text-left text-[13px] font-medium transition-all ${
-                      theme === 'dark'
-                        ? 'text-[#f5f5f5] hover:bg-white/[0.05]'
-                        : 'text-[#2d2820] hover:bg-white/[0.3]'
-                    }`}
+                    className="w-full px-4 py-3 text-left text-[13px] font-medium text-[#2d2820] hover:bg-white/[0.3] transition-all"
                   >
                     Yearly interval
                   </button>
@@ -843,7 +970,6 @@ export function DataPage() {
           background: rgba(201, 152, 58, 0.7);
         }
       `}</style>
-    </div>
     </div>
   );
 }

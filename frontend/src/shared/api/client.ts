@@ -565,6 +565,12 @@ export const deleteOpenSourceWeekEvent = (id: string) =>
     method: "DELETE",
   });
 
+export const deleteAdminProject = (id: string) =>
+  apiRequest<{ ok: boolean }>(`/admin/projects/${id}`, {
+    requiresAuth: true,
+    method: "DELETE",
+  });
+
 export const createEcosystem = (data: {
   name: string;
   description?: string;

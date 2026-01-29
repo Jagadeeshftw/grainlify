@@ -232,6 +232,9 @@ func New(cfg config.Config, deps Deps) *fiber.App {
 	adminGroup.Put("/ecosystems/:id", auth.RequireRole("admin"), ecosystemsAdmin.Update())
 	adminGroup.Delete("/ecosystems/:id", auth.RequireRole("admin"), ecosystemsAdmin.Delete())
 
+	projectsAdmin := handlers.NewProjectsAdminHandler(deps.DB)
+	adminGroup.Delete("/projects/:id", auth.RequireRole("admin"), projectsAdmin.Delete())
+
 	// Open Source Week (admin)
 	oswAdmin := handlers.NewOpenSourceWeekAdminHandler(deps.DB)
 	adminGroup.Get("/open-source-week/events", auth.RequireRole("admin"), oswAdmin.List())

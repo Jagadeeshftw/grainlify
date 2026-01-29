@@ -349,3 +349,47 @@ pub fn emit_batch_funds_released(env: &Env, event: BatchFundsReleased) {
     let topics = (symbol_short!("b_rel"),);
     env.events().publish(topics, event.clone());
 }
+// ============================================================================
+// Contract Pause Events
+// ============================================================================
+
+/// Event emitted when the contract is paused.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ContractPaused {
+    pub paused_by: Address,
+    pub timestamp: u64,
+}
+
+pub fn emit_contract_paused(env: &Env, event: ContractPaused) {
+    let topics = (symbol_short!("pause"),);
+    env.events().publish(topics, event.clone());
+}
+
+/// Event emitted when the contract is unpaused.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ContractUnpaused {
+    pub unpaused_by: Address,
+    pub timestamp: u64,
+}
+
+pub fn emit_contract_unpaused(env: &Env, event: ContractUnpaused) {
+    let topics = (symbol_short!("unpause"),);
+    env.events().publish(topics, event.clone());
+}
+
+/// Event emitted when emergency withdrawal occurs.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct EmergencyWithdrawal {
+    pub withdrawn_by: Address,
+    pub amount: i128,
+    pub recipient: Address,
+    pub timestamp: u64,
+}
+
+pub fn emit_emergency_withdrawal(env: &Env, event: EmergencyWithdrawal) {
+    let topics = (symbol_short!("ewith"),);
+    env.events().publish(topics, event.clone());
+}

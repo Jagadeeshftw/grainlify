@@ -249,55 +249,48 @@ export function DiscoverPage({
   // Fetch recommended issues from top projects
   useEffect(() => {
     const loadRecommendedIssues = async () => {
-      if (projects.length === 0) return;
+      // Only fetch issues if we have projects and they're loaded
+      if (isLoadingProjects || projects.length === 0) return;
 
-      setIsLoadingIssues(true);
-      const issues: Array<{
-        id: string;
-        title: string;
-        description: string;
-        language: string;
-        daysLeft: string;
-        primaryTag?: string;
-        projectId: string;
-      }> = [];
+      await fetchIssues(async () => {
+        const issues: IssueType[] = [];
 
-      // Try to get issues from projects, moving to next if a project has no issues
-      for (const project of projects) {
-        if (issues.length >= 6) break; // We only need 6 issues
+        // Try to get issues from projects, moving to next if a project has no issues
+        for (const project of projects) {
+          if (issues.length >= 6) break; // We only need 6 issues
 
-        try {
-          const issuesResponse = await getPublicProjectIssues(project.id);
-          if (issuesResponse?.issues && Array.isArray(issuesResponse.issues) && issuesResponse.issues.length > 0) {
-            // Take up to 2 issues from this project
-            const projectIssues = issuesResponse.issues.slice(0, 2);
-            for (const issue of projectIssues) {
-              if (issues.length >= 6) break;
+          try {
+            const issuesResponse = await getPublicProjectIssues(project.id);
+            if (issuesResponse?.issues && Array.isArray(issuesResponse.issues) && issuesResponse.issues.length > 0) {
+              // Take up to 2 issues from this project
+              const projectIssues = issuesResponse.issues.slice(0, 2);
+              for (const issue of projectIssues) {
+                if (issues.length >= 6) break;
 
-              // Get project language for the issue
-              const projectData = projects.find(p => p.id === project.id);
-              const language = projectData?.tags.find(t => ['TypeScript', 'JavaScript', 'Python', 'Rust', 'Go', 'CSS', 'HTML'].includes(t)) || projectData?.tags[0] || 'TypeScript';
+                // Get project language for the issue
+                const projectData = projects.find(p => p.id === project.id);
+                const language = projectData?.tags.find(t => ['TypeScript', 'JavaScript', 'Python', 'Rust', 'Go', 'CSS', 'HTML'].includes(t)) || projectData?.tags[0] || 'TypeScript';
 
-              issues.push({
-                id: String(issue.github_issue_id),
-                title: issue.title || 'Untitled Issue',
-                description: cleanIssueDescription(issue.description),
-                language: language,
-                daysLeft: getDaysLeft(),
-                primaryTag: getPrimaryTag(issue.labels || []),
-                projectId: project.id,
-              });
+                issues.push({
+                  id: String(issue.github_issue_id),
+                  title: issue.title || 'Untitled Issue',
+                  description: cleanIssueDescription(issue.description),
+                  language: language,
+                  daysLeft: getDaysLeft(),
+                  primaryTag: getPrimaryTag(issue.labels || []),
+                  projectId: project.id,
+                });
+              }
             }
+          } catch (err) {
+            // If fetching issues fails, continue to next project
+            console.warn(`Failed to fetch issues for project ${project.id}:`, err);
+            continue;
           }
-        } catch (err) {
-          // If fetching issues fails, continue to next project
-          console.warn(`Failed to fetch issues for project ${project.id}:`, err);
-          continue;
         }
-      }
 
-      setRecommendedIssues(issues);
-      setIsLoadingIssues(false);
+        return issues;
+      });
     };
 
     loadRecommendedIssues();
@@ -354,23 +347,25 @@ export function DiscoverPage({
       </div>
 
       {/* Embark on GrainHack */}
-      <div className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${theme === 'dark'
-          ? 'bg-gradient-to-br from-white/[0.1] to-white/[0.06] border-white/15'
-          : 'bg-gradient-to-br from-white/[0.18] to-white/[0.12] border-white/25'
+      <div className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-6 md:p-8 transition-colors ${theme === 'dark'
+        ? 'bg-gradient-to-br from-white/[0.1] to-white/[0.06] border-white/15'
+        : 'bg-gradient-to-br from-white/[0.18] to-white/[0.12] border-white/25'
         }`}>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col-reverse md:flex-row items-start md:items-center justify-between gap-6">
           <div className="flex-1">
-            <h3 className={`text-[28px] font-bold mb-2 transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
+            <h3 className={`text-xl md:text-[28px] font-bold mb-2 transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
               }`}>
               Join the <span className="text-[#c9983a]">GrainHack</span>
             </h3>
-            <p className={`text-[16px] mb-6 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'}`}>
+            <p className={`text-sm md:text-[16px] mb-6 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+              }`}>
               Join our GrainHack week and track your Open Source Week progress directly from your dashboard.
             </p>
             <button
               onClick={onGoToOpenSourceWeek}
               disabled={!onGoToOpenSourceWeek}
-              className={`px-6 py-3 rounded-[14px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white font-semibold text-[14px] shadow-[0_6px_20px_rgba(162,121,44,0.35)] hover:shadow-[0_8px_24px_rgba(162,121,44,0.4)] transition-all border border-white/10 ${!onGoToOpenSourceWeek ? 'opacity-70 cursor-default' : ''}`}
+              className={`w-full md:w-auto px-6 py-3 rounded-[14px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white font-semibold text-[14px] shadow-[0_6px_20px_rgba(162,121,44,0.35)] hover:shadow-[0_8px_24px_rgba(162,121,44,0.4)] transition-all border border-white/10 ${!onGoToOpenSourceWeek ? 'opacity-70 cursor-default' : ''
+                }`}
             >
               Let's go
             </button>
@@ -382,24 +377,27 @@ export function DiscoverPage({
       </div>
 
       {/* Recommended Projects */}
-      <div className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${theme === 'dark'
-          ? 'bg-white/[0.08] border-white/10'
-          : 'bg-white/[0.12] border-white/20'
+      <div className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-6 md:p-8 transition-colors ${theme === 'dark'
+        ? 'bg-white/[0.08] border-white/10'
+        : 'bg-white/[0.12] border-white/20'
         }`}>
         <div className="flex items-center space-x-3 mb-2">
-          <Zap className="w-6 h-6 text-[#c9983a] drop-shadow-sm" />
-          <h3 className={`text-[24px] font-bold transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'}`}>
+          <Zap className="w-5 h-5 md:w-6 md:h-6 text-[#c9983a] drop-shadow-sm" />
+          <h3 className={`text-xl md:text-[24px] font-bold transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
+            }`}>
             Recommended Projects ({projects.length})
           </h3>
         </div>
-        <p className={`text-[14px] mb-6 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'}`}>
+        <p className={`text-[13px] md:text-[14px] mb-6 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+          }`}>
           Finding best suited your interests and expertise
         </p>
 
         {isLoadingProjects ? (
           <div className="flex flex-col md:flex-row gap-4 md:gap-6 overflow-x-auto pb-2">
             {[...Array(4)].map((_, idx) => (
-              <div key={idx} className={`flex-shrink-0 w-full md:w-[320px] rounded-[20px] border p-6 ${theme === 'dark' ? 'bg-white/[0.08] border-white/15' : 'bg-white/[0.15] border-white/25'}`}>
+              <div key={idx} className={`flex-shrink-0 w-full md:w-[320px] rounded-[20px] border p-6 ${theme === 'dark' ? 'bg-white/[0.08] border-white/15' : 'bg-white/[0.15] border-white/25'
+                }`}>
                 {/* Icon and Heart button */}
                 <div className="flex items-start justify-between mb-4">
                   <SkeletonLoader
@@ -486,7 +484,7 @@ export function DiscoverPage({
                     theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"
                   }`}
                 >
-                  {project.description}
+                  {project.description?.trim() || "No description"}
                 </p>
 
                 <div
@@ -524,21 +522,22 @@ export function DiscoverPage({
       </div>
 
       {/* Recommended Issues */}
-      <div className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${theme === 'dark'
-          ? 'bg-white/[0.08] border-white/10'
-          : 'bg-white/[0.12] border-white/20'
+      <div className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-6 md:p-8 transition-colors ${theme === 'dark'
+        ? 'bg-white/[0.08] border-white/10'
+        : 'bg-white/[0.12] border-white/20'
         }`}>
-        <h3 className={`text-[24px] font-bold mb-2 transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'}`}>
-          Recommended Issues
-        </h3>
-        <p className={`text-[14px] mb-6 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'}`}>
+        <h3 className={`text-xl md:text-[24px] font-bold mb-2 transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
+          }`}>Recommended Issues</h3>
+        <p className={`text-[13px] md:text-[14px] mb-6 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+          }`}>
           Issues that match your interests and expertise
         </p>
 
         {isLoadingIssues ? (
           <div className="flex flex-col md:flex-row gap-4 md:overflow-x-auto pb-2">
             {[...Array(3)].map((_, idx) => (
-              <div key={idx} className={`flex-shrink-0 w-full md:w-[480px] rounded-[16px] border p-6 ${theme === 'dark' ? 'bg-white/[0.08] border-white/15' : 'bg-white/[0.15] border-white/25'}`}>
+              <div key={idx} className={`flex-shrink-0 w-full md:w-[480px] rounded-[16px] border p-6 ${theme === 'dark' ? 'bg-white/[0.08] border-white/15' : 'bg-white/[0.15] border-white/25'
+                }`}>
                 {/* Title with status indicator */}
                 <div className="flex items-start gap-3 mb-3">
                   <SkeletonLoader
