@@ -3,7 +3,8 @@
 /* Hide scrollbar but keep scroll functionality */
 .scrollbar-hide {
   -ms-overflow-style: none;  /* IE and Edge */
-  scrollbar-width: none;  /* Firefox */
+  -webkit-scrollbar-width: none;  /* Safari/Chrome compatibility */
+  scrollbar-width: none;  /* Firefox 64+ */
 }
 
 .scrollbar-hide::-webkit-scrollbar {
@@ -27,6 +28,47 @@
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: rgba(201, 152, 58, 0.5);
+}
+
+/* Glass container - prevents blur overflow and glazing */
+.glass-container {
+  -webkit-mask-image: linear-gradient(#fff, #fff); /* Fixes Chrome blur overflow */
+  mask-image: linear-gradient(#fff, #fff); /* Fixes Chrome blur overflow */
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  transform: translateZ(0); /* Forces hardware acceleration */
+  isolation: isolate; /* Creates new stacking context */
+}
+
+/* Optimized glass effect for cards */
+.glass-card {
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.05) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  will-change: transform;
+  transform: translateZ(0);
+  isolation: isolate;
+}
+
+.glass-card:hover {
+
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.08) 100%);
+  border-color: rgba(201, 152, 58, 0.4);
+  box-shadow: 0 0 20px rgba(201, 152, 58, 0.2), inset 0 0 10px rgba(255, 255, 255, 0.1);
+}
+
+/* Dark mode glass adjustments */
+.dark .glass-card {
+  background: linear-gradient(135deg, rgba(45, 40, 32, 0.6) 0%, rgba(45, 40, 32, 0.3) 100%);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.dark .glass-card:hover {
+  background: linear-gradient(135deg, rgba(45, 40, 32, 0.7) 0%, rgba(45, 40, 32, 0.4) 100%);
+  border-color: rgba(201, 152, 58, 0.4);
 }
 
 /* Slide-in animation for modal */
@@ -92,10 +134,10 @@
   --gradient-secondary: linear-gradient(135deg, #d4c4b0 0%, #b8a898 100%);
   --gradient-accent: linear-gradient(135deg, #c9983a 0%, #b8a590 100%);
   
-  /* Glassmorphism */
+  /* Glassmorphism - Optimized blur values */
   --glass-bg: rgba(255, 255, 255, 0.35);
   --glass-border: rgba(201, 152, 58, 0.2);
-  --glass-blur: 40px;
+  --glass-blur: 20px; /* Reduced from 40px for better performance */
   
   /* Glow effects */
   --glow-primary: 0 0 20px rgba(201, 152, 58, 0.3);

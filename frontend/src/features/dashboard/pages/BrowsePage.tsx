@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { X, Filter, SlidersHorizontal } from "lucide-react";
 import { useTheme } from "../../../shared/contexts/ThemeContext";
 import { useState, useEffect } from "react";
 import { Dropdown } from "../../../shared/components/ui/Dropdown";
@@ -74,6 +74,7 @@ const truncateDescription = (
 export function BrowsePage({ onProjectClick }: BrowsePageProps) {
   const { theme } = useTheme();
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
   const [searchTerms, setSearchTerms] = useState<{ [key: string]: string }>({
     languages: "",
     ecosystems: "",
@@ -190,6 +191,15 @@ export function BrowsePage({ onProjectClick }: BrowsePageProps) {
     }));
   };
 
+  const clearAllFilters = () => {
+    setSelectedFilters({
+      languages: [],
+      ecosystems: [],
+      categories: [],
+      tags: [],
+    });
+  };
+
   const getFilteredOptions = (filterType: string) => {
     const searchTerm = searchTerms[filterType].toLowerCase();
     return filterOptions[filterType as keyof typeof filterOptions].filter(
@@ -271,8 +281,13 @@ export function BrowsePage({ onProjectClick }: BrowsePageProps) {
     loadProjects();
   }, [selectedFilters, fetchProjects]);
 
+  const totalActiveFilters = Object.values(selectedFilters).reduce(
+    (acc, arr) => acc + arr.length,
+    0,
+  );
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Active Filters Display */}
       {Object.values(selectedFilters).some((arr) => arr.length > 0) && (
         <div className="flex flex-wrap gap-2">
@@ -280,7 +295,7 @@ export function BrowsePage({ onProjectClick }: BrowsePageProps) {
             values.map((value) => (
               <span
                 key={`${filterType}-${value}`}
-                className={`px-3.5 py-2 rounded-[10px] text-[13px] font-semibold border-[1.5px] flex items-center gap-2 transition-all hover:scale-105 shadow-lg ${
+                className={`px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-[10px] text-xs sm:text-[13px] font-semibold border-[1.5px] flex items-center gap-1.5 sm:gap-2 transition-all hover:scale-105 shadow-lg ${
                   theme === "dark"
                     ? "bg-[#a17932] border-[#c9983a] text-white"
                     : "bg-[#b8872f] border-[#a17932] text-white"
@@ -289,9 +304,10 @@ export function BrowsePage({ onProjectClick }: BrowsePageProps) {
                 {value}
                 <button
                   onClick={() => clearFilter(filterType, value)}
-                  className="hover:text-red-200 transition-colors"
+                  className="hover:text-red-200 transition-colors p-0.5"
+                  aria-label={`Remove ${value} filter`}
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <X className="w-3 h-3" />
                 </button>
               </span>
             )),
@@ -299,8 +315,30 @@ export function BrowsePage({ onProjectClick }: BrowsePageProps) {
         </div>
       )}
 
-      {/* Filters */}
-      <div className="flex items-center flex-wrap gap-3">
+      {/* Mobile Filter Button */}
+      <div className="lg:hidden">
+        <button
+          onClick={() => setIsMobileFiltersOpen(true)}
+          className={`w-full py-2.5 px-4 rounded-[12px] border-[1.5px] text-[14px] font-semibold flex items-center justify-center gap-2 transition-all ${
+            totalActiveFilters > 0
+              ? "bg-[#a17932] border-[#c9983a] text-white"
+              : theme === "dark"
+                ? "bg-white/[0.08] border-white/15 text-[#d4d4d4] hover:bg-white/[0.12]"
+                : "bg-white/[0.15] border-white/25 text-[#6b5d4d] hover:bg-white/[0.2]"
+          }`}
+        >
+          <SlidersHorizontal className="w-4 h-4" />
+          Filters
+          {totalActiveFilters > 0 && (
+            <span className="bg-white/20 px-1.5 py-0.5 rounded-full text-xs">
+              {totalActiveFilters}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* Desktop Filters */}
+      <div className="hidden lg:flex items-center flex-wrap gap-3">
         {["languages", "ecosystems", "categories", "tags"].map((filterType) => (
           <Dropdown
             key={filterType}
@@ -321,28 +359,147 @@ export function BrowsePage({ onProjectClick }: BrowsePageProps) {
         ))}
       </div>
 
+      {/* Mobile Filter Modal */}
+      {isMobileFiltersOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setIsMobileFiltersOpen(false)}
+          />
+          
+          {/* Modal Content */}
+          <div className="absolute inset-x-0 bottom-0 bg-[#2d2820]/[0.98] rounded-t-[24px] border-t border-[#c9983a]/30 animate-in slide-in-from-bottom duration-300 max-h-[85vh] overflow-y-auto">
+            {/* Header */}
+            <div className={`sticky top-0 px-5 py-4 flex items-center justify-between border-b border-white/15 backdrop-blur-[20px] ${
+              theme === "dark" ? "bg-[#2d2820]/[0.95]" : "bg-[#d4c5b0]/[0.95]"
+            }`}>
+              <div className="flex items-center gap-3">
+                <Filter className="w-5 h-5 text-[#c9983a]" />
+                <h2 className="text-[18px] font-bold text-white">Filters</h2>
+                {totalActiveFilters > 0 && (
+                  <span className="bg-[#c9983a] text-white px-2 py-0.5 rounded-full text-xs">
+                    {totalActiveFilters}
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={() => setIsMobileFiltersOpen(false)}
+                className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+                aria-label="Close filters"
+              >
+                <X className="w-5 h-5 text-white" />
+              </button>
+            </div>
+
+            {/* Filter Options */}
+            <div className="p-5 space-y-6">
+              {["languages", "ecosystems", "categories", "tags"].map((filterType) => (
+                <div key={filterType}>
+                  <h3 className="text-[15px] font-semibold text-white mb-3 capitalize">
+                    {filterType}
+                  </h3>
+                  
+                  {/* Search Input */}
+                  <div className="relative mb-3">
+                    <Search 
+                      className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9a8a7a]" 
+                    />
+                    <input
+                      type="text"
+                      placeholder={`Search ${filterType}...`}
+                      value={searchTerms[filterType]}
+                      onChange={(e) =>
+                        setSearchTerms((prev) => ({ ...prev, [filterType]: e.target.value }))
+                      }
+                      className="w-full pl-10 pr-3 py-2.5 rounded-[11px] bg-white/[0.1] border border-white/20 text-white placeholder-[#9a8a7a] text-[14px] focus:outline-none focus:border-[#c9983a] focus:shadow-[0_0_0_3px_rgba(201,152,58,0.15)]"
+                    />
+                  </div>
+
+                  {/* Options */}
+                  <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                    {getFilteredOptions(filterType).map((option) => {
+                      const isSelected = selectedFilters[filterType].includes(option.name);
+                      
+                      return (
+                        <button
+                          key={option.name}
+                          onClick={() => toggleFilter(filterType, option.name)}
+                          className={`w-full px-4 py-3 rounded-[12px] transition-all flex items-center gap-3 ${
+                            isSelected
+                              ? "bg-[#c9983a]/20 border border-[#c9983a]/40"
+                              : "bg-white/[0.05] border border-transparent hover:bg-white/[0.1]"
+                          }`}
+                        >
+                          <div className={`w-5 h-5 rounded-[5px] border-2 flex items-center justify-center transition-all ${
+                            isSelected
+                              ? "bg-[#c9983a] border-[#c9983a]"
+                              : "border-white/30"
+                          }`}>
+                            {isSelected && (
+                              <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </div>
+                          <span className={`text-[14px] font-medium ${
+                            isSelected ? "text-[#f5c563]" : "text-white"
+                          }`}>
+                            {option.name}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Footer Actions */}
+            <div className="sticky bottom-0 px-5 py-4 border-t border-white/15 bg-[#2d2820]/[0.95] backdrop-blur-[20px]">
+              <div className="flex gap-3">
+                {totalActiveFilters > 0 && (
+                  <button
+                    onClick={clearAllFilters}
+                    className="flex-1 py-3 px-4 rounded-[12px] border border-white/20 text-white font-semibold text-[14px] hover:bg-white/10 transition-all"
+                  >
+                    Clear All
+                  </button>
+                )}
+                <button
+                  onClick={() => setIsMobileFiltersOpen(false)}
+                  className="flex-1 py-3 px-4 rounded-[12px] bg-[#c9983a] text-white font-semibold text-[14px] hover:bg-[#b8872f] transition-all"
+                >
+                  Apply Filters
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Projects Grid */}
       {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
           {[...Array(8)].map((_, idx) => (
             <ProjectCardSkeleton key={idx} />
           ))}
         </div>
       ) : projects.length === 0 ? (
         <div
-          className={`p-8 rounded-[16px] border text-center ${
+          className={`p-6 sm:p-8 rounded-[16px] border text-center ${
             theme === "dark"
               ? "bg-white/[0.08] border-white/15 text-[#d4d4d4]"
               : "bg-white/[0.15] border-white/25 text-[#7a6b5a]"
           }`}
         >
-          <p className="text-[16px] font-semibold">No projects found</p>
-          <p className="text-[14px] mt-2">
+          <p className="text-[15px] sm:text-[16px] font-semibold">No projects found</p>
+          <p className="text-[13px] sm:text-[14px] mt-2">
             Try adjusting your filters or check back later.
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
           {projects.map((project) => (
             <ProjectCard
               key={project.id}
@@ -353,5 +510,24 @@ export function BrowsePage({ onProjectClick }: BrowsePageProps) {
         </div>
       )}
     </div>
+  );
+}
+
+// Search icon component for inline use
+function Search({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+      />
+    </svg>
   );
 }

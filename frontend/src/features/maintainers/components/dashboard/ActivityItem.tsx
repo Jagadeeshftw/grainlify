@@ -35,12 +35,14 @@ export function ActivityItem({ activity, index, onClick }: ActivityItemProps) {
         }`}
       style={{ animationDelay: `${index * 80}ms` }}
     >
-      <div className="flex items-start justify-between gap-4">
+      {/* Changed from items-start to items-center */}
+      <div className="flex items-center justify-between gap-4">
         {/* Left: Icon + Number + Title */}
-        <div className="flex items-start gap-3 flex-1 min-w-0">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
           {/* Type Icon */}
           {activity.type === 'pr' ? (
-            <GitPullRequest className={`w-5 h-5 mt-0.5 flex-shrink-0 ${getPRIconColor()}`} />
+            // Removed mt-0.5 from GitPullRequest to align it better
+            <GitPullRequest className={`w-5 h-5 flex-shrink-0 ${getPRIconColor()}`} />
           ) : (
             <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 bg-[#c9983a]/50">
               <Circle className="w-4 h-4 text-white fill-white" strokeWidth={0} />
@@ -59,7 +61,7 @@ export function ActivityItem({ activity, index, onClick }: ActivityItemProps) {
           </div>
 
           {/* Title and Time */}
-          <div className="flex-1 min-w-0 pt-0.5">
+          <div className="flex-1 min-w-0">
             <h3 className={`text-[14px] font-medium transition-colors mb-1.5 line-clamp-1 ${theme === 'dark'
                 ? 'text-[#e8dfd0] group-hover/item:text-[#f5ede0]'
                 : 'text-[#2d2820] group-hover/item:text-[#4a3f2f]'

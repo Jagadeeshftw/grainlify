@@ -30,27 +30,27 @@ export function ProjectCard({ project, onClick }: ProjectCardProps) {
 
   return (
     <div
-      className={`backdrop-blur-[30px] rounded-[18px] border p-5 transition-all cursor-pointer ${
+      className={`backdrop-blur-[30px] rounded-[16px] sm:rounded-[18px] border p-4 sm:p-5 transition-all cursor-pointer touch-manipulation ${
         theme === 'dark'
           ? 'bg-white/[0.08] border-white/15 hover:bg-white/[0.12] hover:shadow-[0_8px_24px_rgba(201,152,58,0.15)]'
           : 'bg-white/[0.15] border-white/25 hover:bg-white/[0.2] hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)]'
       }`}
       onClick={() => onClick?.(project.id.toString())}
     >
-      <div className="flex items-start justify-between mb-4">
+      <div className="flex items-start justify-between mb-3 sm:mb-4">
         {isAvatarUrl && !avatarError ? (
           <img
             src={project.icon}
             alt={project.name}
-            className="w-11 h-11 rounded-[12px] border border-white/20 flex-shrink-0"
+            className="w-10 h-10 sm:w-11 sm:h-11 rounded-[10px] sm:rounded-[12px] border border-white/20 flex-shrink-0"
             onError={() => setAvatarError(true)}
           />
         ) : (
-          <div className={`w-11 h-11 rounded-[12px] bg-gradient-to-br ${project.color} flex items-center justify-center shadow-md ${
-            isAvatarUrl ? '' : 'text-xl'
+          <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-[10px] sm:rounded-[12px] bg-gradient-to-br ${project.color} flex items-center justify-center shadow-md ${
+            isAvatarUrl ? '' : 'text-base sm:text-xl'
           }`}>
             {isAvatarUrl ? (
-              <Package className="w-6 h-6 text-white" />
+              <Package className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
             ) : (
               project.icon
             )}
@@ -58,48 +58,50 @@ export function ProjectCard({ project, onClick }: ProjectCardProps) {
         )}
       </div>
 
-      <h4 className={`text-[16px] font-bold mb-2 transition-colors ${
+      <h4 className={`text-[15px] sm:text-[16px] font-bold mb-1.5 sm:mb-2 transition-colors ${
         theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
       }`}>{project.name}</h4>
-      <p className={`text-[12px] mb-4 line-clamp-2 transition-colors ${
+      <p className={`text-[12px] sm:text-[12px] mb-3 sm:mb-4 line-clamp-2 transition-colors ${
         theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
       }`}>{project.description}</p>
 
-      <div className={`flex items-center space-x-3 text-[12px] mb-4 transition-colors ${
+      <div className={`flex items-center gap-3 sm:gap-3 text-[12px] mb-3 sm:mb-4 transition-colors ${
         theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
       }`}>
-        <div className="flex items-center space-x-1">
+        <div className="flex items-center gap-1">
           <Star className="w-3 h-3 text-[#c9983a]" />
           <span>{project.stars}</span>
         </div>
-        <div className="flex items-center space-x-1">
+        <div className="flex items-center gap-1">
           <GitFork className="w-3 h-3 text-[#c9983a]" />
           <span>{project.forks}</span>
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-2 mb-4 pb-4 border-b border-white/10">
+      <div className={`grid grid-cols-3 gap-2 mb-3 sm:mb-4 pb-3 sm:pb-4 border-b border-white/10 ${
+        theme === 'dark' ? 'border-white/10' : 'border-black/5'
+      }`}>
         <div className="text-center">
-          <div className={`text-[18px] font-bold transition-colors ${
+          <div className={`text-[16px] sm:text-[18px] font-bold transition-colors ${
             theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
           }`}>{project.contributors}</div>
-          <div className={`text-[10px] transition-colors ${
+          <div className={`text-[10px] sm:text-[10px] transition-colors ${
             theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
           }`}>Contributors</div>
         </div>
         <div className="text-center">
-          <div className={`text-[18px] font-bold transition-colors ${
+          <div className={`text-[16px] sm:text-[18px] font-bold transition-colors ${
             theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
           }`}>{project.openIssues}</div>
-          <div className={`text-[10px] transition-colors ${
+          <div className={`text-[10px] sm:text-[10px] transition-colors ${
             theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
           }`}>Issues</div>
         </div>
         <div className="text-center">
-          <div className={`text-[18px] font-bold transition-colors ${
+          <div className={`text-[16px] sm:text-[18px] font-bold transition-colors ${
             theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
           }`}>{project.prs}</div>
-          <div className={`text-[10px] transition-colors ${
+          <div className={`text-[10px] sm:text-[10px] transition-colors ${
             theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
           }`}>PRs</div>
         </div>
@@ -109,7 +111,7 @@ export function ProjectCard({ project, onClick }: ProjectCardProps) {
         {project.tags.map((tag, idx) => (
           <span
             key={idx}
-            className={`px-2 py-1 rounded-[8px] text-[11px] font-semibold shadow-[0_2px_8px_rgba(201,152,58,0.1)] ${
+            className={`px-2 py-1 rounded-[8px] text-[10px] sm:text-[11px] font-semibold shadow-[0_2px_8px_rgba(201,152,58,0.1)] ${
               theme === 'dark'
                 ? 'bg-[#c9983a]/20 border border-[#c9983a]/40 text-[#f5c563]'
                 : 'bg-[#c9983a]/20 border border-[#c9983a]/35 text-[#8b6f3a]'

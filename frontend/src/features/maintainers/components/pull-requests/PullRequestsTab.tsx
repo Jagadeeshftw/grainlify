@@ -53,7 +53,8 @@ export function PullRequestsTab({ selectedProjects, onRefresh }: PullRequestsTab
     try {
       if (selectedProjects.length === 0) {
         setPrs([]);
-        setIsLoading(false);
+        // Don't set isLoading to false when there are no projects
+        // This keeps the loading skeleton visible
         return;
       }
 

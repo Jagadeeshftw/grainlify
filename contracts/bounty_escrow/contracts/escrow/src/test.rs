@@ -1,5 +1,3 @@
-#![cfg(test)]
-
 use super::*;
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
@@ -36,7 +34,7 @@ struct TestSetup<'a> {
     escrow_address: Address,
 }
 
-impl<'a> TestSetup<'a> {
+impl TestSetup<'_> {
     fn new() -> Self {
         let env = Env::default();
         env.mock_all_auths();

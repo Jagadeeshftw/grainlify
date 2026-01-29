@@ -64,6 +64,8 @@ import { AdminPage } from "../admin/pages/AdminPage";
 import { SearchPage } from "./pages/SearchPage";
 import { SettingsTabType } from "../settings/types";
 
+// import { ActivityItem } from './ActivityItem';
+
 export function Dashboard() {
   const { userRole, logout, login } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -329,7 +331,7 @@ export function Dashboard() {
       }`}
     >
       {/* Subtle Background Texture */}
-      <div className="fixed inset-0 opacity-40">
+      <div className="fixed inset-0 opacity-40 will-change-transform transform-gpu " >
         <div
           className={`absolute top-0 left-0 w-[800px] h-[800px] bg-gradient-radial blur-[100px] ${
             darkTheme
@@ -339,9 +341,9 @@ export function Dashboard() {
         />
         <div
           className={`absolute bottom-0 right-0 w-[900px] h-[900px] bg-gradient-radial blur-[120px] ${
-            darkTheme
-              ? "from-[#c9983a]/5 to-transparent"
-              : "from-[#b8a898]/20 to-transparent"
+            darkTheme 
+            ? "from-[#c9983a]/5 to-transparent" 
+            : "from-[#b8a898]/20 to-transparent"
           }`}
         />
       </div>
@@ -356,12 +358,14 @@ export function Dashboard() {
 
       {/* Sidebar */}
       <aside
-        className={`fixed top-2 left-2 bottom-2 z-50 transition-all duration-300 ${isSidebarCollapsed ? "w-[65px] mr-2" : "w-56 mr-2"}`}
+        className={`fixed top-2 left-2 bottom-2 z-50 transition-all duration-300 will-change-transform transform-gpu ${
+          isSidebarCollapsed ? "w-[65px]" : "w-56"
+        }`}
       >
         {/* Toggle Arrow Button - positioned at top of sidebar aligned with header */}
         <button
           onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-          className={`absolute z-[100] backdrop-blur-[90px] rounded-full border-[0.5px] w-6 h-6 shadow-md hover:shadow-lg transition-all flex items-center justify-center ${
+          className={`absolute z-[100] backdrop-blur-[20px] rounded-full border-[0.5px] w-6 h-6 hover:bg-[#c9983a]/40 transition-all flex items-center justify-center ${
             isSidebarCollapsed ? "-right-3 top-[60px]" : "-right-3 top-[60px]"
           } ${
             darkTheme
@@ -375,10 +379,10 @@ export function Dashboard() {
         </button>
 
         <div
-          className={`h-full backdrop-blur-[90px] rounded-[29px] border shadow-[0px_4px_4px_0px_rgba(0,0,0,0.25)] relative overflow-y-auto scrollbar-hide transition-colors ${
+          className={`h-full backdrop-blur-[12px] rounded-[29px] border relative overflow-y-auto scrollbar-hide transition-all duration-300 ${
             darkTheme
-              ? "bg-[#2d2820]/[0.4] border-white/10"
-              : "bg-white/[0.35] border-white/20"
+              ? "bg-[#2d2820]/[0.45] border-white/10 shadow-[-4px_4px_12px_rgba(0,0,0,0.3)]"
+              : "bg-white/[0.35] border-white/20 shadow-[-4px_4px_12px_rgba(0,0,0,0.1)]"
           }`}
         >
           <div className="flex flex-col h-full px-0 py-[40px]">
@@ -404,8 +408,8 @@ export function Dashboard() {
                       darkTheme ? "text-[#f5efe5]" : "text-[#2d2820]"
                     }`}
                   >
-                    Grainlify
-                  </span>
+                  Grainlify
+                </span>
                 </div>
               )}
             </div>
@@ -476,12 +480,14 @@ export function Dashboard() {
 
       {/* Main Content */}
       <main
-        className={`mr-2 my-2 relative z-10 transition-all duration-300 ${isSidebarCollapsed ? "ml-[81px]" : "ml-[240px]"}`}
+        className={`mr-2 my-2 relative z-10 isolate transition-all duration-300 will-change-transform transform-gpu ${
+          isSidebarCollapsed ? "ml-[81px]" : "ml-[240px]"
+        }`}
       >
-        <div className="max-w-[1400px] mx-auto">
+        <div className="max-w-[1400px] mx-auto relative">
           {/* Premium Pill-Style Header - Greatest of All Time */}
           <div
-            className={`fixed top-2 right-2 left-auto z-[9999] flex items-center gap-1 md:gap-2 lg:gap-3 lg:h-[52px] py-3 rounded-[26px] shadow-[0px_4px_4px_0px_rgba(0,0,0,0.25)] backdrop-blur-[90px] border transition-all duration-300 ${
+            className={`fixed top-2 right-2 left-auto z-[9999] flex items-center gap-3 h-[52px] py-3 rounded-[26px] shadow-[0px_4px_4px_0px_rgba(0,0,0,0.25)] backdrop-blur-[90px] border transition-all duration-300 ${
               isSidebarCollapsed ? "ml-[81px]" : "ml-[240px]"
             } ${
               darkTheme
@@ -491,7 +497,7 @@ export function Dashboard() {
           ${showMobileNav? "h-screen flex-col":"" } 
           `}
             style={{
-              width: `calc(100vw - ${isSidebarCollapsed ? "81px" : "240px"} - 8px - 8px)`,
+              width: `calc(100vw - ${isSidebarCollapsed ? "81px" : "240px"} - 16px)`,
             }}
           >
           
@@ -623,7 +629,7 @@ export function Dashboard() {
                   darkTheme
                     ? "shadow-[inset_1px_-1px_1px_0px_rgba(0,0,0,0.5),inset_-2px_2px_1px_-1px_rgba(255,255,255,0.11)]"
                     : "shadow-[inset_1px_-1px_1px_0px_rgba(0,0,0,0.15),inset_-2px_2px_1px_-1px_rgba(255,255,255,0.35)]"
-                } ${showMobileNav? 'rounded-sm': 'rounded-full'}`}
+                }`}
               />
               {darkTheme ? (
                 <Sun
@@ -665,9 +671,9 @@ export function Dashboard() {
             {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
           </div>
-
+          
           {/* Page Content */}
-          <div className="pt-[68px]">
+          <div className="pt-[68px] ">
             {selectedIssue ? (
               <IssueDetailPage
                 issueId={selectedIssue.issueId}
@@ -717,7 +723,7 @@ export function Dashboard() {
                         setSelectedEventName(null);
                       }}
                     />
-                  )}
+            )}
                 {currentPage === "ecosystems" && !selectedEcosystemId && (
                   <EcosystemsPage onEcosystemClick={handleEcosystemClick} />
                 )}
@@ -730,9 +736,9 @@ export function Dashboard() {
                       onBack={handleBackFromEcosystem}
                       onProjectClick={(id) => setSelectedProjectId(id)}
                     />
-                  )}
-                {currentPage === "contributors" && <ContributorsPage />}
-                {currentPage === "maintainers" && <MaintainersPage />}
+            )}
+            {currentPage === "contributors" && <ContributorsPage />}
+            {currentPage === "maintainers" && <MaintainersPage />}
                 {currentPage === "profile" && (
                   <ProfilePage
                     viewingUserId={viewingUserId}
@@ -755,8 +761,8 @@ export function Dashboard() {
                   />
                 )}
                 {currentPage === "data" && adminAuthenticated && <DataPage />}
-                {currentPage === "leaderboard" && <LeaderboardPage />}
-                {currentPage === "blog" && <BlogPage />}
+            {currentPage === "leaderboard" && <LeaderboardPage />}
+            {currentPage === "blog" && <BlogPage />}
                 {currentPage === "settings" && (
                   <SettingsPage initialTab={settingsInitialTab} />
                 )}
@@ -830,10 +836,10 @@ export function Dashboard() {
             >
               Enter the admin password to access the admin panel.
             </p>
-            <ModalInput
-              type="password"
-              placeholder="Enter admin password"
-              value={adminPassword}
+          <ModalInput
+            type="password"
+            placeholder="Enter admin password"
+            value={adminPassword}
               onChange={(value) => setAdminPassword(value)}
               required
               autoFocus
