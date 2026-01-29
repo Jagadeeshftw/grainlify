@@ -39,25 +39,25 @@ export function BlogArticle() {
   ];
 
   return (
-    <div className="backdrop-blur-[40px] bg-white/[0.12] rounded-[24px] border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-10">
+    <div className="backdrop-blur-[40px] bg-white/[0.12] rounded-[20px] md:rounded-[24px] border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-4 md:p-8 lg:p-10">
       <div className="max-w-4xl mx-auto">
         {/* Article Header */}
-        <div className="text-center mb-10">
-          <h2 className={`text-[36px] font-bold mb-4 transition-colors ${
+        <div className="text-center mb-6 md:mb-8 lg:mb-10">
+          <h2 className={`text-xl md:text-3xl lg:text-[36px] font-bold mb-3 md:mb-4 transition-colors leading-tight ${
             theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
           }`}>
             Welcome to OnlyGrain: The Future of Open Source Collaboration
           </h2>
-          <div className={`flex items-center justify-center gap-4 text-[14px] transition-colors ${
+          <div className={`flex flex-col md:flex-row md:items-center md:justify-center gap-2 md:gap-3 lg:gap-4 text-xs md:text-sm lg:text-[14px] transition-colors ${
             theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
           }`}>
-            <span className="flex items-center gap-1.5">
-              <Calendar className="w-4 h-4" />
+            <span className="flex items-center gap-1 md:gap-1.5 justify-center">
+              <Calendar className="w-3.5 h-3.5 md:w-4 md:h-4" />
               December 27, 2024
             </span>
-            <span>•</span>
-            <span className="flex items-center gap-1.5">
-              <Clock className="w-4 h-4" />
+            <span className="hidden md:inline">•</span>
+            <span className="flex items-center gap-1 md:gap-1.5 justify-center">
+              <Clock className="w-3.5 h-3.5 md:w-4 md:h-4" />
               10 min read
             </span>
           </div>
@@ -66,19 +66,19 @@ export function BlogArticle() {
         {/* Article Content */}
         <div className="prose prose-lg max-w-none">
           {/* Introduction */}
-          <div className="mb-8">
-            <h3 className={`text-[28px] font-bold mb-4 flex items-center gap-3 transition-colors ${
+          <div className="mb-6 md:mb-8">
+            <h3 className={`text-lg md:text-2xl lg:text-[28px] font-bold mb-3 md:mb-4 flex items-center gap-2 md:gap-3 transition-colors ${
               theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
             }`}>
-              <Sparkles className="w-7 h-7 text-[#c9983a]" />
+              <Sparkles className="w-5 h-5 md:w-6 md:h-6 lg:w-7 lg:h-7 text-[#c9983a] flex-shrink-0" />
               What is OnlyGrain?
             </h3>
-            <p className={`text-[16px] leading-relaxed mb-4 transition-colors ${
+            <p className={`text-sm md:text-base lg:text-[16px] leading-relaxed mb-3 md:mb-4 transition-colors ${
               theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#6b5d4d]'
             }`}>
               OnlyGrain is a revolutionary platform that bridges the gap between talented open-source developers and innovative Web3 projects across all blockchain ecosystems. We're not just another development platform—we're building the future of decentralized collaboration.
             </p>
-            <p className={`text-[16px] leading-relaxed transition-colors ${
+            <p className={`text-sm md:text-base lg:text-[16px] leading-relaxed transition-colors ${
               theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#6b5d4d]'
             }`}>
               In the rapidly evolving world of blockchain and Web3, finding the right talent for your project or discovering meaningful contribution opportunities can be challenging. OnlyGrain solves this by creating a unified ecosystem where developers and projects connect, collaborate, and thrive together.
@@ -86,14 +86,14 @@ export function BlogArticle() {
           </div>
 
           {/* Our Mission */}
-          <div className="mb-8 p-6 backdrop-blur-[30px] bg-white/[0.15] rounded-[20px] border border-white/25">
-            <h3 className={`text-[28px] font-bold mb-4 flex items-center gap-3 transition-colors ${
+          <div className="mb-6 md:mb-8 p-4 md:p-5 lg:p-6 backdrop-blur-[30px] bg-white/[0.15] rounded-[16px] md:rounded-[20px] border border-white/25">
+            <h3 className={`text-lg md:text-2xl lg:text-[28px] font-bold mb-3 md:mb-4 flex items-center gap-2 md:gap-3 transition-colors ${
               theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
             }`}>
-              <Globe className="w-7 h-7 text-[#c9983a]" />
+              <Globe className="w-5 h-5 md:w-6 md:h-6 lg:w-7 lg:h-7 text-[#c9983a] flex-shrink-0" />
               Our Mission
             </h3>
-            <p className={`text-[16px] leading-relaxed mb-4 transition-colors ${
+            <p className={`text-sm md:text-base lg:text-[16px] leading-relaxed mb-3 md:mb-4 transition-colors ${
               theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#6b5d4d]'
             }`}>
               We believe that the best innovations happen when talented developers have access to meaningful projects and when projects can easily discover and engage with skilled contributors. Our mission is to democratize access to Web3 development opportunities while ensuring quality contributions are properly recognized and rewarded.
@@ -102,11 +102,11 @@ export function BlogArticle() {
           </div>
 
           {/* What We Do */}
-          <div className="mb-8">
-            <h3 className={`text-[28px] font-bold mb-4 flex items-center gap-3 transition-colors ${
+          <div className="mb-6 md:mb-8">
+            <h3 className={`text-lg md:text-2xl lg:text-[28px] font-bold mb-3 md:mb-4 flex items-center gap-2 md:gap-3 transition-colors ${
               theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
             }`}>
-              <Zap className="w-7 h-7 text-[#c9983a]" />
+              <Zap className="w-5 h-5 md:w-6 md:h-6 lg:w-7 lg:h-7 text-[#c9983a] flex-shrink-0" />
               What We Do
             </h3>
             <BlogFeatureList features={features} />
@@ -116,11 +116,11 @@ export function BlogArticle() {
           <BlogHowItWorks />
 
           {/* Why Choose OnlyGrain */}
-          <div className="mb-8">
-            <h3 className={`text-[28px] font-bold mb-4 flex items-center gap-3 transition-colors ${
+          <div className="mb-6 md:mb-8">
+            <h3 className={`text-lg md:text-2xl lg:text-[28px] font-bold mb-3 md:mb-4 flex items-center gap-2 md:gap-3 transition-colors ${
               theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
             }`}>
-              <Coins className="w-7 h-7 text-[#c9983a]" />
+              <Coins className="w-5 h-5 md:w-6 md:h-6 lg:w-7 lg:h-7 text-[#c9983a] flex-shrink-0" />
               Why Choose OnlyGrain?
             </h3>
             <BlogWhyChoose />

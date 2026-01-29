@@ -28,16 +28,16 @@ export function BlogWhyChoose() {
   ];
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4 lg:gap-5">
       {cards.map((card, index) => (
-        <div key={index} className="backdrop-blur-[20px] bg-white/[0.15] rounded-[16px] border border-white/25 p-5">
-          <div className="w-12 h-12 mb-3 rounded-[12px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] flex items-center justify-center shadow-md">
+        <div key={index} className="backdrop-blur-[20px] bg-white/[0.15] rounded-[12px] md:rounded-[16px] border border-white/25 p-3 md:p-4 lg:p-5">
+          <div className="w-10 h-10 md:w-12 md:h-12 mb-2 md:mb-3 rounded-[10px] md:rounded-[12px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] flex items-center justify-center shadow-md">
             {card.icon}
           </div>
-          <h4 className={`text-[18px] font-bold mb-2 transition-colors ${
+          <h4 className={`text-sm md:text-base lg:text-[18px] font-bold mb-1 md:mb-2 transition-colors ${
             theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
           }`}>{card.title}</h4>
-          <p className={`text-[14px] transition-colors ${
+          <p className={`text-xs md:text-sm lg:text-[14px] transition-colors leading-relaxed ${
             theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#6b5d4d]'
           }`}>
             {card.description}
