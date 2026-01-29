@@ -156,7 +156,8 @@ export function IssuesTab({ onNavigate, selectedProjects, onRefresh, initialSele
     try {
       if (selectedProjects.length === 0) {
         setIssues([]);
-        setIsLoadingIssues(false);
+        // Don't set isLoadingIssues to false when there are no projects
+        // This keeps the loading skeleton visible
         return;
       }
 
