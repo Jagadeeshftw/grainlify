@@ -185,7 +185,37 @@ export function IssuesTab({ onNavigate, selectedProjects, onRefresh, initialSele
         return dateB - dateA;
       });
 
-      setIssues(flattenedIssues);
+      // Simulation: Add dummy data if no real issues are found for the dummy project
+      // OR if no real issues are found at all and we want to show something
+
+      if (flattenedIssues.length === 0 && selectedProjects.length > 0) {
+        console.log('IssuesTab: No real issues found, generating dummy data');
+        
+        // Generate dummy issues only for projects that are either the dummy project 
+        // OR have no real issues (falling back to user preference)
+        const dummyIssues = selectedProjects
+          .filter(project => project.id === 'dummy-project-id' || flattenedIssues.length === 0)
+          .map(project => ({
+            github_issue_id: Math.floor(Math.random() * 1000000),
+            number: Math.floor(Math.random() * 1000),
+            state: 'open',
+            title: `[DUMMY] Sample Issue for ${project.github_full_name}`,
+            description: "This is a dummy issue generated for simulation purposes. It allows testing the navigation and filtering logic even when a project has no actual GitHub issues.",
+            author_login: "grainlify-ghost",
+            assignees: [],
+            labels: [{ name: "bug" }, { name: "help wanted" }],
+            comments_count: 2,
+            comments: [],
+            url: "#",
+            updated_at: new Date().toISOString(),
+            last_seen_at: new Date().toISOString(),
+            projectName: project.github_full_name,
+            projectId: project.id,
+          }));
+        setIssues(dummyIssues);
+      } else {
+        setIssues(flattenedIssues);
+      }
       setIsLoadingIssues(false);
     } catch (err) {
       console.error('Failed to load issues:', err);

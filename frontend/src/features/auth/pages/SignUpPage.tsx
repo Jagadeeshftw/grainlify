@@ -21,7 +21,6 @@ export function SignUpPage() {
   }, [navigate]);
 
   const handleGitHubSignUp = () => {
-    if (isRedirecting) return;
     console.log('Sign up button clicked');
     setIsRedirecting(true);
     const githubUrl = getGitHubLoginUrl();

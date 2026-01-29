@@ -135,8 +135,6 @@ export function BillingTab() {
   const [isVerifying, setIsVerifying] = useState(false);
   const [kycStatus, setKycStatus] = useState<string | null>(null);
   const [isCheckingKYC, setIsCheckingKYC] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  
   const [kycWindowOpened, setKycWindowOpened] = useState(false);
 
   const handleCreateProfile = () => {
@@ -188,7 +186,6 @@ export function BillingTab() {
       }
     } catch (error) {
       console.error('Failed to check KYC status:', error);
-      setErrorMessage("VerificationFailed: Connection to the identity server failed. Please try again.");
     } finally {
       setIsCheckingKYC(false);
     }
@@ -225,8 +222,7 @@ export function BillingTab() {
 
       // Open the KYC URL in a new window
       if (response.url) {
-        window.open(response.url, '_blank', 'width=800,height=600');
-        setErrorMessage("");
+        const kycWindow = window.open(response.url, '_blank', 'width=800,height=600');
         
         // Window opened successfully - update state to reflect this
         if (kycWindow) {
@@ -261,7 +257,6 @@ export function BillingTab() {
             }
           } catch (error) {
             console.error('Failed to poll KYC status:', error);
-            setErrorMessage("Connection lost. We're having trouble checking your verification status. Please refresh the page.");
           }
         }, 3000); // Poll every 3 seconds
 
@@ -273,7 +268,6 @@ export function BillingTab() {
       }
     } catch (error) {
       console.error('Failed to start KYC verification:', error);
-      setErrorMessage("Could not start verification. Please try again later.");
       setIsVerifying(false);
       setKycWindowOpened(false);
     }
@@ -373,13 +367,6 @@ export function BillingTab() {
     // Profile Detail View
     return (
       <div className="space-y-6">
-        {errorMessage && (
-                <div className="text-red-500 bg-red-100 p-2 rounded mb-4 border border-red-200">
-                        {errorMessage}
-                              </div>
-                                  )}
-                                  
-        )
         {/* Back Button */}
         <button
           onClick={() => setSelectedProfile(null)}

@@ -118,7 +118,7 @@ fn test_single_release_schedule() {
 }
 */
 
-fn create_escrow_contract<'a>(e: &Env) -> BountyEscrowContractClient<'a> {
+fn _create_escrow_contract<'a>(e: &Env) -> BountyEscrowContractClient<'a> {
     let contract_id = e.register_contract(None, BountyEscrowContract);
     BountyEscrowContractClient::new(e, &contract_id)
 }
@@ -268,7 +268,7 @@ fn test_release_fund() {
 
     client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
 
-    client.release_funds(&bounty_id, &contributor);
+    client.release_funds(&bounty_id, &contributor, &None::<i128>);
 
     // Get all events emitted
     let events = env.events().all();
@@ -600,7 +600,7 @@ fn test_complete_bounty_workflow_lock_release() {
     assert_eq!(contract_balance, amount);
 
     // 6. Release funds to contributor
-    client.release_funds(&bounty_id, &contributor);
+    client.release_funds(&bounty_id, &contributor, &None::<i128>);
 
     // 7. Verify funds released
     let escrow_after = client.get_escrow_info(&bounty_id);
@@ -657,36 +657,36 @@ fn test_complete_bounty_workflow_lock_refund() {
 
 #[test]
 fn test_pause_functionality() {
-    let (env, client, contract_id) = create_test_env();
+    let (env, client, _contract_id) = create_test_env();
     env.mock_all_auths();
 
     let admin = Address::generate(&env);
 
     // Create and setup token
-    let (token_address, token_client, token_admin) = create_token_contract(&env, &admin);
+    let (token_address, _token_client, _token_admin) = create_token_contract(&env, &admin);
 
     // Initialize escrow
     client.init(&admin, &token_address);
 
     // Initially not paused
-    assert_eq!(client.is_paused(), false);
+    assert!(!client.is_paused());
 
     // Pause contract
     client.pause();
-    assert_eq!(client.is_paused(), true);
+    assert!(client.is_paused());
 
     // Unpause contract
     client.unpause();
-    assert_eq!(client.is_paused(), false);
+    assert!(!client.is_paused());
 
     // Pause again for emergency test
     client.pause();
-    assert_eq!(client.is_paused(), true);
+    assert!(client.is_paused());
 
     // Unpause to verify idempotent
     client.unpause();
     client.unpause(); // Call again - should not error
-    assert_eq!(client.is_paused(), false);
+    assert!(!client.is_paused());
 }
 
 #[test]
@@ -704,7 +704,7 @@ fn test_emergency_withdraw() {
 
     // Pause contract
     client.pause();
-    assert_eq!(client.is_paused(), true);
+    assert!(client.is_paused());
 
     // Call emergency_withdraw (it will fail gracefully if no funds)
     // The important thing is that it's callable when paused
@@ -712,5 +712,5 @@ fn test_emergency_withdraw() {
     client.emergency_withdraw(&emergency_recipient);
 
     // Verify pause state still true
-    assert_eq!(client.is_paused(), true);
+    assert!(client.is_paused());
 }

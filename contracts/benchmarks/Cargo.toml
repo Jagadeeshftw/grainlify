@@ -1,0 +1,23 @@
+[package]
+name = "contract-benchmarks"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+# Bench harness (std) uses Soroban test env + contract crates.
+soroban-sdk = { version = "21.0.0", features = ["testutils"] }
+
+# Benchmark target contracts
+bounty-escrow = { path = "../bounty_escrow/contracts/escrow" }
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "bounty_escrow"
+harness = false
+

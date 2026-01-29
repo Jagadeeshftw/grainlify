@@ -1,6 +1,7 @@
 import { Star, GitFork, Package } from 'lucide-react';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
 import { useState } from 'react';
+import { LanguageIcon } from '../../../shared/components/LanguageIcon';
 
 export interface Project {
   id: number | string;
@@ -14,6 +15,7 @@ export interface Project {
   description: string;
   tags: string[];
   color: string;
+  languages?: Array<{ name: string; percentage: number }>;
 }
 
 interface ProjectCardProps {
@@ -105,6 +107,26 @@ export function ProjectCard({ project, onClick }: ProjectCardProps) {
         </div>
       </div>
 
+      {/* Languages Section */}
+      {project.languages && project.languages.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {project.languages.slice(0, 5).map((lang, idx) => (
+            <span
+              key={idx}
+              className={`px-2 py-1 rounded-[8px] text-[11px] font-medium flex items-center gap-1.5 transition-all ${
+                theme === 'dark'
+                  ? 'bg-white/[0.08] border border-white/15 text-[#d4d4d4]'
+                  : 'bg-white/[0.15] border border-white/25 text-[#7a6b5a]'
+              }`}
+            >
+              <LanguageIcon language={lang.name} className="w-3 h-3" />
+              {lang.name}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Tags Section */}
       <div className="flex flex-wrap gap-1.5">
         {project.tags.map((tag, idx) => (
           <span

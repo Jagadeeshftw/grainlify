@@ -27,58 +27,25 @@ export function AuthCallbackPage() {
     
     const handleCallback = async () => {
       hasProcessed.current = true;
-                                                                                                
-                                                                                                                                                  
-          
-
-                                                                                                                                                            
-                                                                                                                                          
-                                                                                                                                                                                      
-
-                                                                                                                                                                
-                                                                                                                                                                                            
-                                                                                                                                                                                                                  
-                                                                                                                                                                                                                        
-                                                                                                                                                                                                                                    
-                                                                                                                                                                                                                                                      
-
-                                                                                                                                                                                                                                          
-                                                                                                                                                                                                                                                          
-                                                                                                                                                                                                                                                                
-                                                                                                                                                                                                                                                                    
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              
-                                                                                                                                                                                                                                                                                          
-                                                                                                                                                                                                                                                                                            
-                                                                     
-                                                                                                                      
-                                                                                                                                        
-                                                            
       
-  try {
+      try {
         // Get the token from URL parameters
         const params = new URLSearchParams(window.location.search);
         const token = params.get('token');
-        const github = params.get('github');
         const errorParam = params.get('error');
 
         console.log('OAuth Callback - URL:', window.location.href);
         console.log('OAuth Callback - Token:', token ? 'Present' : 'Missing');
-        console.log('OAuth Callback - GitHub Username:', github);
         console.log('OAuth Callback - Error:', errorParam);
 
         if (errorParam) {
           console.error('OAuth Error:', errorParam);
-          if (errorParam === 'access_denied') {
-                setError('Login was cancelled. Please try again.');
-                } else {
-                    setError(errorParam || 'An unexpected error occurred');
-                    }
-          }
+          setError(errorParam);
           setIsProcessing(false);
           // Redirect to signin after 3 seconds
           setTimeout(() => navigate('/signin'), 3000);
           return;
-        
+        }
 
         if (!token) {
           console.error('No token found in URL');
@@ -100,10 +67,10 @@ export function AuthCallbackPage() {
         setIsProcessing(false);
         setTimeout(() => navigate('/signin'), 3000);
       }
-    } 
-  
+    };
+
     handleCallback();
- }, [login, navigate]);
+  }, [login, navigate]);
 
   return (
     <div className={`min-h-screen flex items-center justify-center transition-colors ${

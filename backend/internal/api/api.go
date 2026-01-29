@@ -186,6 +186,7 @@ func New(cfg config.Config, deps Deps) *fiber.App {
 	// Public leaderboard
 	leaderboard := handlers.NewLeaderboardHandler(deps.DB)
 	app.Get("/leaderboard", leaderboard.Leaderboard())
+	app.Get("/leaderboard/projects", leaderboard.ProjectsLeaderboard())
 
 	// Public landing stats
 	landingStats := handlers.NewLandingStatsHandler(deps.DB)
@@ -231,6 +232,9 @@ func New(cfg config.Config, deps Deps) *fiber.App {
 	adminGroup.Post("/ecosystems", auth.RequireRole("admin"), ecosystemsAdmin.Create())
 	adminGroup.Put("/ecosystems/:id", auth.RequireRole("admin"), ecosystemsAdmin.Update())
 	adminGroup.Delete("/ecosystems/:id", auth.RequireRole("admin"), ecosystemsAdmin.Delete())
+
+	projectsAdmin := handlers.NewProjectsAdminHandler(deps.DB)
+	adminGroup.Delete("/projects/:id", auth.RequireRole("admin"), projectsAdmin.Delete())
 
 	// Open Source Week (admin)
 	oswAdmin := handlers.NewOpenSourceWeekAdminHandler(deps.DB)

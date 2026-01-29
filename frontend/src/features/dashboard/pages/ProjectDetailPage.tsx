@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { ExternalLink, Copy, Circle, ArrowLeft, GitPullRequest } from 'lucide-react';
+import { ExternalLink, Copy, Circle, ArrowLeft, GitPullRequest, ArrowRight } from 'lucide-react';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
 import { getPublicProject, getPublicProjectIssues, getPublicProjectPRs } from '../../../shared/api/client';
 import { SkeletonLoader } from '../../../shared/components/SkeletonLoader';
@@ -10,11 +10,12 @@ import { LanguageIcon } from '../../../shared/components/LanguageIcon';
 interface ProjectDetailPageProps {
   onBack?: () => void;
   onIssueClick?: (issueId: string, projectId: string) => void;
+  onNavigateToIssues?: (projectId: string) => void;
   projectId?: string;
   onClose?: () => void;
 }
 
-export function ProjectDetailPage({ onBack, onIssueClick, projectId: propProjectId, onClose }: ProjectDetailPageProps) {
+export function ProjectDetailPage({ onBack, onIssueClick, onNavigateToIssues, projectId: propProjectId, onClose }: ProjectDetailPageProps) {
   const { theme } = useTheme();
   const { projectId: paramProjectId } = useParams<{ projectId: string }>();
   const projectId = propProjectId || paramProjectId;
@@ -58,6 +59,84 @@ export function ProjectDetailPage({ onBack, onIssueClick, projectId: propProject
         setIsLoading(false);
         return;
       }
+
+      if (projectId === 'dummy-project-id') {
+        console.log('ProjectDetailPage: Loading simulated data for dummy project');
+        setProject({
+          id: 'dummy-project-id',
+          github_full_name: 'Grainlify/Grainlify-Test-Project',
+          stars_count: 1250,
+          forks_count: 450,
+          contributors_count: 25,
+          open_issues_count: 12,
+          open_prs_count: 5,
+          description: 'This is a simulated project created for testing navigation and filtering features. Grainlify is the ultimate platform for open source sustainability.',
+          language: 'TypeScript',
+          repo: {
+            owner_login: 'Grainlify',
+            owner_avatar_url: 'https://github.com/Grainlify.png',
+            html_url: 'https://github.com/Grainlify/Grainlify-Test-Project',
+            homepage: 'https://grainlify.com',
+            description: 'The Open Source Sustainability platform.'
+          },
+          languages: [
+            { name: 'TypeScript', percentage: 75 },
+            { name: 'CSS', percentage: 20 },
+            { name: 'HTML', percentage: 5 }
+          ],
+          tags: ['Open Source', 'Sustainability', 'Web App'],
+          category: 'Full Stack',
+          status: 'active'
+        } as any);
+
+        setIssues([
+          {
+            github_issue_id: 1,
+            number: 101,
+            state: 'open',
+            title: '[DUMMY] Setup project architecture',
+            description: 'Simulated issue for testing layout.',
+            author_login: 'maintainer-1',
+            labels: [{ name: 'enhancement', color: 'blue' }, { name: 'help wanted', color: 'green' }],
+            url: '#',
+            updated_at: new Date().toISOString(),
+            last_seen_at: new Date().toISOString()
+          },
+          {
+            github_issue_id: 2,
+            number: 102,
+            state: 'open',
+            title: '[DUMMY] Implement project details navigation',
+            description: 'Simulated issue for testing navigation.',
+            author_login: 'maintainer-2',
+            labels: [{ name: 'bug', color: 'red' }],
+            url: '#',
+            updated_at: new Date().toISOString(),
+            last_seen_at: new Date().toISOString()
+          }
+        ]);
+
+        setPRs([
+          {
+            github_pr_id: 1,
+            number: 1,
+            state: 'open',
+            title: '[DUMMY] Initial Commit',
+            author_login: 'maintainer-1',
+            url: '#',
+            merged: false,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            closed_at: null,
+            merged_at: null,
+            last_seen_at: new Date().toISOString()
+          }
+        ]);
+
+        setIsLoading(false);
+        return;
+      }
+
       setIsLoading(true);
       try {
         console.log('ProjectDetailPage: Fetching project data for ID:', projectId);
@@ -79,8 +158,10 @@ export function ProjectDetailPage({ onBack, onIssueClick, projectId: propProject
       } catch (e) {
         if (cancelled) return;
         console.error('ProjectDetailPage: Error loading project data', e);
-        // Keep loading state true to show skeleton forever when backend is down
-        // Don't set isLoading to false - keep showing skeleton
+        // Fallback for demo/simulation if API fails
+        if (projectId === 'dummy-project-id') {
+           setIsLoading(false);
+        }
       }
     };
 
@@ -779,9 +860,17 @@ export function ProjectDetailPage({ onBack, onIssueClick, projectId: propProject
             ? 'bg-white/[0.12] border-white/20'
             : 'bg-white/[0.12] border-white/20'
         }`}>
-          <h2 className={`text-[18px] font-bold mb-6 transition-colors ${
-            theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-          }`}>Issues</h2>
+          <div 
+            onClick={() => projectId && onNavigateToIssues?.(projectId)}
+            className="flex items-center gap-2 mb-6 cursor-pointer group w-fit"
+          >
+            <h2 className={`text-[18px] font-bold transition-colors ${
+              theme === 'dark' ? 'text-[#f5f5f5] group-hover:text-[#c9983a]' : 'text-[#2d2820] group-hover:text-[#b8872f]'
+            }`}>Issues</h2>
+            <ArrowRight className={`w-4 h-4 opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all ${
+              theme === 'dark' ? 'text-[#c9983a]' : 'text-[#b8872f]'
+            }`} />
+          </div>
 
           {/* Issue Tabs */}
           <div className="flex flex-wrap items-center gap-2 mb-6">
