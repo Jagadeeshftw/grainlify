@@ -268,7 +268,7 @@ fn test_release_fund() {
 
     client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
 
-    client.release_funds(&bounty_id, &contributor);
+    client.release_funds(&bounty_id, &contributor, &None::<i128>);
 
     // Get all events emitted
     let events = env.events().all();
@@ -600,7 +600,7 @@ fn test_complete_bounty_workflow_lock_release() {
     assert_eq!(contract_balance, amount);
 
     // 6. Release funds to contributor
-    client.release_funds(&bounty_id, &contributor);
+    client.release_funds(&bounty_id, &contributor, &None::<i128>);
 
     // 7. Verify funds released
     let escrow_after = client.get_escrow_info(&bounty_id);

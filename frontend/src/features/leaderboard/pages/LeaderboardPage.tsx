@@ -200,9 +200,8 @@ export function LeaderboardPage() {
           !isLoading &&
           leaderboardData.length === 0 && (
             <div
-              className={`text-center py-8 transition-colors ${
-                theme === "dark" ? "text-[#b8a898]" : "text-[#7a6b5a]"
-              }`}
+              className={`text-center py-8 transition-colors ${theme === "dark" ? "text-[#b8a898]" : "text-[#7a6b5a]"
+                }`}
             >
               No contributors yet. Be the first to contribute!
             </div>
@@ -243,7 +242,7 @@ export function LeaderboardPage() {
                 onUserClick={(username, userId) => {
                   // Navigate to profile page with user identifier
                   const identifier = userId || username;
-                  window.location.href = `/dashboard?tab=profile&user=${identifier}`;
+                  window.location.href = `/dashboard?page=profile&user=${encodeURIComponent(identifier)}`;
                 }}
               />
               {hasMore && (

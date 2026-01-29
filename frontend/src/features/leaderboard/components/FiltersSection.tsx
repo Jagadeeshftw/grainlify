@@ -51,7 +51,7 @@ export function FiltersSection({
   // Get the label for the currently active filter
   const getActiveFilterLabel = () => {
     const activeOption = filterOptions.find(
-      (option) => option.value === activeFilter
+      (option) => option.value === activeFilter,
     );
     return activeOption?.label || "Overall Leaderboard";
   };
@@ -89,9 +89,9 @@ export function FiltersSection({
         isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
       }`}
     >
-      <div className="flex items-center justify-end flex-wrap gap-4">
+      <div className="flex items-center justify-center md:justify-end flex-wrap gap-4">
         {/* Filter Dropdown Button */}
-        <div className="relative z-[100]">
+        <div className="relative z-[100] w-full md:w-auto">
           <button
             onClick={() => {
               setShowFilterDropdown(!showFilterDropdown);
@@ -100,7 +100,7 @@ export function FiltersSection({
                 onToggleDropdown();
               }
             }}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-[12px] backdrop-blur-[30px] border hover:scale-105 transition-all duration-300 ${
+            className={`w-full md:w-auto flex items-center justify-between md:justify-start gap-2 px-4 py-2.5 rounded-[12px] backdrop-blur-[30px] border hover:scale-105 transition-all duration-300 ${
               theme === "dark"
                 ? "bg-white/[0.08] border-white/15 hover:bg-white/[0.12]"
                 : "bg-white/[0.15] border-white/25 hover:bg-white/[0.2]"
@@ -120,9 +120,11 @@ export function FiltersSection({
             />
           </button>
           {showFilterDropdown && (
-            <div className={`absolute right-0 mt-2 w-[220px] border-2 border-white/30 rounded-[12px] shadow-[0_8px_32px_rgba(0,0,0,0.15)] overflow-hidden z-[100] animate-dropdown-in ${
-              theme === "dark" ? "bg-[#2d2820]/95" : "bg-white/95"
-            }`}>
+            <div
+              className={`absolute left-0 md:left-auto right-0 mt-2 w-full md:w-[220px] border-2 border-white/30 rounded-[12px] shadow-[0_8px_32px_rgba(0,0,0,0.15)] overflow-hidden z-[100] animate-dropdown-in ${
+                theme === "dark" ? "bg-[#2d2820]/95" : "bg-white/95"
+              }`}
+            >
               {filterOptions.map((option) => (
                 <button
                   key={option.value}
@@ -144,7 +146,7 @@ export function FiltersSection({
         </div>
 
         {/* Ecosystem Dropdown Button */}
-        <div className="relative z-[100]">
+        <div className="relative z-[100] w-full md:w-auto">
           <button
             onClick={() => {
               onToggleDropdown();
@@ -153,7 +155,7 @@ export function FiltersSection({
                 setShowFilterDropdown(false);
               }
             }}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-[12px] backdrop-blur-[30px] border hover:scale-105 transition-all duration-300 ${
+            className={`w-full md:w-auto flex items-center justify-between md:justify-start gap-2 px-4 py-2.5 rounded-[12px] backdrop-blur-[30px] border hover:scale-105 transition-all duration-300 ${
               theme === "dark"
                 ? "bg-white/[0.08] border-white/15 hover:bg-white/[0.12]"
                 : "bg-white/[0.15] border-white/25 hover:bg-white/[0.2]"
@@ -173,9 +175,11 @@ export function FiltersSection({
             />
           </button>
           {showDropdown && (
-            <div className={`absolute right-0 mt-2 w-[200px] border-2 border-white/30 rounded-[12px] shadow-[0_8px_32px_rgba(0,0,0,0.15)] overflow-hidden z-[100] animate-dropdown-in ${
-              theme === "dark" ? "bg-[#2d2820]/95" : "bg-white/95"
-            }`}>
+            <div
+              className={`absolute left-0 md:left-auto right-0 mt-2 w-full md:w-[200px] border-2 border-white/30 rounded-[12px] shadow-[0_8px_32px_rgba(0,0,0,0.15)] overflow-hidden z-[100] animate-dropdown-in ${
+                theme === "dark" ? "bg-[#2d2820]/95" : "bg-white/95"
+              }`}
+            >
               {loading ? (
                 <div className="px-4 py-3 flex justify-center">
                   <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />

@@ -340,6 +340,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "payout_history"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "refund_history"
                       },
                       "val": {

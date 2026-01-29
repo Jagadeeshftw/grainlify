@@ -344,6 +344,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "payout_history"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "refund_history"
                       },
                       "val": {
@@ -2562,6 +2570,14 @@
                   },
                   "val": {
                     "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "payout_history"
+                  },
+                  "val": {
+                    "vec": []
                   }
                 },
                 {
