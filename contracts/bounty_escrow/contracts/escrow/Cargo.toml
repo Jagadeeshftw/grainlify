@@ -12,4 +12,5 @@ doctest = false
 soroban-sdk = { workspace = true }
 
 [dev-dependencies]
-soroban-sdk = { workspace = true, features = ["alloc", "testutils"] }
+soroban-sdk = { version = "23", features = ["testutils"] }
+test-utils = { path = "../../../test-utils" }
