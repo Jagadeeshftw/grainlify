@@ -88,13 +88,20 @@ func New(cfg config.Config, deps Deps) *fiber.App {
 			return true
 		}
 
+		// Allow all Vercel preview deployments (*.vercel.app)
+		if strings.HasSuffix(origin, ".vercel.app") {
+			return true
+		}
+
+		// Check explicit CORS origins from config
 		if _, ok := explicitOrigins[origin]; ok {
 			return true
 		}
 
-		// If FrontendBaseURL is set, allow it.
+		// If FrontendBaseURL is set, allow it (exact match or with path)
 		if cfg.FrontendBaseURL != "" {
-			if origin == cfg.FrontendBaseURL || strings.HasPrefix(origin, cfg.FrontendBaseURL+"/") {
+			frontendBase := strings.TrimSuffix(cfg.FrontendBaseURL, "/")
+			if origin == frontendBase || strings.HasPrefix(origin, frontendBase+"/") {
 				return true
 			}
 		}
@@ -179,6 +186,7 @@ func New(cfg config.Config, deps Deps) *fiber.App {
 	// Public leaderboard
 	leaderboard := handlers.NewLeaderboardHandler(deps.DB)
 	app.Get("/leaderboard", leaderboard.Leaderboard())
+	app.Get("/leaderboard/projects", leaderboard.ProjectsLeaderboard())
 
 	// Public landing stats
 	landingStats := handlers.NewLandingStatsHandler(deps.DB)
@@ -224,6 +232,9 @@ func New(cfg config.Config, deps Deps) *fiber.App {
 	adminGroup.Post("/ecosystems", auth.RequireRole("admin"), ecosystemsAdmin.Create())
 	adminGroup.Put("/ecosystems/:id", auth.RequireRole("admin"), ecosystemsAdmin.Update())
 	adminGroup.Delete("/ecosystems/:id", auth.RequireRole("admin"), ecosystemsAdmin.Delete())
+
+	projectsAdmin := handlers.NewProjectsAdminHandler(deps.DB)
+	adminGroup.Delete("/projects/:id", auth.RequireRole("admin"), projectsAdmin.Delete())
 
 	// Open Source Week (admin)
 	oswAdmin := handlers.NewOpenSourceWeekAdminHandler(deps.DB)

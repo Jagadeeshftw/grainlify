@@ -19,17 +19,21 @@ interface Project {
 interface DashboardTabProps {
   selectedProjects: Project[];
   onRefresh?: () => void;
+  onNavigateToIssue?: (issueId: string, projectId: string) => void;
 }
 
-export function DashboardTab({ selectedProjects, onRefresh }: DashboardTabProps) {
+export function DashboardTab({ selectedProjects, onRefresh, onNavigateToIssue }: DashboardTabProps) {
   const { theme } = useTheme();
   const [issues, setIssues] = useState<any[]>([]);
   const [prs, setPrs] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [showAllActivities, setShowAllActivities] = useState(false);
 
   // Fetch data from selected projects
   useEffect(() => {
     loadData();
+    // Reset expanded state when projects change
+    setShowAllActivities(false);
   }, [selectedProjects]);
 
   const loadData = async () => {
@@ -114,7 +118,7 @@ export function DashboardTab({ selectedProjects, onRefresh }: DashboardTabProps)
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('repositories-refreshed', handleRepositoriesRefreshed);
-    
+
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('repositories-refreshed', handleRepositoriesRefreshed);
@@ -233,7 +237,7 @@ export function DashboardTab({ selectedProjects, onRefresh }: DashboardTabProps)
         number: pr.number,
         title: pr.title,
         label: pr.merged ? 'Merged' : pr.state === 'open' ? 'Open' : 'Closed',
-        timeAgo: pr.updated_at 
+        timeAgo: pr.updated_at
           ? formatTimeAgo(new Date(pr.updated_at))
           : formatTimeAgo(new Date(pr.last_seen_at)),
       });
@@ -247,7 +251,8 @@ export function DashboardTab({ selectedProjects, onRefresh }: DashboardTabProps)
         number: issue.number,
         title: issue.title,
         label: issue.comments_count > 0 ? `${issue.comments_count} comment${issue.comments_count !== 1 ? 's' : ''}` : null,
-        timeAgo: issue.updated_at 
+        projectId: issue.projectId,
+        timeAgo: issue.updated_at
           ? formatTimeAgo(new Date(issue.updated_at))
           : formatTimeAgo(new Date(issue.last_seen_at)),
       });
@@ -260,14 +265,14 @@ export function DashboardTab({ selectedProjects, onRefresh }: DashboardTabProps)
       return timeB - timeA;
     });
 
-    return combined.slice(0, 5); // Top 5 most recent
+    return combined; // Return all activities (will be sliced in render based on state)
   }, [issues, prs, formatTimeAgo, parseTimeAgo]);
 
   // Generate chart data from real data (last 6 months)
   const chartData: ChartDataPoint[] = useMemo(() => {
     const months = ['May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'];
     const now = new Date();
-    
+
     return months.map((month, index) => {
       const monthDate = new Date(now.getFullYear(), now.getMonth() - (5 - index), 1);
       const nextMonth = new Date(now.getFullYear(), now.getMonth() - (4 - index), 1);
@@ -310,18 +315,16 @@ export function DashboardTab({ selectedProjects, onRefresh }: DashboardTabProps)
       {/* Main Content: Last Activity & Applications History */}
       <div className="grid grid-cols-2 gap-6">
         {/* Last Activity */}
-        <div className={`backdrop-blur-[40px] rounded-[24px] border p-8 relative overflow-hidden group/activity transition-colors ${
-          theme === 'dark'
-            ? 'bg-[#2d2820]/[0.4] border-white/10'
-            : 'bg-white/[0.12] border-white/20'
-        }`}>
+        <div className={`backdrop-blur-[40px] rounded-[24px] border p-8 relative overflow-hidden group/activity transition-colors ${theme === 'dark'
+          ? 'bg-[#2d2820]/[0.4] border-white/10'
+          : 'bg-white/[0.12] border-white/20'
+          }`}>
           {/* Background Glow */}
           <div className="absolute bottom-0 left-0 w-80 h-80 bg-gradient-to-tr from-[#c9983a]/8 to-transparent rounded-full blur-3xl pointer-events-none group-hover/activity:scale-125 transition-transform duration-1000" />
-          
+
           <div className="relative">
-            <h2 className={`text-[20px] font-bold mb-6 transition-colors ${
-              theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
-            }`}>Last activity</h2>
+            <h2 className={`text-[20px] font-bold mb-6 transition-colors ${theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
+              }`}>Last activity</h2>
 
             {/* Activity List */}
             {isLoading ? (
@@ -331,27 +334,50 @@ export function DashboardTab({ selectedProjects, onRefresh }: DashboardTabProps)
                 ))}
               </div>
             ) : (
-              <div className="space-y-3">
-                {activities.length === 0 ? (
-                  <div className={`text-center py-8 ${theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'}`}>
-                    No recent activity found.
+              <>
+                <div className="space-y-3">
+                  {activities.length === 0 ? (
+                    <div className={`text-center py-8 ${theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'}`}>
+                      No recent activity found.
+                    </div>
+                  ) : (
+                    (showAllActivities ? activities : activities.slice(0, 5)).map((activity, idx) => (
+                      <ActivityItem
+                        key={activity.id}
+                        activity={activity}
+                        index={idx}
+                        onClick={() => {
+                          if (activity.type === 'issue' && activity.projectId && onNavigateToIssue) {
+                            onNavigateToIssue(activity.id.toString(), activity.projectId);
+                          }
+                        }}
+                      />
+                    ))
+                  )}
+                </div>
+                {/* View More / Show Less Button */}
+                {activities.length > 5 && (
+                  <div className="flex justify-center mt-6">
+                    <button
+                      onClick={() => setShowAllActivities(!showAllActivities)}
+                      className={`px-6 py-2.5 rounded-[10px] backdrop-blur-[25px] bg-gradient-to-br from-[#c9983a]/25 to-[#d4af37]/20 border border-[#c9983a]/40 text-[13px] font-semibold text-[#c9983a] hover:from-[#c9983a]/35 hover:to-[#d4af37]/30 hover:scale-105 transition-all duration-200 ${
+                        theme === 'dark' ? 'hover:border-[#c9983a]/60' : 'hover:border-[#c9983a]/50'
+                      }`}
+                    >
+                      {showAllActivities ? 'Show less' : 'View more'}
+                    </button>
                   </div>
-                ) : (
-                  activities.map((activity, idx) => (
-                    <ActivityItem key={activity.id} activity={activity} index={idx} />
-                  ))
                 )}
-              </div>
+              </>
             )}
           </div>
         </div>
 
         {/* Applications History */}
-        <div className={`backdrop-blur-[40px] rounded-[24px] border p-8 relative overflow-hidden group/chart transition-colors ${
-          theme === 'dark'
-            ? 'bg-[#2d2820]/[0.4] border-white/10'
-            : 'bg-white/[0.12] border-white/20'
-        }`}>
+        <div className={`backdrop-blur-[40px] rounded-[24px] border p-8 relative overflow-hidden group/chart transition-colors ${theme === 'dark'
+          ? 'bg-[#2d2820]/[0.4] border-white/10'
+          : 'bg-white/[0.12] border-white/20'
+          }`}>
           {isLoading ? (
             <ChartSkeleton />
           ) : (

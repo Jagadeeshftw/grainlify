@@ -98,12 +98,12 @@ WHERE id = $1
 }
 
 // BootstrapAdmin promotes the currently authenticated user to admin if they know the bootstrap token.
-// This is meant for bootstrapping the first admin in a fresh environment.
+// This allows any authenticated user with the correct bootstrap token to become an admin.
 //
 // Rules:
 // - Requires ADMIN_BOOTSTRAP_TOKEN header match
-// - Allowed if there are currently 0 admins in the DB, OR the caller is already an admin
-// - Returns a fresh JWT with the updated role to avoid re-login
+// - If user is already an admin, returns a fresh JWT token
+// - Otherwise, promotes the user to admin and returns a fresh JWT with the updated role
 func (h *AdminHandler) BootstrapAdmin() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		if h.db == nil || h.db.Pool == nil {
@@ -115,7 +115,9 @@ func (h *AdminHandler) BootstrapAdmin() fiber.Handler {
 		if h.cfg.JWTSecret == "" {
 			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "jwt_not_configured"})
 		}
-		if c.Get("X-Admin-Bootstrap-Token") != h.cfg.AdminBootstrapToken {
+		headerToken := strings.TrimSpace(c.Get("X-Admin-Bootstrap-Token"))
+		configToken := strings.TrimSpace(h.cfg.AdminBootstrapToken)
+		if headerToken != configToken {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid_bootstrap_token"})
 		}
 		sub, _ := c.Locals(auth.LocalUserID).(string)
@@ -132,14 +134,20 @@ func (h *AdminHandler) BootstrapAdmin() fiber.Handler {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "bootstrap_failed"})
 		}
 
-		var adminCount int
-		if err := h.db.Pool.QueryRow(c.Context(), `SELECT COUNT(1) FROM users WHERE role = 'admin'`).Scan(&adminCount); err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "bootstrap_failed"})
-		}
-		if adminCount > 0 && currentRole != "admin" {
-			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "bootstrap_forbidden_admin_exists"})
+		// If user is already an admin, no need to update
+		if currentRole == "admin" {
+			jwtToken, err := auth.IssueJWT(h.cfg.JWTSecret, userID, "admin", "", "", 60*time.Minute)
+			if err != nil {
+				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "token_issue_failed"})
+			}
+			return c.Status(fiber.StatusOK).JSON(fiber.Map{
+				"ok":    true,
+				"token": jwtToken,
+				"role":  "admin",
+			})
 		}
 
+		// Promote user to admin if they have the correct bootstrap token
 		_, err = h.db.Pool.Exec(c.Context(), `UPDATE users SET role = 'admin', updated_at = now() WHERE id = $1`, userID)
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "bootstrap_failed"})

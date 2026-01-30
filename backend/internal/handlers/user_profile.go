@@ -122,7 +122,7 @@ LIMIT 10
 				continue
 			}
 			languages = append(languages, fiber.Map{
-				"language":            lang,
+				"language":           lang,
 				"contribution_count": count,
 			})
 		}
@@ -260,12 +260,12 @@ WHERE p.status = 'verified'
 		}
 
 		response := fiber.Map{
-			"contributions_count":         contributionsCount,
+			"contributions_count":           contributionsCount,
 			"projects_contributed_to_count": projectsContributedToCount,
-			"projects_led_count":          projectsLedCount,
-			"rewards_count":              0, // TODO: Implement rewards system
-			"languages":                  languages,
-			"ecosystems":                 ecosystems,
+			"projects_led_count":            projectsLedCount,
+			"rewards_count":                 0, // TODO: Implement rewards system
+			"languages":                     languages,
+			"ecosystems":                    ecosystems,
 			"rank": fiber.Map{
 				"position":   rankPosition,
 				"tier":       string(rankTier),
@@ -421,19 +421,19 @@ ORDER BY date ASC
 		// Using GitHub's algorithm: levels are based on quartiles
 		var calendar []fiber.Map
 		currentDate := startDate
-		for currentDate.Before(now) || currentDate.Equal(now.Truncate(24 * time.Hour)) {
+		for currentDate.Before(now) || currentDate.Equal(now.Truncate(24*time.Hour)) {
 			dateStr := currentDate.Format("2006-01-02")
 			count := dateCounts[dateStr]
-			
+
 			// Calculate level (0-4) based on count
 			level := calculateContributionLevel(count, maxCount)
-			
+
 			calendar = append(calendar, fiber.Map{
 				"date":  dateStr,
 				"count": count,
 				"level": level,
 			})
-			
+
 			currentDate = currentDate.AddDate(0, 0, 1)
 		}
 
@@ -602,7 +602,7 @@ SELECT
 		return c.Status(fiber.StatusOK).JSON(fiber.Map{
 			"activities": activities,
 			"total":      total,
-			"limit":     limit,
+			"limit":      limit,
 			"offset":     offset,
 		})
 	}
@@ -653,9 +653,19 @@ WHERE user_id = $1
 		}
 
 		if err != nil || githubLogin == nil || *githubLogin == "" {
+			slog.Warn("no github login found for user",
+				"err", err,
+				"user_id_param", userIDParam,
+				"login_param", loginParam,
+			)
 			return c.Status(fiber.StatusOK).JSON([]fiber.Map{})
 		}
-
+		slog.Warn("ProjectsContributed: resolved github login",
+			"github_login", githubLogin,
+			"query_user_id", userIDParam,
+			"query_login", loginParam,
+			"jwt_sub", c.Locals(auth.LocalUserID),
+		)
 		// Get distinct projects user has contributed to (via issues or PRs) in verified projects
 		rows, err := h.db.Pool.Query(c.Context(), `
 SELECT DISTINCT
@@ -723,6 +733,14 @@ LIMIT 10
 				slog.Error("failed to scan project row", "error", err)
 				continue
 			}
+
+			slog.Warn("ProjectsContributed: no github login resolved",
+				"err", err,
+				"githubLogin", githubLogin,
+				"query_user_id", userIDParam,
+				"query_login", loginParam,
+				"jwt_sub", c.Locals(auth.LocalUserID),
+			)
 
 			// Fetch owner avatar from GitHub (works for public repos even without token)
 			var ownerAvatarURL *string
@@ -802,13 +820,13 @@ WHERE LOWER(ga.login) = $1
 				// User not found in database, but they might still be a contributor
 				// Return basic profile with just the login
 				return c.Status(fiber.StatusOK).JSON(fiber.Map{
-					"login":            loginParam,
-					"user_id":          "",
+					"login":               loginParam,
+					"user_id":             "",
 					"contributions_count": 0,
-					"languages":        []fiber.Map{},
-					"ecosystems":       []fiber.Map{},
-					"bio":              nil,
-					"website":          nil,
+					"languages":           []fiber.Map{},
+					"ecosystems":          []fiber.Map{},
+					"bio":                 nil,
+					"website":             nil,
 					"rank": fiber.Map{
 						"position":   nil,
 						"tier":       "unranked",
@@ -884,7 +902,7 @@ LIMIT 10
 				continue
 			}
 			languages = append(languages, fiber.Map{
-				"language":          lang,
+				"language":           lang,
 				"contribution_count": count,
 			})
 		}
@@ -926,7 +944,7 @@ LIMIT 10
 				continue
 			}
 			ecosystems = append(ecosystems, fiber.Map{
-				"ecosystem_name":    ecoName,
+				"ecosystem_name":     ecoName,
 				"contribution_count": count,
 			})
 		}
@@ -1026,24 +1044,24 @@ WHERE u.id = $1
 		}
 
 		response := fiber.Map{
-			"login":                      *githubLogin,
-			"user_id":                    func() string {
+			"login": *githubLogin,
+			"user_id": func() string {
 				if userID != nil {
 					return userID.String()
 				}
 				return ""
 			}(),
-			"avatar_url":                 func() string {
+			"avatar_url": func() string {
 				if avatarURL != nil && *avatarURL != "" {
 					return *avatarURL
 				}
 				return ""
 			}(),
-			"contributions_count":         contributionsCount,
+			"contributions_count":           contributionsCount,
 			"projects_contributed_to_count": projectsContributedToCount,
-			"projects_led_count":        projectsLedCount,
-			"languages":                  languages,
-			"ecosystems":                 ecosystems,
+			"projects_led_count":            projectsLedCount,
+			"languages":                     languages,
+			"ecosystems":                    ecosystems,
 			"rank": fiber.Map{
 				"position":   rankPosition,
 				"tier":       string(rankTier),
@@ -1265,4 +1283,3 @@ WHERE id = $2
 		})
 	}
 }
-

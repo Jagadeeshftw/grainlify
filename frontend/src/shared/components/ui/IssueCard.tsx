@@ -60,8 +60,8 @@ export function IssueCard({
             : 'bg-white/[0.15] border-white/25 hover:bg-white/[0.2]'
         }`}
       >
-        <div className="flex items-start justify-between mb-3">
-          <h4 className={`text-[16px] font-semibold transition-colors ${
+        <div className="flex items-start justify-between mb-2">
+          <h4 className={`text-[16px] font-semibold leading-6 min-h-[3rem] line-clamp-2 transition-colors ${
             isDark ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
           }`}>{title}</h4>
           {primaryTag && (

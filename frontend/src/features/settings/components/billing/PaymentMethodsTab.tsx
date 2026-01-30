@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Trash2, Wallet, Copy, CheckCircle2, Star, X } from 'lucide-react';
+import { Plus, Trash2, Wallet, Copy, CheckCircle2, Star, X, AlertCircle, Edit2 } from 'lucide-react';
 import { useTheme } from '../../../../shared/contexts/ThemeContext';
 import { PaymentMethod, EcosystemType, CryptoType } from '../../types';
 
@@ -8,6 +8,7 @@ interface PaymentMethodsTabProps {
   paymentMethods: PaymentMethod[];
   onAddPaymentMethod: (method: PaymentMethod) => void;
   onRemovePaymentMethod: (id: number) => void;
+  onUpdatePaymentMethod: (id: number, updates: Partial<PaymentMethod>) => void;
   onSetDefault: (id: number) => void;
 }
 
@@ -15,33 +16,85 @@ export function PaymentMethodsTab({
   paymentMethods, 
   onAddPaymentMethod, 
   onRemovePaymentMethod,
+  onUpdatePaymentMethod,
   onSetDefault 
 }: PaymentMethodsTabProps) {
   const { theme } = useTheme();
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingMethod, setEditingMethod] = useState<PaymentMethod | null>(null);
   const selectedEcosystem: EcosystemType = 'stellar';
   const [selectedCrypto, setSelectedCrypto] = useState<CryptoType>('usdc');
   const [walletAddress, setWalletAddress] = useState('');
   const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [validationError, setValidationError] = useState<string>('');
 
   const getAvailableCryptos = (): CryptoType[] => ['usdc', 'usdt', 'xlm'];
 
-  const handleAddPaymentMethod = () => {
-    if (!walletAddress.trim()) return;
+  // Get tokens that already have wallets
+  const getUsedTokens = (): Set<CryptoType> => {
+    return new Set(paymentMethods.map(m => m.cryptoType));
+  };
 
-    const newMethod: PaymentMethod = {
-      id: Date.now(),
-      ecosystem: selectedEcosystem,
-      cryptoType: selectedCrypto,
-      walletAddress: walletAddress,
-      isDefault: paymentMethods.length === 0, // First one is default
-      createdAt: new Date().toISOString(),
-    };
-
-    onAddPaymentMethod(newMethod);
-    setShowAddModal(false);
+  const handleOpenAddModal = () => {
+    setEditingMethod(null);
     setWalletAddress('');
     setSelectedCrypto('usdc');
+    setShowAddModal(true);
+  };
+
+  const handleOpenEditModal = (method: PaymentMethod) => {
+    setEditingMethod(method);
+    setWalletAddress(method.walletAddress);
+    setSelectedCrypto(method.cryptoType);
+    setShowAddModal(true);
+  };
+  const checkDuplicateToken = (cryptoType: CryptoType): string => {
+    const existingWallet = paymentMethods.find(method => method.cryptoType === cryptoType);
+    if (existingWallet) {
+      const tokenLabel = getCryptoLabel(cryptoType);
+      return `You already have a ${tokenLabel} wallet configured. Please edit the existing wallet instead.`;
+    }
+    return '';
+  };
+
+  const handleCloseModal = () => {
+    setShowAddModal(false);
+    setEditingMethod(null);
+    setWalletAddress('');
+    setSelectedCrypto('usdc');
+    setValidationError('');
+  };
+
+  const handleSavePaymentMethod = () => {
+    if (!walletAddress.trim()) return;
+
+    if (editingMethod) {
+      // Update existing method
+      onUpdatePaymentMethod(editingMethod.id, {
+        walletAddress: walletAddress.trim(),
+      });
+    } else {
+      // Check for duplicate token
+      const usedTokens = getUsedTokens();
+      if (usedTokens.has(selectedCrypto)) {
+        alert(`You already have a ${getCryptoLabel(selectedCrypto)} wallet. Please edit the existing one instead.`);
+        return;
+      }
+
+      // Add new method
+      const newMethod: PaymentMethod = {
+        id: Date.now(),
+        ecosystem: selectedEcosystem,
+        cryptoType: selectedCrypto,
+        walletAddress: walletAddress.trim(),
+        isDefault: paymentMethods.length === 0, // First one is default
+        createdAt: new Date().toISOString(),
+      };
+
+      onAddPaymentMethod(newMethod);
+    }
+
+    handleCloseModal();
   };
 
   const handleCopyAddress = (id: number, address: string) => {
@@ -54,6 +107,13 @@ export function PaymentMethodsTab({
 
   const getCryptoLabel = (crypto: CryptoType) => {
     return crypto.toUpperCase();
+  };
+
+  // Validate when crypto selection changes
+  const handleCryptoChange = (crypto: CryptoType) => {
+    setSelectedCrypto(crypto);
+    const error = checkDuplicateToken(crypto);
+    setValidationError(error);
   };
 
   return (
@@ -75,7 +135,7 @@ export function PaymentMethodsTab({
           </p>
         </div>
         <button
-          onClick={() => setShowAddModal(true)}
+          onClick={handleOpenAddModal}
           className="px-5 py-3 rounded-[14px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white font-semibold text-[14px] shadow-[0_6px_24px_rgba(162,121,44,0.4)] hover:shadow-[0_8px_28px_rgba(162,121,44,0.5)] transition-all border border-white/10 flex items-center gap-2"
         >
           <Plus className="w-4 h-4" />
@@ -169,12 +229,24 @@ export function PaymentMethodsTab({
                     </button>
                   )}
                   <button
+                    onClick={() => handleOpenEditModal(method)}
+                    className={`p-2.5 rounded-[10px] transition-all ${
+                      theme === 'dark'
+                        ? 'hover:bg-white/[0.15] text-[#b8a898]'
+                        : 'hover:bg-white/[0.2] text-[#7a6b5a]'
+                    }`}
+                    title="Edit wallet address"
+                  >
+                    <Edit2 className="w-4 h-4" />
+                  </button>
+                  <button
                     onClick={() => onRemovePaymentMethod(method.id)}
                     className={`p-2.5 rounded-[10px] transition-all ${
                       theme === 'dark'
                         ? 'hover:bg-[#dc2626]/20 text-[#ef4444]'
                         : 'hover:bg-[#dc2626]/10 text-[#dc2626]'
                     }`}
+                    title="Delete wallet"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -216,9 +288,9 @@ export function PaymentMethodsTab({
             <div className="flex items-center justify-between mb-6">
               <h3 className={`text-[20px] font-bold transition-colors ${
                 theme === 'dark' ? 'text-[#f5efe5]' : 'text-[#2d2820]'
-              }`}>Add Payment Method</h3>
+              }`}>{editingMethod ? 'Edit Payment Method' : 'Add Payment Method'}</h3>
               <button 
-                onClick={() => setShowAddModal(false)} 
+                onClick={handleCloseModal} 
                 className={`w-8 h-8 rounded-[10px] backdrop-blur-[20px] border flex items-center justify-center transition-all ${
                   theme === 'dark'
                     ? 'bg-white/[0.1] hover:bg-white/[0.15] border-white/20'
@@ -240,26 +312,53 @@ export function PaymentMethodsTab({
                   Select Token
                 </label>
                 <div className="grid grid-cols-3 gap-3">
-                  {getAvailableCryptos().map((crypto) => (
-                    <button
-                      key={crypto}
-                      onClick={() => setSelectedCrypto(crypto)}
-                      className={`px-4 py-3 rounded-[12px] backdrop-blur-[25px] border-2 transition-all ${
-                        selectedCrypto === crypto
-                          ? 'border-[#c9983a] bg-[#c9983a]/10'
-                          : theme === 'dark'
-                            ? 'border-white/15 bg-white/[0.08] hover:bg-white/[0.12]'
-                            : 'border-white/25 bg-white/[0.15] hover:bg-white/[0.2]'
-                      }`}
-                    >
-                      <p className={`text-[14px] font-bold transition-colors ${
-                        theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
-                      }`}>
-                        {getCryptoLabel(crypto)}
-                      </p>
-                    </button>
-                  ))}
+                  {getAvailableCryptos().map((crypto) => {
+                    const usedTokens = getUsedTokens();
+                    const isUsed = usedTokens.has(crypto);
+                    const isEditingThisToken = editingMethod && editingMethod.cryptoType === crypto;
+                    const isDisabled = isUsed && !isEditingThisToken;
+
+                    return (
+                      <button
+                        key={crypto}
+                        onClick={() => {
+                          if (!isDisabled) {
+                            handleCryptoChange(crypto);
+                          }
+                        }}
+                        disabled={isDisabled}
+                        title={isDisabled ? `You already added a ${getCryptoLabel(crypto)} wallet. Edit it from the list below.` : undefined}
+                        className={`px-4 py-3 rounded-[12px] backdrop-blur-[25px] border-2 transition-all relative ${
+                          selectedCrypto === crypto
+                            ? 'border-[#c9983a] bg-[#c9983a]/10'
+                            : theme === 'dark'
+                              ? 'border-white/15 bg-white/[0.08] hover:bg-white/[0.12]'
+                              : 'border-white/25 bg-white/[0.15] hover:bg-white/[0.2]'
+                        } ${isDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                      >
+                        <p className={`text-[14px] font-bold transition-colors ${
+                          theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
+                        }`}>
+                          {getCryptoLabel(crypto)}
+                        </p>
+                        {isDisabled && (
+                          <span className={`absolute top-1 right-1 text-[10px] px-1.5 py-0.5 rounded-full ${
+                            theme === 'dark' ? 'bg-white/10 text-white/60' : 'bg-white/20 text-[#7a6b5a]'
+                          }`}>
+                            Added
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
+                {editingMethod && (
+                  <p className={`text-[12px] mt-2 transition-colors ${
+                    theme === 'dark' ? 'text-[#8a7e70]' : 'text-[#9a8b7a]'
+                  }`}>
+                    Token type cannot be changed when editing. Only the address can be updated.
+                  </p>
+                )}
               </div>
 
               {/* Wallet Address Input */}
@@ -285,12 +384,24 @@ export function PaymentMethodsTab({
                 }`}>
                   Make sure this address is correct. Payments sent to wrong addresses cannot be recovered.
                 </p>
+                {validationError && (
+                  <div className={`flex items-start gap-2 mt-3 p-3 rounded-[10px] border transition-colors ${
+                    theme === 'dark'
+                      ? 'bg-[#dc2626]/10 border-[#dc2626]/30'
+                      : 'bg-[#dc2626]/5 border-[#dc2626]/20'
+                  }`}>
+                    <AlertCircle className="w-4 h-4 text-[#dc2626] flex-shrink-0 mt-0.5" />
+                    <p className="text-[13px] text-[#dc2626] font-medium">
+                      {validationError}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 
             <div className="flex items-center gap-3 mt-6">
               <button
-                onClick={() => setShowAddModal(false)}
+                onClick={handleCloseModal}
                 className={`flex-1 px-6 py-3 rounded-[12px] backdrop-blur-[30px] border font-medium text-[14px] transition-all ${
                   theme === 'dark'
                     ? 'bg-white/[0.08] border-white/20 text-[#d4c5b0] hover:bg-white/[0.12]'
@@ -300,11 +411,11 @@ export function PaymentMethodsTab({
                 Cancel
               </button>
               <button
-                onClick={handleAddPaymentMethod}
-                disabled={!walletAddress.trim()}
+                onClick={handleSavePaymentMethod}
+                disabled={!walletAddress.trim() || !!validationError}
                 className="flex-1 px-6 py-3 rounded-[12px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white font-semibold text-[14px] shadow-[0_4px_16px_rgba(162,121,44,0.3)] hover:shadow-[0_6px_20px_rgba(162,121,44,0.4)] transition-all border border-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Add Wallet
+                {editingMethod ? 'Save Changes' : 'Add Wallet'}
               </button>
             </div>
           </div>

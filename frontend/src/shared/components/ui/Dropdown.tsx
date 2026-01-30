@@ -141,11 +141,7 @@ export function Dropdown({
                       key={idx}
                       onClick={() => onToggle(option.name)}
                       className={`w-full px-4 py-3 transition-all flex items-start justify-between group ${
-                        isSelected
-                          ? theme === 'dark'
-                            ? 'bg-[#c9983a]/[0.15] hover:bg-[#c9983a]/[0.22]'
-                            : 'bg-[#c9983a]/[0.12] hover:bg-[#c9983a]/[0.18]'
-                          : theme === 'dark'
+                        theme === 'dark'
                           ? 'hover:bg-white/[0.05]'
                           : 'hover:bg-black/[0.03]'
                       }`}

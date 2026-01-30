@@ -276,6 +276,23 @@ body.modal-open aside {
     font-size: var(--text-base);
     font-weight: var(--font-weight-medium);
     line-height: 1.5;
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+
+  a, [role="button"], [onclick], .cursor-pointer {
+    cursor: pointer;
+  }
+
+  input, textarea {
+    cursor: text;
+  }
+
+  input[type="checkbox"], input[type="radio"], input[type="range"], input[type="file"], input[type="button"], input[type="submit"], input[type="reset"] {
+    cursor: pointer;
   }
 
   input {

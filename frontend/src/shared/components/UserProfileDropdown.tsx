@@ -13,9 +13,10 @@ import {
 
 interface UserProfileDropdownProps {
   onPageChange?: (page: string) => void;
+  showMobileNav:boolean
 }
 
-export function UserProfileDropdown({ onPageChange }: UserProfileDropdownProps) {
+export function UserProfileDropdown({ onPageChange,showMobileNav }: UserProfileDropdownProps) {
   const { user, userRole, logout } = useAuth();
   const { theme } = useTheme();
   const navigate = useNavigate();
@@ -51,13 +52,14 @@ export function UserProfileDropdown({ onPageChange }: UserProfileDropdownProps) 
     return (
       <button
         onClick={handleSignIn}
-        className={`h-[46px] px-6 rounded-[999px] overflow-clip relative flex items-center gap-2 bg-gradient-to-br transition-all hover:scale-105 shadow-[0px_6px_6.5px_-1px_rgba(0,0,0,0.36),0px_0px_4.2px_0px_rgba(0,0,0,0.69)] mr-[3px] ${
+        className={`h-[46px] px-6 rounded-[999px] overflow-clip relative  items-center gap-2 bg-gradient-to-br transition-all hover:scale-105 shadow-[0px_6px_6.5px_-1px_rgba(0,0,0,0.36),0px_0px_4.2px_0px_rgba(0,0,0,0.69)] mr-[3px] ${
           darkTheme ? 'from-[#c9983a] to-[#a67c2e]' : 'from-[#e8c571] to-[#c9983a]'
-        }`}
+        }
+        ${showMobileNav? 'flex':'hidden lg:flex'} `}
       >
         <div className="absolute inset-0 pointer-events-none shadow-[0_0_20px_rgba(201,152,58,0.5),inset_0_1px_1px_rgba(255,255,255,0.25)]" />
         <LogIn className="w-4 h-4 relative z-10 text-white" />
-        <span className="text-[13px] font-medium relative z-10 text-white tracking-wide text-shadow-[0px_1px_2px_rgba(0,0,0,0.3)]">
+        <span className="block text-[13px] font-medium relative z-10 text-white tracking-wide text-shadow-[0px_1px_2px_rgba(0,0,0,0.3)]">
           Sign In
         </span>
       </button>
@@ -70,7 +72,9 @@ export function UserProfileDropdown({ onPageChange }: UserProfileDropdownProps) 
         <button
           className={`h-[46px] px-4 rounded-[999px] overflow-clip relative flex items-center gap-2 backdrop-blur-[40px] transition-all hover:scale-105 shadow-[0px_6px_6.5px_-1px_rgba(0,0,0,0.36),0px_0px_4.2px_0px_rgba(0,0,0,0.69)] mr-[3px] ${
             darkTheme ? 'bg-[#2d2820]' : 'bg-[#d4c5b0]'
-          }`}
+          }
+          ${showMobileNav ? " flex " : " hidden lg:flex "}
+          `}
         >
           <div className={`absolute inset-0 pointer-events-none rounded-full ${
             darkTheme
