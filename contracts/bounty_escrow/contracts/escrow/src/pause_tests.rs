@@ -18,7 +18,7 @@ mod pause_tests {
         let token = create_token(&env, &admin);
 
         client.init(&admin, &token.address);
-        client.pause();
+        client.pause(&admin);
         assert!(client.is_paused());
     }
 
@@ -33,7 +33,7 @@ mod pause_tests {
         let token = create_token(&env, &admin);
 
         client.init(&admin, &token.address);
-        client.pause();
+        client.pause(&admin);
         client.lock_funds(&admin, &1, &1000, &9999);
     }
 
@@ -47,8 +47,8 @@ mod pause_tests {
         let token = create_token(&env, &admin);
 
         client.init(&admin, &token.address);
-        client.pause();
-        client.unpause();
+        client.pause(&admin);
+        client.unpause(&admin);
         assert!(!client.is_paused());
     }
 
@@ -63,7 +63,7 @@ mod pause_tests {
         let recipient = Address::generate(&env);
 
         client.init(&admin, &token.address);
-        client.pause();
+        client.pause(&admin);
         client.emergency_withdraw(&recipient);
     }
 
@@ -77,7 +77,7 @@ mod pause_tests {
         let token = create_token(&env, &admin);
 
         client.init(&admin, &token.address);
-        client.pause();
+        client.pause(&admin);
         assert!(client.is_paused());
         assert!(client.is_paused());
     }

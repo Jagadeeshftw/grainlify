@@ -1119,15 +1119,23 @@ impl BountyEscrowContract {
         Self::is_paused_internal(&env)
     }
 
-    /// Pause the contract (admin only)
+    /// Pause the contract (Admin or Pauser role)
     /// Prevents new fund locks, releases, and refunds
-    pub fn pause(env: Env) -> Result<(), Error> {
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `caller` - The address requesting to pause the contract
+    pub fn pause(env: Env, caller: Address) -> Result<(), Error> {
         if !env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::NotInitialized);
         }
 
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
-        admin.require_auth();
+        caller.require_auth();
+
+        // Check RBAC: only Admin or Pauser can pause
+        if !rbac::can_pause(&env, &caller) {
+            return Err(Error::Unauthorized);
+        }
 
         if Self::is_paused_internal(&env) {
             return Ok(()); // Already paused, idempotent
@@ -1138,7 +1146,7 @@ impl BountyEscrowContract {
         emit_contract_paused(
             &env,
             ContractPaused {
-                paused_by: admin.clone(),
+                paused_by: caller.clone(),
                 timestamp: env.ledger().timestamp(),
             },
         );
@@ -1146,15 +1154,23 @@ impl BountyEscrowContract {
         Ok(())
     }
 
-    /// Unpause the contract (admin only)
+    /// Unpause the contract (Admin or Pauser role)
     /// Resumes normal operations
-    pub fn unpause(env: Env) -> Result<(), Error> {
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `caller` - The address requesting to unpause the contract
+    pub fn unpause(env: Env, caller: Address) -> Result<(), Error> {
         if !env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::NotInitialized);
         }
 
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
-        admin.require_auth();
+        caller.require_auth();
+
+        // Check RBAC: only Admin or Pauser can unpause
+        if !rbac::can_pause(&env, &caller) {
+            return Err(Error::Unauthorized);
+        }
 
         if !Self::is_paused_internal(&env) {
             return Ok(()); // Already unpaused, idempotent
@@ -1278,7 +1294,7 @@ impl BountyEscrowContract {
         emit_contract_unpaused(
             &env,
             ContractUnpaused {
-                unpaused_by: admin.clone(),
+                unpaused_by: caller.clone(),
                 timestamp: env.ledger().timestamp(),
             },
         );
@@ -1751,6 +1767,13 @@ impl BountyEscrowContract {
         anti_abuse::check_rate_limit(&env, admin.clone());
 
         admin.require_auth();
+
+        // Check RBAC: only Admin or Operator can release funds
+        if !rbac::is_operator(&env, &admin) {
+            monitoring::track_operation(&env, symbol_short!("release"), admin.clone(), false);
+            env.storage().instance().remove(&DataKey::ReentrancyGuard);
+            return Err(Error::Unauthorized);
+        }
 
         // Verify bounty exists
         if !env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {

@@ -672,20 +672,20 @@ fn test_pause_functionality() {
     assert_eq!(client.is_paused(), false);
 
     // Pause contract
-    client.pause();
+    client.pause(&admin);
     assert_eq!(client.is_paused(), true);
 
     // Unpause contract
-    client.unpause();
+    client.unpause(&admin);
     assert_eq!(client.is_paused(), false);
 
     // Pause again for emergency test
-    client.pause();
+    client.pause(&admin);
     assert_eq!(client.is_paused(), true);
 
     // Unpause to verify idempotent
-    client.unpause();
-    client.unpause(); // Call again - should not error
+    client.unpause(&admin);
+    client.unpause(&admin); // Call again - should not error
     assert_eq!(client.is_paused(), false);
 }
 
@@ -703,7 +703,7 @@ fn test_emergency_withdraw() {
     client.init(&admin, &token_address);
 
     // Pause contract
-    client.pause();
+    client.pause(&admin);
     assert_eq!(client.is_paused(), true);
 
     // Call emergency_withdraw (it will fail gracefully if no funds)
