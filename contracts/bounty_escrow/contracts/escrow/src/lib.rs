@@ -94,9 +94,12 @@ mod test_bounty_escrow;
 //mod test_query;
 
 use events::{
-    emit_batch_funds_locked, emit_batch_funds_released, emit_contract_paused,emit_admin_action_cancelled, emit_admin_action_executed , emit_admin_action_proposed ,emit_admin_updated,emit_payout_key_updated,emit_config_limits_updated,AdminActionProposed ,
-    emit_contract_unpaused, emit_emergency_withdrawal, BatchFundsLocked, BatchFundsReleased,
-    ContractPaused, ContractUnpaused, EmergencyWithdrawal,AdminActionCancelled , AdminActionExecuted ,AdminUpdated,PayoutKeyUpdated,ConfigLimitsUpdated
+    emit_admin_action_cancelled, emit_admin_action_executed, emit_admin_action_proposed,
+    emit_admin_updated, emit_batch_funds_locked, emit_batch_funds_released,
+    emit_config_limits_updated, emit_contract_paused, emit_contract_unpaused,
+    emit_emergency_withdrawal, emit_payout_key_updated, AdminActionCancelled, AdminActionExecuted,
+    AdminActionProposed, AdminUpdated, BatchFundsLocked, BatchFundsReleased, ConfigLimitsUpdated,
+    ContractPaused, ContractUnpaused, EmergencyWithdrawal, PayoutKeyUpdated,
 };
 
 use crate::indexed::{

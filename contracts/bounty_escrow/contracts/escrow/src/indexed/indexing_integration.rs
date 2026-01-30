@@ -1,6 +1,6 @@
 use crate::indexed::enhanced_events::{
-    create_event_metadata, _emit_bounty_activity, _emit_bounty_status_changed,
-    _emit_enhanced_funds_locked, _emit_enhanced_funds_refunded, _emit_enhanced_funds_released,
+    _emit_bounty_activity, _emit_bounty_status_changed, _emit_enhanced_funds_locked,
+    _emit_enhanced_funds_refunded, _emit_enhanced_funds_released, create_event_metadata,
     ActivityType, BountyActivity, BountyStatusChanged, EnhancedFundsLocked, EnhancedFundsRefunded,
     EnhancedFundsReleased,
 };
@@ -240,7 +240,7 @@ pub fn on_deadline_extended(
     new_deadline: u64,
     extended_by: &Address,
 ) {
-    use crate::indexed::enhanced_events::{_emit_bounty_deadline_extended, BountyDeadlineExtended};
+    use crate::indexed::enhanced_events::{BountyDeadlineExtended, _emit_bounty_deadline_extended};
 
     let timestamp = env.ledger().timestamp();
     let metadata = create_event_metadata(env);
@@ -276,7 +276,7 @@ pub fn on_amount_increased(
     increase_amount: i128,
     increased_by: &Address,
 ) {
-    use crate::indexed::enhanced_events::{_emit_bounty_amount_increased, BountyAmountIncreased};
+    use crate::indexed::enhanced_events::{BountyAmountIncreased, _emit_bounty_amount_increased};
 
     let timestamp = env.ledger().timestamp();
     let metadata = create_event_metadata(env);
