@@ -144,6 +144,10 @@ use soroban_sdk::{
     Vec,
 };
 
+use grainlify_interfaces::{
+    ConfigurableFee, EscrowLock, EscrowRelease, FeeConfig as SharedFeeConfig, Pausable, RefundMode,
+};
+
 // Event types
 #[allow(dead_code)]
 const PROGRAM_INITIALIZED: Symbol = symbol_short!("ProgInit");
@@ -167,6 +171,28 @@ pub struct FeeConfig {
     pub payout_fee_rate: i128,  // Fee rate for payout operations (basis points)
     pub fee_recipient: Address, // Address to receive fees
     pub fee_enabled: bool,      // Global fee enable/disable flag
+}
+
+impl From<SharedFeeConfig> for FeeConfig {
+    fn from(shared: SharedFeeConfig) -> Self {
+        Self {
+            lock_fee_rate: shared.lock_fee_rate,
+            payout_fee_rate: shared.payout_fee_rate,
+            fee_recipient: shared.fee_recipient,
+            fee_enabled: shared.fee_enabled,
+        }
+    }
+}
+
+impl From<FeeConfig> for SharedFeeConfig {
+    fn from(local: FeeConfig) -> Self {
+        Self {
+            lock_fee_rate: local.lock_fee_rate,
+            payout_fee_rate: local.payout_fee_rate,
+            fee_recipient: local.fee_recipient,
+            fee_enabled: local.fee_enabled,
+        }
+    }
 }
 // ==================== MONITORING MODULE ====================
 mod monitoring {
@@ -774,46 +800,13 @@ impl ProgramEscrowContract {
     // Pause and Emergency Functions
     // ========================================================================
 
-    /// Check if contract is paused (internal helper)
+    /// Get pause status (view function)
+    /// Deprecated: Use Pausable trait instead. Keeping internal helper.
     fn is_paused_internal(env: &Env) -> bool {
         env.storage()
             .instance()
             .get::<_, bool>(&DataKey::IsPaused)
             .unwrap_or(false)
-    }
-
-    /// Get pause status (view function)
-    pub fn is_paused(env: Env) -> bool {
-        Self::is_paused_internal(&env)
-    }
-
-    /// Pause the contract (authorized payout key only)
-    /// Prevents new fund locking, payouts, and schedule releases
-    pub fn pause(env: Env) {
-        // For program-escrow, pause is triggered by the first authorized key that calls it
-        // In a multi-program setup, this would need to be per-program
-
-        if Self::is_paused_internal(&env) {
-            return; // Already paused, idempotent
-        }
-
-        env.storage().instance().set(&DataKey::IsPaused, &true);
-
-        env.events()
-            .publish((symbol_short!("pause"),), (env.ledger().timestamp(),));
-    }
-
-    /// Unpause the contract (authorized payout key only)
-    /// Resumes normal operations
-    pub fn unpause(env: Env) {
-        if !Self::is_paused_internal(&env) {
-            return; // Already unpaused, idempotent
-        }
-
-        env.storage().instance().set(&DataKey::IsPaused, &false);
-
-        env.events()
-            .publish((symbol_short!("unpause"),), (env.ledger().timestamp(),));
     }
 
     /// Emergency withdrawal for all contract funds (authorized payout key only, only when paused)
@@ -2080,7 +2073,8 @@ impl ProgramEscrowContract {
     }
 
     /// Get current fee configuration (view function)
-    pub fn get_fee_config(env: Env) -> FeeConfig {
+    /// Deprecated: Use ConfigurableFee trait. Keeping internal helper.
+    fn get_fee_config_internal_api(env: Env) -> FeeConfig {
         Self::get_fee_config_internal(&env)
     }
 
@@ -3136,5 +3130,119 @@ mod test {
         assert_eq!(config.window_size, 7200);
         assert_eq!(config.max_operations, 5);
         assert_eq!(config.cooldown_period, 120);
+    }
+}
+
+#[contractimpl]
+impl ProgramEscrowContract {
+    fn u64_to_string(env: &Env, n: u64) -> String {
+        let mut id_bytes = [0u8; 20];
+        let mut val = n;
+        let mut len = 0;
+        if val == 0 {
+            id_bytes[0] = b'0';
+            len = 1;
+        } else {
+            let mut i = 19;
+            while val > 0 {
+                id_bytes[i] = (val % 10) as u8 + b'0';
+                val /= 10;
+                i -= 1;
+                len += 1;
+            }
+            for j in 0..len {
+                id_bytes[j] = id_bytes[19 - len + 1 + j];
+            }
+        }
+        String::from_str(env, core::str::from_utf8(&id_bytes[..len]).unwrap())
+    }
+}
+
+#[contractimpl]
+impl EscrowLock for ProgramEscrowContract {
+    fn lock_funds(env: Env, _depositor: Address, id: u64, amount: i128, _deadline: u64) {
+        let id_str = Self::u64_to_string(&env, id);
+        Self::lock_program_funds(env, id_str, amount);
+    }
+}
+
+#[contractimpl]
+impl EscrowRelease for ProgramEscrowContract {
+    fn release_funds(env: Env, id: u64, recipient: Address) {
+        let id_str = Self::u64_to_string(&env, id);
+        // Note: single_payout requires a positive amount.
+        // Trait-based release in program-escrow is a placeholder.
+        let _ = id_str;
+        let _ = recipient;
+    }
+
+    fn refund(
+        env: Env,
+        _id: u64,
+        _amount: Option<i128>,
+        _recipient: Option<Address>,
+        _mode: RefundMode,
+    ) {
+        // Program escrow doesn't have a direct 'refund' for individual IDs in the same way.
+        // It's a prize pool. Refund might mean returning all funds to organizer.
+    }
+
+    fn get_balance(env: Env, id: u64) -> i128 {
+        let id_str = Self::u64_to_string(&env, id);
+        if let Some(program) = env
+            .storage()
+            .instance()
+            .get::<_, ProgramData>(&DataKey::Program(id_str))
+        {
+            program.remaining_balance
+        } else {
+            0
+        }
+    }
+}
+
+#[contractimpl]
+impl ConfigurableFee for ProgramEscrowContract {
+    fn set_fee_config(env: Env, config: SharedFeeConfig) {
+        let _ = Self::update_fee_config(
+            env,
+            Some(config.lock_fee_rate),
+            Some(config.payout_fee_rate),
+            Some(config.fee_recipient),
+            Some(config.fee_enabled),
+        );
+    }
+
+    fn get_fee_config(env: Env) -> SharedFeeConfig {
+        Self::get_fee_config_internal(&env).into()
+    }
+}
+
+#[contractimpl]
+impl Pausable for ProgramEscrowContract {
+    fn pause(env: Env) {
+        if Self::is_paused_internal(&env) {
+            return;
+        }
+
+        env.storage().instance().set(&DataKey::IsPaused, &true);
+
+        env.events()
+            .publish((symbol_short!("pause"),), (env.ledger().timestamp(),));
+    }
+
+    fn unpause(env: Env) {
+        if !Self::is_paused_internal(&env) {
+            return;
+        }
+
+        env.storage().instance().set(&DataKey::IsPaused, &false);
+
+        env.events()
+            .publish((symbol_short!("unpause"),), (env.ledger().timestamp(),));
+    }
+
+    fn is_paused(env: Env) -> bool {
+        Self::is_paused_internal(&env)
     }
 }
