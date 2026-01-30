@@ -762,6 +762,18 @@ pub struct ProgramData {
     pub organizer: Address,    // Program organizer address
 }
 
+/// Per-operation pause configuration for granular control.
+///
+/// Allows the platform to halt specific operations while allowing others to continue.
+/// For program escrow: lock (fund locking), payout (single/batch payouts), schedule (release schedules)
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PauseConfig {
+    pub lock_paused: bool,
+    pub payout_paused: bool,
+    pub schedule_paused: bool,
+}
+
 /// Storage key type for individual programs
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -771,11 +783,10 @@ pub enum DataKey {
     ReleaseHistory(String),       // program_id -> Vec<ProgramReleaseHistory>
     NextScheduleId(String),       // program_id -> next schedule_id
     AmountLimits,                 // Amount limits configuration
-    ReleaseHistory(String),       // program_id -> Vec<ProgramReleaseHistory>
-    NextScheduleId(String),       // program_id -> next schedule_id
-    IsPaused,                     // Global contract pause state
+    IsPaused,                     // Global contract pause state (legacy)
     TokenWhitelist(Address),      // token_address -> bool (whitelist status)
     RegisteredTokens,             // Vec<Address> of all registered tokens
+    PauseConfig,                  // Per-operation pause configuration
 }
 
 #[contracttype]
@@ -822,6 +833,12 @@ pub enum Error {
     BatchMismatch = 1,
     InsufficientBalance = 2,
     InvalidAmount = 3,
+    /// Returned when lock operations are paused
+    LockPaused = 4,
+    /// Returned when payout operations are paused
+    PayoutPaused = 5,
+    /// Returned when schedule operations are paused
+    SchedulePaused = 6,
 }
 
 #[contract]
@@ -1204,10 +1221,10 @@ impl ProgramEscrowContract {
         let _start = env.ledger().timestamp();
         let caller = env.current_contract_address();
 
-        // Check if contract is paused
-        if Self::is_paused_internal(&env) {
+        // Check if lock operations are paused
+        if Self::is_lock_paused_internal(&env) {
             monitoring::track_operation(&env, symbol_short!("lock"), caller.clone(), false);
-            panic!("Contract is paused");
+            panic!("Lock operations are paused");
         }
 
         // Validate amount
@@ -1389,7 +1406,7 @@ impl ProgramEscrowContract {
     /// # Limitations
     /// - Maximum batch size limited by gas/resource limits
     /// - For very large batches, consider multiple calls
-    /// - All amounts must be positive
+    /// - All amounts must be positive  
     pub fn batch_payout(
         env: Env,
         program_id: String,
@@ -1399,9 +1416,9 @@ impl ProgramEscrowContract {
     ) -> ProgramData {
         let _guard = ReentrancyGuardRAII::new(&env).expect("Reentrancy detected");
 
-        // Check if contract is paused
-        if Self::is_paused_internal(&env) {
-            panic!("Contract is paused");
+        // Check if payout operations are paused
+        if Self::is_payout_paused_internal(&env) {
+            panic!("Payout operations are paused");
         }
         // Apply rate limiting to the contract itself or the program
         // We can't easily get the caller here without getting program data first
@@ -1593,8 +1610,9 @@ impl ProgramEscrowContract {
         token_address: Option<Address>, // Optional: if None, uses program's primary token
     ) -> ProgramData {
         let _guard = ReentrancyGuardRAII::new(&env).expect("Reentrancy detected");
-        if Self::is_paused_internal(&env) {
-            panic!("Contract is paused");
+        // Check if payout operations are paused
+        if Self::is_payout_paused_internal(&env) {
+            panic!("Payout operations are paused");
         }
         // Get program data
         let program_key = DataKey::Program(program_id.clone());
@@ -1763,10 +1781,12 @@ impl ProgramEscrowContract {
         recipient: Address,
     ) -> ProgramData {
         let _guard = ReentrancyGuardRAII::new(&env).expect("Reentrancy detected");
-        if Self::is_paused_internal(&env) {
-            panic!("Contract is paused");
-        }
         let start = env.ledger().timestamp();
+
+        // Check if schedule operations are paused
+        if Self::is_schedule_paused_internal(&env) {
+            panic!("Schedule operations are paused");
+        }
 
         // Get program data
         let program_key = DataKey::Program(program_id.clone());
@@ -1884,9 +1904,9 @@ impl ProgramEscrowContract {
         let start = env.ledger().timestamp();
         let caller = env.current_contract_address();
 
-        // Check if contract is paused
-        if Self::is_paused_internal(&env) {
-            panic!("Contract is paused");
+        // Check if schedule operations are paused
+        if Self::is_schedule_paused_internal(&env) {
+            panic!("Schedule operations are paused");
         }
 
         // Get program data

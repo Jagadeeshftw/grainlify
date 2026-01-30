@@ -7,6 +7,9 @@
     [],
     [],
     [],
+    [],
+    [],
+    [],
     []
   ],
   "ledger": {
@@ -57,7 +60,7 @@
                                 "symbol": "lock_paused"
                               },
                               "val": {
-                                "bool": true
+                                "bool": false
                               }
                             },
                             {
@@ -65,7 +68,7 @@
                                 "symbol": "payout_paused"
                               },
                               "val": {
-                                "bool": true
+                                "bool": false
                               }
                             },
                             {
@@ -73,7 +76,7 @@
                                 "symbol": "schedule_paused"
                               },
                               "val": {
-                                "bool": true
+                                "bool": false
                               }
                             }
                           ]
