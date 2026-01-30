@@ -448,3 +448,87 @@ pub fn emit_deadline_extended(env: &Env, event: DeadlineExtended) {
     let topics = (symbol_short!("dead_ext"), event.bounty_id);
     env.events().publish(topics, event.clone());
 }
+
+// ============================================================================
+// Multi-Signature Events
+// ============================================================================
+
+/// Event emitted when multisig configuration is set or updated.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct MultisigConfigured {
+    pub threshold_amount: i128,
+    pub signer_count: u32,
+    pub required_approvals: u32,
+    pub enabled: bool,
+    pub configured_by: Address,
+    pub timestamp: u64,
+}
+
+pub fn emit_multisig_configured(env: &Env, event: MultisigConfigured) {
+    let topics = (symbol_short!("ms_config"),);
+    env.events().publish(topics, event.clone());
+}
+
+/// Event emitted when a large release approval is created.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ReleaseApprovalCreated {
+    pub bounty_id: u64,
+    pub amount: i128,
+    pub contributor: Address,
+    pub threshold_amount: i128,
+    pub required_approvals: u32,
+    pub timestamp: u64,
+}
+
+pub fn emit_release_approval_created(env: &Env, event: ReleaseApprovalCreated) {
+    let topics = (symbol_short!("ms_create"), event.bounty_id);
+    env.events().publish(topics, event.clone());
+}
+
+/// Event emitted when a signer approves a pending release.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ReleaseApprovalSigned {
+    pub bounty_id: u64,
+    pub signer: Address,
+    pub approval_count: u32,
+    pub required_approvals: u32,
+    pub timestamp: u64,
+}
+
+pub fn emit_release_approval_signed(env: &Env, event: ReleaseApprovalSigned) {
+    let topics = (symbol_short!("ms_sign"), event.bounty_id);
+    env.events().publish(topics, event.clone());
+}
+
+/// Event emitted when a multisig release is executed.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ReleaseApprovalExecuted {
+    pub bounty_id: u64,
+    pub amount: i128,
+    pub contributor: Address,
+    pub approval_count: u32,
+    pub timestamp: u64,
+}
+
+pub fn emit_release_approval_executed(env: &Env, event: ReleaseApprovalExecuted) {
+    let topics = (symbol_short!("ms_exec"), event.bounty_id);
+    env.events().publish(topics, event.clone());
+}
+
+/// Event emitted when a pending release approval is cancelled.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ReleaseApprovalCancelled {
+    pub bounty_id: u64,
+    pub cancelled_by: Address,
+    pub timestamp: u64,
+}
+
+pub fn emit_release_approval_cancelled(env: &Env, event: ReleaseApprovalCancelled) {
+    let topics = (symbol_short!("ms_cancel"), event.bounty_id);
+    env.events().publish(topics, event.clone());
+}
