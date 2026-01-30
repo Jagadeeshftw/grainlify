@@ -10,15 +10,209 @@ fn setup_program(env: &Env) -> (ProgramEscrowContract, Address, Address, String)
     let token = Address::generate(env);
     let program_id = String::from_str(env, "hackathon-2024-q1");
 
-    contract.init_program(env, program_id.clone(), admin.clone(), token.clone());
+    contract.initialize_program(env, program_id.clone(), admin.clone(), token.clone());
     (contract, admin, token, program_id)
 }
 
 // Helper function to setup program with funds
 fn setup_program_with_funds(env: &Env, initial_amount: i128) -> (ProgramEscrowContract, Address, Address, String) {
     let (contract, admin, token, program_id) = setup_program(env);
-    contract.lock_program_funds(env, initial_amount);
+    contract.lock_program_funds(env, program_id.clone(), initial_amount);
     (contract, admin, token, program_id)
+}
+
+// =============================================================================
+// TESTS FOR AMOUNT LIMITS
+// =============================================================================
+
+#[test]
+fn test_amount_limits_initialization() {
+    let env = Env::default();
+    let (contract, _admin, _token, _program_id) = setup_program(&env);
+    
+    // Check default limits
+    let limits = contract.get_amount_limits(&env);
+    assert_eq!(limits.min_lock_amount, 1);
+    assert_eq!(limits.max_lock_amount, i128::MAX);
+    assert_eq!(limits.min_payout, 1);
+    assert_eq!(limits.max_payout, i128::MAX);
+}
+
+#[test]
+fn test_update_amount_limits() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, admin, _token, _program_id) = setup_program(&env);
+    
+    // Update limits
+    contract.update_amount_limits(&env, 200, 2000, 100, 1000);
+    
+    // Verify updated limits
+    let limits = contract.get_amount_limits(&env);
+    assert_eq!(limits.min_lock_amount, 200);
+    assert_eq!(limits.max_lock_amount, 2000);
+    assert_eq!(limits.min_payout, 100);
+    assert_eq!(limits.max_payout, 1000);
+}
+
+#[test]
+#[should_panic(expected = "Invalid amount: amounts cannot be negative")]
+fn test_update_amount_limits_invalid_negative() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, admin, _token, _program_id) = setup_program(&env);
+    
+    // Try to set negative limits
+    contract.update_amount_limits(&env, -100, 1000, 50, 500);
+}
+
+#[test]
+#[should_panic(expected = "Invalid amount: minimum cannot exceed maximum")]
+fn test_update_amount_limits_invalid_min_greater_than_max() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, admin, _token, _program_id) = setup_program(&env);
+    
+    // Try to set min > max
+    contract.update_amount_limits(&env, 1000, 100, 50, 500);
+}
+
+#[test]
+fn test_lock_program_funds_respects_amount_limits() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, admin, token, program_id) = setup_program(&env);
+    
+    // Set limits
+    contract.update_amount_limits(&env, 100, 1000, 50, 500);
+    
+    // Test successful lock within limits
+    let result = contract.lock_program_funds(&env, program_id.clone(), 500);
+    assert_eq!(result.remaining_balance, 500);
+    
+    // Test lock at minimum limit
+    let result = contract.lock_program_funds(&env, program_id.clone(), 100);
+    assert_eq!(result.remaining_balance, 600);
+    
+    // Test lock at maximum limit
+    let result = contract.lock_program_funds(&env, program_id.clone(), 1000);
+    assert_eq!(result.remaining_balance, 1600);
+}
+
+#[test]
+#[should_panic(expected = "Amount violates configured limits")]
+fn test_lock_program_funds_below_minimum() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, admin, token, program_id) = setup_program(&env);
+    
+    // Set limits
+    contract.update_amount_limits(&env, 100, 1000, 50, 500);
+    
+    // Try to lock below minimum
+    contract.lock_program_funds(&env, program_id, 50);
+}
+
+#[test]
+#[should_panic(expected = "Amount violates configured limits")]
+fn test_lock_program_funds_above_maximum() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, admin, token, program_id) = setup_program(&env);
+    
+    // Set limits
+    contract.update_amount_limits(&env, 100, 1000, 50, 500);
+    
+    // Try to lock above maximum
+    contract.lock_program_funds(&env, program_id, 1500);
+}
+
+#[test]
+fn test_single_payout_respects_limits() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, admin, token, program_id) = setup_program_with_funds(&env, 1000);
+    
+    // Set limits - payout limits are 100-500
+    contract.update_amount_limits(&env, 100, 2000, 100, 500);
+    
+    let recipient = Address::generate(&env);
+    
+    // Payout within limits should work
+    let result = contract.single_payout(&env, program_id.clone(), recipient.clone(), 300);
+    assert_eq!(result.remaining_balance, 700);
+}
+
+#[test]
+#[should_panic(expected = "Payout amount violates configured limits")]
+fn test_single_payout_above_maximum() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, admin, token, program_id) = setup_program_with_funds(&env, 1000);
+    
+    // Set limits - payout max is 500
+    contract.update_amount_limits(&env, 100, 2000, 100, 500);
+    
+    let recipient = Address::generate(&env);
+    
+    // Try to payout above maximum
+    contract.single_payout(&env, program_id, recipient, 600);
+}
+
+#[test]
+#[should_panic(expected = "Payout amount violates configured limits")]
+fn test_single_payout_below_minimum() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, admin, token, program_id) = setup_program_with_funds(&env, 1000);
+    
+    // Set limits - payout min is 100
+    contract.update_amount_limits(&env, 100, 2000, 100, 500);
+    
+    let recipient = Address::generate(&env);
+    
+    // Try to payout below minimum
+    contract.single_payout(&env, program_id, recipient, 50);
+}
+
+#[test]
+fn test_batch_payout_respects_limits() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, admin, token, program_id) = setup_program_with_funds(&env, 2000);
+    
+    // Set limits
+    contract.update_amount_limits(&env, 100, 2000, 100, 500);
+    
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+    
+    let recipients = vec![&env, recipient1, recipient2];
+    let amounts = vec![&env, 200i128, 300i128];
+    
+    // Batch payout within limits should work
+    let result = contract.batch_payout(&env, program_id, recipients, amounts);
+    assert_eq!(result.remaining_balance, 1500);
+}
+
+#[test]
+#[should_panic(expected = "Payout amount violates configured limits")]
+fn test_batch_payout_with_amount_above_maximum() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, admin, token, program_id) = setup_program_with_funds(&env, 2000);
+    
+    // Set limits - payout max is 500
+    contract.update_amount_limits(&env, 100, 2000, 100, 500);
+    
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+    
+    let recipients = vec![&env, recipient1, recipient2];
+    let amounts = vec![&env, 200i128, 600i128]; // 600 > 500 (max)
+    
+    // Should fail because one amount exceeds maximum
+    contract.batch_payout(&env, program_id, recipients, amounts);
 }
 
 // =============================================================================

@@ -26,3 +26,4 @@ This is a code bundle for Glassmorphism Landing Page. The original project is av
 ## Running the code
 
 Run `pnpm run dev` to start the development server.
+make 

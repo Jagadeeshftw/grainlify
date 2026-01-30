@@ -67,6 +67,199 @@ impl<'a> TestSetup<'a> {
 }
 
 #[test]
+fn test_amount_limits_initialization() {
+    let setup = TestSetup::new();
+    
+    // Initialize contract
+    setup.escrow.init(&setup.admin, &setup.token.address);
+    
+    // Check default limits
+    let limits = setup.escrow.get_amount_limits();
+    assert_eq!(limits.min_lock_amount, 1);
+    assert_eq!(limits.max_lock_amount, i128::MAX);
+    assert_eq!(limits.min_payout, 1);
+    assert_eq!(limits.max_payout, i128::MAX);
+}
+
+#[test]
+fn test_update_amount_limits() {
+    let setup = TestSetup::new();
+    setup.escrow.init(&setup.admin, &setup.token.address);
+    
+    // Update limits
+    setup.escrow.update_amount_limits(&100, &1000, &50, &500).unwrap();
+    
+    // Verify updated limits
+    let limits = setup.escrow.get_amount_limits();
+    assert_eq!(limits.min_lock_amount, 100);
+    assert_eq!(limits.max_lock_amount, 1000);
+    assert_eq!(limits.min_payout, 50);
+    assert_eq!(limits.max_payout, 500);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #13)")]
+fn test_update_amount_limits_invalid_negative() {
+    let setup = TestSetup::new();
+    setup.escrow.init(&setup.admin, &setup.token.address);
+    
+    // Try to set negative limits
+    setup.escrow.update_amount_limits(&-100, &1000, &50, &500).unwrap();
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #13)")]
+fn test_update_amount_limits_invalid_min_greater_than_max() {
+    let setup = TestSetup::new();
+    setup.escrow.init(&setup.admin, &setup.token.address);
+    
+    // Try to set min > max
+    setup.escrow.update_amount_limits(&1000, &100, &50, &500).unwrap();
+}
+
+#[test]
+fn test_lock_funds_respects_amount_limits() {
+    let setup = TestSetup::new();
+    setup.escrow.init(&setup.admin, &setup.token.address);
+    
+    // Set limits
+    setup.escrow.update_amount_limits(&100, &1000, &50, &500).unwrap();
+    
+    // Mint tokens
+    setup.token_admin.mint(&setup.depositor, &2000);
+    
+    // Test successful lock within limits
+    let deadline = setup.env.ledger().timestamp() + 86400;
+    setup.escrow.lock_funds(&setup.depositor, &1, &500, &deadline).unwrap();
+    
+    // Test lock at minimum limit
+    setup.escrow.lock_funds(&setup.depositor, &2, &100, &deadline).unwrap();
+    
+    // Test lock at maximum limit
+    setup.escrow.lock_funds(&setup.depositor, &3, &1000, &deadline).unwrap();
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #13)")]
+fn test_lock_funds_below_minimum() {
+    let setup = TestSetup::new();
+    setup.escrow.init(&setup.admin, &setup.token.address);
+    
+    // Set limits
+    setup.escrow.update_amount_limits(&100, &1000, &50, &500).unwrap();
+    
+    // Mint tokens
+    setup.token_admin.mint(&setup.depositor, &2000);
+    
+    // Try to lock below minimum
+    let deadline = setup.env.ledger().timestamp() + 86400;
+    setup.escrow.lock_funds(&setup.depositor, &1, &50, &deadline).unwrap();
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #13)")]
+fn test_lock_funds_above_maximum() {
+    let setup = TestSetup::new();
+    setup.escrow.init(&setup.admin, &setup.token.address);
+    
+    // Set limits
+    setup.escrow.update_amount_limits(&100, &1000, &50, &500).unwrap();
+    
+    // Mint tokens
+    setup.token_admin.mint(&setup.depositor, &2000);
+    
+    // Try to lock above maximum
+    let deadline = setup.env.ledger().timestamp() + 86400;
+    setup.escrow.lock_funds(&setup.depositor, &1, &1500, &deadline).unwrap();
+}
+
+#[test]
+fn test_release_funds_respects_payout_limits() {
+    let setup = TestSetup::new();
+    setup.escrow.init(&setup.admin, &setup.token.address);
+    
+    // Set limits - payout limits are 50-500
+    setup.escrow.update_amount_limits(&100, &1000, &50, &500).unwrap();
+    
+    // Mint and lock funds
+    setup.token_admin.mint(&setup.depositor, &600);
+    let deadline = setup.env.ledger().timestamp() + 86400;
+    setup.escrow.lock_funds(&setup.depositor, &1, &600, &deadline).unwrap();
+    
+    // Release should work (600 is within payout limits)
+    setup.escrow.release_funds(&1, &setup.contributor).unwrap();
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #13)")]
+fn test_release_funds_above_payout_maximum() {
+    let setup = TestSetup::new();
+    setup.escrow.init(&setup.admin, &setup.token.address);
+    
+    // Set limits - payout max is 500
+    setup.escrow.update_amount_limits(&100, &1000, &50, &500).unwrap();
+    
+    // Mint and lock funds above payout limit
+    setup.token_admin.mint(&setup.depositor, &800);
+    let deadline = setup.env.ledger().timestamp() + 86400;
+    setup.escrow.lock_funds(&setup.depositor, &1, &800, &deadline).unwrap();
+    
+    // Try to release - should fail because 800 > 500 (payout max)
+    setup.escrow.release_funds(&1, &setup.contributor).unwrap();
+}
+
+#[test]
+fn test_batch_operations_respect_limits() {
+    let setup = TestSetup::new();
+    setup.escrow.init(&setup.admin, &setup.token.address);
+    
+    // Set limits
+    setup.escrow.update_amount_limits(&100, &1000, &50, &500).unwrap();
+    
+    // Mint tokens
+    setup.token_admin.mint(&setup.depositor, &3000);
+    
+    // Create batch lock items within limits
+    let deadline = setup.env.ledger().timestamp() + 86400;
+    let items = vec![
+        &setup.env,
+        LockFundsItem {
+            bounty_id: 1,
+            depositor: setup.depositor.clone(),
+            amount: 200,
+            deadline,
+        },
+        LockFundsItem {
+            bounty_id: 2,
+            depositor: setup.depositor.clone(),
+            amount: 500,
+            deadline,
+        },
+    ];
+    
+    // Batch lock should succeed
+    let result = setup.escrow.batch_lock_funds(&items).unwrap();
+    assert_eq!(result, 2);
+    
+    // Create batch release items
+    let release_items = vec![
+        &setup.env,
+        ReleaseFundsItem {
+            bounty_id: 1,
+            contributor: setup.contributor.clone(),
+        },
+        ReleaseFundsItem {
+            bounty_id: 2,
+            contributor: setup.contributor.clone(),
+        },
+    ];
+    
+    // Batch release should succeed (amounts are within payout limits)
+    let result = setup.escrow.batch_release_funds(&release_items).unwrap();
+    assert_eq!(result, 2);
+}
+
+#[test]
 fn test_lock_funds_success() {
     let setup = TestSetup::new();
     let bounty_id = 1;
