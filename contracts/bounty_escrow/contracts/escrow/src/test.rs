@@ -4,32 +4,29 @@ use soroban_sdk::{
     token, vec, Address, Env, Vec,
 };
 
-fn create_token_contract<'a>(
-    e: &Env,
-    admin: &Address,
-) -> (token::Client<'a>, token::StellarAssetClient<'a>) {
-    let contract_address = e
-        .register_stellar_asset_contract_v2(admin.clone())
-        .address();
+fn create_token_contract<'a>(e: &Env, admin: &Address) -> (Address, token::Client<'a>, token::StellarAssetClient<'a>) {
+    let stellar_asset = e.register_stellar_asset_contract_v2(admin.clone());
+    let token_address = stellar_asset.address();
+
     (
-        token::Client::new(e, &contract_address),
-        token::StellarAssetClient::new(e, &contract_address),
+        token_address.clone(),
+        token::Client::new(e, &token_address),
+        token::StellarAssetClient::new(e, &token_address)
     )
 }
 
 fn create_escrow_contract<'a>(e: &Env) -> (BountyEscrowContractClient<'a>, Address) {
-    let contract_id = e.register_contract(None, BountyEscrowContract);
+    let contract_id = e.register(BountyEscrowContract, ());
     let client = BountyEscrowContractClient::new(e, &contract_id);
     (client, contract_id)
 }
 
 struct TestSetup<'a> {
     env: Env,
-    admin: Address,
+    // Remove unused fields
     depositor: Address,
     contributor: Address,
     token: token::Client<'a>,
-    token_admin: token::StellarAssetClient<'a>,
     escrow: BountyEscrowContractClient<'a>,
     escrow_address: Address,
 }
@@ -43,21 +40,19 @@ impl TestSetup<'_> {
         let depositor = Address::generate(&env);
         let contributor = Address::generate(&env);
 
-        let (token, token_admin) = create_token_contract(&env, &admin);
+        let (token_address, token, token_admin) = create_token_contract(&env, &admin);
         let (escrow, escrow_address) = create_escrow_contract(&env);
 
-        escrow.init(&admin, &token.address);
+        escrow.init(&admin, &token_address);
 
         // Mint tokens to depositor
         token_admin.mint(&depositor, &1_000_000);
 
         Self {
             env,
-            admin,
             depositor,
             contributor,
             token,
-            token_admin,
             escrow,
             escrow_address,
         }
@@ -88,6 +83,7 @@ fn test_lock_funds_success() {
     assert_eq!(stored_escrow.remaining_amount, amount); // remaining_amount stores original
     assert_eq!(stored_escrow.status, EscrowStatus::Locked);
     assert_eq!(stored_escrow.deadline, deadline);
+    assert_eq!(stored_escrow.token, setup.token.address);
 
     // Verify contract balance
     assert_eq!(setup.token.balance(&setup.escrow_address), amount);
@@ -156,6 +152,7 @@ fn test_get_escrow_info() {
     assert_eq!(escrow.deadline, deadline);
     assert_eq!(escrow.depositor, setup.depositor);
     assert_eq!(escrow.status, EscrowStatus::Locked);
+    assert_eq!(escrow.token, setup.token.address);
 }
 
 #[test]
@@ -1027,9 +1024,6 @@ fn test_batch_lock_funds_success() {
         },
     ];
 
-    // Mint enough tokens
-    setup.token_admin.mint(&setup.depositor, &10_000);
-
     // Batch lock funds
     let count = setup.escrow.batch_lock_funds(&items);
     assert_eq!(count, 3);
@@ -1308,9 +1302,6 @@ fn test_batch_operations_large_batch() {
         });
     }
 
-    // Mint enough tokens
-    setup.token_admin.mint(&setup.depositor, &10_000);
-
     // Batch lock
     let count = setup.escrow.batch_lock_funds(&items);
     assert_eq!(count, 10);
@@ -1333,4 +1324,256 @@ fn test_batch_operations_large_batch() {
     // Batch release
     let release_count = setup.escrow.batch_release_funds(&release_items);
     assert_eq!(release_count, 10);
+}
+
+// =============================================================================
+// MULTI-TOKEN TESTS
+// =============================================================================
+
+struct MultiTokenTestSetup<'a> {
+    env: Env,
+    depositor: Address,
+    contributor: Address,
+    token1: token::Client<'a>,
+    token2: token::Client<'a>,
+    escrow: BountyEscrowContractClient<'a>,
+    escrow_address: Address,
+}
+
+impl<'a> MultiTokenTestSetup<'a> {
+    fn new() -> Self {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let admin = Address::generate(&env);
+        let depositor = Address::generate(&env);
+        let contributor = Address::generate(&env);
+
+        // Create two different tokens
+        let (_, token1, token1_admin) = create_token_contract(&env, &admin);
+        let (_, token2, token2_admin) = create_token_contract(&env, &admin);
+        let (escrow, escrow_address) = create_escrow_contract(&env);
+
+        // Initialize with first token (auto-whitelisted)
+        escrow.init(&admin, &token1.address);
+
+        // Mint tokens to depositor
+        token1_admin.mint(&depositor, &1_000_000);
+        token2_admin.mint(&depositor, &1_000_000);
+
+        Self {
+            env,
+            depositor,
+            contributor,
+            token1,
+            token2,
+            escrow,
+            escrow_address,
+        }
+    }
+}
+
+#[test]
+fn test_add_token_to_whitelist() {
+    let setup = MultiTokenTestSetup::new();
+
+    // Token1 should already be whitelisted (from init)
+    assert!(setup.escrow.is_token_whitelisted(&setup.token1.address));
+
+    // Token2 should not be whitelisted yet
+    assert!(!setup.escrow.is_token_whitelisted(&setup.token2.address));
+
+    // Add token2 to whitelist
+    setup.escrow.add_token(&setup.token2.address);
+
+    // Now token2 should be whitelisted
+    assert!(setup.escrow.is_token_whitelisted(&setup.token2.address));
+
+    // Verify both tokens in whitelist
+    let tokens = setup.escrow.get_whitelisted_tokens();
+    assert_eq!(tokens.len(), 2);
+}
+
+#[test]
+fn test_remove_token_from_whitelist() {
+    let setup = MultiTokenTestSetup::new();
+
+    // Add token2
+    setup.escrow.add_token(&setup.token2.address);
+    assert!(setup.escrow.is_token_whitelisted(&setup.token2.address));
+
+    // Remove token2
+    setup.escrow.remove_token(&setup.token2.address);
+    assert!(!setup.escrow.is_token_whitelisted(&setup.token2.address));
+
+    // Token1 should still be whitelisted
+    assert!(setup.escrow.is_token_whitelisted(&setup.token1.address));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #8)")] // TokenNotWhitelisted
+fn test_lock_funds_non_whitelisted_token() {
+    let setup = MultiTokenTestSetup::new();
+    let bounty_id = 1;
+    let amount = 1000;
+    let deadline = setup.env.ledger().timestamp() + 1000;
+
+    // Try to lock with token2 (not whitelisted)
+    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &setup.token2.address);
+}
+
+#[test]
+fn test_lock_funds_with_multiple_tokens() {
+    let setup = MultiTokenTestSetup::new();
+
+    // Add token2 to whitelist
+    setup.escrow.add_token(&setup.token2.address);
+
+    let deadline = setup.env.ledger().timestamp() + 1000;
+
+    // Lock funds with token1
+    setup.escrow.lock_funds(&setup.depositor, &1, &1000, &deadline, &setup.token1.address);
+
+    // Lock funds with token2
+    setup.escrow.lock_funds(&setup.depositor, &2, &2000, &deadline, &setup.token2.address);
+
+    // Verify escrows have correct tokens
+    let escrow1 = setup.escrow.get_escrow_info(&1);
+    assert_eq!(escrow1.token, setup.token1.address);
+    assert_eq!(escrow1.amount, 1000);
+
+    let escrow2 = setup.escrow.get_escrow_info(&2);
+    assert_eq!(escrow2.token, setup.token2.address);
+    assert_eq!(escrow2.amount, 2000);
+
+    // Verify token balances in contract
+    assert_eq!(setup.token1.balance(&setup.escrow_address), 1000);
+    assert_eq!(setup.token2.balance(&setup.escrow_address), 2000);
+}
+
+#[test]
+fn test_release_funds_with_correct_token() {
+    let setup = MultiTokenTestSetup::new();
+
+    // Add token2 to whitelist
+    setup.escrow.add_token(&setup.token2.address);
+
+    let deadline = setup.env.ledger().timestamp() + 1000;
+
+    // Lock funds with different tokens
+    setup.escrow.lock_funds(&setup.depositor, &1, &1000, &deadline, &setup.token1.address);
+    setup.escrow.lock_funds(&setup.depositor, &2, &2000, &deadline, &setup.token2.address);
+
+    // Release bounty 2 (token2)
+    setup.escrow.release_funds(&2, &setup.contributor, &None::<i128>);
+
+    // Verify contributor received token2
+    assert_eq!(setup.token2.balance(&setup.contributor), 2000);
+    assert_eq!(setup.token1.balance(&setup.contributor), 0);
+
+    // Contract should still hold token1
+    assert_eq!(setup.token1.balance(&setup.escrow_address), 1000);
+    assert_eq!(setup.token2.balance(&setup.escrow_address), 0);
+}
+
+#[test]
+fn test_refund_with_correct_token() {
+    let setup = MultiTokenTestSetup::new();
+
+    // Add token2 to whitelist
+    setup.escrow.add_token(&setup.token2.address);
+
+    let current_time = setup.env.ledger().timestamp();
+    let deadline = current_time + 1000;
+
+    // Lock funds with token2
+    let initial_balance = setup.token2.balance(&setup.depositor);
+    setup.escrow.lock_funds(&setup.depositor, &1, &2000, &deadline, &setup.token2.address);
+
+    // Advance time past deadline
+    setup.env.ledger().set_timestamp(deadline + 1);
+
+    // Refund
+    setup.escrow.refund(&1, &None::<i128>, &None::<Address>, &RefundMode::Full);
+
+    // Verify depositor received token2 back
+    assert_eq!(setup.token2.balance(&setup.depositor), initial_balance);
+    assert_eq!(setup.token2.balance(&setup.escrow_address), 0);
+}
+
+#[test]
+fn test_get_token_balance() {
+    let setup = MultiTokenTestSetup::new();
+
+    // Add token2 to whitelist
+    setup.escrow.add_token(&setup.token2.address);
+
+    let deadline = setup.env.ledger().timestamp() + 1000;
+
+    // Lock funds with both tokens
+    setup.escrow.lock_funds(&setup.depositor, &1, &1000, &deadline, &setup.token1.address);
+    setup.escrow.lock_funds(&setup.depositor, &2, &2000, &deadline, &setup.token2.address);
+    setup.escrow.lock_funds(&setup.depositor, &3, &500, &deadline, &setup.token1.address);
+
+    // Check token-specific balances
+    assert_eq!(setup.escrow.get_token_balance(&setup.token1.address), 1500);
+    assert_eq!(setup.escrow.get_token_balance(&setup.token2.address), 2000);
+}
+
+#[test]
+fn test_get_whitelisted_tokens() {
+    let setup = MultiTokenTestSetup::new();
+
+    // Initially only token1 should be whitelisted
+    let tokens = setup.escrow.get_whitelisted_tokens();
+    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens.get(0).unwrap(), setup.token1.address);
+
+    // Add token2
+    setup.escrow.add_token(&setup.token2.address);
+
+    let tokens = setup.escrow.get_whitelisted_tokens();
+    assert_eq!(tokens.len(), 2);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")] // TokenAlreadyWhitelisted
+fn test_add_duplicate_token() {
+    let setup = MultiTokenTestSetup::new();
+
+    // Token1 is already whitelisted from init, try to add again
+    setup.escrow.add_token(&setup.token1.address);
+}
+
+#[test]
+fn test_multi_token_lifecycle() {
+    let setup = MultiTokenTestSetup::new();
+
+    // Add token2 to whitelist
+    setup.escrow.add_token(&setup.token2.address);
+
+    let deadline = setup.env.ledger().timestamp() + 1000;
+
+    // Create bounties with different tokens
+    setup.escrow.lock_funds(&setup.depositor, &1, &1000, &deadline, &setup.token1.address);
+    setup.escrow.lock_funds(&setup.depositor, &2, &2000, &deadline, &setup.token2.address);
+    setup.escrow.lock_funds(&setup.depositor, &3, &1500, &deadline, &setup.token1.address);
+
+    // Release bounty 1 (token1) to contributor
+    setup.escrow.release_funds(&1, &setup.contributor, &None::<i128>);
+    assert_eq!(setup.token1.balance(&setup.contributor), 1000);
+
+    // Release bounty 2 (token2) to contributor
+    setup.escrow.release_funds(&2, &setup.contributor, &None::<i128>);
+    assert_eq!(setup.token2.balance(&setup.contributor), 2000);
+
+    // Advance time and refund bounty 3 (token1)
+    setup.env.ledger().set_timestamp(deadline + 1);
+    let depositor_token1_before = setup.token1.balance(&setup.depositor);
+    setup.escrow.refund(&3, &None::<i128>, &None::<Address>, &RefundMode::Full);
+    assert_eq!(setup.token1.balance(&setup.depositor), depositor_token1_before + 1500);
+
+    // Verify final contract balances
+    assert_eq!(setup.token1.balance(&setup.escrow_address), 0);
+    assert_eq!(setup.token2.balance(&setup.escrow_address), 0);
 }

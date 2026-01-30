@@ -440,6 +440,12 @@ pub enum Error {
     FundsNotLocked = 5,
     DeadlineNotPassed = 6,
     Unauthorized = 7,
+
+    /// Returned when attempting to use a non-whitelisted token
+    TokenNotWhitelisted = 8,
+
+    /// Returned when attempting to whitelist an already whitelisted token
+    TokenAlreadyWhitelisted = 9,
     InvalidFeeRate = 8,
     FeeRecipientNotSet = 9,
     InvalidBatchSize = 10,
@@ -512,6 +518,7 @@ pub struct Escrow {
     pub amount: i128, // Total amount (sum of all token balances, for backward compatibility)
     pub status: EscrowStatus,
     pub deadline: u64,
+    pub token: Address,
     pub refund_history: Vec<RefundRecord>,
     pub remaining_amount: i128, // Total remaining (sum of all token balances)
     pub token_address: Address, // Primary/default token (for backward compatibility)
@@ -599,6 +606,16 @@ pub struct ContractState {
     pub contract_version: u64,
 }
 
+/// Storage keys for contract data.
+///
+/// # Keys
+/// * `Admin` - Stores the admin address (instance storage)
+/// * `Token` - Stores the token contract address (instance storage)
+/// * `Escrow(u64)` - Stores escrow data indexed by bounty_id (persistent storage)
+///
+/// # Storage Types
+/// - **Instance Storage**: Admin and Token (never expires, tied to contract)
+/// - **Persistent Storage**: Individual escrow records (extended TTL on access)
 #[contracttype]
 pub enum DataKey {
     Admin,
@@ -669,8 +686,21 @@ impl BountyEscrowContract {
             return Err(Error::AlreadyInitialized);
         }
 
+        // Store configuration
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::Token, &token);
+
+        // Auto-whitelist the initial token
+        env.storage().instance().set(&DataKey::WlToken(token.clone()), &true);
+        let mut token_list: Vec<Address> = Vec::new(&env);
+        token_list.push_back(token.clone());
+        env.storage().instance().set(&DataKey::TokenList, &token_list);
+
+        // Auto-whitelist the initial token
+        env.storage().instance().set(&DataKey::WlToken(token.clone()), &true);
+        let mut token_list: Vec<Address> = Vec::new(&env);
+        token_list.push_back(token.clone());
+        env.storage().instance().set(&DataKey::TokenList, &token_list);
 
         let fee_config = FeeConfig {
             lock_fee_rate: 0,
@@ -1443,6 +1473,16 @@ impl BountyEscrowContract {
             return Err(Error::NotInitialized);
         }
 
+        // Verify token is whitelisted
+        if !env.storage().instance().has(&DataKey::WlToken(token.clone())) {
+            return Err(Error::TokenNotWhitelisted);
+        }
+
+        // Verify token is whitelisted
+        if !env.storage().instance().has(&DataKey::WlToken(token.clone())) {
+            return Err(Error::TokenNotWhitelisted);
+        }
+
         if env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
             monitoring::track_operation(&env, symbol_short!("lock"), caller, false);
             env.storage().instance().remove(&DataKey::ReentrancyGuard);
@@ -1764,6 +1804,8 @@ impl BountyEscrowContract {
         // Simple check: if remaining_amount > 0, there's still balance
         if escrow.remaining_amount == 0 {
             escrow.status = EscrowStatus::Released;
+        } else {
+            escrow.status = EscrowStatus::PartiallyReleased;
         }
 
         // Update escrow state
@@ -1780,6 +1822,7 @@ impl BountyEscrowContract {
                 token_address: token_addr.clone(),
                 timestamp: env.ledger().timestamp(),
                 remaining_amount: escrow.remaining_amount,
+                token,
             },
         );
 
@@ -1877,6 +1920,13 @@ impl BountyEscrowContract {
         }
 
         let now = env.ledger().timestamp();
+        if now < escrow.deadline {
+            return Err(Error::DeadlineNotPassed);
+        }
+
+        // Transfer funds back to depositor using escrow's token
+        let client = token::Client::new(&env, &escrow.token);
+        client.transfer(&env.current_contract_address(), &escrow.depositor, &escrow.amount);
         let is_before_deadline = now < escrow.deadline;
 
         // Determine token address first (needed for balance checks)
@@ -1981,7 +2031,8 @@ impl BountyEscrowContract {
         // Update status - check if all tokens are refunded
         // Simple check: if remaining_amount > 0, there's still balance
         if escrow.remaining_amount == 0 {
-            escrow.status = EscrowStatus::Refunded;
+            let token = escrow.token.clone();
+        escrow.status = EscrowStatus::Refunded;
         } else {
             escrow.status = EscrowStatus::PartiallyRefunded;
         }
@@ -2583,6 +2634,89 @@ impl BountyEscrowContract {
         );
 
         Ok(released_count)
+    }
+
+    // ========================================================================
+    // Token Management Functions
+    // ========================================================================
+
+    /// Adds a token to the whitelist (admin only).
+    pub fn add_token(env: Env, token: Address) -> Result<(), Error> {
+        if !env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::NotInitialized);
+        }
+
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        if env.storage().instance().has(&DataKey::WlToken(token.clone())) {
+            return Err(Error::TokenAlreadyWhitelisted);
+        }
+
+        env.storage().instance().set(&DataKey::WlToken(token.clone()), &true);
+
+        let mut token_list: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&DataKey::TokenList)
+            .unwrap_or(Vec::new(&env));
+        token_list.push_back(token);
+        env.storage().instance().set(&DataKey::TokenList, &token_list);
+
+        Ok(())
+    }
+
+    /// Removes a token from the whitelist (admin only).
+    pub fn remove_token(env: Env, token: Address) -> Result<(), Error> {
+        if !env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::NotInitialized);
+        }
+
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        if !env.storage().instance().has(&DataKey::WlToken(token.clone())) {
+            return Err(Error::TokenNotWhitelisted);
+        }
+
+        env.storage().instance().remove(&DataKey::WlToken(token.clone()));
+
+        let token_list: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&DataKey::TokenList)
+            .unwrap_or(Vec::new(&env));
+        let mut new_list: Vec<Address> = Vec::new(&env);
+        for t in token_list.iter() {
+            if t != token {
+                new_list.push_back(t);
+            }
+        }
+        env.storage().instance().set(&DataKey::TokenList, &new_list);
+
+        Ok(())
+    }
+
+    /// Checks if a token is whitelisted.
+    pub fn is_token_whitelisted(env: Env, token: Address) -> bool {
+        env.storage().instance().has(&DataKey::WlToken(token))
+    }
+
+    /// Returns all whitelisted tokens.
+    pub fn get_whitelisted_tokens(env: Env) -> Vec<Address> {
+        env.storage()
+            .instance()
+            .get(&DataKey::TokenList)
+            .unwrap_or(Vec::new(&env))
+    }
+
+    /// Returns the balance for a specific token.
+    pub fn get_token_balance(env: Env, token: Address) -> Result<i128, Error> {
+        if !env.storage().instance().has(&DataKey::WlToken(token.clone())) {
+            return Err(Error::TokenNotWhitelisted);
+        }
+        let client = token::Client::new(&env, &token);
+        Ok(client.balance(&env.current_contract_address()))
     }
 }
 

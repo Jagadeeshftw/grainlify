@@ -9,7 +9,7 @@ use crate::{BountyEscrowContract, BountyEscrowContractClient};
 
 fn create_test_env() -> (Env, BountyEscrowContractClient<'static>, Address) {
     let env = Env::default();
-    let contract_id = env.register_contract(None, BountyEscrowContract);
+    let contract_id = env.register(BountyEscrowContract, ()); // FIXED: Remove None, add ()
     let client = BountyEscrowContractClient::new(&env, &contract_id);
 
     (env, client, contract_id)
@@ -19,8 +19,8 @@ fn create_token_contract<'a>(
     e: &'a Env,
     admin: &Address,
 ) -> (Address, token::Client<'a>, token::StellarAssetClient<'a>) {
-    let token_id = e.register_stellar_asset_contract_v2(admin.clone());
-    let token = token_id.address();
+    let stellar_asset = e.register_stellar_asset_contract_v2(admin.clone()); // Returns StellarAssetContract
+    let token = stellar_asset.address(); // Get Address
     let token_client = token::Client::new(e, &token);
     let token_admin_client = token::StellarAssetClient::new(e, &token);
     (token, token_client, token_admin_client)

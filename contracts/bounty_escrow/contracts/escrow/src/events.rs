@@ -37,6 +37,18 @@ pub struct FundsLocked {
     pub token_address: Address, // Token used for this lock
 }
 
+/// Emits a FundsLocked event.
+///
+/// # Arguments
+/// * `env` - The contract environment
+/// * `event` - The funds locked event data
+///
+/// # Event Structure
+/// Topic: `(symbol_short!("f_lock"), event.bounty_id)`
+/// Data: Complete `FundsLocked` struct
+///
+/// # Indexing Note
+/// The bounty_id is included in topics for efficient filtering
 pub fn emit_funds_locked(env: &Env, event: FundsLocked) {
     let topics = (symbol_short!("f_lock"), event.bounty_id);
     env.events().publish(topics, event.clone());
@@ -57,6 +69,15 @@ pub struct FundsReleased {
     pub remaining_amount: i128,
 }
 
+/// Emits a FundsReleased event.
+///
+/// # Arguments
+/// * `env` - The contract environment
+/// * `event` - The funds released event data
+///
+/// # Event Structure
+/// Topic: `(symbol_short!("f_rel"), event.bounty_id)`
+/// Data: Complete `FundsReleased` struct
 pub fn emit_funds_released(env: &Env, event: FundsReleased) {
     let topics = (symbol_short!("f_rel"), event.bounty_id);
     env.events().publish(topics, event.clone());
@@ -78,6 +99,15 @@ pub struct FundsRefunded {
     pub token_address: Address, // Token used for this refund
 }
 
+/// Emits a FundsRefunded event.
+///
+/// # Arguments
+/// * `env` - The contract environment
+/// * `event` - The funds refunded event data
+///
+/// # Event Structure
+/// Topic: `(symbol_short!("f_ref"), event.bounty_id)`
+/// Data: Complete `FundsRefunded` struct
 pub fn emit_funds_refunded(env: &Env, event: FundsRefunded) {
     let topics = (symbol_short!("f_ref"), event.bounty_id);
     env.events().publish(topics, event.clone());
