@@ -393,3 +393,58 @@ pub fn emit_emergency_withdrawal(env: &Env, event: EmergencyWithdrawal) {
     let topics = (symbol_short!("ewith"),);
     env.events().publish(topics, event.clone());
 }
+
+// ============================================================================
+// Deadline Extended Event
+// ============================================================================
+
+/// Event emitted when the refund deadline for an escrow is extended.
+///
+/// # Fields
+/// * `bounty_id` - The bounty identifier
+/// * `old_deadline` - The previous deadline timestamp
+/// * `new_deadline` - The new deadline timestamp
+/// * `extended_by` - Address that extended the deadline (admin or depositor)
+/// * `timestamp` - Unix timestamp when the extension occurred
+///
+/// # Event Topic
+/// Symbol: `deadline_ext`
+/// Indexed: `bounty_id`
+///
+/// # Usage
+/// Emitted when an authorized party (admin or depositor) extends the refund
+/// deadline for a bounty. This allows bounties to be extended without
+/// migrating funds to a new escrow.
+///
+/// # Conditions
+/// - New deadline must be strictly greater than old deadline
+/// - Escrow must be in Locked or PartiallyRefunded state
+/// - Only admin or depositor can extend deadline
+///
+/// # Security Considerations
+/// - Deadline can only be extended, never shortened
+/// - Prevents indefinite locking by requiring extension
+/// - Full audit trail of all deadline changes
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct DeadlineExtended {
+    pub bounty_id: u64,
+    pub old_deadline: u64,
+    pub new_deadline: u64,
+    pub extended_by: Address,
+    pub timestamp: u64,
+}
+
+/// Emits a DeadlineExtended event.
+///
+/// # Arguments
+/// * `env` - The contract environment
+/// * `event` - The deadline extended event data
+///
+/// # Event Structure
+/// Topic: `(symbol_short!("deadline_ext"), event.bounty_id)`
+/// Data: Complete `DeadlineExtended` struct
+pub fn emit_deadline_extended(env: &Env, event: DeadlineExtended) {
+    let topics = (symbol_short!("dead_ext"), event.bounty_id);
+    env.events().publish(topics, event.clone());
+}
