@@ -19,10 +19,6 @@ jobs:
   contracts-ci:
     name: Format, Build, Test, and Stellar Build Check
     runs-on: macos-latest
-    
-    defaults:
-      run:
-        working-directory: contracts/bounty_escrow
 
     steps:
       - name: Checkout code
@@ -60,30 +56,39 @@ jobs:
       - name: Check code formatting
         run: |
           source $HOME/.cargo/env
-          cd contracts/escrow
+          cd contracts/bounty_escrow/contracts/escrow
           cargo fmt --check --all
 
       - name: Build contracts
         run: |
           source $HOME/.cargo/env
-          cd contracts/escrow
+          cd contracts/bounty_escrow/contracts/escrow
           cargo build --release --target wasm32v1-none
 
       - name: Run tests
         run: |
           source $HOME/.cargo/env
-          cd contracts/escrow
+          cd contracts/bounty_escrow/contracts/escrow
           cargo test --verbose --lib
 
       - name: Build Soroban contract
         run: |
           source $HOME/.cargo/env
-          cd contracts/escrow
+          cd contracts/bounty_escrow/contracts/escrow
+          stellar contract build --verbose
+
+      - name: Build Program Escrow contract
+        run: |
+          source $HOME/.cargo/env
+          cd contracts/program-escrow
+          cargo build --release --target wasm32v1-none
+          cargo test --verbose --lib
           stellar contract build --verbose
 
       - name: Stellar build check
         run: |
           source $HOME/.cargo/env
+          cd contracts/bounty_escrow/contracts/escrow
           # Verify WASM files were generated
           echo "Checking for generated WASM files..."
           wasm_file="target/wasm32v1-none/release/bounty_escrow.wasm"
