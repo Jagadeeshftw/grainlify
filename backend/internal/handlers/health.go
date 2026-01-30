@@ -6,7 +6,7 @@ func Health() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusOK).JSON(fiber.Map{
 			"ok":      true,
-			"service": "patchwork-api",
+			"service": "grainlify-api",
 		})
 	}
 }

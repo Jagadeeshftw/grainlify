@@ -13,10 +13,10 @@ import {
 
 interface UserProfileDropdownProps {
   onPageChange?: (page: string) => void;
-  showMobileNav:boolean
+  showMobileNav: boolean;
 }
 
-export function UserProfileDropdown({ onPageChange,showMobileNav }: UserProfileDropdownProps) {
+export function UserProfileDropdown({ onPageChange, showMobileNav }: UserProfileDropdownProps) {
   const { user, userRole, logout } = useAuth();
   const { theme } = useTheme();
   const navigate = useNavigate();

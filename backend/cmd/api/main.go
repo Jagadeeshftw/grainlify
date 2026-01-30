@@ -72,7 +72,7 @@ func main() {
 			os.Exit(1)
 		}
 		slog.Info("db connection successful", "step", "4.3", "action", "db_connection_successful",
-			"max_conns", 10,
+			"max_conns", 20,
 		)
 		database = d
 		defer func() {

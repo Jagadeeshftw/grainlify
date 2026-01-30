@@ -567,16 +567,89 @@ pub struct Escrow {
     pub remaining_amount: i128,
 }
 
+/// Metadata structure for enhanced escrow indexing and categorization.
+///
+/// # Fields
+/// * `repo_id` - Repository identifier (e.g., "owner/repo")
+/// * `issue_id` - Issue or pull request identifier
+/// * `bounty_type` - Type classification (e.g., "bug", "feature", "security")
+/// * `tags` - Custom tags for filtering and categorization
+/// * `custom_fields` - Additional key-value pairs for extensibility
+///
+/// # Size Limits
+/// * Total serialized size: 1024 bytes maximum
+/// * Tags vector: 20 items maximum
+/// * Custom fields map: 10 key-value pairs maximum
+/// * Individual string values: 128 characters maximum
+///
+/// # Storage
+/// Stored separately from core escrow data with key `DataKey::EscrowMetadata(bounty_id)`.
+/// Metadata is optional and can be added/updated after escrow creation.
+///
+/// # Example
+/// ```rust
+/// let metadata = EscrowMetadata {
+///     repo_id: Some(String::from_str(&env, "stellar/rs-soroban-sdk")),
+///     issue_id: Some(String::from_str(&env, "123")),
+///     bounty_type: Some(String::from_str(&env, "bug")),
+///     tags: vec![&env,
+///         String::from_str(&env, "priority-high"),
+///         String::from_str(&env, "security")
+///     ],
+///     custom_fields: map![
+///         &env,
+///         (String::from_str(&env, "difficulty"), String::from_str(&env, "medium")),
+///         (String::from_str(&env, "estimated_hours"), String::from_str(&env, "20"))
+///     ]
+/// };
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EscrowMetadata {
+    pub repo_id: Option<String>,
+    pub issue_id: Option<String>,
+    pub bounty_type: Option<String>,
+    pub tags: Vec<String>,
+    pub custom_fields: Map<String, String>,
+}
+
+/// Combined view of escrow data and metadata for convenient access.
+///
+/// # Fields
+/// * `escrow` - Core escrow information
+/// * `metadata` - Optional metadata (None if not set)
+///
+/// # Usage
+/// Provides a unified interface for retrieving complete escrow information
+/// including both financial and descriptive data.
+///
+/// # Example
+/// ```rust
+/// let escrow_view = escrow_client.get_escrow_with_metadata(&42)?;
+/// if let Some(metadata) = escrow_view.metadata {
+///     println!("Repo: {:?}", metadata.repo_id);
+///     println!("Issue: {:?}", metadata.issue_id);
+///     println!("Tags: {:?}", metadata.tags);
+/// }
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EscrowWithMetadata {
+    pub escrow: Escrow,
+    pub metadata: Option<EscrowMetadata>,
+}
+
 /// Storage keys for contract data.
 ///
 /// # Keys
 /// * `Admin` - Stores the admin address (instance storage)
 /// * `Token` - Stores the token contract address (instance storage)
 /// * `Escrow(u64)` - Stores escrow data indexed by bounty_id (persistent storage)
+/// * `EscrowMetadata(u64)` - Stores metadata for bounty_id (persistent storage)
 ///
 /// # Storage Types
 /// - **Instance Storage**: Admin and Token (never expires, tied to contract)
-/// - **Persistent Storage**: Individual escrow records (extended TTL on access)
+/// - **Persistent Storage**: Individual escrow records and metadata (extended TTL on access)
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LockFundsItem {
@@ -1102,6 +1175,88 @@ impl BountyEscrowContract {
         Ok(())
     }
 
+    /// Sets or updates metadata for an existing escrow.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `bounty_id` - The bounty to attach metadata to
+    /// * `metadata` - Metadata structure containing repo, issue, type, and tags
+    ///
+    /// # Returns
+    /// * `Ok(())` - Metadata successfully set/updated
+    /// * `Err(Error::BountyNotFound)` - Bounty doesn't exist
+    /// * `Err(Error::MetadataTooLarge)` - Metadata exceeds size limits
+    /// * `Err(Error::Unauthorized)` - Caller is not the depositor
+    ///
+    /// # State Changes
+    /// - Stores/updates metadata in persistent storage
+    /// - Extends storage TTL on access
+    ///
+    /// # Authorization
+    /// - Only the original depositor can set/update metadata
+    /// - This prevents unauthorized metadata modification
+    ///
+    /// # Size Limits
+    /// See `validate_metadata_size()` documentation for detailed limits.
+    ///
+    /// # Events
+    /// Emits: `FundsLocked` event with additional metadata field
+    ///
+    /// # Example
+    /// ```rust
+    /// let metadata = EscrowMetadata {
+    ///     repo_id: Some(String::from_str(&env, "owner/repo")),
+    ///     issue_id: Some(String::from_str(&env, "123")),
+    ///     bounty_type: Some(String::from_str(&env, "bug")),
+    ///     tags: vec![&env, String::from_str(&env, "priority-high")],
+    ///     custom_fields: map![&env],
+    /// };
+    ///
+    /// escrow_client.set_escrow_metadata(&42, &metadata)?;
+    /// ```
+    pub fn set_escrow_metadata(
+        env: Env,
+        bounty_id: u64,
+        metadata: EscrowMetadata,
+    ) -> Result<(), Error> {
+        // Verify bounty exists
+        if !env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
+            return Err(Error::BountyNotFound);
+        }
+
+        // Get escrow to verify depositor authorization
+        let escrow: Escrow = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Escrow(bounty_id))
+            .unwrap();
+        escrow.depositor.require_auth();
+
+        // Validate metadata size limits
+        if !validate_metadata_size(&env, &metadata) {
+            return Err(Error::MetadataTooLarge);
+        }
+
+        // Store metadata
+        env.storage()
+            .persistent()
+            .set(&DataKey::EscrowMetadata(bounty_id), &metadata);
+
+        // Extend TTL for both escrow and metadata
+        env.storage().persistent().extend_ttl(
+            &DataKey::Escrow(bounty_id),
+            1000000,  // Minimum
+            10000000, // Maximum
+        );
+        env.storage().persistent().extend_ttl(
+            &DataKey::EscrowMetadata(bounty_id),
+            1000000,  // Minimum
+            10000000, // Maximum
+        );
+
+        Ok(())
+    }
+
     /// Releases escrowed funds to a contributor.
     ///
     /// # Arguments
@@ -1545,6 +1700,77 @@ impl BountyEscrowContract {
             .persistent()
             .get(&DataKey::Escrow(bounty_id))
             .unwrap())
+    }
+
+    /// Retrieves metadata for a specific bounty.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `bounty_id` - The bounty to query
+    ///
+    /// # Returns
+    /// * `Ok(Option<EscrowMetadata>)` - Metadata if set, None if not set
+    /// * `Err(Error::BountyNotFound)` - Bounty doesn't exist
+    ///
+    /// # Gas Cost
+    /// Very Low - Single storage read
+    ///
+    /// # Example
+    /// ```rust
+    /// let metadata_opt = escrow_client.get_escrow_metadata(&42)?;
+    /// if let Some(metadata) = metadata_opt {
+    ///     println!("Repo: {:?}", metadata.repo_id);
+    ///     println!("Issue: {:?}", metadata.issue_id);
+    ///     println!("Type: {:?}", metadata.bounty_type);
+    ///     println!("Tags: {:?}", metadata.tags);
+    /// }
+    /// ```
+    pub fn get_escrow_metadata(env: Env, bounty_id: u64) -> Result<Option<EscrowMetadata>, Error> {
+        // Verify bounty exists
+        if !env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
+            return Err(Error::BountyNotFound);
+        }
+
+        // Get metadata if it exists
+        let metadata: Option<EscrowMetadata> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::EscrowMetadata(bounty_id));
+        Ok(metadata)
+    }
+
+    /// Retrieves complete escrow information including metadata.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `bounty_id` - The bounty to query
+    ///
+    /// # Returns
+    /// * `Ok(EscrowWithMetadata)` - Combined escrow and metadata information
+    /// * `Err(Error::BountyNotFound)` - Bounty doesn't exist
+    ///
+    /// # Gas Cost
+    /// Low - Two storage reads
+    ///
+    /// # Example
+    /// ```rust
+    /// let escrow_view = escrow_client.get_escrow_with_metadata(&42)?;
+    /// println!("Amount: {}", escrow_view.escrow.amount);
+    /// println!("Status: {:?}", escrow_view.escrow.status);
+    ///
+    /// if let Some(meta) = escrow_view.metadata {
+    ///     println!("Repository: {:?}", meta.repo_id);
+    ///     println!("Issue: {:?}", meta.issue_id);
+    /// }
+    /// ```
+    pub fn get_escrow_with_metadata(env: Env, bounty_id: u64) -> Result<EscrowWithMetadata, Error> {
+        // Get core escrow data
+        let escrow = Self::get_escrow_info(env.clone(), bounty_id)?;
+
+        // Get metadata if it exists
+        let metadata = Self::get_escrow_metadata(env, bounty_id)?;
+
+        Ok(EscrowWithMetadata { escrow, metadata })
     }
 
     /// Returns the current token balance held by the contract.

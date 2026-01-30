@@ -20,9 +20,12 @@ jobs:
     name: Format, Build, Test, and Stellar Build Check
     runs-on: macos-latest
     
+    env:
+      PATH: ${{ env.PATH }}:${{ env.HOME }}/.cargo/bin
+    
     defaults:
       run:
-        working-directory: contracts/bounty_escrow
+        working-directory: contracts
 
     steps:
       - name: Checkout code
@@ -31,11 +34,13 @@ jobs:
       - name: Install Rust
         run: |
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          # Source the cargo environment
           source $HOME/.cargo/env
+          # Verify cargo is available
+          cargo --version
 
       - name: Install Rust target for Soroban
         run: |
-          source $HOME/.cargo/env
           rustup target add wasm32v1-none
 
       - name: Install Stellar CLI with Homebrew
@@ -59,34 +64,29 @@ jobs:
 
       - name: Check code formatting
         run: |
-          source $HOME/.cargo/env
-          cd contracts/escrow
+          cd bounty_escrow/contracts/escrow
           cargo fmt --check --all
 
       - name: Build contracts
         run: |
-          source $HOME/.cargo/env
-          cd contracts/escrow
+          cd bounty_escrow/contracts/escrow
           cargo build --release --target wasm32v1-none
 
       - name: Run tests
         run: |
-          source $HOME/.cargo/env
-          cd contracts/escrow
+          cd bounty_escrow/contracts/escrow
           cargo test --verbose --lib
 
       - name: Build Soroban contract
         run: |
-          source $HOME/.cargo/env
-          cd contracts/escrow
+          cd bounty_escrow/contracts/escrow
           stellar contract build --verbose
 
       - name: Stellar build check
         run: |
-          source $HOME/.cargo/env
           # Verify WASM files were generated
           echo "Checking for generated WASM files..."
-          wasm_file="target/wasm32v1-none/release/bounty_escrow.wasm"
+          wasm_file="bounty_escrow/target/wasm32v1-none/release/bounty_escrow.wasm"
           if [ ! -f "$wasm_file" ]; then
             echo "Error: WASM file not found"
             echo "Expected: $wasm_file"
