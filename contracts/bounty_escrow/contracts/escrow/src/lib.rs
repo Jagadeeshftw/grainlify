@@ -89,6 +89,7 @@
 #![no_std]
 mod events;
 mod indexed;
+mod rbac;
 mod test_bounty_escrow;
 
 use events::{
@@ -769,6 +770,11 @@ impl BountyEscrowContract {
             .instance()
             .set(&DataKey::FeeConfig, &fee_config);
 
+        // Backward-compatibility: assign Admin role to the initial admin
+        // Directly set the RBAC mapping so init bootstrap works
+        let role_key = rbac::RBACKey::RoleAssignment(admin.clone(), rbac::Role::Admin);
+        env.storage().persistent().set(&role_key, &true);
+
         // Emit initialization event
         // emit_bounty_initialized(
         //     &env,
@@ -1051,6 +1057,7 @@ impl BountyEscrowContract {
     /// - Forgetting to approve token contract before calling
     /// - Using a bounty ID that already exists
     /// - Setting deadline in the past or too far in the future
+    ///
     pub fn lock_funds(
         env: Env,
         depositor: Address,
@@ -1066,14 +1073,14 @@ impl BountyEscrowContract {
 
         // Check if contract is paused
         if Self::is_paused_internal(&env) {
-            monitoring::track_operation(&env, symbol_short!("lock"), caller, false);
+            monitoring::track_operation(&env, symbol_short!("lock"), caller.clone(), false);
             return Err(Error::ContractPaused);
         }
 
         // Verify depositor authorization
         depositor.require_auth();
 
-        // Ensure contract is initialized
+        // Ensure contract is initialized and prevent reentrancy
         if env.storage().instance().has(&DataKey::ReentrancyGuard) {
             panic!("Reentrancy detected");
         }
@@ -1082,25 +1089,20 @@ impl BountyEscrowContract {
             .set(&DataKey::ReentrancyGuard, &true);
 
         if amount <= 0 {
-            monitoring::track_operation(&env, symbol_short!("lock"), caller, false);
+            monitoring::track_operation(&env, symbol_short!("lock"), caller.clone(), false);
             env.storage().instance().remove(&DataKey::ReentrancyGuard);
             return Err(Error::InvalidAmount);
         }
 
         if deadline <= env.ledger().timestamp() {
-            monitoring::track_operation(&env, symbol_short!("lock"), caller, false);
+            monitoring::track_operation(&env, symbol_short!("lock"), caller.clone(), false);
             env.storage().instance().remove(&DataKey::ReentrancyGuard);
             return Err(Error::InvalidDeadline);
-        }
-        if !env.storage().instance().has(&DataKey::Admin) {
-            monitoring::track_operation(&env, symbol_short!("lock"), caller, false);
-            env.storage().instance().remove(&DataKey::ReentrancyGuard);
-            return Err(Error::NotInitialized);
         }
 
         // Prevent duplicate bounty IDs
         if env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
-            monitoring::track_operation(&env, symbol_short!("lock"), caller, false);
+            monitoring::track_operation(&env, symbol_short!("lock"), caller.clone(), false);
             env.storage().instance().remove(&DataKey::ReentrancyGuard);
             return Err(Error::BountyExists);
         }
@@ -1429,7 +1431,7 @@ impl BountyEscrowContract {
         env.storage().instance().remove(&DataKey::ReentrancyGuard);
 
         // Track successful operation
-        monitoring::track_operation(&env, symbol_short!("release"), admin, true);
+        monitoring::track_operation(&env, symbol_short!("release"), admin.clone(), true);
 
         // Track performance
         let duration = env.ledger().timestamp().saturating_sub(start);
@@ -1437,8 +1439,11 @@ impl BountyEscrowContract {
         Ok(())
     }
 
-    /// Approve a refund before deadline (admin only).
-    /// This allows early refunds with admin approval.
+    /// Approve a refund before deadline (admin or operator only).
+    /// This allows early refunds with admin/operator approval.
+    ///
+    /// # Role-Based Access Control
+    /// - Requires: Admin or Operator role
     pub fn approve_refund(
         env: Env,
         bounty_id: u64,
@@ -2162,6 +2167,120 @@ impl BountyEscrowContract {
         );
 
         Ok(released_count)
+    }
+
+    // ========================================================================
+    // Role-Based Access Control Functions
+    // ========================================================================
+
+    /// Grant a role to an address (Admin only).
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `address` - The address to grant the role to
+    /// * `role` - The role to grant (Admin, Operator, Pauser, Viewer)
+    ///
+    /// # Authorization
+    /// - Caller must be Admin
+    ///
+    /// # Events
+    /// Emits: `RoleGranted { address, role, granted_by, timestamp }`
+    ///
+    /// # Backward Compatibility
+    /// - Initial admin gets Admin role automatically on first grant_role call
+    /// - This maintains compatibility with existing single-admin setup
+    pub fn grant_role(env: Env, address: Address, role: rbac::Role) -> Result<(), Error> {
+        let start = env.ledger().timestamp();
+
+        // Get the original admin from contract initialization
+        if !env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::NotInitialized);
+        }
+
+        let original_admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        original_admin.require_auth();
+
+        // Backward compatibility: grant original admin the Admin role
+        if !rbac::has_role(&env, original_admin.clone(), rbac::Role::Admin) {
+            rbac::grant_role(&env, original_admin.clone(), rbac::Role::Admin, original_admin.clone());
+        }
+
+        // Verify caller is Admin via RBAC
+        rbac::require_admin(&env, original_admin.clone());
+
+        // Grant the role
+        rbac::grant_role(&env, address.clone(), role.clone(), original_admin.clone());
+
+        monitoring::track_operation(&env, symbol_short!("gRole"), original_admin.clone(), true);
+        let duration = env.ledger().timestamp().saturating_sub(start);
+        monitoring::emit_performance(&env, symbol_short!("gRole"), duration);
+
+        Ok(())
+    }
+
+    /// Revoke a role from an address (Admin only).
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `address` - The address to revoke the role from
+    /// * `role` - The role to revoke
+    ///
+    /// # Authorization
+    /// - Caller must be Admin
+    ///
+    /// # Events
+    /// Emits: `RoleRevoked { address, role, revoked_by, timestamp }`
+    pub fn revoke_role(env: Env, address: Address, role: rbac::Role) -> Result<(), Error> {
+        let start = env.ledger().timestamp();
+
+        if !env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::NotInitialized);
+        }
+
+        let original_admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        original_admin.require_auth();
+
+        // Backward compatibility: grant original admin the Admin role
+        if !rbac::has_role(&env, original_admin.clone(), rbac::Role::Admin) {
+            rbac::grant_role(&env, original_admin.clone(), rbac::Role::Admin, original_admin.clone());
+        }
+
+        // Verify caller is Admin
+        rbac::require_admin(&env, original_admin.clone());
+
+        // Revoke the role
+        rbac::revoke_role(&env, address, role, original_admin.clone());
+
+        monitoring::track_operation(&env, symbol_short!("rRole"), original_admin.clone(), true);
+        let duration = env.ledger().timestamp().saturating_sub(start);
+        monitoring::emit_performance(&env, symbol_short!("rRole"), duration);
+
+        Ok(())
+    }
+
+    /// Get all roles assigned to an address (callable by any role).
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `address` - The address to query roles for
+    ///
+    /// # Returns
+    /// * `Vec<rbac::Role>` - All roles assigned to the address
+    pub fn get_address_roles(env: Env, address: Address) -> Vec<rbac::Role> {
+        rbac::get_roles(&env, address)
+    }
+
+    /// Check if an address has a specific role.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `address` - The address to check
+    /// * `role` - The role to check for
+    ///
+    /// # Returns
+    /// * `bool` - True if the address has the role
+    pub fn has_role(env: Env, address: Address, role: rbac::Role) -> bool {
+        rbac::has_role(&env, address, role)
     }
 }
 

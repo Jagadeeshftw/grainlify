@@ -123,6 +123,40 @@ fn create_escrow_contract<'a>(e: &Env) -> BountyEscrowContractClient<'a> {
     BountyEscrowContractClient::new(e, &contract_id)
 }
 
+#[test]
+fn test_rbac_grant_operator_and_release() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, BountyEscrowContract);
+    let client = BountyEscrowContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let contributor = Address::generate(&env);
+
+    // Setup token
+    let token_admin = Address::generate(&env);
+    let (token, _token_client, token_admin_client) = create_token_contract(&env, &token_admin);
+
+    // Initialize and fund
+    env.mock_all_auths();
+    client.init(&admin, &token);
+    token_admin_client.mint(&depositor, &1000i128);
+
+    // Lock funds as depositor
+    client.lock_funds(&depositor, &1u64, &500i128, &1000u64);
+
+    // Grant Operator role to operator (admin authorizes)
+    client.grant_role(&operator, &crate::rbac::Role::Operator);
+
+    // Admin performs release (backward-compatible)
+    client.release_funds(&1u64, &contributor);
+
+    // Verify released
+    let escrow = client.get_escrow_info(&1u64);
+    assert_eq!(escrow.status, crate::EscrowStatus::Released);
+}
+
 /* Release schedule tests commented out - functionality not implemented
 #[test]
 fn test_multiple_release_schedules() {

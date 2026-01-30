@@ -87,6 +87,31 @@ fn test_init_program_event_emission() {
 }
 
 #[test]
+fn test_rbac_grant_and_get_roles() {
+    let env = Env::default();
+    let contract = ProgramEscrowContract;
+
+    // Set anti-abuse admin (used by RBAC grant/revoke)
+    let admin = Address::generate(&env);
+    contract.set_admin(&env, admin.clone());
+
+    // Grant Operator role to an address
+    let operator = Address::generate(&env);
+    contract.grant_role(&env, operator.clone(), rbac::Role::Operator);
+
+    // Query roles
+    let roles = contract.get_address_roles(&env, operator.clone());
+    // Ensure Operator role is present
+    let mut found = false;
+    for r in roles.iter() {
+        if r == &rbac::Role::Operator {
+            found = true;
+        }
+    }
+    assert!(found, "Operator role should be granted");
+}
+
+#[test]
 #[should_panic(expected = "Program already initialized")]
 fn test_init_program_duplicate() {
     let env = Env::default();
