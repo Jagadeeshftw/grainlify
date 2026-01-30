@@ -139,6 +139,7 @@
 //! 6. **Token Approval**: Ensure contract has token allowance before locking funds
 
 #![no_std]
+mod multisig_tests;
 mod pause_tests;
 
 use soroban_sdk::{
@@ -680,15 +681,46 @@ pub struct ProgramData {
     pub token_address: Address,
 }
 
+/// Multi-signature configuration for large payouts.
+///
+/// When enabled, payouts above `threshold_amount` require approval from
+/// `required_approvals` out of `signers.len()` authorized signers.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MultisigConfig {
+    pub threshold_amount: i128,   // Amount above which multisig is required
+    pub signers: Vec<Address>,    // List of authorized signers
+    pub required_approvals: u32,  // N-of-M signatures needed
+    pub enabled: bool,            // Enable/disable multisig requirement
+}
+
+/// Pending payout approval for large payouts requiring multisig.
+///
+/// Created when a payout is initiated for an amount above the threshold.
+/// Accumulates approvals until required_approvals is reached.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MultisigPayoutApproval {
+    pub program_id: String,
+    pub amount: i128,
+    pub recipient: Address,
+    pub approvals: Vec<Address>,  // Collected signatures
+    pub created_at: u64,
+    pub payout_id: u64,           // Unique ID for this payout request
+}
+
 /// Storage key type for individual programs
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
-    Program(String),              // program_id -> ProgramData
-    ReleaseSchedule(String, u64), // program_id, schedule_id -> ProgramReleaseSchedule
-    ReleaseHistory(String),       // program_id -> Vec<ProgramReleaseHistory>
-    NextScheduleId(String),       // program_id -> next schedule_id
-    IsPaused,                     // Global contract pause state
+    Program(String),               // program_id -> ProgramData
+    ReleaseSchedule(String, u64),  // program_id, schedule_id -> ProgramReleaseSchedule
+    ReleaseHistory(String),        // program_id -> Vec<ProgramReleaseHistory>
+    NextScheduleId(String),        // program_id -> next schedule_id
+    IsPaused,                      // Global contract pause state
+    MultisigConfig,                // Multi-signature configuration
+    MultisigPayoutApproval(u64),   // payout_id -> MultisigPayoutApproval
+    NextPayoutApprovalId,          // Auto-incrementing payout approval ID
 }
 
 // ============================================================================
@@ -702,6 +734,22 @@ pub enum Error {
     BatchMismatch = 1,
     InsufficientBalance = 2,
     InvalidAmount = 3,
+    /// Returned when payout exceeds threshold and requires multisig approval
+    MultisigRequired = 4,
+    /// Returned when caller is not an authorized multisig signer
+    NotAuthorizedSigner = 5,
+    /// Returned when signer has already approved this payout
+    AlreadyApproved = 6,
+    /// Returned when there aren't enough approvals to execute payout
+    InsufficientApprovals = 7,
+    /// Returned when no pending multisig approval exists
+    MultisigApprovalNotFound = 8,
+    /// Returned when multisig configuration is invalid
+    InvalidMultisigConfig = 9,
+    /// Returned when not initialized
+    NotInitialized = 10,
+    /// Returned when caller is unauthorized
+    Unauthorized = 11,
 }
 
 #[contract]
@@ -865,6 +913,359 @@ impl ProgramEscrowContract {
         );
 
         balance
+    }
+
+    // ========================================================================
+    // Multi-Signature Configuration for Large Payouts
+    // ========================================================================
+
+    /// Get multisig configuration (internal helper)
+    fn get_multisig_config_internal(env: &Env) -> Option<MultisigConfig> {
+        env.storage().instance().get(&DataKey::MultisigConfig)
+    }
+
+    /// Check if multisig is required for given amount
+    fn requires_multisig(env: &Env, amount: i128) -> bool {
+        if let Some(config) = Self::get_multisig_config_internal(env) {
+            config.enabled && amount > config.threshold_amount
+        } else {
+            false
+        }
+    }
+
+    /// Check if address is an authorized signer
+    fn is_authorized_signer(config: &MultisigConfig, signer: &Address) -> bool {
+        config.signers.contains(signer)
+    }
+
+    /// Get next payout approval ID
+    fn get_next_payout_approval_id(env: &Env) -> u64 {
+        let id: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::NextPayoutApprovalId)
+            .unwrap_or(1);
+        env.storage()
+            .instance()
+            .set(&DataKey::NextPayoutApprovalId, &(id + 1));
+        id
+    }
+
+    /// Configure multi-signature requirements for large payouts.
+    ///
+    /// # Arguments
+    /// * `threshold_amount` - Payouts above this amount require multisig
+    /// * `signers` - List of authorized signer addresses
+    /// * `required_approvals` - Number of approvals needed (N-of-M)
+    /// * `enabled` - Whether multisig requirement is active
+    pub fn configure_multisig(
+        env: Env,
+        program_id: String,
+        threshold_amount: i128,
+        signers: Vec<Address>,
+        required_approvals: u32,
+        enabled: bool,
+    ) -> Result<(), Error> {
+        // Get program data to verify it exists and get authorized key
+        let program_key = DataKey::Program(program_id.clone());
+        let program_data: ProgramData = env
+            .storage()
+            .instance()
+            .get(&program_key)
+            .ok_or(Error::NotInitialized)?;
+
+        // Require authorization from payout key
+        program_data.authorized_payout_key.require_auth();
+
+        // Validate configuration
+        if threshold_amount < 0 {
+            return Err(Error::InvalidMultisigConfig);
+        }
+
+        if required_approvals == 0 || required_approvals > signers.len() as u32 {
+            return Err(Error::InvalidMultisigConfig);
+        }
+
+        if signers.is_empty() {
+            return Err(Error::InvalidMultisigConfig);
+        }
+
+        let config = MultisigConfig {
+            threshold_amount,
+            signers,
+            required_approvals,
+            enabled,
+        };
+
+        env.storage().instance().set(&DataKey::MultisigConfig, &config);
+
+        // Emit event
+        env.events().publish(
+            (symbol_short!("ms_config"),),
+            (
+                threshold_amount,
+                config.signers.len() as u32,
+                required_approvals,
+                enabled,
+                env.ledger().timestamp(),
+            ),
+        );
+
+        Ok(())
+    }
+
+    /// Get current multisig configuration (view function)
+    pub fn get_multisig_config(env: Env) -> Option<MultisigConfig> {
+        Self::get_multisig_config_internal(&env)
+    }
+
+    /// Initiate a large payout that requires multisig approval.
+    ///
+    /// Creates a pending approval that signers can approve using `approve_payout_as`.
+    ///
+    /// # Arguments
+    /// * `program_id` - The program to pay from
+    /// * `recipient` - The recipient of the funds once approved
+    /// * `amount` - The payout amount
+    ///
+    /// # Returns
+    /// * `Ok(Some(payout_id))` - Pending approval created (multisig required)
+    /// * `Ok(None)` - No multisig required (caller can use single_payout directly)
+    pub fn initiate_payout(
+        env: Env,
+        program_id: String,
+        recipient: Address,
+        amount: i128,
+    ) -> Result<Option<u64>, Error> {
+        // Get program data
+        let program_key = DataKey::Program(program_id.clone());
+        let program_data: ProgramData = env
+            .storage()
+            .instance()
+            .get(&program_key)
+            .ok_or(Error::NotInitialized)?;
+
+        program_data.authorized_payout_key.require_auth();
+
+        // Check balance
+        if amount <= 0 {
+            return Err(Error::InvalidAmount);
+        }
+        if amount > program_data.remaining_balance {
+            return Err(Error::InsufficientBalance);
+        }
+
+        // Check if multisig is required
+        if !Self::requires_multisig(&env, amount) {
+            return Ok(None); // No multisig required
+        }
+
+        // Create new pending approval
+        let payout_id = Self::get_next_payout_approval_id(&env);
+        let approval = MultisigPayoutApproval {
+            program_id: program_id.clone(),
+            amount,
+            recipient: recipient.clone(),
+            approvals: vec![&env],
+            created_at: env.ledger().timestamp(),
+            payout_id,
+        };
+        env.storage()
+            .persistent()
+            .set(&DataKey::MultisigPayoutApproval(payout_id), &approval);
+
+        // Emit event
+        env.events().publish(
+            (symbol_short!("ms_create"), payout_id),
+            (
+                program_id,
+                amount,
+                recipient,
+                Self::get_multisig_config_internal(&env)
+                    .map(|c| c.required_approvals)
+                    .unwrap_or(0),
+                env.ledger().timestamp(),
+            ),
+        );
+
+        Ok(Some(payout_id))
+    }
+
+    /// Approve a pending large payout as a specific signer.
+    ///
+    /// # Arguments
+    /// * `payout_id` - The payout approval ID to approve
+    /// * `signer` - The signer address (must authorize the call)
+    ///
+    /// # Returns
+    /// * `Ok(true)` - Payout executed (threshold reached)
+    /// * `Ok(false)` - Approval recorded, awaiting more signatures
+    pub fn approve_payout_as(env: Env, payout_id: u64, signer: Address) -> Result<bool, Error> {
+        // Require signer authorization
+        signer.require_auth();
+
+        let config = Self::get_multisig_config_internal(&env)
+            .ok_or(Error::InvalidMultisigConfig)?;
+
+        // Verify signer is authorized
+        if !Self::is_authorized_signer(&config, &signer) {
+            return Err(Error::NotAuthorizedSigner);
+        }
+
+        // Get pending approval
+        let approval_key = DataKey::MultisigPayoutApproval(payout_id);
+        let mut approval: MultisigPayoutApproval = env
+            .storage()
+            .persistent()
+            .get(&approval_key)
+            .ok_or(Error::MultisigApprovalNotFound)?;
+
+        // Check if already approved
+        if approval.approvals.contains(&signer) {
+            return Err(Error::AlreadyApproved);
+        }
+
+        // Add approval
+        approval.approvals.push_back(signer.clone());
+
+        // Emit approval event
+        env.events().publish(
+            (symbol_short!("ms_sign"), payout_id),
+            (
+                signer.clone(),
+                approval.approvals.len() as u32,
+                config.required_approvals,
+                env.ledger().timestamp(),
+            ),
+        );
+
+        // Check if threshold reached
+        if (approval.approvals.len() as u32) >= config.required_approvals {
+            // Execute the payout
+            Self::execute_multisig_payout(&env, &approval)?;
+
+            // Remove the pending approval
+            env.storage().persistent().remove(&approval_key);
+
+            return Ok(true);
+        }
+
+        // Save updated approval
+        env.storage().persistent().set(&approval_key, &approval);
+
+        Ok(false)
+    }
+
+    /// Execute a payout that has enough multisig approvals (internal)
+    fn execute_multisig_payout(
+        env: &Env,
+        approval: &MultisigPayoutApproval,
+    ) -> Result<(), Error> {
+        // Get program data
+        let program_key = DataKey::Program(approval.program_id.clone());
+        let mut program_data: ProgramData = env
+            .storage()
+            .instance()
+            .get(&program_key)
+            .ok_or(Error::NotInitialized)?;
+
+        // Verify balance is still sufficient
+        if approval.amount > program_data.remaining_balance {
+            return Err(Error::InsufficientBalance);
+        }
+
+        // Calculate and collect fee if enabled
+        let fee_config = Self::get_fee_config_internal(env);
+        let fee_amount = if fee_config.fee_enabled && fee_config.payout_fee_rate > 0 {
+            Self::calculate_fee(approval.amount, fee_config.payout_fee_rate)
+        } else {
+            0
+        };
+        let net_amount = approval.amount - fee_amount;
+
+        // Transfer funds
+        let contract_address = env.current_contract_address();
+        let token_client = token::Client::new(env, &program_data.token_address);
+        token_client.transfer(&contract_address, &approval.recipient, &net_amount);
+
+        // Transfer fee if applicable
+        if fee_amount > 0 {
+            token_client.transfer(&contract_address, &fee_config.fee_recipient, &fee_amount);
+        }
+
+        // Record payout
+        let timestamp = env.ledger().timestamp();
+        let payout_record = PayoutRecord {
+            recipient: approval.recipient.clone(),
+            amount: net_amount,
+            timestamp,
+        };
+
+        program_data.payout_history.push_back(payout_record);
+        program_data.remaining_balance -= approval.amount;
+
+        // Store updated data
+        env.storage().instance().set(&program_key, &program_data);
+
+        // Emit events
+        env.events().publish(
+            (symbol_short!("ms_exec"), approval.payout_id),
+            (
+                approval.program_id.clone(),
+                net_amount,
+                approval.recipient.clone(),
+                approval.approvals.len() as u32,
+                timestamp,
+            ),
+        );
+
+        env.events().publish(
+            (PAYOUT,),
+            (
+                approval.program_id.clone(),
+                approval.recipient.clone(),
+                net_amount,
+                timestamp,
+                program_data.remaining_balance,
+            ),
+        );
+
+        Ok(())
+    }
+
+    /// Get pending payout approval (view function)
+    pub fn get_payout_approval(env: Env, payout_id: u64) -> Option<MultisigPayoutApproval> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::MultisigPayoutApproval(payout_id))
+    }
+
+    /// Cancel a pending payout approval (authorized payout key only)
+    pub fn cancel_payout_approval(env: Env, program_id: String, payout_id: u64) -> Result<(), Error> {
+        // Get program data
+        let program_key = DataKey::Program(program_id);
+        let program_data: ProgramData = env
+            .storage()
+            .instance()
+            .get(&program_key)
+            .ok_or(Error::NotInitialized)?;
+
+        program_data.authorized_payout_key.require_auth();
+
+        let approval_key = DataKey::MultisigPayoutApproval(payout_id);
+
+        if !env.storage().persistent().has(&approval_key) {
+            return Err(Error::MultisigApprovalNotFound);
+        }
+
+        env.storage().persistent().remove(&approval_key);
+
+        env.events().publish(
+            (symbol_short!("ms_cancel"), payout_id),
+            (env.ledger().timestamp(),),
+        );
+
+        Ok(())
     }
 
     pub fn initialize_program(
