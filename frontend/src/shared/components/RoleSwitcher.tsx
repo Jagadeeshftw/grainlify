@@ -1,16 +1,17 @@
 import { Shield, Users, Code, Lock } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
-import { useEffect , useState} from 'react';
+import { useEffect } from 'react';
 
 interface RoleSwitcherProps {
   currentRole: 'contributor' | 'maintainer' | 'admin';
   onRoleChange: (role: 'contributor' | 'maintainer' | 'admin') => void;
   showMobileNav: boolean;
   isSmallDevice: boolean;
-  closeMobileNav:()=>void
+  closeMobileNav:()=>void;
+  isIconOnly?: boolean;
 }
 
-export function RoleSwitcher({ currentRole, onRoleChange , showMobileNav , isSmallDevice, closeMobileNav}: RoleSwitcherProps) {
+export function RoleSwitcher({ currentRole, onRoleChange , showMobileNav , isSmallDevice, closeMobileNav, isIconOnly}: RoleSwitcherProps) {
   const { theme } = useTheme();
 
   const roles = [
@@ -33,12 +34,12 @@ export function RoleSwitcher({ currentRole, onRoleChange , showMobileNav , isSma
 
   return (
     <div 
-      className={`w-[80%] lg:w-auto max-w-[800px] lg:max-w-none flex-col lg:flex-row gap-[8px] lg:gap-[2px] lg:h-[44px] items-start p-[2px] rounded-[10px] lg:rounded-[999px] shadow-[0px_6px_6.5px_-1px_rgba(0,0,0,0.36),0px_0px_4.2px_0px_rgba(0,0,0,0.69)] ${
+      className={`lg:w-auto lg:max-w-none lg:flex-row lg:gap-[2px] lg:h-[44px] items-center p-[2px] rounded-[10px] lg:rounded-[999px] shadow-[0px_6px_6.5px_-1px_rgba(0,0,0,0.36),0px_0px_4.2px_0px_rgba(0,0,0,0.69)] ${
         theme === 'dark'
           ? 'bg-[#1a1612]'
           : 'bg-[#8b7d6b]'
       }
-      ${showMobileNav? 'inline-flex' : 'hidden lg:inline-flex'}
+      ${isIconOnly ? 'flex flex-row w-auto gap-[2px] rounded-[999px]' : showMobileNav ? 'flex w-[80%] max-w-[800px] flex-col gap-[8px] items-start' : 'hidden lg:inline-flex'}
       `}
     >
       {roles.map((role, index) => {
@@ -51,10 +52,11 @@ export function RoleSwitcher({ currentRole, onRoleChange , showMobileNav , isSma
           <button
             key={role.id}
             onClick={() => {onRoleChange(role.id); closeMobileNav();}}
-            className={`h-[40px] relative shrink-0 w-full lg:w-[130px] px-3 ${
-              isFirst ? 'rounded-bl-[10px] lg:rounded-bl-[20px] rounded-br-[4px] rounded-tl-[10px] lg:rounded-tl-[20px] rounded-tr-[4px] ' :
-              isLast ? 'rounded-bl-[4px] rounded-br-[10px] lg:rounded-br-[20px] rounded-tl-[4px] rounded-tr-[10px] lg:rounded-tr-[20px]' :
-              'rounded-[4px]'
+            className={`h-[40px] relative shrink-0 px-3 ${
+              isIconOnly ? 'w-[40px] rounded-full' :
+              isFirst ? 'rounded-bl-[10px] lg:rounded-bl-[20px] rounded-br-[4px] rounded-tl-[10px] lg:rounded-tl-[20px] rounded-tr-[4px] w-full lg:w-[130px]' :
+              isLast ? 'rounded-bl-[4px] rounded-br-[10px] lg:rounded-br-[20px] rounded-tl-[4px] rounded-tr-[10px] lg:rounded-tr-[20px] w-full lg:w-[130px]' :
+              'rounded-[4px] w-full lg:w-[130px]'
             } ${
               isActive
                 ? theme === 'dark'
@@ -77,11 +79,13 @@ export function RoleSwitcher({ currentRole, onRoleChange , showMobileNav , isSma
                 isActive ? '' : 'opacity-80'
               }`} />
               
-              <span className={`text-[11px] font-medium leading-[0] tracking-wide ${
-                isActive ? 'text-shadow-[0px_1px_2px_rgba(0,0,0,0.3)]' : 'text-shadow-[0px_1px_0px_rgba(0,0,0,0.19)]'
-              }`}>
-                {role.label}
-              </span>
+              {!isIconOnly && (
+                <span className={`text-[11px] font-medium leading-[0] tracking-wide ${
+                  isActive ? 'text-shadow-[0px_1px_2px_rgba(0,0,0,0.3)]' : 'text-shadow-[0px_1px_0px_rgba(0,0,0,0.19)]'
+                }`}>
+                  {role.label}
+                </span>
+              )}
             </div>
 
             {/* Lock Badge for Admin - Restricted Access Indicator */}

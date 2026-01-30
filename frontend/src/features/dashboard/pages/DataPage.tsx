@@ -121,11 +121,6 @@ const buildYearlyData = (monthly: any[]): ActivityPoint[] => [
   aggregateRange("2024", monthly.slice(0, 6)),
   aggregateRange("2025", monthly.slice(6, 12)),
 ];
-import { useState } from 'react';
-import { ChevronDown, Info } from 'lucide-react';
-import { Bar, Line as RechartsLine, XAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart } from 'recharts';
-import { ComposableMap, Geographies, Geography, Marker, ZoomableGroup } from "react-simple-maps";
-import { useTheme } from '../../../shared/contexts/ThemeContext';
 
 export function DataPage() {
   const { theme, toggleTheme } = useTheme();
@@ -805,8 +800,64 @@ export function DataPage() {
                     strokeWidth={3}
                     dot={false}
                   />
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-2 gap-6">
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Filters */}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => toggleProjectFilter("new")}
+                className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${
+                  projectFilters.new
+                    ? "bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]"
+                    : "backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]"
+                }`}
+              >
+                New
+              </button>
+              <button
+                onClick={() => toggleProjectFilter("reactivated")}
+                className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${
+                  projectFilters.reactivated
+                    ? "bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]"
+                    : "backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]"
+                }`}
+              >
+                Reactivated
+              </button>
+              <button
+                onClick={() => toggleProjectFilter("active")}
+                className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${
+                  projectFilters.active
+                    ? "bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]"
+                    : "backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]"
+                }`}
+              >
+                Active
+              </button>
+              <button
+                onClick={() => toggleProjectFilter("churned")}
+                className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${
+                  projectFilters.churned
+                    ? "bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]"
+                    : "backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]"
+                }`}
+              >
+                Churned
+              </button>
+              <button
+                onClick={() => toggleProjectFilter("prMerged")}
+                className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${
+                  projectFilters.prMerged
+                    ? "bg-[#c9983a] text-white shadow-[0_3px_12px_rgba(201,152,58,0.3)]"
+                    : "backdrop-blur-[20px] bg-white/[0.15] border border-white/25 text-[#2d2820] hover:bg-white/[0.2]"
+                }`}
+              >
+                PR merged
+              </button>
+            </div>
+          </div>
         {/* Left Column - Activity Sections */}
         <div className="flex flex-col gap-6">
           {/* Project Activity */}
@@ -967,7 +1018,7 @@ export function DataPage() {
                   <div className="absolute right-0 mt-2 w-[160px] backdrop-blur-[30px] bg-white/[0.55] border-2 border-white/30 rounded-[10px] shadow-[0_8px_32px_rgba(0,0,0,0.15)] overflow-hidden z-50">
                     <button
                       onClick={() => {
-                        setContributorInterval('Daily interval');
+                        setContributorInterval('daily');
                         setShowContributorIntervalDropdown(false);
                       }}
                       className="w-full px-4 py-2 text-left text-[12px] font-medium text-[#2d2820] hover:bg-white/[0.3] transition-all"
@@ -976,7 +1027,7 @@ export function DataPage() {
                     </button>
                     <button
                       onClick={() => {
-                        setContributorInterval('Weekly interval');
+                        setContributorInterval('weekly');
                         setShowContributorIntervalDropdown(false);
                       }}
                       className="w-full px-4 py-2 text-left text-[12px] font-medium text-[#2d2820] hover:bg-white/[0.3] transition-all"
@@ -985,10 +1036,10 @@ export function DataPage() {
                     </button>
                     <button
                       onClick={() => {
-                        setContributorInterval('Monthly interval');
+                        setContributorInterval('monthly');
                         setShowContributorIntervalDropdown(false);
                       }}
-                      className={`w-full px-4 py-2 text-left text-[12px] font-medium transition-all ${contributorInterval === 'Monthly interval'
+                      className={`w-full px-4 py-2 text-left text-[12px] font-medium transition-all ${contributorInterval === 'monthly'
                           ? 'bg-white/[0.35] text-[#2d2820] font-bold'
                           : 'text-[#2d2820] hover:bg-white/[0.3]'
                         }`}
@@ -1088,12 +1139,12 @@ export function DataPage() {
           </div>
         </div>
 
-          {/* Right Column - Contributors Map */}
-          <div
-            className={`backdrop-blur-[40px] rounded-[24px] border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${
-              theme === "dark" ? "bg-white/[0.15]" : "bg-white/[0.12]"
-            }`}
-          >
+        {/* Right Column - Contributors Map */}
+        <div
+          className={`backdrop-blur-[40px] rounded-[24px] border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${
+            theme === "dark" ? "bg-white/[0.15]" : "bg-white/[0.12]"
+          }`}
+        >
             <h2
               className={`text-[18px] font-bold mb-6 transition-colors ${
                 theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"
@@ -1124,20 +1175,6 @@ export function DataPage() {
                         stroke="rgba(201,152,58,0.2)"
                         strokeWidth="0.5"
                       />
-        {/* Right Column - Contributors Map */}
-        <div className="relative h-full min-h-0">
-          <div className="absolute inset-0 flex flex-col backdrop-blur-[40px] bg-white/[0.12] rounded-[24px] border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 overflow-hidden">
-            <h2 className={`text-[18px] font-bold mb-6 flex-shrink-0 transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-              }`}>Contributors map</h2>
-
-            {/* World Map Visualization - Fixed */}
-            <div className="relative h-[280px] mb-6 flex-shrink-0 rounded-[16px] backdrop-blur-[20px] bg-gradient-to-br from-[#2d2820]/80 via-[#1a1410]/70 to-[#2d2820]/80 border border-white/10 overflow-hidden">
-              {/* Map Background Pattern */}
-              <div className="absolute inset-0 opacity-20">
-                <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
-                  <defs>
-                    <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
-                      <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgba(201,152,58,0.2)" strokeWidth="0.5" />
                     </pattern>
                   </defs>
                   <rect width="100%" height="100%" fill="url(#grid)" />
@@ -1184,14 +1221,14 @@ export function DataPage() {
                   <ZoomableGroup
                     zoom={mapZoom}
                     center={mapCenter}
-                    onMoveEnd={({ coordinates, zoom }) => {
-                      setMapCenter(coordinates as [number, number]);
+                    onMoveEnd={({ coordinates, zoom }: { coordinates: [number, number]; zoom: number }) => {
+                      setMapCenter(coordinates);
                       setMapZoom(zoom);
                     }}
                   >
                     <Geographies geography={geoUrl}>
-                      {({ geographies }) =>
-                        geographies.map((geo) => {
+                      {({ geographies }: { geographies: any[] }) =>
+                        geographies.map((geo: any) => {
                           const isHighlighted = Object.keys(
                             countryCoordinates,
                           ).some(
@@ -1284,12 +1321,18 @@ export function DataPage() {
 
               {/* Map Info Overlay */}
               <div className="absolute top-2 right-2 md:top-4 md:right-4 flex flex-col gap-1.5 md:gap-1">
-                <div className="w-10 h-10 md:w-8 md:h-8 rounded-[8px] backdrop-blur-[25px] bg-white/[0.2] border border-white/30 flex items-center justify-center text-white font-bold text-[14px] md:text-[11px] hover:bg-white/[0.3] active:bg-white/[0.4] transition-all cursor-pointer touch-manipulation">
+                <button
+                  onClick={() => setMapZoom((z) => Math.min(z * 1.5, 8))}
+                  className="w-10 h-10 md:w-8 md:h-8 rounded-[8px] backdrop-blur-[25px] bg-white/[0.2] border border-white/30 flex items-center justify-center text-white font-bold text-[14px] md:text-[11px] hover:bg-white/[0.3] active:bg-white/[0.4] transition-all cursor-pointer touch-manipulation"
+                >
                   +
-                </div>
-                <div className="w-10 h-10 md:w-8 md:h-8 rounded-[8px] backdrop-blur-[25px] bg-white/[0.2] border border-white/30 flex items-center justify-center text-white font-bold text-[14px] md:text-[11px] hover:bg-white/[0.3] active:bg-white/[0.4] transition-all cursor-pointer touch-manipulation">
+                </button>
+                <button
+                  onClick={() => setMapZoom((z) => Math.max(z / 1.5, 1))}
+                  className="w-10 h-10 md:w-8 md:h-8 rounded-[8px] backdrop-blur-[25px] bg-white/[0.2] border border-white/30 flex items-center justify-center text-white font-bold text-[14px] md:text-[11px] hover:bg-white/[0.3] active:bg-white/[0.4] transition-all cursor-pointer touch-manipulation"
+                >
                   −
-                </div>
+                </button>
               </div>
             </div>
 
@@ -1559,131 +1602,11 @@ export function DataPage() {
               >
                 PR merged
               </button>
-              </div>
-
-              {/* World Map SVG */}
-              <div className="absolute inset-0 w-full h-full">
-                <ComposableMap
-                  projection="geoMercator"
-                  projectionConfig={{
-                    scale: 100,
-                  }}
-                  className="w-full h-full"
-                >
-                  <ZoomableGroup
-                    zoom={mapZoom}
-                    center={mapCenter}
-                    onMoveEnd={({ coordinates, zoom }) => {
-                      setMapCenter(coordinates as [number, number]);
-                      setMapZoom(zoom);
-                    }}
-                  >
-                    <Geographies geography={geoUrl}>
-                      {({ geographies }) =>
-                        geographies.map((geo) => {
-                          const isHighlighted = Object.keys(countryCoordinates).some(country =>
-                            geo.properties.name === country ||
-                            (country === "United Kingdom" && geo.properties.name === "United Kingdom") || // Add aliases if needed
-                            (country === "United States" && geo.properties.name === "United States of America")
-                          );
-                          return (
-                            <Geography
-                              key={geo.rsmKey}
-                              geography={geo}
-                              fill={isHighlighted ? "rgba(201,152,58,0.3)" : "rgba(255,255,255,0.05)"}
-                              stroke="#c9983a"
-                              strokeWidth={0.5}
-                              style={{
-                                default: { outline: "none" },
-                                hover: { fill: "#d4af37", outline: "none", opacity: 0.8 },
-                                pressed: { outline: "none" },
-                              }}
-                            />
-                          );
-                        })
-                      }
-                    </Geographies>
-
-                    {/* Markers */}
-                    {contributorsByRegion.map((region) => {
-                      const coords = countryCoordinates[region.name];
-                      if (!coords) return null;
-                      return (
-                        <Marker key={region.name} coordinates={coords}>
-                          <circle r={4} fill="#c9983a" stroke="#fff" strokeWidth={1}>
-                            <animate attributeName="opacity" values="0.6;1;0.6" dur="2s" repeatCount="indefinite" />
-                          </circle>
-                        </Marker>
-                      );
-                    })}
-                  </ZoomableGroup>
-                </ComposableMap>
-              </div>
-
-              {/* Map Info Overlay */}
-              <div className="absolute top-4 right-4 flex flex-col gap-1">
-                <button
-                  onClick={() => setMapZoom(z => Math.min(z * 1.5, 8))}
-                  className="w-8 h-8 rounded-[8px] backdrop-blur-[25px] bg-white/[0.2] border border-white/30 flex items-center justify-center text-white font-bold text-[11px] hover:bg-white/[0.3] transition-all cursor-pointer"
-                >
-                  +
-                </button>
-                <button
-                  onClick={() => setMapZoom(z => Math.max(z / 1.5, 1))}
-                  className="w-8 h-8 rounded-[8px] backdrop-blur-[25px] bg-white/[0.2] border border-white/30 flex items-center justify-center text-white font-bold text-[11px] hover:bg-white/[0.3] transition-all cursor-pointer"
-                >
-                  −
-                </button>
-              </div>
-            </div>
-
-            {/* Regional List - Scrollable */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 min-h-0">
-              {/* Country Bars */}
-              <div className="space-y-2">
-                {contributorsByRegion.map((region) => (
-                  <div key={region.name} className="flex items-center gap-3 group">
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className={`text-[13px] font-semibold transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-                          }`}>{region.name}</span>
-                        <span className="text-[12px] font-bold text-[#c9983a]">{region.value}</span>
-                      </div>
-                      <div className="h-6 rounded-[6px] backdrop-blur-[15px] bg-white/[0.08] border border-white/15 overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-[#c9983a] to-[#d4af37] rounded-[6px] transition-all duration-500 group-hover:shadow-[0_0_15px_rgba(201,152,58,0.5)]"
-                          style={{ width: `${region.percentage}%` }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Bottom Grid */}
-      <div className="grid grid-cols-2 gap-6">
-        {/* Information Panel - Full Width Span */}
-        <div className="col-span-2 backdrop-blur-[40px] bg-white/[0.12] rounded-[24px] border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8">
-          <h2 className={`text-[18px] font-bold mb-6 transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-            }`}>Information</h2>
-
-          {/* Info Text */}
-          <div className="mb-6 p-5 rounded-[16px] backdrop-blur-[20px] bg-white/[0.15] border border-white/25">
-            <div className="flex items-start gap-3">
-              <Info className="w-5 h-5 text-[#c9983a] flex-shrink-0 mt-0.5" />
-              <p className={`text-[14px] leading-relaxed transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#4a3f2f]'
-                }`}>
-                Only data from contributors who have completed a KYC are included. Contributors without a completed KYC are excluded from the map.
-              </p>
             </div>
           </div>
 
           {/* Information Panel */}
-          <div className="backdrop-blur-[40px] bg-white/[0.12] rounded-[24px] border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8">
+          <div className="col-span-1 md:col-span-2 backdrop-blur-[40px] bg-white/[0.12] rounded-[24px] border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8">
             <h2
               className={`text-[18px] font-bold mb-6 transition-colors ${
                 theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"
@@ -1788,8 +1711,9 @@ export function DataPage() {
             </div>
           </div>
         </div>
+      </div>
 
-        <style>{`
+      <style>{`
         .custom-scrollbar::-webkit-scrollbar {
           width: 6px;
         }
@@ -1816,6 +1740,6 @@ export function DataPage() {
         }
       `}</style>
       </div>
-    </div>
+    
   );
 }

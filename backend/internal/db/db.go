@@ -38,10 +38,11 @@ func Connect(ctx context.Context, dbURL string) (*DB, error) {
 		"user", cfg.ConnConfig.User,
 	)
 
-	cfg.MaxConns = 10
-	cfg.MinConns = 0
-	cfg.MaxConnLifetime = 30 * time.Minute
-	cfg.MaxConnIdleTime = 5 * time.Minute
+	// Set reasonable connection pool settings
+	cfg.MaxConns = 20  // Increased from 10 to handle more concurrent connections
+	cfg.MinConns = 2   // Maintain at least 2 connections to reduce connection establishment overhead
+	cfg.MaxConnLifetime = 60 * time.Minute  // Increased from 30 minutes
+	cfg.MaxConnIdleTime = 15 * time.Minute  // Increased from 5 minutes
 	cfg.HealthCheckPeriod = 30 * time.Second
 
 	slog.Info("creating database connection pool",
@@ -103,7 +104,3 @@ func (d *DB) Close() {
 	}
 	d.Pool.Close()
 }
-
-
-
-
