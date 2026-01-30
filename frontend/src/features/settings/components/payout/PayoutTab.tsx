@@ -38,7 +38,7 @@ export function PayoutTab() {
   }, []);
 
   const handleProfileChange = (projectId: string, profileId: string) => {
-    setProjectMappings((prev) => ({
+    setProjectMappings((prev: Record<string, number | null>) => ({
       ...prev,
       [projectId]: profileId === '' ? null : parseInt(profileId, 10),
     }));
@@ -46,7 +46,7 @@ export function PayoutTab() {
 
   const handleSave = () => {
     // TODO: Implement save to backend
-    console.log('Saving payout preferences:', projectMappings);
+    // console.log('Saving payout preferences:', projectMappings);
   };
 
   const getProjectInitial = (fullName: string) => {
@@ -60,7 +60,7 @@ export function PayoutTab() {
   };
 
   // Only show verified billing profiles
-  const availableProfiles = profiles.filter(p => p.status === 'verified');
+  const availableProfiles = profiles.filter((p: any) => p.status === 'verified');
 
   return (
     <div className="space-y-6">
@@ -102,7 +102,7 @@ export function PayoutTab() {
               <div key={idx} className="grid grid-cols-2 gap-4 items-center py-4 border-b border-white/5">
                 {/* Project Column Skeleton */}
                 <div className="flex items-center gap-3">
-                  <SkeletonLoader variant="circle" className="w-10 h-10 flex-shrink-0" />
+                  <SkeletonLoader className="w-10 h-10 flex-shrink-0 rounded-full" />
                   <div className="flex flex-col gap-2">
                     <SkeletonLoader className="h-4 w-32" />
                     <SkeletonLoader className="h-3 w-24" />

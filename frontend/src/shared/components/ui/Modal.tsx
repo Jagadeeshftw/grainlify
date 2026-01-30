@@ -178,6 +178,7 @@ interface ModalInputProps {
   rows?: number;
   className?: string;
   error?: string | null;
+  autoFocus?: boolean;
 }
 
 export function ModalInput({
@@ -190,7 +191,8 @@ export function ModalInput({
   required = false,
   rows,
   className = '',
-  error
+  error,
+  autoFocus = false
 }: ModalInputProps) {
   const { theme } = useTheme();
 
@@ -233,6 +235,7 @@ export function ModalInput({
           onBlur={onBlur}
           className={inputClasses}
           placeholder={placeholder}
+          autoFocus={autoFocus}
         />
       )}
       {isError && (
@@ -266,7 +269,7 @@ export function ModalSelect({
   const isDark = theme === 'dark';
 
   return (
-    <div className={`flex flex-col gap-1 relative ${className}`} ref={containerRef}>
+    <div className={`flex flex-col gap-1 relative ${className}`}>
       {label && (
         <label className={`block text-[13px] font-medium mb-2 transition-colors ${
           isDark ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'

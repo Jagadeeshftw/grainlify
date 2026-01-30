@@ -20,10 +20,6 @@ jobs:
     name: Format, Build, Test, and Stellar Build Check
     runs-on: macos-latest
     
-    defaults:
-      run:
-        working-directory: contracts/bounty_escrow
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -31,11 +27,10 @@ jobs:
       - name: Install Rust
         run: |
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-          source $HOME/.cargo/env
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Install Rust target for Soroban
         run: |
-          source $HOME/.cargo/env
           rustup target add wasm32v1-none
 
       - name: Install Stellar CLI with Homebrew
@@ -52,41 +47,36 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+            contracts/**/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('contracts/**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
       - name: Check code formatting
         run: |
-          source $HOME/.cargo/env
-          cd contracts/escrow
+          cd contracts/bounty_escrow/contracts/escrow
           cargo fmt --check --all
 
       - name: Build contracts
         run: |
-          source $HOME/.cargo/env
-          cd contracts/escrow
+          cd contracts/bounty_escrow/contracts/escrow
           cargo build --release --target wasm32v1-none
 
       - name: Run tests
         run: |
-          source $HOME/.cargo/env
-          cd contracts/escrow
+          cd contracts/bounty_escrow/contracts/escrow
           cargo test --verbose --lib
 
       - name: Build Soroban contract
         run: |
-          source $HOME/.cargo/env
-          cd contracts/escrow
+          cd contracts/bounty_escrow/contracts/escrow
           stellar contract build --verbose
 
       - name: Stellar build check
         run: |
-          source $HOME/.cargo/env
           # Verify WASM files were generated
           echo "Checking for generated WASM files..."
-          wasm_file="target/wasm32v1-none/release/bounty_escrow.wasm"
+          wasm_file="contracts/bounty_escrow/target/wasm32v1-none/release/bounty_escrow.wasm"
           if [ ! -f "$wasm_file" ]; then
             echo "Error: WASM file not found"
             echo "Expected: $wasm_file"

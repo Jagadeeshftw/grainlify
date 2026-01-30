@@ -277,6 +277,16 @@ export function BillingTab() {
   const handleAddPaymentMethod = (method: PaymentMethod) => {
     if (!selectedProfile) return;
 
+    // Checked for the  duplicate token type (secondary validation)
+    const existingWallet = selectedProfile.paymentMethods?.find(
+      pm => pm.cryptoType === method.cryptoType
+    );
+    
+    if (existingWallet) {
+      console.warn(`Duplicate wallet prevented: ${method.cryptoType} already exists`);
+      return;
+    }
+
     const updatedProfile = {
       ...selectedProfile,
       paymentMethods: [...(selectedProfile.paymentMethods || []), method],
@@ -296,6 +306,24 @@ export function BillingTab() {
     const updatedProfile = {
       ...selectedProfile,
       paymentMethods: (selectedProfile.paymentMethods || []).filter(m => m.id !== methodId),
+    };
+
+    const updatedProfiles = profiles.map(p =>
+      p.id === selectedProfile.id ? updatedProfile : p
+    );
+
+    setProfiles(updatedProfiles);
+    setSelectedProfile(updatedProfile);
+  };
+
+  const handleUpdatePaymentMethod = (methodId: number, updates: Partial<PaymentMethod>) => {
+    if (!selectedProfile) return;
+
+    const updatedProfile = {
+      ...selectedProfile,
+      paymentMethods: (selectedProfile.paymentMethods || []).map(m =>
+        m.id === methodId ? { ...m, ...updates } : m
+      ),
     };
 
     const updatedProfiles = profiles.map(p =>
@@ -683,6 +711,7 @@ export function BillingTab() {
             paymentMethods={selectedProfile.paymentMethods || []}
             onAddPaymentMethod={handleAddPaymentMethod}
             onRemovePaymentMethod={handleRemovePaymentMethod}
+            onUpdatePaymentMethod={handleUpdatePaymentMethod}
             onSetDefault={handleSetDefaultPaymentMethod}
           />
         )}

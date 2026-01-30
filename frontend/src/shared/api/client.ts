@@ -4,6 +4,7 @@
  */
 
 import { API_BASE_URL } from "../config/api";
+import { SearchResults } from "../types/search";
 
 // Token management
 export const getAuthToken = (): string | null => {
@@ -166,6 +167,10 @@ export type LandingStats = {
 };
 
 export const getLandingStats = () => apiRequest<LandingStats>("/stats/landing");
+
+// Search
+export const search = (query: string) =>
+  apiRequest<SearchResults>(`/search?q=${encodeURIComponent(query)}`);
 
 // Authentication
 export const getCurrentUser = () =>
@@ -561,6 +566,12 @@ export const createOpenSourceWeekEvent = (data: {
 
 export const deleteOpenSourceWeekEvent = (id: string) =>
   apiRequest<{ ok: boolean }>(`/admin/open-source-week/events/${id}`, {
+    requiresAuth: true,
+    method: "DELETE",
+  });
+
+export const deleteAdminProject = (id: string) =>
+  apiRequest<{ ok: boolean }>(`/admin/projects/${id}`, {
     requiresAuth: true,
     method: "DELETE",
   });

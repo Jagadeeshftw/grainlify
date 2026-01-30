@@ -73,7 +73,7 @@ pub struct BountyEscrowInitialized {
 /// # Event Structure
 /// Topic: `(symbol_short!("init"),)`
 /// Data: Complete `BountyEscrowInitialized` struct
-pub fn emit_bounty_initialized(env: &Env, event: BountyEscrowInitialized) {
+pub fn _emit_bounty_initialized(env: &Env, event: BountyEscrowInitialized) {
     let topics = (symbol_short!("init"),);
     env.events().publish(topics, event.clone());
 }
@@ -137,7 +137,7 @@ pub struct FundsLocked {
 ///
 /// # Indexing Note
 /// The bounty_id is included in topics for efficient filtering
-pub fn emit_funds_locked(env: &Env, event: FundsLocked) {
+pub fn _emit_funds_locked(env: &Env, event: FundsLocked) {
     let topics = (symbol_short!("f_lock"), event.bounty_id);
     env.events().publish(topics, event.clone());
 }
@@ -204,7 +204,7 @@ pub struct FundsReleased {
 /// # Event Structure
 /// Topic: `(symbol_short!("f_rel"), event.bounty_id)`
 /// Data: Complete `FundsReleased` struct
-pub fn emit_funds_released(env: &Env, event: FundsReleased) {
+pub fn _emit_funds_released(env: &Env, event: FundsReleased) {
     let topics = (symbol_short!("f_rel"), event.bounty_id);
     env.events().publish(topics, event.clone());
 }
@@ -282,8 +282,30 @@ pub struct FundsRefunded {
 /// # Event Structure
 /// Topic: `(symbol_short!("f_ref"), event.bounty_id)`
 /// Data: Complete `FundsRefunded` struct
-pub fn emit_funds_refunded(env: &Env, event: FundsRefunded) {
+pub fn _emit_funds_refunded(env: &Env, event: FundsRefunded) {
     let topics = (symbol_short!("f_ref"), event.bounty_id);
+    env.events().publish(topics, event.clone());
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FeeOperationType {
+    Lock,
+    Release,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct FeeCollected {
+    pub operation_type: FeeOperationType,
+    pub amount: i128,
+    pub fee_rate: i128,
+    pub recipient: Address,
+    pub timestamp: u64,
+}
+
+pub fn emit_fee_collected(env: &Env, event: FeeCollected) {
+    let topics = (symbol_short!("fee"),);
     env.events().publish(topics, event.clone());
 }
 
@@ -302,6 +324,21 @@ pub fn emit_batch_funds_locked(env: &Env, event: BatchFundsLocked) {
 
 #[contracttype]
 #[derive(Clone, Debug)]
+pub struct FeeConfigUpdated {
+    pub lock_fee_rate: i128,
+    pub release_fee_rate: i128,
+    pub fee_recipient: Address,
+    pub fee_enabled: bool,
+    pub timestamp: u64,
+}
+
+pub fn emit_fee_config_updated(env: &Env, event: FeeConfigUpdated) {
+    let topics = (symbol_short!("fee_cfg"),);
+    env.events().publish(topics, event.clone());
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
 pub struct BatchFundsReleased {
     pub count: u32,
     pub total_amount: i128,
@@ -310,5 +347,104 @@ pub struct BatchFundsReleased {
 
 pub fn emit_batch_funds_released(env: &Env, event: BatchFundsReleased) {
     let topics = (symbol_short!("b_rel"),);
+    env.events().publish(topics, event.clone());
+}
+// ============================================================================
+// Contract Pause Events
+// ============================================================================
+
+/// Event emitted when the contract is paused.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ContractPaused {
+    pub paused_by: Address,
+    pub timestamp: u64,
+}
+
+pub fn emit_contract_paused(env: &Env, event: ContractPaused) {
+    let topics = (symbol_short!("pause"),);
+    env.events().publish(topics, event.clone());
+}
+
+/// Event emitted when the contract is unpaused.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ContractUnpaused {
+    pub unpaused_by: Address,
+    pub timestamp: u64,
+}
+
+pub fn emit_contract_unpaused(env: &Env, event: ContractUnpaused) {
+    let topics = (symbol_short!("unpause"),);
+    env.events().publish(topics, event.clone());
+}
+
+/// Event emitted when emergency withdrawal occurs.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct EmergencyWithdrawal {
+    pub withdrawn_by: Address,
+    pub amount: i128,
+    pub recipient: Address,
+    pub timestamp: u64,
+}
+
+pub fn emit_emergency_withdrawal(env: &Env, event: EmergencyWithdrawal) {
+    let topics = (symbol_short!("ewith"),);
+    env.events().publish(topics, event.clone());
+}
+
+// ============================================================================
+// Deadline Extended Event
+// ============================================================================
+
+/// Event emitted when the refund deadline for an escrow is extended.
+///
+/// # Fields
+/// * `bounty_id` - The bounty identifier
+/// * `old_deadline` - The previous deadline timestamp
+/// * `new_deadline` - The new deadline timestamp
+/// * `extended_by` - Address that extended the deadline (admin or depositor)
+/// * `timestamp` - Unix timestamp when the extension occurred
+///
+/// # Event Topic
+/// Symbol: `deadline_ext`
+/// Indexed: `bounty_id`
+///
+/// # Usage
+/// Emitted when an authorized party (admin or depositor) extends the refund
+/// deadline for a bounty. This allows bounties to be extended without
+/// migrating funds to a new escrow.
+///
+/// # Conditions
+/// - New deadline must be strictly greater than old deadline
+/// - Escrow must be in Locked or PartiallyRefunded state
+/// - Only admin or depositor can extend deadline
+///
+/// # Security Considerations
+/// - Deadline can only be extended, never shortened
+/// - Prevents indefinite locking by requiring extension
+/// - Full audit trail of all deadline changes
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct DeadlineExtended {
+    pub bounty_id: u64,
+    pub old_deadline: u64,
+    pub new_deadline: u64,
+    pub extended_by: Address,
+    pub timestamp: u64,
+}
+
+/// Emits a DeadlineExtended event.
+///
+/// # Arguments
+/// * `env` - The contract environment
+/// * `event` - The deadline extended event data
+///
+/// # Event Structure
+/// Topic: `(symbol_short!("deadline_ext"), event.bounty_id)`
+/// Data: Complete `DeadlineExtended` struct
+pub fn emit_deadline_extended(env: &Env, event: DeadlineExtended) {
+    let topics = (symbol_short!("dead_ext"), event.bounty_id);
     env.events().publish(topics, event.clone());
 }

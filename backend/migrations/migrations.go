@@ -7,24 +7,3 @@ import "embed"
 // Note: embed patterns cannot use "..", so the embedding must live alongside the SQL files.
 //go:embed *.sql
 var FS embed.FS
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

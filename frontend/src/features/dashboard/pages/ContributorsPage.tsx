@@ -4,7 +4,11 @@ import { ProjectsTab } from "../components/ProjectsTab";
 import { RewardsTab } from "../components/RewardsTab";
 import { useTheme } from "../../../shared/contexts/ThemeContext";
 
-export function ContributorsPage() {
+interface ContributorsPageProps {
+  onNavigate: (page: string) => void;
+}
+
+export function ContributorsPage({ onNavigate }: ContributorsPageProps) {
   const { theme } = useTheme();
   const [activeTab, setActiveTab] = useState<
     "contributions" | "projects" | "rewards"

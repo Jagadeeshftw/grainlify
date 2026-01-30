@@ -28,10 +28,27 @@ func New(cfg config.Config, deps Deps) *fiber.App {
 		"app_name", "grainlify-api",
 	)
 	app := fiber.New(fiber.Config{
-		AppName:      "grainlify-api",
-		IdleTimeout:  60 * time.Second,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		AppName:               "grainlify-api",
+		IdleTimeout:           120 * time.Second,  // Increased from 60s
+		ReadTimeout:           30 * time.Second,   // Increased from 10s
+		WriteTimeout:          30 * time.Second,   // Increased from 10s
+		DisableStartupMessage: true,               // Disable Fiber startup message
+		EnablePrintRoutes:     false,              // Disable route logging
+		ServerHeader:          "Grainlify-API",   // Add server header
+		ErrorHandler: func(ctx *fiber.Ctx, err error) error {
+			// Log the error
+			code := fiber.StatusInternalServerError
+			if e, ok := err.(*fiber.Error); ok {
+				code = e.Code
+			}
+			slog.Error("API error",
+				"method", ctx.Method(),
+				"path", ctx.Path(),
+				"status", code,
+				"error", err,
+			)
+			return fiber.DefaultErrorHandler(ctx, err)
+		},
 	})
 	slog.Info("Fiber app created")
 
@@ -231,6 +248,9 @@ func New(cfg config.Config, deps Deps) *fiber.App {
 	adminGroup.Post("/ecosystems", auth.RequireRole("admin"), ecosystemsAdmin.Create())
 	adminGroup.Put("/ecosystems/:id", auth.RequireRole("admin"), ecosystemsAdmin.Update())
 	adminGroup.Delete("/ecosystems/:id", auth.RequireRole("admin"), ecosystemsAdmin.Delete())
+
+	projectsAdmin := handlers.NewProjectsAdminHandler(deps.DB)
+	adminGroup.Delete("/projects/:id", auth.RequireRole("admin"), projectsAdmin.Delete())
 
 	// Open Source Week (admin)
 	oswAdmin := handlers.NewOpenSourceWeekAdminHandler(deps.DB)
