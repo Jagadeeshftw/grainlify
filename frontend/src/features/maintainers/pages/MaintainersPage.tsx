@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { ChevronDown, ChevronRight, Plus, Settings as SettingsIcon, AlertCircle, Package } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Settings as SettingsIcon, AlertCircle, Package, Menu } from 'lucide-react';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
 import { SkeletonLoader } from '../../../shared/components/SkeletonLoader';
 import { DashboardTab } from '../components/dashboard/DashboardTab';
@@ -48,6 +48,7 @@ export function MaintainersPage({ onNavigate, initialProjectId, onClearTargetPro
   const [failedAvatars, setFailedAvatars] = useState<Set<string>>(new Set());
   const [targetIssueId, setTargetIssueId] = useState<string | undefined>(undefined);
   const [targetProjectId, setTargetProjectId] = useState<string | undefined>(undefined);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
   if (projects && projects.length > 0) {
@@ -219,15 +220,214 @@ export function MaintainersPage({ onNavigate, initialProjectId, onClearTargetPro
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       {/* Top Navigation Bar */}
-      <div className={`backdrop-blur-[40px] rounded-[20px] border p-2 relative z-10 transition-colors ${theme === 'dark'
+      <div className={`backdrop-blur-[40px] rounded-[16px] md:rounded-[20px] border p-2 relative z-10 transition-colors ${theme === 'dark'
         ? 'bg-[#2d2820]/[0.4] border-white/10'
         : 'bg-white/[0.12] border-white/25'
         }`}>
-        <div className="flex items-center gap-4">
-          {/* Repository Selector */}
-          <div className="relative z-50">
+        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 md:gap-4">
+          {/* Mobile: Repository Selector + Menu Button */}
+          <div className="flex items-center gap-2 md:hidden">
+            {/* Repository Selector (Mobile) */}
+            <div className="relative z-50 flex-1">
+              <button
+                className={`flex items-center justify-between gap-2 px-4 py-3 rounded-[12px] backdrop-blur-[30px] border transition-all w-full ${theme === 'dark'
+                  ? 'bg-white/[0.08] border-white/20 hover:bg-white/[0.12] hover:border-[#c9983a]/40'
+                  : 'bg-white/[0.15] border-white/30 hover:bg-white/[0.2] hover:border-[#c9983a]/30'
+                  }`}
+                onClick={() => setIsRepoDropdownOpen(!isRepoDropdownOpen)}
+              >
+                <span className={`text-[13px] font-semibold truncate transition-colors ${theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
+                  }`}>Repositories</span>
+                <ChevronDown className={`w-4 h-4 flex-shrink-0 transition-all ${isRepoDropdownOpen ? 'rotate-180' : ''} ${theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
+                  }`} />
+              </button>
+
+              {/* Dropdown Menu (Mobile - Full Width) */}
+              {isRepoDropdownOpen && (
+                <div className={`absolute top-full left-0 right-0 mt-2 rounded-[16px] border-2 z-50 overflow-hidden transition-colors ${theme === 'dark'
+                  ? 'bg-[#3a3228] border-white/30'
+                  : 'bg-[#d4c5b0] border-white/40'
+                  }`}>
+                  {/* Header */}
+                  <div className={`px-4 py-4 border-b-2 bg-gradient-to-b from-white/10 to-transparent transition-colors ${theme === 'dark' ? 'border-white/20' : 'border-white/30'
+                    }`}>
+                    <h3 className={`text-[15px] font-bold transition-colors ${theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
+                      }`}>Select repositories</h3>
+                  </div>
+
+                  {/* Repository List */}
+                  <div className="py-2 max-h-[60vh] overflow-y-auto">
+                    {isLoading ? (
+                      <div className="px-4 space-y-2">
+                        {[...Array(5)].map((_, idx) => (
+                          <div key={idx} className="flex items-center gap-2 py-2">
+                            <SkeletonLoader variant="circle" className="w-4 h-4 flex-shrink-0" />
+                            <SkeletonLoader className="h-3 w-24" />
+                          </div>
+                        ))}
+                      </div>
+                    ) : error ? (
+                      <div className={`flex items-center gap-2 px-4 py-3 mx-3 rounded-[10px] ${theme === 'dark'
+                        ? 'bg-red-500/10 border border-red-500/30 text-red-400'
+                        : 'bg-red-100 border border-red-300 text-red-700'
+                        }`}>
+                        <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                        <span className="text-[12px] font-medium">{error}</span>
+                      </div>
+                    ) : groupedRepositories.length === 0 ? (
+                      <div className={`px-4 py-6 text-center ${theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
+                        }`}>
+                        <p className="text-[13px] font-medium mb-1">No repositories found</p>
+                        <p className="text-[11px]">Add your first repository to get started</p>
+                      </div>
+                    ) : (
+                      groupedRepositories.map((group) => {
+                        const isExpanded = expandedOrgs.has(group.org);
+
+                        return (
+                          <div key={group.org}>
+                            {/* Organization/Project */}
+                            <button
+                              className={`w-full px-4 py-2.5 flex items-center justify-between transition-all ${theme === 'dark'
+                                ? 'hover:bg-[#4a3e30]'
+                                : 'hover:bg-[#c9b8a0]'
+                                }`}
+                              onClick={() => group.repos.length > 0 && toggleOrgExpansion(group.org)}
+                            >
+                              <div className="flex items-center gap-2 flex-1">
+                                <span className={`text-[14px] font-bold transition-colors ${theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
+                                  }`}>
+                                  {group.org}
+                                </span>
+                                {group.repos.length === 0 && (
+                                  <span className={`text-[11px] italic font-medium transition-colors ${theme === 'dark' ? 'text-[#b8a898]' : 'text-[#8a7b6a]'
+                                    }`}>
+                                    No synced repos
+                                  </span>
+                                )}
+                              </div>
+                              {group.repos.length > 0 && (
+                                <ChevronRight
+                                  className={`w-4 h-4 transition-all ${isExpanded ? 'rotate-90' : ''} ${theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
+                                    }`}
+                                />
+                              )}
+                            </button>
+
+                            {/* Sub-repositories (if expanded) */}
+                            {group.repos.length > 0 && isExpanded && (
+                              <div className={`py-1 space-y-1 transition-colors ${theme === 'dark' ? 'bg-[#2d2820]/30' : 'bg-[#c9b8a0]/30'
+                                }`}>
+                                {group.repos.map((repo) => (
+                                  <label
+                                    key={repo.id}
+                                    className={`flex items-center gap-2 px-4 py-2 rounded-[8px] mx-3 cursor-pointer transition-all ${theme === 'dark'
+                                      ? 'hover:bg-[#4a3e30]'
+                                      : 'hover:bg-[#c9b8a0]'
+                                      }`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedRepoIds.has(repo.id)}
+                                      onChange={() => toggleRepoSelection(repo.id)}
+                                      className={`w-[16px] h-[16px] min-w-[16px] rounded-[4px] border-2 checked:bg-[#c9983a] checked:border-[#c9983a] focus:ring-2 focus:ring-[#c9983a]/40 transition-all cursor-pointer appearance-none checked:after:content-['✓'] checked:after:text-white checked:after:text-[11px] checked:after:flex checked:after:items-center checked:after:justify-center checked:after:font-bold ${theme === 'dark'
+                                        ? 'border-[#b8a898]/50 bg-[#2d2820]'
+                                        : 'border-[#7a6b5a]/50 bg-[#e8dfd0]'
+                                        }`}
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center'
+                                      }}
+                                    />
+                                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                                      {failedAvatars.has(getRepoAvatar(repo.fullName, 20)) ? (
+                                        <div className="w-4 h-4 min-w-[16px] rounded-md bg-gradient-to-br from-[#c9983a] to-[#d4af37] flex items-center justify-center flex-shrink-0">
+                                          <Package className="w-2.5 h-2.5 text-white" />
+                                        </div>
+                                      ) : (
+                                        <img
+                                          src={getRepoAvatar(repo.fullName, 20)}
+                                          alt={repo.name}
+                                          className="w-4 h-4 min-w-[16px] rounded-md border border-[#c9983a]/40 flex-shrink-0"
+                                          onError={() => setFailedAvatars(prev => new Set(prev).add(getRepoAvatar(repo.fullName, 20)))}
+                                        />
+                                      )}
+                                      <span className={`text-[13px] font-semibold truncate transition-colors ${theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
+                                        }`}>
+                                        {repo.name}
+                                      </span>
+                                      {repo.status === 'pending_verification' && (
+                                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ${theme === 'dark'
+                                          ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
+                                          : 'bg-yellow-100 text-yellow-700 border border-yellow-300'
+                                          }`}>
+                                          Pending
+                                        </span>
+                                      )}
+                                    
+                                      {repo.status === 'rejected' && (
+                                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ${theme === 'dark'
+                                          ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                                          : 'bg-red-100 text-red-700 border border-red-300'
+                                          }`}>
+                                          Rejected
+                                        </span>
+                                      )}
+                                    </div>
+                                  </label>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  {/* Footer: Add Repository */}
+                  <div className={`px-4 py-3 border-t-2 bg-gradient-to-t from-white/10 to-transparent transition-colors ${theme === 'dark' ? 'border-white/20' : 'border-white/30'
+                    }`}>
+                    <button
+                      onClick={() => setIsAddModalOpen(true)}
+                      className={`w-full flex items-center justify-between px-4 py-2.5 rounded-[12px] border-2 transition-all ${theme === 'dark'
+                        ? 'bg-white/10 border-white/25 hover:bg-white/20 hover:border-[#c9983a]/40'
+                        : 'bg-white/40 border-white/50 hover:bg-white/60 hover:border-[#c9983a]/40'
+                        }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-5 h-5 rounded-full bg-gradient-to-br from-[#c9983a]/30 to-[#d4af37]/20 flex items-center justify-center border border-[#c9983a]/40">
+                          <Plus className="w-3 h-3 text-[#c9983a]" strokeWidth={2.5} />
+                        </div>
+                        <span className={`text-[13px] font-bold transition-colors ${theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
+                          }`}>
+                          Add a repository
+                        </span>
+                      </div>
+                      <SettingsIcon className={`w-3.5 h-3.5 transition-colors ${theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
+                        }`} />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Mobile Menu Button */}
+            <button
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className={`p-3 rounded-[12px] backdrop-blur-[30px] border transition-all md:hidden ${theme === 'dark'
+                ? 'bg-white/[0.08] border-white/20 hover:bg-white/[0.12]'
+                : 'bg-white/[0.15] border-white/30 hover:bg-white/[0.2]'
+                }`}
+            >
+              <Menu className={`w-5 h-5 ${theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'}`} />
+            </button>
+          </div>
+
+          {/* Desktop: Repository Selector */}
+          <div className="relative z-50 hidden md:block">
             <button
               className={`flex items-center gap-3 px-5 py-3 rounded-[14px] backdrop-blur-[30px] border transition-all group ${theme === 'dark'
                 ? 'bg-white/[0.08] border-white/20 hover:bg-white/[0.12] hover:border-[#c9983a]/40'
@@ -241,7 +441,7 @@ export function MaintainersPage({ onNavigate, initialProjectId, onClearTargetPro
                 }`} />
             </button>
 
-            {/* Dropdown Menu */}
+            {/* Desktop Dropdown Menu */}
             {isRepoDropdownOpen && (
               <div className={`absolute top-full left-0 mt-2 w-[380px] rounded-[20px] border-2 z-50 overflow-hidden transition-colors ${theme === 'dark'
                 ? 'bg-[#3a3228] border-white/30'
@@ -412,8 +612,8 @@ export function MaintainersPage({ onNavigate, initialProjectId, onClearTargetPro
             )}
           </div>
 
-          {/* Tab Navigation */}
-          <div className="flex items-center gap-2 flex-1">
+          {/* Tab Navigation - Desktop: Horizontal, Mobile: Scrollable or Dropdown */}
+          <div className="hidden md:flex items-center gap-2 flex-1">
             {tabs.map((tab) => (
               <button
                 key={tab}
@@ -431,6 +631,33 @@ export function MaintainersPage({ onNavigate, initialProjectId, onClearTargetPro
               </button>
             ))}
           </div>
+
+          {/* Mobile Tab Navigation - Slide-out Menu */}
+          {isMobileMenuOpen && (
+            <div className="md:hidden">
+              <div className="flex flex-col gap-2 pt-2">
+                {tabs.map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => {
+                      setActiveTab(tab);
+                      setIsMobileMenuOpen(false);
+                    }}
+                    className={`px-4 py-3 rounded-[12px] text-[14px] font-semibold transition-all text-left ${activeTab === tab
+                      ? theme === 'dark'
+                        ? 'bg-gradient-to-br from-[#c9983a]/40 via-[#d4af37]/35 to-[#c9983a]/30 border-2 border-[#c9983a]/70 text-[#fef5e7]'
+                        : 'bg-gradient-to-br from-[#c9983a]/30 via-[#d4af37]/25 to-[#c9983a]/20 border-2 border-[#c9983a]/50 text-[#2d2820]'
+                      : theme === 'dark'
+                        ? 'text-white bg-white/[0.15] border-2 border-white/25'
+                        : 'text-[#7a6b5a] bg-white/[0.1] border-2 border-transparent'
+                      }`}
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

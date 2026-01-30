@@ -299,8 +299,8 @@ export function DashboardTab({ selectedProjects, onRefresh, onNavigateToIssue }:
 
   return (
     <>
-      {/* Stats Cards */}
-      <div className="grid grid-cols-5 gap-5">
+      {/* Stats Cards - Mobile: 1 column, Tablet: 3 columns, Desktop: 5 columns */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3 md:gap-4 lg:gap-5 px-2 sm:px-0">
         {isLoading ? (
           [...Array(5)].map((_, idx) => (
             <StatsCardSkeleton key={idx} />
@@ -312,10 +312,10 @@ export function DashboardTab({ selectedProjects, onRefresh, onNavigateToIssue }:
         )}
       </div>
 
-      {/* Main Content: Last Activity & Applications History */}
-      <div className="grid grid-cols-2 gap-6">
+      {/* Main Content: Last Activity & Applications History - Mobile: Stack, Desktop: Side by side */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
         {/* Last Activity */}
-        <div className={`backdrop-blur-[40px] rounded-[24px] border p-8 relative overflow-hidden group/activity transition-colors ${theme === 'dark'
+        <div className={`backdrop-blur-[40px] rounded-[20px] md:rounded-[24px] border p-6 md:p-8 relative overflow-hidden group/activity transition-colors ${theme === 'dark'
           ? 'bg-[#2d2820]/[0.4] border-white/10'
           : 'bg-white/[0.12] border-white/20'
           }`}>
@@ -323,21 +323,21 @@ export function DashboardTab({ selectedProjects, onRefresh, onNavigateToIssue }:
           <div className="absolute bottom-0 left-0 w-80 h-80 bg-gradient-to-tr from-[#c9983a]/8 to-transparent rounded-full blur-3xl pointer-events-none group-hover/activity:scale-125 transition-transform duration-1000" />
 
           <div className="relative">
-            <h2 className={`text-[20px] font-bold mb-6 transition-colors ${theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
+            <h2 className={`text-[18px] md:text-[20px] font-bold mb-4 md:mb-6 transition-colors ${theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
               }`}>Last activity</h2>
 
             {/* Activity List */}
             {isLoading ? (
-              <div className="space-y-3">
+              <div className="space-y-2 md:space-y-3">
                 {[...Array(5)].map((_, idx) => (
                   <ActivityItemSkeleton key={idx} />
                 ))}
               </div>
             ) : (
               <>
-                <div className="space-y-3">
+                <div className="space-y-2 md:space-y-3">
                   {activities.length === 0 ? (
-                    <div className={`text-center py-8 ${theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'}`}>
+                    <div className={`text-center py-6 md:py-8 ${theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'}`}>
                       No recent activity found.
                     </div>
                   ) : (
@@ -357,10 +357,10 @@ export function DashboardTab({ selectedProjects, onRefresh, onNavigateToIssue }:
                 </div>
                 {/* View More / Show Less Button */}
                 {activities.length > 5 && (
-                  <div className="flex justify-center mt-6">
+                  <div className="flex justify-center mt-4 md:mt-6">
                     <button
                       onClick={() => setShowAllActivities(!showAllActivities)}
-                      className={`px-6 py-2.5 rounded-[10px] backdrop-blur-[25px] bg-gradient-to-br from-[#c9983a]/25 to-[#d4af37]/20 border border-[#c9983a]/40 text-[13px] font-semibold text-[#c9983a] hover:from-[#c9983a]/35 hover:to-[#d4af37]/30 hover:scale-105 transition-all duration-200 ${
+                      className={`px-5 md:px-6 py-2 md:py-2.5 rounded-[10px] backdrop-blur-[25px] bg-gradient-to-br from-[#c9983a]/25 to-[#d4af37]/20 border border-[#c9983a]/40 text-[12px] md:text-[13px] font-semibold text-[#c9983a] hover:from-[#c9983a]/35 hover:to-[#d4af37]/30 hover:scale-105 transition-all duration-200 ${
                         theme === 'dark' ? 'hover:border-[#c9983a]/60' : 'hover:border-[#c9983a]/50'
                       }`}
                     >
@@ -374,7 +374,7 @@ export function DashboardTab({ selectedProjects, onRefresh, onNavigateToIssue }:
         </div>
 
         {/* Applications History */}
-        <div className={`backdrop-blur-[40px] rounded-[24px] border p-8 relative overflow-hidden group/chart transition-colors ${theme === 'dark'
+        <div className={`backdrop-blur-[40px] rounded-[20px] md:rounded-[24px] border p-6 md:p-8 relative overflow-hidden group/chart transition-colors ${theme === 'dark'
           ? 'bg-[#2d2820]/[0.4] border-white/10'
           : 'bg-white/[0.12] border-white/20'
           }`}>

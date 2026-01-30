@@ -59,7 +59,7 @@ export function PRRow({ pr }: PRRowProps) {
   return (
     <div 
       onClick={handleClick}
-      className={`grid grid-cols-[2fr_1.5fr_1fr_0.5fr] gap-6 px-6 py-5 rounded-[16px] backdrop-blur-[25px] border transition-all cursor-pointer group ${
+      className={`grid grid-cols-1 sm:grid-cols-[2fr_1.5fr_1fr_0.5fr] gap-6 px-4 sm:px-6 py-5 rounded-[16px] backdrop-blur-[25px] border transition-all cursor-pointer group ${
         theme === 'dark'
           ? 'bg-white/[0.08] border-white/15 hover:bg-white/[0.15] hover:border-[#c9983a]/30'
           : 'bg-white/[0.08] border-white/15 hover:bg-white/[0.15] hover:border-[#c9983a]/20'
@@ -85,7 +85,7 @@ export function PRRow({ pr }: PRRowProps) {
       </div>
 
       {/* Author Info */}
-      <div>
+      <div className="hidden sm:block">
         <div className="flex items-center gap-2 mb-2">
           <img
             src={`https://github.com/${pr.author.name}.png?size=28`}
@@ -134,7 +134,7 @@ export function PRRow({ pr }: PRRowProps) {
       </div>
 
       {/* Repository Info */}
-      <div>
+      <div className="hidden sm:block">
         <div className="flex items-center gap-2 mb-1">
           {(() => {
             const [owner] = pr.org ? [pr.org] : pr.repo.split('/');
@@ -180,7 +180,7 @@ export function PRRow({ pr }: PRRowProps) {
       </div>
 
       {/* Indicators */}
-      <div className="flex items-center gap-2">
+      <div className="hidden sm:flex items-center gap-2">
         {pr.indicators.map((indicator, idx) => {
           const { Icon, color } = getIndicatorIcon(indicator);
           return (

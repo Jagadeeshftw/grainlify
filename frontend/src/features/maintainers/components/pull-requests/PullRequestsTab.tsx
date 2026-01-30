@@ -164,11 +164,11 @@ export function PullRequestsTab({ selectedProjects, onRefresh }: PullRequestsTab
         }`}>Review and manage pull requests with quality indicators and contributor insights.</p>
       </div>
 
-      {/* Search and Filters */}
-      <div className="flex items-center gap-3 mb-6">
+      {/* Search and Filters (responsive) */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-6">
         {/* Search Bar */}
         <div className="relative flex-1">
-          <Search className={`absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors ${
+          <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors ${
             theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
           }`} />
           <input
@@ -176,7 +176,7 @@ export function PullRequestsTab({ selectedProjects, onRefresh }: PullRequestsTab
             placeholder="Search pull request by title or author name..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className={`w-full pl-11 pr-4 py-3 rounded-[14px] backdrop-blur-[25px] border text-[14px] focus:outline-none transition-all ${
+            className={`w-full pl-10 pr-4 py-2 sm:py-3 rounded-[12px] sm:rounded-[14px] backdrop-blur-[25px] border text-[13px] sm:text-[14px] focus:outline-none transition-all ${
               theme === 'dark'
                 ? 'bg-white/[0.08] border-white/20 text-[#e8dfd0] placeholder:text-[#8a7b6a] focus:bg-white/[0.12] focus:border-[#c9983a]/40'
                 : 'bg-white/[0.15] border-white/25 text-[#2d2820] placeholder:text-[#9a8b7a] focus:bg-white/[0.2] focus:border-[#c9983a]/40'
@@ -184,44 +184,46 @@ export function PullRequestsTab({ selectedProjects, onRefresh }: PullRequestsTab
           />
         </div>
 
-        {/* Filter Dropdown */}
-        <PRFilterDropdown
-          value={filter}
-          onChange={setFilter}
-          isOpen={isFilterDropdownOpen}
-          onToggle={() => setIsFilterDropdownOpen(!isFilterDropdownOpen)}
-          onClose={() => setIsFilterDropdownOpen(false)}
-        />
+        {/* Filter Dropdown (stacked on mobile) */}
+        <div className="mt-2 sm:mt-0 sm:ml-2 sm:flex-shrink-0">
+          <PRFilterDropdown
+            value={filter}
+            onChange={setFilter}
+            isOpen={isFilterDropdownOpen}
+            onToggle={() => setIsFilterDropdownOpen(!isFilterDropdownOpen)}
+            onClose={() => setIsFilterDropdownOpen(false)}
+          />
+        </div>
 
-        {/* Clear Filters Button */}
+        {/* Clear Filters Button (full width on mobile) */}
         <button 
-          className={`px-5 py-3 rounded-[14px] backdrop-blur-[25px] border transition-all ${
+          className={`mt-2 sm:mt-0 w-full sm:w-auto px-4 sm:px-5 py-2 sm:py-3 rounded-[12px] backdrop-blur-[25px] border transition-all text-[13px] font-semibold ${
             theme === 'dark'
               ? 'bg-white/[0.08] border-white/20 hover:bg-white/[0.12] hover:border-[#c9983a]/30 text-[#b8a898]'
               : 'bg-white/[0.15] border-white/25 hover:bg-white/[0.2] hover:border-[#c9983a]/30 text-[#7a6b5a]'
           }`}
           onClick={handleClearFilters}
         >
-          <span className="text-[14px] font-semibold">Clear filters</span>
+          Clear filters
         </button>
       </div>
 
       {/* Pull Requests Table */}
       <div className="space-y-4">
-        {/* Table Header */}
-        <div className={`grid grid-cols-[2fr_1.5fr_1fr_0.5fr] gap-6 px-6 py-3 border-b-2 transition-colors ${
+        {/* Table Header (responsive) */}
+        <div className={`grid grid-cols-1 sm:grid-cols-[2fr_1.5fr_1fr_0.5fr] gap-6 px-4 sm:px-6 py-3 border-b-2 transition-colors ${
           theme === 'dark' ? 'border-white/20' : 'border-white/20'
         }`}>
           <div className={`text-[12px] font-bold uppercase tracking-wide transition-colors ${
             theme === 'dark' ? 'text-[#d4c5b0]' : 'text-[#7a6b5a]'
           }`}>Pull Request</div>
-          <div className={`text-[12px] font-bold uppercase tracking-wide transition-colors ${
+          <div className={`hidden sm:block text-[12px] font-bold uppercase tracking-wide transition-colors ${
             theme === 'dark' ? 'text-[#d4c5b0]' : 'text-[#7a6b5a]'
           }`}>Author</div>
-          <div className={`text-[12px] font-bold uppercase tracking-wide transition-colors ${
+          <div className={`hidden sm:block text-[12px] font-bold uppercase tracking-wide transition-colors ${
             theme === 'dark' ? 'text-[#d4c5b0]' : 'text-[#7a6b5a]'
           }`}>Repository</div>
-          <div className={`text-[12px] font-bold uppercase tracking-wide transition-colors ${
+          <div className={`hidden sm:block text-[12px] font-bold uppercase tracking-wide transition-colors ${
             theme === 'dark' ? 'text-[#d4c5b0]' : 'text-[#7a6b5a]'
           }`}>Indicators</div>
         </div>
