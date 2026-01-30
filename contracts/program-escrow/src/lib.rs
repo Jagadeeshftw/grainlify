@@ -147,8 +147,8 @@ use events::{
     ProgramInitializedEvent, UpdateAdminEvent, UpdateAuthorizedKeyEvent,
 };
 use soroban_sdk::{
-    contract, contractimpl, contracttype, symbol_short, token, vec, Address, Env, String, Symbol,
-    Vec, Map,
+    contract, contractimpl, contracttype, symbol_short, token, vec, Address, Env, Map, String,
+    Symbol, Vec,
 };
 
 // Event types
@@ -166,6 +166,7 @@ const FEE_CONFIG: Symbol = symbol_short!("FeeCfg");
 // Example: 100 basis points = 1%, 1000 basis points = 10%
 const BASIS_POINTS: i128 = 10_000;
 const MAX_FEE_RATE: i128 = 1_000; // Maximum 10% fee
+const ADMIN_UPDATE_TIMELOCK: u64 = 1 * 24 * 60 * 60; // Maximum 10% fee
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -391,6 +392,7 @@ mod anti_abuse {
         State(Address),
         Whitelist(Address),
         Admin,
+        LastAdminUpdate,
     }
 
     pub fn get_config(env: &Env) -> AntiAbuseConfig {
@@ -728,7 +730,6 @@ pub struct ProgramStats {
     pub total_payouts_volume: i128,
 }
 
-
 // ============================================================================
 // Contract Implementation
 // ============================================================================
@@ -920,7 +921,9 @@ impl ProgramEscrowContract {
             monitoring::track_operation(&env, symbol_short!("init_prg"), caller, false);
             panic!("Program already exists");
         }
-        env.storage().instance().set(&DataKey::Admin, &admin);
+        env.storage()
+            .instance()
+            .set(&anti_abuse::AntiAbuseKey::Admin, &admin);
 
         // Create program data
         let mut balances = Map::new(&env);
@@ -976,16 +979,13 @@ impl ProgramEscrowContract {
     /// Check if token is registered/whitelisted
     fn is_token_registered(env: &Env, token: &Address) -> bool {
         // Check whitelist
-        env.storage().instance().has(&DataKey::TokenWhitelist(token.clone()))
+        env.storage()
+            .instance()
+            .has(&DataKey::TokenWhitelist(token.clone()))
     }
 
     /// Register a new token (authorized payout key only)
-    pub fn register_token(
-        env: Env,
-        program_id: String,
-        token: Address,
-        whitelisted: bool,
-    ) {
+    pub fn register_token(env: Env, program_id: String, token: Address, whitelisted: bool) {
         let program_key = DataKey::Program(program_id.clone());
         if !env.storage().instance().has(&program_key) {
             panic!("Program not found");
@@ -996,9 +996,13 @@ impl ProgramEscrowContract {
 
         // Store whitelist status
         if whitelisted {
-            env.storage().instance().set(&DataKey::TokenWhitelist(token.clone()), &true);
+            env.storage()
+                .instance()
+                .set(&DataKey::TokenWhitelist(token.clone()), &true);
         } else {
-            env.storage().instance().remove(&DataKey::TokenWhitelist(token.clone()));
+            env.storage()
+                .instance()
+                .remove(&DataKey::TokenWhitelist(token.clone()));
         }
 
         // Add to registered tokens list
@@ -1019,7 +1023,9 @@ impl ProgramEscrowContract {
 
         if !found {
             registered.push_back(token.clone());
-            env.storage().instance().set(&DataKey::RegisteredTokens, &registered);
+            env.storage()
+                .instance()
+                .set(&DataKey::RegisteredTokens, &registered);
         }
     }
 
@@ -1248,8 +1254,13 @@ impl ProgramEscrowContract {
         let net_amount = amount - fee_amount;
 
         // Update token balance in map
-        let current_balance = program_data.token_balances.get(token_addr.clone()).unwrap_or(0);
-        program_data.token_balances.set(token_addr.clone(), current_balance + net_amount);
+        let current_balance = program_data
+            .token_balances
+            .get(token_addr.clone())
+            .unwrap_or(0);
+        program_data
+            .token_balances
+            .set(token_addr.clone(), current_balance + net_amount);
 
         // Update balances with net amount
         program_data.total_funds += net_amount;
@@ -1419,7 +1430,10 @@ impl ProgramEscrowContract {
         };
 
         // Get balance for this token
-        let token_balance = program_data.token_balances.get(token_addr.clone()).unwrap_or(0);
+        let token_balance = program_data
+            .token_balances
+            .get(token_addr.clone())
+            .unwrap_or(0);
 
         // Apply rate limiting to the authorized payout key
         anti_abuse::check_rate_limit(&env, program_data.authorized_payout_key.clone());
@@ -1512,7 +1526,9 @@ impl ProgramEscrowContract {
         // Update program data
         let mut updated_data = program_data.clone();
         // Update token balance
-        updated_data.token_balances.set(token_addr.clone(), token_balance - total_payout);
+        updated_data
+            .token_balances
+            .set(token_addr.clone(), token_balance - total_payout);
         updated_data.remaining_balance -= total_payout; // Total includes fees
         updated_data.payout_history = updated_history;
 
@@ -1619,7 +1635,10 @@ impl ProgramEscrowContract {
         };
 
         // Get balance for this token
-        let token_balance = program_data.token_balances.get(token_addr.clone()).unwrap_or(0);
+        let token_balance = program_data
+            .token_balances
+            .get(token_addr.clone())
+            .unwrap_or(0);
 
         program_data.authorized_payout_key.require_auth();
         // Apply rate limiting to the authorized payout key
@@ -1926,7 +1945,7 @@ impl ProgramEscrowContract {
         // Update schedule
         schedule.released = true;
         schedule.released_at = Some(now);
-         // Debugging: set to None to avoid panic?
+        // Debugging: set to None to avoid panic?
         schedule.released_by = Some(env.current_contract_address());
 
         // Update program data
@@ -2284,86 +2303,74 @@ impl ProgramEscrowContract {
     ///
     /// # Performance
     /// This function iterates through the registry. For large registries, ensure `pagination.limit` is reasonable
-    /// to avoid running out of gas. 
+    /// to avoid running out of gas.
     pub fn get_programs(
-        env: Env, 
-        filter: ProgramFilter, 
-        pagination: Pagination
+        env: Env,
+        filter: ProgramFilter,
+        pagination: Pagination,
     ) -> Vec<ProgramData> {
         let registry: Vec<String> = env
             .storage()
             .instance()
             .get(&PROGRAM_REGISTRY)
             .unwrap_or(vec![&env]);
-            
+
         let mut result = vec![&env];
         let mut count: u32 = 0;
         let mut skipped: u64 = 0;
-        
+
         for i in 0..registry.len() {
             // Check pagination limit
             if count >= pagination.limit {
                 break;
             }
-            
+
             let program_id = registry.get(i).unwrap();
             let key = DataKey::Program(program_id);
-            
+
             if !env.storage().instance().has(&key) {
                 continue;
             }
-            
-            let program: ProgramData = env
-                .storage()
-                .instance()
-                .get(&key)
-                .unwrap();
-                
+
+            let program: ProgramData = env.storage().instance().get(&key).unwrap();
+
             // Apply Filters
             if let Some(key) = &filter.authorized_key {
                 if &program.authorized_payout_key != key {
                     continue;
                 }
             }
-            
+
             if let Some(token) = &filter.token_address {
-                 if &program.token_address != token {
+                if &program.token_address != token {
                     continue;
                 }
             }
-            
+
             // Apply Pagination Skip
             if skipped < pagination.start_index {
                 skipped += 1;
                 continue;
             }
-            
+
             result.push_back(program);
             count += 1;
         }
-        
+
         result
     }
-    
+
     /// Query payouts for a program with filtering
-    pub fn get_payouts(
-        env: Env, 
-        program_id: String,
-        filter: PayoutFilter
-    ) -> Vec<PayoutRecord> {
+    pub fn get_payouts(env: Env, program_id: String, filter: PayoutFilter) -> Vec<PayoutRecord> {
         let program_key = DataKey::Program(program_id);
         if !env.storage().instance().has(&program_key) {
-             return vec![&env];
+            return vec![&env];
         }
-        
-        let program: ProgramData = env
-            .storage()
-            .instance()
-            .get(&program_key)
-            .unwrap();
-            
+
+        let program: ProgramData = env.storage().instance().get(&program_key).unwrap();
+
         let mut result = vec![&env];
-        
+
         for record in program.payout_history.iter() {
             // Recipient filter
             if let Some(recipient) = &filter.recipient {
@@ -2371,7 +2378,7 @@ impl ProgramEscrowContract {
                     continue;
                 }
             }
-            
+
             // Amount filter
             if let Some(min) = filter.min_amount {
                 if record.amount < min {
@@ -2383,7 +2390,7 @@ impl ProgramEscrowContract {
                     continue;
                 }
             }
-            
+
             // Time filter
             if let Some(start) = filter.start_time {
                 if record.timestamp < start {
@@ -2395,10 +2402,10 @@ impl ProgramEscrowContract {
                     continue;
                 }
             }
-            
+
             result.push_back(record);
         }
-        
+
         result
     }
 
@@ -2413,29 +2420,25 @@ impl ProgramEscrowContract {
             .instance()
             .get(&PROGRAM_REGISTRY)
             .unwrap_or(vec![&env]);
-            
+
         let mut total_locked: i128 = 0;
         let mut total_remaining: i128 = 0;
         let mut total_payouts: i128 = 0;
-        
+
         for i in 0..registry.len() {
             let program_id = registry.get(i).unwrap();
             let key = DataKey::Program(program_id);
-            
+
             if env.storage().instance().has(&key) {
-                let program: ProgramData = env
-                    .storage()
-                    .instance()
-                    .get(&key)
-                    .unwrap();
-                
+                let program: ProgramData = env.storage().instance().get(&key).unwrap();
+
                 total_locked += program.total_funds;
                 total_remaining += program.remaining_balance;
                 // Payouts volume = Total - Remaining (roughly, assuming no other drains)
                 total_payouts += program.total_funds - program.remaining_balance;
             }
         }
-        
+
         ProgramStats {
             total_programs: registry.len() as u64,
             total_funds_locked: total_locked,
@@ -2645,6 +2648,74 @@ impl ProgramEscrowContract {
             .get(&DataKey::ReleaseHistory(program_id))
             .unwrap_or(vec![&env])
     }
+
+    // ========================================================================
+    // Admin Functions
+    // ========================================================================
+
+    /// Update Admin
+    ///
+    /// # Arguments
+    /// * `new_admin` - New Admin address
+    /// Admin Require Auth
+    pub fn update_admin(env: Env, new_admin: Address) {
+        let current_admin = anti_abuse::get_admin(&env).unwrap();
+        current_admin.require_auth();
+
+        let last_update: u64 = env
+            .storage()
+            .instance()
+            .get(&anti_abuse::AntiAbuseKey::LastAdminUpdate)
+            .unwrap_or(0);
+        let current_time = env.ledger().timestamp();
+        if current_time < last_update + ADMIN_UPDATE_TIMELOCK {
+            panic!("TimeLock");
+        }
+
+        env.storage()
+            .instance()
+            .set(&anti_abuse::AntiAbuseKey::Admin, &new_admin);
+        env.storage()
+            .instance()
+            .set(&anti_abuse::AntiAbuseKey::LastAdminUpdate, &current_time);
+
+        emit_update_admin(
+            &env,
+            UpdateAdminEvent {
+                admin: current_admin,
+                new_admin,
+                timestamp: current_time,
+            },
+        );
+    }
+
+    /// Update Authorized Payout Key
+    ///
+    /// # Arguments
+    /// * `new_admin` - New Authorized Payout Key address
+    /// Admin Require Auth
+    pub fn update_authorized_payout_key(env: Env, authorized_payout_key: Address) {
+        let current_admin = anti_abuse::get_admin(&env).unwrap();
+        current_admin.require_auth();
+
+        let mut program_data: ProgramData = env
+            .storage()
+            .instance()
+            .get(&PROGRAM_DATA)
+            .unwrap_or_else(|| panic!("Program not initialized"));
+
+        program_data.authorized_payout_key = authorized_payout_key.clone();
+
+        env.storage().instance().set(&PROGRAM_DATA, &program_data);
+        emit_update_authorized_key(
+            &env,
+            UpdateAuthorizedKeyEvent {
+                old_authorized_payout_key: program_data.authorized_payout_key,
+                new_authorized_payout_key: authorized_payout_key,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+    }
 }
 
 /// Helper function to calculate total scheduled amount for a program.
@@ -2718,12 +2789,7 @@ mod test {
         token_admin.mint(authorized_key, &total_amount);
 
         // Lock funds for program
-        token_client.approve(
-            authorized_key,
-            &client.address,
-            &total_amount,
-            &1000,
-        );
+        token_client.approve(authorized_key, &client.address, &total_amount, &1000);
         client.lock_program_funds(program_id, &total_amount);
 
         // Create release schedule
@@ -2805,12 +2871,7 @@ mod test {
         token_admin.mint(&authorized_key, &total_amount);
 
         // Lock funds for program
-        token_client.approve(
-            &authorized_key,
-            &client.address,
-            &total_amount,
-            &1000,
-        );
+        token_client.approve(&authorized_key, &client.address, &total_amount, &1000);
         client.lock_program_funds(&program_id, &total_amount);
 
         // Create first release schedule
@@ -2974,12 +3035,7 @@ mod test {
         token_admin.mint(&authorized_key, &total_amount);
 
         // Lock funds for program
-        token_client.approve(
-            &authorized_key,
-            &client.address,
-            &total_amount,
-            &1000,
-        );
+        token_client.approve(&authorized_key, &client.address, &total_amount, &1000);
         client.lock_program_funds(&program_id, &total_amount);
 
         // Create first schedule
@@ -3054,12 +3110,7 @@ mod test {
         token_admin.mint(&authorized_key, &total_amount);
 
         // Lock funds for program
-        token_client.approve(
-            &authorized_key,
-            &client.address,
-            &total_amount,
-            &1000,
-        );
+        token_client.approve(&authorized_key, &client.address, &total_amount, &1000);
         client.lock_program_funds(&program_id, &total_amount);
 
         // Create overlapping schedules (all at same timestamp)
@@ -3494,4 +3545,3 @@ mod test {
 
 #[cfg(test)]
 mod test_query;
-
