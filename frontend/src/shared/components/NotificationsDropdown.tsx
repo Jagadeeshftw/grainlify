@@ -11,6 +11,7 @@ import {
 interface NotificationsDropdownProps {
   showMobileNav?: boolean;
   closeMobileNav?: () => void;
+  isIconOnly?: boolean;
 }
 
 interface Notification {
@@ -23,7 +24,7 @@ interface Notification {
 
 export function NotificationsDropdown({
   showMobileNav = false,
-  closeMobileNav,
+  isIconOnly = false,
 }: NotificationsDropdownProps) {
   const { theme } = useTheme();
   const darkTheme = theme === "dark";
@@ -65,7 +66,7 @@ export function NotificationsDropdown({
         ]);
         
       } catch (error) {
-        console.error("Failed to fetch notifications:", error);
+        // console.error("Failed to fetch notifications:", error);
       }
     };
 
@@ -84,10 +85,10 @@ export function NotificationsDropdown({
           className={`h-[46px] w-[46px] rounded-full relative items-center justify-center backdrop-blur-[40px] transition-all hover:scale-105 shadow-[0px_6px_6.5px_-1px_rgba(0,0,0,0.36),0px_0px_4.2px_0px_rgba(0,0,0,0.69)] ${
             darkTheme ? "bg-[#2d2820] " : "bg-[#d4c5b0] "
           }
-          ${showMobileNav ? "flex w-[80%] max-w-[800px] rounded-sm" : "hidden lg:flex"}`}
+          ${isIconOnly ? "flex rounded-full" : showMobileNav ? "flex w-[80%] max-w-[800px] rounded-sm" : "hidden lg:flex"}`}
         >
           <div
-            className={`absolute inset-0 pointer-events-none ${showMobileNav ? "rounded-sm" : "rounded-full"} ${
+            className={`absolute inset-0 pointer-events-none ${isIconOnly || !showMobileNav ? "rounded-full" : "rounded-sm"} ${
               darkTheme
                 ? "shadow-[inset_1px_-1px_1px_0px_rgba(0,0,0,0.5),inset_-2px_2px_1px_-1px_rgba(255,255,255,0.11)]"
                 : "shadow-[inset_1px_-1px_1px_0px_rgba(0,0,0,0.15),inset_-2px_2px_1px_-1px_rgba(255,255,255,0.35)]"

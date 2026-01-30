@@ -1,40 +1,24 @@
 import { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   Search,
-  Bell,
   Compass,
   Grid3x3,
   Calendar,
   Globe,
   Users,
-  FolderGit2,
   Trophy,
-  Database,
-  Plus,
   FileText,
   ChevronRight,
-  Sparkles,
-  Heart,
-  Star,
-  GitFork,
-  ArrowUpRight,
-  Target,
-  Zap,
-  ChevronDown,
-  CircleDot,
-  Clock,
   Moon,
   Sun,
   Shield,
-  Code,
   X,
-  Menu
+  Menu,
 } from "lucide-react";
 import { useAuth } from "../../shared/contexts/AuthContext";
 import grainlifyLogo from "../../assets/grainlify_log.svg";
 import { useTheme } from "../../shared/contexts/ThemeContext";
-import { LanguageIcon } from "../../shared/components/LanguageIcon";
 import { UserProfileDropdown } from "../../shared/components/UserProfileDropdown";
 import { NotificationsDropdown } from "../../shared/components/NotificationsDropdown";
 import { RoleSwitcher } from "../../shared/components/RoleSwitcher";
@@ -54,7 +38,6 @@ import { EcosystemsPage } from "./pages/EcosystemsPage";
 import { EcosystemDetailPage } from "./pages/EcosystemDetailPage";
 import { MaintainersPage } from "../maintainers/pages/MaintainersPage";
 import { ProfilePage } from "./pages/ProfilePage";
-import { DataPage } from "./pages/DataPage";
 import { ProjectDetailPage } from "./pages/ProjectDetailPage";
 import { IssueDetailPage } from "./pages/IssueDetailPage";
 import { LeaderboardPage } from "../leaderboard/pages/LeaderboardPage";
@@ -65,7 +48,7 @@ import { SearchPage } from "./pages/SearchPage";
 import { SettingsTabType } from "../settings/types";
 
 export function Dashboard() {
-  const { userRole, logout, login } = useAuth();
+  const { login } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   // const [currentPage, setCurrentPage] = useState('discover');
@@ -86,26 +69,21 @@ export function Dashboard() {
   const [selectedEventName, setSelectedEventName] = useState<string | null>(
     null,
   );
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 1024 : false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(
-     typeof window !== 'undefined' ? window.innerWidth < 768 : false);
+    typeof window !== 'undefined' ? window.innerWidth < 1100 : false);
   const [activeRole, setActiveRole] = useState<
     "contributor" | "maintainer" | "admin"
   >("contributor");
-  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [viewingUserId, setViewingUserId] = useState<string | null>(null);
   const [viewingUserLogin, setViewingUserLogin] = useState<string | null>(null);
   const [settingsInitialTab, setSettingsInitialTab] =
     useState<SettingsTabType>("profile");
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [deviceWidth, setDeviceWidth] = useState(
-    typeof window !== 'undefined' ? window.innerWidth : null
-  );
 
   useEffect(() => { 
     const handleResize = () => {
-      setDeviceWidth(window.innerWidth);
+      setIsMobile(window.innerWidth < 1024);
     };
 
     window.addEventListener('resize', handleResize);
@@ -165,15 +143,7 @@ export function Dashboard() {
     localStorage.setItem("dashboardTab", currentPage);
   }, [currentPage]);
 
-  // Example tab list
-  const tabs = [
-    "discover",
-    "browse",
-    "open-source-week",
-    "ecosystems",
-    "contributors",
-    "settings",
-  ];
+
 
   // Keyboard shortcut for search (Cmd+K / Ctrl+K)
   useEffect(() => {
@@ -188,16 +158,6 @@ export function Dashboard() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // Mobile detection
-  useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 1024);
-    };
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
-
   // Close mobile menu on page change
   const handleNavigation = (page: string) => {
     setCurrentPage(page);
@@ -208,30 +168,18 @@ export function Dashboard() {
     setSelectedEventId(null);
     setSelectedEventName(null);
     if (isMobile) {
-      setIsMobileMenuOpen(false);
+      setMobileMenuOpen(false);
     }
   };
 
-  const handleLogout = () => {
-    logout();
-    setAdminAuthenticated(false);
-    sessionStorage.removeItem("admin_authenticated");
-    navigate("/");
-  };
+
 
   const openAdminAuthModal = (target: "nav" | "role") => {
     setPendingAdminTarget(target);
     setShowAdminPasswordModal(true);
   };
 
-  const handleAdminClick = () => {
-    if (adminAuthenticated) {
-      setActiveRole("admin");
-      handleNavigation("admin");
-      return;
-    }
-    openAdminAuthModal("nav");
-  };
+
 
   const handleAdminPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -303,26 +251,20 @@ export function Dashboard() {
     activeRole === "maintainer" || activeRole === "admin"
       ? { id: "maintainers", icon: Users, label: "Maintainers" }
       : { id: "contributors", icon: Users, label: "Contributors" },
-    // Data page is only visible to admin
-    ...(activeRole === "admin"
-      ? [{ id: "data", icon: Database, label: "Data" }]
-      : []),
     { id: "leaderboard", icon: Trophy, label: "Leaderboard" },
     { id: "blog", icon: FileText, label: "Grainlify Blog" },
   ];
 
   const darkTheme = theme === "dark";
-    const closeMobileNav = () => {
-     if (showMobileNav){
-          setMobileMenuOpen(false);
-     }
-  }
-  const isSmallDevice = deviceWidth && deviceWidth < 1024;
-  const showMobileNav = mobileMenuOpen&& isSmallDevice;
+  const closeMobileNav = () => {
+    if (mobileMenuOpen) {
+      setMobileMenuOpen(false);
+    }
+  };
 
   return (
     <div
-      className={`min-h-screen relative overflow-hidden transition-colors ${
+      className={`min-h-screen relative overflow-x-hidden transition-colors ${
         darkTheme
           ? "bg-gradient-to-br from-[#1a1512] via-[#231c17] to-[#2d241d]"
           : "bg-gradient-to-br from-[#c4b5a0] via-[#b8a590] to-[#a89780]"
@@ -347,22 +289,26 @@ export function Dashboard() {
       </div>
 
       {/* Mobile Sidebar Overlay Backdrop */}
-      {isMobile && isMobileMenuOpen && (
+      {isMobile && mobileMenuOpen && (
         <div
           className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] transition-opacity duration-300"
-          onClick={() => setIsMobileMenuOpen(false)}
+          onClick={() => setMobileMenuOpen(false)}
         />
       )}
 
       {/* Sidebar */}
       <aside
-        className={`fixed top-2 left-2 bottom-2 z-50 transition-all duration-300 ${isSidebarCollapsed ? "w-[65px] mr-2" : "w-56 mr-2"}`}
+        className={`fixed top-2 left-2 bottom-2 z-[101] transition-all duration-300 ${
+          isMobile 
+            ? mobileMenuOpen ? "translate-x-0 w-64" : "-translate-x-[110%] w-64" 
+            : isSidebarCollapsed ? "w-[65px]" : "w-56"
+        }`}
       >
         {/* Toggle Arrow Button - positioned at top of sidebar aligned with header */}
         <button
           onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
           className={`absolute z-[100] backdrop-blur-[90px] rounded-full border-[0.5px] w-6 h-6 shadow-md hover:shadow-lg transition-all flex items-center justify-center ${
-            isSidebarCollapsed ? "-right-3 top-[60px]" : "-right-3 top-[60px]"
+            isMobile ? "hidden" : isSidebarCollapsed ? "-right-3 top-[60px]" : "-right-3 top-[60px]"
           } ${
             darkTheme
               ? "bg-[#2d2820]/[0.85] border-[rgba(201,152,58,0.2)]"
@@ -453,7 +399,7 @@ export function Dashboard() {
                             : "text-[#a2792c]"
                       }`}
                     />
-                    {!isSidebarCollapsed && (
+                    {(!isSidebarCollapsed || isMobile) && (
                       <span
                         className={`ml-3 font-medium text-[14px] ${
                           isActive
@@ -470,59 +416,57 @@ export function Dashboard() {
                 );
               })}
             </nav>
+
+            {/* User Profile at bottom on mobile */}
+            {isMobile && (
+              <div className="mt-auto px-2 pb-4 w-full">
+                <div className="h-[0.5px] opacity-[0.24] mb-6 bg-gradient-to-r from-transparent via-[#432c2c] to-transparent w-full" />
+                <UserProfileDropdown onPageChange={handleNavigation} showMobileNav={true} />
+              </div>
+            )}
           </div>
         </div>
       </aside>
 
       {/* Main Content */}
       <main
-        className={`mr-2 my-2 relative z-10 transition-all duration-300 ${isSidebarCollapsed ? "ml-[81px]" : "ml-[240px]"}`}
+        className={`mr-2 my-2 relative z-10 transition-all duration-300 ${isMobile ? "ml-2" : isSidebarCollapsed ? "ml-[81px]" : "ml-[240px]"}`}
       >
         <div className="max-w-[1400px] mx-auto">
           {/* Premium Pill-Style Header - Greatest of All Time */}
           <div
-            className={`fixed top-2 right-2 left-auto z-[9999] flex items-center gap-1 md:gap-2 lg:gap-3 lg:h-[52px] py-3 rounded-[26px] shadow-[0px_4px_4px_0px_rgba(0,0,0,0.25)] backdrop-blur-[90px] border transition-all duration-300 ${
-              isSidebarCollapsed ? "ml-[81px]" : "ml-[240px]"
+            className={`fixed top-2 right-2 z-[9999] flex items-center gap-1 md:gap-2 lg:gap-3 lg:h-[52px] py-3 rounded-[26px] shadow-[0px_4px_4px_0px_rgba(0,0,0,0.25)] backdrop-blur-[90px] border transition-all duration-300 ${
+              isMobile 
+                ? "left-2 w-[calc(100vw-16px)]" 
+                : isSidebarCollapsed 
+                  ? "left-[81px] w-[calc(100vw-81px-16px)]" 
+                  : "left-[240px] w-[calc(100vw-240px-16px)]"
             } ${
               darkTheme
                 ? "bg-[#2d2820]/[0.4] border-white/10 shadow-[inset_0px_0px_9px_0px_rgba(201,152,58,0.1)]"
                 : "bg-white/[0.35] border-white shadow-[inset_0px_0px_9px_0px_rgba(255,255,255,0.5)]"
-            }
-          ${showMobileNav? "h-screen flex-col":"" } 
+            } 
           `}
-            style={{
-              width: `calc(100vw - ${isSidebarCollapsed ? "81px" : "240px"} - 8px - 8px)`,
-            }}
           >
           
-          {/* opened mobile nav view header  */}
-         {showMobileNav &&  
-          <div className="flex items-center justify-between w-full px-4"> 
-         <Link to="/" className="flex items-center space-x-3 mr-auto">
-            <img src={grainlifyLogo} alt="Grainlify" className="w-8 h-8 grainlify-logo" />
-            <span className={`text-xl font-semibold transition-colors ${
-                 theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
-               }`}>Grainlify</span>
-          </Link>
+            {/* Menu button on the far left for mobile */}
+            {isMobile && (
+              <button
+                className={`lg:hidden transition-colors ml-4 mr-2 ${
+                  theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
+                }`}
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              >
+                {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+              </button>
+            )}
 
-          {/* mobile nav close button */}
-          <button
-            className={`lg:hidden transition-colors self-end ${showMobileNav ? 'block' : 'hidden'} ${
-                 theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
-               }`}
-               onClick={() => setMobileMenuOpen(false)}
-               >
-            <X size={24} />
-          </button>
-          </div>
-          }
-
-            {/* Search - Premium Pill Style */}
+            {/* Search - Premium Pill Style / Mobile Icon */}
             <button
               onClick={() => {setCurrentPage("search");closeMobileNav();}}
-              className={`relative h-[46px] lg:flex-1 rounded-[23px] overflow-visible backdrop-blur-[40px] shadow-[0px_6px_6.5px_-1px_rgba(0,0,0,0.36),0px_0px_4.2px_0px_rgba(0,0,0,0.69)] ml-[3px] transition-all hover:scale-[1.01] cursor-pointer ${
+              className={`relative h-[46px] rounded-[23px] overflow-visible backdrop-blur-[40px] shadow-[0px_6px_6.5px_-1px_rgba(0,0,0,0.36),0px_0px_4.2px_0px_rgba(0,0,0,0.69)] ml-[3px] transition-all hover:scale-[1.01] cursor-pointer ${
                 darkTheme ? "bg-[#2d2820]" : "bg-[#d4c5b0]"
-              } ${showMobileNav ? 'min-h-[46px] w-[80%] max-w-[800px] block': 'lg:block hidden'}
+              } ${isMobile ? 'w-[46px] flex items-center justify-center' : 'lg:flex-1 lg:flex hidden'}
               `}
             >
               <div
@@ -532,33 +476,35 @@ export function Dashboard() {
                     : "shadow-[inset_1px_-1px_1px_0px_rgba(0,0,0,0.15),inset_-2px_2px_1px_-1px_rgba(255,255,255,0.35)]"
                 }`}
               />
-              <div className="relative h-full flex items-center px-2 lg:px-5 justify-between">
-                <div className="flex items-center flex-1">
+              <div className={`relative h-full flex items-center ${isMobile ? 'justify-center w-full' : 'px-2 lg:px-5 justify-between'}`}>
+                <div className={`flex items-center ${isMobile ? '' : 'flex-1'}`}>
                   <Search
-                    className={`w-4 h-4 mr-3 flex-shrink-0 transition-colors ${
+                    className={`w-4 h-4 flex-shrink-0 transition-colors ${
                       darkTheme
                         ? "text-[rgba(255,255,255,0.69)]"
                         : "text-[rgba(45,40,32,0.75)]"
-                    }`}
+                    } ${isMobile ? '' : 'mr-3'}`}
                   />
-                  <span
-                    className={`text-[13px] transition-colors ${
-                      darkTheme
-                        ? "text-[rgba(255,255,255,0.5)]"
-                        : "text-[rgba(45,40,32,0.5)]"
-                    }`}
-                  >
-                    <span className="sm:hidden">Search</span>
-                    <span className="hidden sm:inline md:hidden">
-                      Search projects
+                  {!isMobile && (
+                    <span
+                      className={`text-[13px] transition-colors ${
+                        darkTheme
+                          ? "text-[rgba(255,255,255,0.5)]"
+                          : "text-[rgba(45,40,32,0.5)]"
+                      }`}
+                    >
+                      <span className="sm:hidden">Search</span>
+                      <span className="hidden sm:inline md:hidden">
+                        Search projects
+                      </span>
+                      <span className="hidden md:inline lg:hidden">
+                        Search projects, issues
+                      </span>
+                      <span className="hidden lg:inline">
+                        Search projects, issues, contributors...
+                      </span>
                     </span>
-                    <span className="hidden md:inline lg:hidden">
-                      Search projects, issues
-                    </span>
-                    <span className="hidden lg:inline">
-                      Search projects, issues, contributors...
-                    </span>
-                  </span>
+                  )}
                 </div>
 
                 <div
@@ -600,8 +546,9 @@ export function Dashboard() {
             {/* Role Switcher */}
             <RoleSwitcher
               currentRole={activeRole}
-              isSmallDevice={!!isSmallDevice}
-              showMobileNav={!!showMobileNav}
+              isSmallDevice={isMobile}
+              isIconOnly={isMobile}
+              showMobileNav={mobileMenuOpen && isMobile}
               closeMobileNav={closeMobileNav}
               onRoleChange={handleRoleChange}
             />
@@ -612,10 +559,10 @@ export function Dashboard() {
                toggleTheme()
                closeMobileNav(); 
               }}
-              className={`h-[46px] lg:w-[46px]  overflow-clip relative items-center justify-center backdrop-blur-[40px] transition-all hover:scale-105 shadow-[0px_6px_6.5px_-1px_rgba(0,0,0,0.36),0px_0px_4.2px_0px_rgba(0,0,0,0.69)] ${
+              className={`h-[46px] lg:w-[46px] overflow-clip relative items-center justify-center backdrop-blur-[40px] transition-all hover:scale-105 shadow-[0px_6px_6.5px_-1px_rgba(0,0,0,0.36),0px_0px_4.2px_0px_rgba(0,0,0,0.69)] ${
                 darkTheme ? "bg-[#2d2820] text-[#e8dfd0]" : "bg-[#d4c5b0] text-[#2d2820]"
               }
-              ${showMobileNav ? ' flex rounded-sm w-[80%] max-w-[800px] ' : ' hidden lg:flex rounded-full '}`}
+              ${isMobile ? ' flex rounded-full w-[46px] ' : ' hidden lg:flex rounded-full '}`}
               title={darkTheme ? "Switch to light mode" : "Switch to dark mode"}
             >
               <div
@@ -623,7 +570,7 @@ export function Dashboard() {
                   darkTheme
                     ? "shadow-[inset_1px_-1px_1px_0px_rgba(0,0,0,0.5),inset_-2px_2px_1px_-1px_rgba(255,255,255,0.11)]"
                     : "shadow-[inset_1px_-1px_1px_0px_rgba(0,0,0,0.15),inset_-2px_2px_1px_-1px_rgba(255,255,255,0.35)]"
-                } ${showMobileNav? 'rounded-sm': 'rounded-full'}`}
+                } ${mobileMenuOpen && isMobile ? 'rounded-sm' : 'rounded-full'}`}
               />
               {darkTheme ? (
                 <Sun
@@ -642,28 +589,23 @@ export function Dashboard() {
                   }`}
                 />
               )}
-               <span className='ml-2 lg:hidden'>
-              {
 
-               showMobileNav && darkTheme ?"Light Mode" :"Dark Mode"
-               }
-               </span>
             </button>
 
             {/* Notifications Dropdown */}
-            <NotificationsDropdown showMobileNav={!!showMobileNav} closeMobileNav={closeMobileNav}/>
+            <NotificationsDropdown 
+              showMobileNav={mobileMenuOpen && isMobile} 
+              closeMobileNav={closeMobileNav}
+              isIconOnly={isMobile}
+            />
 
-            {/* User Profile Dropdown - Shows profile when authenticated, Sign In when not */}
-            <UserProfileDropdown onPageChange={handleNavigation} showMobileNav={!!showMobileNav} />
-            {/* mobile nav open button  */}
-             <button
-            className={`lg:hidden transition-colors ml-auto mr-[8px] ${showMobileNav? 'hidden' : 'block'} ${
-              theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
-            }`}
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          >
-            {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-          </button>
+            {/* User Profile - Header placement for desktop */}
+            <UserProfileDropdown 
+              onPageChange={handleNavigation} 
+              showMobileNav={false} 
+            />
+
+            {/* mobile nav open button - removed from right side */}
           </div>
 
           {/* Page Content */}
@@ -731,8 +673,8 @@ export function Dashboard() {
                       onProjectClick={(id) => setSelectedProjectId(id)}
                     />
                   )}
-                {currentPage === "contributors" && <ContributorsPage />}
-                {currentPage === "maintainers" && <MaintainersPage />}
+                {currentPage === "contributors" && <ContributorsPage onNavigate={handleNavigation} />}
+                {currentPage === "maintainers" && <MaintainersPage onNavigate={handleNavigation} />}
                 {currentPage === "profile" && (
                   <ProfilePage
                     viewingUserId={viewingUserId}
@@ -754,7 +696,7 @@ export function Dashboard() {
                     }}
                   />
                 )}
-                {currentPage === "data" && adminAuthenticated && <DataPage />}
+
                 {currentPage === "leaderboard" && <LeaderboardPage />}
                 {currentPage === "blog" && <BlogPage />}
                 {currentPage === "settings" && (

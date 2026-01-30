@@ -73,7 +73,7 @@ pub struct BountyEscrowInitialized {
 /// # Event Structure
 /// Topic: `(symbol_short!("init"),)`
 /// Data: Complete `BountyEscrowInitialized` struct
-pub fn emit_bounty_initialized(env: &Env, event: BountyEscrowInitialized) {
+pub fn _emit_bounty_initialized(env: &Env, event: BountyEscrowInitialized) {
     let topics = (symbol_short!("init"),);
     env.events().publish(topics, event.clone());
 }
@@ -137,7 +137,7 @@ pub struct FundsLocked {
 ///
 /// # Indexing Note
 /// The bounty_id is included in topics for efficient filtering
-pub fn emit_funds_locked(env: &Env, event: FundsLocked) {
+pub fn _emit_funds_locked(env: &Env, event: FundsLocked) {
     let topics = (symbol_short!("f_lock"), event.bounty_id);
     env.events().publish(topics, event.clone());
 }
@@ -204,7 +204,7 @@ pub struct FundsReleased {
 /// # Event Structure
 /// Topic: `(symbol_short!("f_rel"), event.bounty_id)`
 /// Data: Complete `FundsReleased` struct
-pub fn emit_funds_released(env: &Env, event: FundsReleased) {
+pub fn _emit_funds_released(env: &Env, event: FundsReleased) {
     let topics = (symbol_short!("f_rel"), event.bounty_id);
     env.events().publish(topics, event.clone());
 }
@@ -282,7 +282,7 @@ pub struct FundsRefunded {
 /// # Event Structure
 /// Topic: `(symbol_short!("f_ref"), event.bounty_id)`
 /// Data: Complete `FundsRefunded` struct
-pub fn emit_funds_refunded(env: &Env, event: FundsRefunded) {
+pub fn _emit_funds_refunded(env: &Env, event: FundsRefunded) {
     let topics = (symbol_short!("f_ref"), event.bounty_id);
     env.events().publish(topics, event.clone());
 }

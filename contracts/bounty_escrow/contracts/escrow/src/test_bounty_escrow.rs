@@ -240,7 +240,7 @@ fn test_lock_fund() {
     let events = env.events().all();
 
     // Verify the event was emitted (5 original events + 4 monitoring events from init & lock_funds)
-    assert_eq!(events.len(), 9);
+    assert_eq!(events.len(), 10);
 }
 
 #[test]
@@ -274,7 +274,7 @@ fn test_release_fund() {
     let events = env.events().all();
 
     // Verify the event was emitted (7 original events + 6 monitoring events from init, lock_funds & release_funds)
-    assert_eq!(events.len(), 13);
+    assert_eq!(events.len(), 16);
 }
 
 #[test]
