@@ -142,7 +142,7 @@
 mod pause_tests;
 
 use soroban_sdk::{
-    contract, contractimpl, contracttype, symbol_short, token, vec, Address, Env, String, Symbol,
+    contract, contracterror, contractimpl, contracttype, symbol_short, token, vec, Address, Env, String, Symbol,
     Vec,
 };
 
@@ -537,7 +537,7 @@ const PROGRAM_REGISTRY: Symbol = symbol_short!("ProgReg");
 
 /// Storage key for program metadata.
 /// Contains optional metadata for indexing and categorization.
-const PROGRAM_METADATA: Symbol = symbol_short!("ProgramMeta");
+const PROGRAM_METADATA: Symbol = symbol_short!("ProgMeta");
 
 // ============================================================================
 // Data Structures
@@ -720,6 +720,15 @@ pub enum DataKey {
 // ============================================================================
 // Contract Implementation
 // ============================================================================
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum Error {
+    BatchMismatch = 1,
+    InsufficientBalance = 2,
+    InvalidAmount = 3,
+}
 
 #[contract]
 pub struct ProgramEscrowContract;
@@ -1133,7 +1142,7 @@ impl ProgramEscrowContract {
             ),
         );
 
-        Ok(program_data)
+        program_data
     }
 
     // ========================================================================
@@ -1261,7 +1270,7 @@ impl ProgramEscrowContract {
 
         // Validate inputs
         if recipients.len() != amounts.len() {
-            return Err(Error::BatchMismatch);
+            panic!("Recipients and amounts vectors must have the same length");
         }
 
         if recipients.is_empty() {
@@ -1271,7 +1280,7 @@ impl ProgramEscrowContract {
         // Calculate total with overflow protection
         let mut total_payout: i128 = 0;
         for i in 0..amounts.len() {
-            let amount = amounts.get(i).unwrap();
+            let amount = amounts.get(i as u32).unwrap();
             if amount <= 0 {
                 panic!("All amounts must be greater than zero");
             }
@@ -1282,7 +1291,7 @@ impl ProgramEscrowContract {
 
         // Validate balance
         if total_payout > program_data.remaining_balance {
-            return Err(Error::InsufficientBalance);
+            panic!("Insufficient balance");
         }
 
         // Calculate fees if enabled
@@ -1296,8 +1305,8 @@ impl ProgramEscrowContract {
         let token_client = token::Client::new(&env, &program_data.token_address);
 
         for i in 0..recipients.len() {
-            let recipient = recipients.get(i).unwrap();
-            let amount = amounts.get(i).unwrap();
+            let recipient = recipients.get(i as u32).unwrap();
+            let amount = amounts.get(i as u32).unwrap();
 
             // Calculate fee for this payout
             let fee_amount = if fee_config.fee_enabled && fee_config.payout_fee_rate > 0 {
@@ -1357,7 +1366,7 @@ impl ProgramEscrowContract {
             ),
         );
 
-        Ok(updated_data)
+        updated_data
     }
 
     /// Executes a single payout to one recipient.
@@ -1442,12 +1451,12 @@ impl ProgramEscrowContract {
 
         // Validate amount
         if amount <= 0 {
-            return Err(Error::InvalidAmount);
+            panic!("Invalid amount");
         }
 
         // Validate balance
         if amount > program_data.remaining_balance {
-            return Err(Error::InsufficientBalance);
+            panic!("Insufficient balance");
         }
 
         // Calculate and collect fee if enabled
@@ -1510,7 +1519,7 @@ impl ProgramEscrowContract {
             ),
         );
 
-        Ok(updated_data)
+        updated_data
     }
 
     // ========================================================================

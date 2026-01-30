@@ -21,3 +21,4 @@ contracts/deployments/*.json
 .soroban/
 soroban/.soroban/identity/
 soroban/.soroban/network/
+test_snapshots/

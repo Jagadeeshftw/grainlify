@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Trash2, Wallet, Copy, CheckCircle2, Star, X, AlertCircle, Edit2 } from 'lucide-react';
+import { Plus, Trash2, Wallet, Copy, CheckCircle2, Star, X, AlertCircle, Edit2, AlertTriangle } from 'lucide-react';
 import { useTheme } from '../../../../shared/contexts/ThemeContext';
 import { PaymentMethod, EcosystemType, CryptoType } from '../../types';
 
@@ -22,14 +22,14 @@ export function PaymentMethodsTab({
   const { theme } = useTheme();
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingMethod, setEditingMethod] = useState<PaymentMethod | null>(null);
-  const selectedEcosystem: EcosystemType = 'stellar';
+  const [selectedEcosystem, setSelectedEcosystem] = useState<EcosystemType>('stellar');
   const [selectedCrypto, setSelectedCrypto] = useState<CryptoType>('usdc');
   const [walletAddress, setWalletAddress] = useState('');
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [validationError, setValidationError] = useState<string>('');
 
   const getAvailableCryptos = (): CryptoType[] => ['usdc', 'usdt', 'xlm'];
-
+  
   // Get tokens that already have wallets
   const getUsedTokens = (): Set<CryptoType> => {
     return new Set(paymentMethods.map(m => m.cryptoType));
@@ -39,6 +39,7 @@ export function PaymentMethodsTab({
     setEditingMethod(null);
     setWalletAddress('');
     setSelectedCrypto('usdc');
+    setSelectedEcosystem('stellar'); // Default
     setShowAddModal(true);
   };
 
@@ -46,8 +47,10 @@ export function PaymentMethodsTab({
     setEditingMethod(method);
     setWalletAddress(method.walletAddress);
     setSelectedCrypto(method.cryptoType);
+    setSelectedEcosystem(method.ecosystem);
     setShowAddModal(true);
   };
+
   const checkDuplicateToken = (cryptoType: CryptoType): string => {
     const existingWallet = paymentMethods.find(method => method.cryptoType === cryptoType);
     if (existingWallet) {
@@ -62,6 +65,7 @@ export function PaymentMethodsTab({
     setEditingMethod(null);
     setWalletAddress('');
     setSelectedCrypto('usdc');
+    setSelectedEcosystem('stellar');
     setValidationError('');
   };
 
@@ -72,6 +76,7 @@ export function PaymentMethodsTab({
       // Update existing method
       onUpdatePaymentMethod(editingMethod.id, {
         walletAddress: walletAddress.trim(),
+        ecosystem: selectedEcosystem,
       });
     } else {
       // Check for duplicate token
@@ -103,10 +108,21 @@ export function PaymentMethodsTab({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const getEcosystemColor = (_ecosystem: EcosystemType) => '#14B6E7'; // Stellar brand color
+  const getEcosystemColor = (ecosystem: EcosystemType) => {
+    switch (ecosystem) {
+      case 'ethereum': return '#627EEA';
+      case 'polygon': return '#8247E5';
+      case 'stellar':
+      default: return '#14B6E7';
+    }
+  };
 
   const getCryptoLabel = (crypto: CryptoType) => {
     return crypto.toUpperCase();
+  };
+  
+  const getEcosystemLabel = (ecosystem: EcosystemType) => {
+    return ecosystem.charAt(0).toUpperCase() + ecosystem.slice(1);
   };
 
   // Validate when crypto selection changes
@@ -114,6 +130,18 @@ export function PaymentMethodsTab({
     setSelectedCrypto(crypto);
     const error = checkDuplicateToken(crypto);
     setValidationError(error);
+    
+    // Auto-select network for specific tokens
+    if (crypto === 'xlm') {
+      setSelectedEcosystem('stellar');
+    }
+  };
+
+  // Helper to determine if network selection should be disabled
+  const isNetworkSelectionDisabled = () => {
+    // XLM is only on Stellar
+    if (selectedCrypto === 'xlm') return true;
+    return false;
   };
 
   return (
@@ -171,7 +199,7 @@ export function PaymentMethodsTab({
                       <h4 className={`text-[16px] font-bold transition-colors ${
                         theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
                       }`}>
-                        {getCryptoLabel(method.cryptoType)} on {method.ecosystem.charAt(0).toUpperCase() + method.ecosystem.slice(1)}
+                        {getCryptoLabel(method.cryptoType)} on {getEcosystemLabel(method.ecosystem)}
                       </h4>
                       {method.isDefault && (
                         <div className="flex items-center gap-1.5 px-3 py-1 rounded-[8px] bg-[#c9983a]/20 border border-[#c9983a]/30">
@@ -280,6 +308,7 @@ export function PaymentMethodsTab({
       {/* Add Payment Method Modal */}
       {showAddModal && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleCloseModal} />
           <div className={`relative w-full max-w-lg rounded-[24px] border shadow-[0_20px_60px_rgba(0,0,0,0.3)] p-8 overflow-hidden max-h-[90vh] overflow-y-auto ${
             theme === 'dark'
               ? 'bg-[#2d2820] border-white/20'
@@ -361,6 +390,48 @@ export function PaymentMethodsTab({
                 )}
               </div>
 
+              {/* Network Selection */}
+              <div>
+                <label className={`block text-[14px] font-semibold mb-3 transition-colors ${
+                  theme === 'dark' ? 'text-[#f5efe5]' : 'text-[#2d2820]'
+                }`}>
+                  Select Network
+                </label>
+                <div className="grid grid-cols-3 gap-3">
+                  {(['stellar', 'ethereum', 'polygon'] as EcosystemType[]).map((network) => {
+                     const isSelected = selectedEcosystem === network;
+                     const disabled = isNetworkSelectionDisabled() && network !== 'stellar'; // Only Stellar allowed if disabled (XLM)
+
+                     return (
+                      <button
+                        key={network}
+                        onClick={() => setSelectedEcosystem(network)}
+                        disabled={disabled}
+                        className={`px-4 py-2.5 rounded-[12px] backdrop-blur-[25px] border transition-all ${
+                          isSelected
+                            ? 'border-[#c9983a] bg-[#c9983a]/10'
+                            : theme === 'dark'
+                              ? 'border-white/15 bg-white/[0.08] hover:bg-white/[0.12]'
+                              : 'border-white/25 bg-white/[0.15] hover:bg-white/[0.2]'
+                        } ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+                      >
+                        <div className="flex items-center justify-center gap-2">
+                           <div 
+                            className="w-2 h-2 rounded-full"
+                            style={{ backgroundColor: getEcosystemColor(network) }}
+                          />
+                          <span className={`text-[13px] font-medium transition-colors ${
+                            theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
+                          }`}>
+                            {getEcosystemLabel(network)}
+                          </span>
+                        </div>
+                      </button>
+                     );
+                  })}
+                </div>
+              </div>
+
               {/* Wallet Address Input */}
               <div>
                 <label className={`block text-[14px] font-semibold mb-2 transition-colors ${
@@ -372,18 +443,28 @@ export function PaymentMethodsTab({
                   type="text"
                   value={walletAddress}
                   onChange={(e) => setWalletAddress(e.target.value)}
-                  placeholder={`Enter your ${getCryptoLabel(selectedCrypto)} wallet address`}
+                  placeholder={`Enter your ${getCryptoLabel(selectedCrypto)} wallet address on ${getEcosystemLabel(selectedEcosystem)}`}
                   className={`w-full px-4 py-3 rounded-[14px] backdrop-blur-[30px] border focus:outline-none text-[14px] font-mono transition-all ${
                     theme === 'dark'
                       ? 'bg-[#3d342c]/[0.4] border-white/15 text-[#f5efe5] placeholder-[#8a7e70]/50 focus:border-[#c9983a]/40'
                       : 'bg-white/[0.15] border-white/25 text-[#2d2820] placeholder-[#7a6b5a]/50 focus:bg-white/[0.2] focus:border-[#c9983a]/40'
                   }`}
                 />
-                <p className={`text-[12px] mt-2 transition-colors ${
-                  theme === 'dark' ? 'text-[#8a7e70]' : 'text-[#9a8b7a]'
-                }`}>
-                  Make sure this address is correct. Payments sent to wrong addresses cannot be recovered.
-                </p>
+                
+                {/* Risk Warning */}
+                <div className={`flex items-start gap-3 mt-3 p-3.5 rounded-[12px] border transition-colors ${
+                    theme === 'dark'
+                      ? 'bg-[#eab308]/10 border-[#eab308]/20'
+                      : 'bg-[#eab308]/10 border-[#eab308]/30'
+                  }`}>
+                    <AlertTriangle className="w-5 h-5 text-[#eab308] flex-shrink-0 mt-0.5" />
+                    <p className={`text-[13px] font-medium leading-relaxed ${
+                      theme === 'dark' ? 'text-[#fde047]' : 'text-[#854d0e]'
+                    }`}>
+                      Selecting the wrong network or entering an address on a different network may result in <span className="font-bold">permanent loss of funds</span>.
+                    </p>
+                </div>
+
                 {validationError && (
                   <div className={`flex items-start gap-2 mt-3 p-3 rounded-[10px] border transition-colors ${
                     theme === 'dark'

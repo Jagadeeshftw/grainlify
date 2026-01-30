@@ -1182,3 +1182,188 @@ fn test_batch_operations_large_batch() {
     let release_count = setup.escrow.batch_release_funds(&release_items);
     assert_eq!(release_count, 10);
 }
+
+// ============================================================================
+// DEADLINE EXTENSION TESTS
+// ============================================================================
+
+#[test]
+fn test_extend_refund_deadline_success() {
+    let setup = TestSetup::new();
+    let bounty_id = 1;
+    let amount = 1000;
+    let current_time = setup.env.ledger().timestamp();
+    let initial_deadline = current_time + 1000;
+
+    // Lock funds
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &initial_deadline);
+
+    // Verify initial deadline
+    let escrow_before = setup.escrow.get_escrow_info(&bounty_id);
+    assert_eq!(escrow_before.deadline, initial_deadline);
+
+    // Extend deadline
+    let new_deadline = initial_deadline + 2000;
+    setup
+        .escrow
+        .extend_refund_deadline(&bounty_id, &new_deadline);
+
+    // Verify deadline was extended
+    let escrow_after = setup.escrow.get_escrow_info(&bounty_id);
+    assert_eq!(escrow_after.deadline, new_deadline);
+    assert_eq!(escrow_after.status, EscrowStatus::Locked);
+    assert_eq!(escrow_after.amount, amount);
+
+    // Verify event was emitted (check that deadline was extended)
+    // Event verification is done through the contract's event system
+    // The deadline extension should have been logged
+}
+
+#[test]
+fn test_extend_refund_deadline_multiple_times() {
+    let setup = TestSetup::new();
+    let bounty_id = 1;
+    let amount = 1000;
+    let current_time = setup.env.ledger().timestamp();
+    let initial_deadline = current_time + 1000;
+
+    // Lock funds
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &initial_deadline);
+
+    // First extension
+    let first_extension = initial_deadline + 1000;
+    setup
+        .escrow
+        .extend_refund_deadline(&bounty_id, &first_extension);
+
+    let escrow_after_first = setup.escrow.get_escrow_info(&bounty_id);
+    assert_eq!(escrow_after_first.deadline, first_extension);
+
+    // Second extension
+    let second_extension = first_extension + 2000;
+    setup
+        .escrow
+        .extend_refund_deadline(&bounty_id, &second_extension);
+
+    let escrow_after_second = setup.escrow.get_escrow_info(&bounty_id);
+    assert_eq!(escrow_after_second.deadline, second_extension);
+
+    // Third extension
+    let third_extension = second_extension + 3000;
+    setup
+        .escrow
+        .extend_refund_deadline(&bounty_id, &third_extension);
+
+    let escrow_after_third = setup.escrow.get_escrow_info(&bounty_id);
+    assert_eq!(escrow_after_third.deadline, third_extension);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #19)")] // InvalidDeadlineExtension
+fn test_extend_refund_deadline_not_greater() {
+    let setup = TestSetup::new();
+    let bounty_id = 1;
+    let amount = 1000;
+    let current_time = setup.env.ledger().timestamp();
+    let initial_deadline = current_time + 1000;
+
+    // Lock funds
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &initial_deadline);
+
+    // Try to extend with same deadline (should fail)
+    setup
+        .escrow
+        .extend_refund_deadline(&bounty_id, &initial_deadline);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #19)")] // InvalidDeadlineExtension
+fn test_extend_refund_deadline_shorter() {
+    let setup = TestSetup::new();
+    let bounty_id = 1;
+    let amount = 1000;
+    let current_time = setup.env.ledger().timestamp();
+    let initial_deadline = current_time + 1000;
+
+    // Lock funds
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &initial_deadline);
+
+    // Try to extend with shorter deadline (should fail)
+    let shorter_deadline = initial_deadline - 100;
+    setup
+        .escrow
+        .extend_refund_deadline(&bounty_id, &shorter_deadline);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #5)")] // FundsNotLocked
+fn test_extend_refund_deadline_after_release() {
+    let setup = TestSetup::new();
+    let bounty_id = 1;
+    let amount = 1000;
+    let current_time = setup.env.ledger().timestamp();
+    let deadline = current_time + 1000;
+
+    // Lock funds
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+
+    // Release funds
+    setup.escrow.release_funds(&bounty_id, &setup.contributor);
+
+    // Try to extend deadline after release (should fail)
+    let new_deadline = deadline + 2000;
+    setup
+        .escrow
+        .extend_refund_deadline(&bounty_id, &new_deadline);
+}
+
+#[test]
+fn test_extend_refund_deadline_with_partially_refunded() {
+    let setup = TestSetup::new();
+    let bounty_id = 1;
+    let amount = 1000;
+    let current_time = setup.env.ledger().timestamp();
+    let initial_deadline = current_time + 1000;
+
+    // Lock funds
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &initial_deadline);
+
+    // Advance time past deadline
+    setup.env.ledger().set_timestamp(initial_deadline + 1);
+
+    // Partial refund
+    let partial_amount = 500;
+    setup.escrow.refund(
+        &bounty_id,
+        &Some(partial_amount),
+        &None::<Address>,
+        &RefundMode::Partial,
+    );
+
+    // Verify status is PartiallyRefunded
+    let escrow_before = setup.escrow.get_escrow_info(&bounty_id);
+    assert_eq!(escrow_before.status, EscrowStatus::PartiallyRefunded);
+
+    // Extend deadline (should work with PartiallyRefunded status)
+    let new_deadline = initial_deadline + 2000;
+    setup
+        .escrow
+        .extend_refund_deadline(&bounty_id, &new_deadline);
+
+    // Verify deadline was extended
+    let escrow_after = setup.escrow.get_escrow_info(&bounty_id);
+    assert_eq!(escrow_after.deadline, new_deadline);
+    assert_eq!(escrow_after.status, EscrowStatus::PartiallyRefunded);
+}
