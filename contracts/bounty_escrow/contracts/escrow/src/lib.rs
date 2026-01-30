@@ -90,6 +90,7 @@
 mod blacklist;
 mod events;
 mod indexed;
+mod rbac;
 mod test_blacklist;
 mod test_bounty_escrow;
 pub mod security {

@@ -139,6 +139,7 @@
 //! 6. **Token Approval**: Ensure contract has token allowance before locking funds
 
 #![no_std]
+mod rbac;
 pub mod security {
     pub mod reentrancy_guard;
 }
