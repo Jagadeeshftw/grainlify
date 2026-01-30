@@ -150,23 +150,21 @@
 //! - ❌ Upgrading without proper testing
 //! - ❌ Not having a rollback plan
 
-
-
-
-
 #![no_std]
 
-mod multisig;
 mod governance;
+mod multisig;
 #[cfg(test)]
 mod test;
-use multisig::MultiSig;
 pub use governance::{
-    Error as GovError, Proposal, ProposalStatus, VoteType, VotingScheme, GovernanceConfig, Vote
+    Error as GovError, GovernanceConfig, Proposal, ProposalStatus, Vote, VoteType, VotingScheme,
 };
+use multisig::MultiSig;
 use soroban_sdk::{
-    contract, contractimpl, contracttype, symbol_short, Address, BytesN, Env, Symbol, Vec, String,
+    contract, contractimpl, contracttype, symbol_short, Address, BytesN, Env, String, Symbol, Vec,
 };
+
+use grainlify_interfaces::{ConfigurableFee, FeeConfig as SharedFeeConfig, Pausable};
 
 // ==================== MONITORING MODULE ====================
 mod monitoring {
@@ -357,7 +355,6 @@ mod monitoring {
 }
 // ==================== END MONITORING MODULE ====================
 
-
 // ============================================================================
 // Contract Definition
 // ============================================================================
@@ -392,12 +389,18 @@ enum DataKey {
 
     /// Migration state tracking - prevents double migration
     MigrationState,
-    
+
     /// Previous version before migration (for rollback support)
     PreviousVersion,
 
     /// Upgrade proposal data
     UpgradeProposal(u64),
+
+    /// Global contract pause state
+    IsPaused,
+
+    /// Fee configuration
+    FeeConfig,
 }
 
 // ============================================================================
@@ -453,62 +456,61 @@ pub struct MigrationEvent {
 // Contract Implementation
 // ============================================================================
 
+// ========================================================================
+// Initialization
+// ========================================================================
 
-    // ========================================================================
-    // Initialization
-    // ========================================================================
+/// Initializes the contract with an admin address.
+///
+/// # Arguments
+/// * `env` - The contract environment
+/// * `admin` - Address authorized to perform upgrades
+///
+/// # Panics
+/// * If contract is already initialized
+///
+/// # State Changes
+/// - Sets Admin address in instance storage
+/// - Sets initial Version number
+///
+/// # Security Considerations
+/// - Can only be called once (prevents admin takeover)
+/// - Admin address is immutable after initialization
+/// - Admin should be a secure address (hardware wallet/multi-sig)
+/// - No authorization required for initialization (first-caller pattern)
+///
+/// # Example
+/// ```rust
+/// use soroban_sdk::{Address, Env};
+///
+/// let env = Env::default();
+/// let admin = Address::generate(&env);
+///
+/// // Initialize contract
+/// contract.init(&env, &admin);
+///
+/// // Subsequent init attempts will panic
+/// // contract.init(&env, &another_admin); // ❌ Panics!
+/// ```
+///
+/// # Gas Cost
+/// Low - Two storage writes
+///
+/// # Production Deployment
+/// ```bash
+/// # Deploy contract
+/// stellar contract deploy \
+///   --wasm target/wasm32-unknown-unknown/release/grainlify.wasm \
+///   --source ADMIN_SECRET_KEY
+///
+/// # Initialize with admin address
+/// stellar contract invoke \
+///   --id CONTRACT_ID \
+///   --source ADMIN_SECRET_KEY \
+///   -- init \
+///   --admin GADMIN_ADDRESS
+/// ```
 
-    /// Initializes the contract with an admin address.
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `admin` - Address authorized to perform upgrades
-    ///
-    /// # Panics
-    /// * If contract is already initialized
-    ///
-    /// # State Changes
-    /// - Sets Admin address in instance storage
-    /// - Sets initial Version number
-    ///
-    /// # Security Considerations
-    /// - Can only be called once (prevents admin takeover)
-    /// - Admin address is immutable after initialization
-    /// - Admin should be a secure address (hardware wallet/multi-sig)
-    /// - No authorization required for initialization (first-caller pattern)
-    ///
-    /// # Example
-    /// ```rust
-    /// use soroban_sdk::{Address, Env};
-    ///
-    /// let env = Env::default();
-    /// let admin = Address::generate(&env);
-    ///
-    /// // Initialize contract
-    /// contract.init(&env, &admin);
-    ///
-    /// // Subsequent init attempts will panic
-    /// // contract.init(&env, &another_admin); // ❌ Panics!
-    /// ```
-    ///
-    /// # Gas Cost
-    /// Low - Two storage writes
-    ///
-    /// # Production Deployment
-    /// ```bash
-    /// # Deploy contract
-    /// stellar contract deploy \
-    ///   --wasm target/wasm32-unknown-unknown/release/grainlify.wasm \
-    ///   --source ADMIN_SECRET_KEY
-    ///
-    /// # Initialize with admin address
-    /// stellar contract invoke \
-    ///   --id CONTRACT_ID \
-    ///   --source ADMIN_SECRET_KEY \
-    ///   -- init \
-    ///   --admin GADMIN_ADDRESS
-    /// ```
- 
 #[contractimpl]
 impl GrainlifyContract {
     /// Initializes the contract with multisig configuration.
@@ -600,9 +602,6 @@ impl GrainlifyContract {
         monitoring::emit_performance(&env, symbol_short!("init"), duration);
     }
 
-
-
-
     /// Proposes an upgrade with a new WASM hash (multisig version).
     ///
     /// # Arguments
@@ -612,11 +611,7 @@ impl GrainlifyContract {
     ///
     /// # Returns
     /// * `u64` - The proposal ID
-    pub fn propose_upgrade(
-        env: Env,
-        proposer: Address,
-        wasm_hash: BytesN<32>,
-    ) -> u64 {
+    pub fn propose_upgrade(env: Env, proposer: Address, wasm_hash: BytesN<32>) -> u64 {
         let proposal_id = MultiSig::propose(&env, proposer);
 
         env.storage()
@@ -632,14 +627,9 @@ impl GrainlifyContract {
     /// * `env` - The contract environment
     /// * `proposal_id` - The ID of the proposal to approve
     /// * `signer` - Address approving the proposal
-    pub fn approve_upgrade(
-        env: Env,
-        proposal_id: u64,
-        signer: Address,
-    ) {
+    pub fn approve_upgrade(env: Env, proposal_id: u64, signer: Address) {
         MultiSig::approve(&env, proposal_id, signer);
     }
-
 
     /// Upgrades the contract to new WASM code.
     ///
@@ -768,7 +758,9 @@ impl GrainlifyContract {
 
         // Store previous version for potential rollback
         let current_version = env.storage().instance().get(&DataKey::Version).unwrap_or(1);
-        env.storage().instance().set(&DataKey::PreviousVersion, &current_version);
+        env.storage()
+            .instance()
+            .set(&DataKey::PreviousVersion, &current_version);
 
         // Perform WASM upgrade
         env.deployer().update_current_contract_wasm(new_wasm_hash);
@@ -780,7 +772,6 @@ impl GrainlifyContract {
         let duration = env.ledger().timestamp().saturating_sub(start);
         monitoring::emit_performance(&env, symbol_short!("upgrade"), duration);
     }
-
 
     // ========================================================================
     // Version Management
@@ -831,11 +822,7 @@ impl GrainlifyContract {
     /// Returns the semantic version string (e.g., "1.0.0").
     /// Falls back to mapping known numeric values to semantic strings.
     pub fn get_version_semver_string(env: Env) -> String {
-        let raw: u32 = env
-            .storage()
-            .instance()
-            .get(&DataKey::Version)
-            .unwrap_or(0);
+        let raw: u32 = env.storage().instance().get(&DataKey::Version).unwrap_or(0);
         let s = match raw {
             0 => "0.0.0",
             1 | 10000 => "1.0.0",
@@ -850,12 +837,12 @@ impl GrainlifyContract {
     /// Returns the numeric encoded semantic version using policy major*10_000 + minor*100 + patch.
     /// If the stored version is a simple major number (1,2,3...), it will be converted to major*10_000.
     pub fn get_version_numeric_encoded(env: Env) -> u32 {
-        let raw: u32 = env
-            .storage()
-            .instance()
-            .get(&DataKey::Version)
-            .unwrap_or(0);
-        if raw >= 10_000 { raw } else { raw.saturating_mul(10_000) }
+        let raw: u32 = env.storage().instance().get(&DataKey::Version).unwrap_or(0);
+        if raw >= 10_000 {
+            raw
+        } else {
+            raw.saturating_mul(10_000)
+        }
     }
 
     /// Ensures the current version meets a minimum required encoded semantic version.
@@ -866,7 +853,6 @@ impl GrainlifyContract {
             panic!("Incompatible contract version");
         }
     }
-
 
     /// Updates the contract version number.
     ///
@@ -930,7 +916,6 @@ impl GrainlifyContract {
     /// # Panics
     /// * If admin address is not set (contract not initialized)
     /// * If caller is not the admin
-
 
     pub fn set_version(env: Env, new_version: u32) {
         let start = env.ledger().timestamp();
@@ -1026,10 +1011,8 @@ impl GrainlifyContract {
 
         // Validate target version
         if target_version <= current_version {
-            let error_msg = String::from_str(
-                &env,
-                "Target version must be greater than current version"
-            );
+            let error_msg =
+                String::from_str(&env, "Target version must be greater than current version");
             emit_migration_event(
                 &env,
                 MigrationEvent {
@@ -1051,7 +1034,7 @@ impl GrainlifyContract {
                 .instance()
                 .get(&DataKey::MigrationState)
                 .unwrap();
-            
+
             if migration_state.to_version >= target_version {
                 // Migration already completed, skip
                 return;
@@ -1062,16 +1045,13 @@ impl GrainlifyContract {
         let mut from_version = current_version;
         while from_version < target_version {
             let next_version = from_version + 1;
-            
+
             // Execute migration from from_version to next_version
             match next_version {
                 2 => migrate_v1_to_v2(&env),
                 3 => migrate_v2_to_v3(&env),
                 _ => {
-                    let error_msg = String::from_str(
-                        &env,
-                        "No migration path available"
-                    );
+                    let error_msg = String::from_str(&env, "No migration path available");
                     emit_migration_event(
                         &env,
                         MigrationEvent {
@@ -1086,12 +1066,14 @@ impl GrainlifyContract {
                     panic!("No migration path available");
                 }
             }
-            
+
             from_version = next_version;
         }
 
         // Update version
-        env.storage().instance().set(&DataKey::Version, &target_version);
+        env.storage()
+            .instance()
+            .set(&DataKey::Version, &target_version);
 
         // Record migration state
         let migration_state = MigrationState {
@@ -1100,7 +1082,9 @@ impl GrainlifyContract {
             migrated_at: env.ledger().timestamp(),
             migration_hash: migration_hash.clone(),
         };
-        env.storage().instance().set(&DataKey::MigrationState, &migration_state);
+        env.storage()
+            .instance()
+            .set(&DataKey::MigrationState, &migration_state);
 
         // Emit success event
         emit_migration_event(
@@ -1129,7 +1113,12 @@ impl GrainlifyContract {
     /// * `Option<MigrationState>` - Current migration state if exists
     pub fn get_migration_state(env: Env) -> Option<MigrationState> {
         if env.storage().instance().has(&DataKey::MigrationState) {
-            Some(env.storage().instance().get(&DataKey::MigrationState).unwrap())
+            Some(
+                env.storage()
+                    .instance()
+                    .get(&DataKey::MigrationState)
+                    .unwrap(),
+            )
         } else {
             None
         }
@@ -1141,10 +1130,72 @@ impl GrainlifyContract {
     /// * `Option<u32>` - Previous version if exists
     pub fn get_previous_version(env: Env) -> Option<u32> {
         if env.storage().instance().has(&DataKey::PreviousVersion) {
-            Some(env.storage().instance().get(&DataKey::PreviousVersion).unwrap())
+            Some(
+                env.storage()
+                    .instance()
+                    .get(&DataKey::PreviousVersion)
+                    .unwrap(),
+            )
         } else {
             None
         }
+    }
+}
+
+#[contractimpl]
+impl ConfigurableFee for GrainlifyContract {
+    fn set_fee_config(env: Env, config: SharedFeeConfig) {
+        // Only admin can set fee config
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        admin.require_auth();
+
+        env.storage().instance().set(&DataKey::FeeConfig, &config);
+    }
+
+    fn get_fee_config(env: Env) -> SharedFeeConfig {
+        env.storage()
+            .instance()
+            .get(&DataKey::FeeConfig)
+            .unwrap_or(SharedFeeConfig {
+                lock_fee_rate: 0,
+                payout_fee_rate: 0,
+                fee_recipient: env.current_contract_address(),
+                fee_enabled: false,
+            })
+    }
+}
+
+#[contractimpl]
+impl Pausable for GrainlifyContract {
+    fn pause(env: Env) {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        admin.require_auth();
+        env.storage().instance().set(&DataKey::IsPaused, &true);
+    }
+
+    fn unpause(env: Env) {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        admin.require_auth();
+        env.storage().instance().set(&DataKey::IsPaused, &false);
+    }
+
+    fn is_paused(env: Env) -> bool {
+        env.storage()
+            .instance()
+            .get(&DataKey::IsPaused)
+            .unwrap_or(false)
     }
 }
 
@@ -1154,10 +1205,7 @@ impl GrainlifyContract {
 
 /// Emits a migration event for audit trail
 fn emit_migration_event(env: &Env, event: MigrationEvent) {
-    env.events().publish(
-        (symbol_short!("migration"),),
-        event,
-    );
+    env.events().publish((symbol_short!("migration"),), event);
 }
 
 /// Migration from version 1 to version 2
@@ -1169,7 +1217,7 @@ fn migrate_v1_to_v2(_env: &Env) {
     // 2. Transform to new format
     // 3. Write new data format
     // 4. Clean up old data if needed
-    
+
     // For now, this is a no-op migration
     // Add actual migration logic based on your data structure changes
 }
@@ -1181,14 +1229,16 @@ fn migrate_v2_to_v3(_env: &Env) {
     // This will be implemented when v3 is released
 }
 
-
 // ============================================================================
 // Testing Module
 // ============================================================================
 #[cfg(test)]
 mod internal_test {
     use super::*;
-    use soroban_sdk::{testutils::{Address as _, Events}, Env};
+    use soroban_sdk::{
+        testutils::{Address as _, Events},
+        Env,
+    };
 
     #[test]
     fn multisig_init_works() {
@@ -1333,7 +1383,7 @@ mod internal_test {
         let client = GrainlifyContractClient::new(&env, &contract_id);
 
         let admin = Address::generate(&env);
-        
+
         // 1. Initialize contract
         client.init_admin(&admin);
         // Initially VERSION (2)
@@ -1406,4 +1456,3 @@ mod internal_test {
         assert!(events.len() > initial_event_count);
     }
 }
-
