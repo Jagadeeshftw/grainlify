@@ -1,0 +1,46 @@
+[package]
+name = "bounty-escrow-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[[bin]]
+name = "fuzz_lock_funds"
+path = "fuzz_targets/fuzz_lock_funds.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_release_funds"
+path = "fuzz_targets/fuzz_release_funds.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_refund"
+path = "fuzz_targets/fuzz_refund.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_batch_operations"
+path = "fuzz_targets/fuzz_batch_operations.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_anti_abuse"
+path = "fuzz_targets/fuzz_anti_abuse.rs"
+test = false
+doc = false
+
+[dependencies]
+libfuzzer-sys = "0.4"
+soroban-sdk = { workspace = true, features = ["alloc", "testutils"] }
+bounty-escrow = { path = ".." }
+
+[profile.release]
+debug = true
