@@ -33,37 +33,32 @@ export function ContributorsTable({
 
   return (
     <div
-      className={`backdrop-blur-[40px] bg-white/[0.12] rounded-[24px] border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.08)] overflow-hidden transition-all duration-700 delay-1000 ${
-        isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
-      }`}
+      className={`backdrop-blur-[40px] bg-white/[0.12] rounded-[24px] border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.08)] overflow-hidden transition-all duration-700 delay-1000 ${isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
+        }`}
     >
       {/* Table Header */}
       <div className="grid grid-cols-12 gap-4 px-8 py-4 border-b border-white/10 backdrop-blur-[30px] bg-white/[0.08]">
         <div
-          className={`col-span-1 text-[12px] font-bold uppercase tracking-wider transition-colors ${
-            theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"
-          }`}
+          className={`col-span-1 text-[12px] font-bold uppercase tracking-wider transition-colors ${theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"
+            }`}
         >
           Rank
         </div>
         <div
-          className={`col-span-1 text-[12px] font-bold uppercase tracking-wider transition-colors ${
-            theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"
-          }`}
+          className={`col-span-1 text-[12px] font-bold uppercase tracking-wider transition-colors ${theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"
+            }`}
         >
           Trend
         </div>
         <div
-          className={`col-span-6 text-[12px] font-bold uppercase tracking-wider transition-colors ${
-            theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"
-          }`}
+          className={`col-span-6 text-[12px] font-bold uppercase tracking-wider transition-colors ${theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"
+            }`}
         >
           Contributor
         </div>
         <div
-          className={`col-span-2 text-[12px] font-bold uppercase tracking-wider text-right flex items-center justify-end gap-1 transition-colors ${
-            theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"
-          }`}
+          className={`col-span-2 text-[12px] font-bold uppercase tracking-wider text-right flex items-center justify-end gap-1 transition-colors ${theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"
+            }`}
         >
           Score
           <Award className="w-3.5 h-3.5 animate-wiggle-slow" />
@@ -88,9 +83,8 @@ export function ContributorsTable({
             <div className="col-span-1 flex items-center">
               <div className="flex items-center justify-center w-8 h-8 rounded-[10px] bg-gradient-to-br from-white/[0.15] to-white/[0.08] border border-white/20 shadow-sm group-hover:scale-110 group-hover:shadow-md transition-all duration-300">
                 <span
-                  className={`text-[15px] font-bold transition-colors ${
-                    theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"
-                  }`}
+                  className={`text-[15px] font-bold transition-colors ${theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"
+                    }`}
                 >
                   {leader.rank}
                 </span>
@@ -110,8 +104,8 @@ export function ContributorsTable({
                 className={`relative w-12 h-12 rounded-full bg-gradient-to-br ${getAvatarGradient(index)} flex items-center justify-center text-white font-bold text-[18px] shadow-md border-2 border-white/25 group-hover:scale-125 group-hover:shadow-lg group-hover:rotate-12 transition-all duration-300 overflow-hidden`}
               >
                 {leader.avatar &&
-                (leader.avatar.startsWith("http") ||
-                  leader.avatar.startsWith("https")) ? (
+                  (leader.avatar.startsWith("http") ||
+                    leader.avatar.startsWith("https")) ? (
                   <img
                     src={leader.avatar}
                     alt={leader.username}
@@ -132,17 +126,17 @@ export function ContributorsTable({
               </div>
               <div>
                 <div
-                  className={`text-[15px] font-bold group-hover:text-[#c9983a] transition-colors duration-300 ${
-                    theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"
-                  }`}
+                  className={`text-[15px] font-bold group-hover:text-[#c9983a] transition-colors duration-300 ${theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"
+                    }`}
                 >
-                  {leader.username}
+                  {leader.first_name || leader.last_name
+                    ? `${leader.first_name || ''} ${leader.last_name || ''}`.trim()
+                    : leader.username}
                 </div>
                 {activeFilter === "contributions" && leader.contributions && (
                   <div
-                    className={`text-[12px] transition-colors ${
-                      theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"
-                    }`}
+                    className={`text-[12px] transition-colors ${theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"
+                      }`}
                   >
                     {leader.contributions} contributions
                   </div>
@@ -166,9 +160,8 @@ export function ContributorsTable({
             <div className="col-span-2 flex items-center justify-end">
               <div className="relative px-5 py-2.5 rounded-[12px] bg-gradient-to-br from-[#c9983a]/25 to-[#d4af37]/15 border border-[#c9983a]/40 shadow-sm group-hover:shadow-lg group-hover:border-[#c9983a]/70 group-hover:from-[#c9983a]/35 group-hover:to-[#d4af37]/25 group-hover:scale-110 transition-all duration-300">
                 <div
-                  className={`text-[17px] font-black transition-colors ${
-                    theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"
-                  }`}
+                  className={`text-[17px] font-black transition-colors ${theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"
+                    }`}
                 >
                   {leader.score}
                 </div>

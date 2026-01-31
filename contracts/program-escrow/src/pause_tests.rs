@@ -29,8 +29,9 @@ mod pause_tests {
         let admin = Address::generate(&env);
         let token = create_token(&env, &admin);
         let prog_id = String::from_str(&env, "Test");
+        let organizer = Address::generate(&env);
 
-        client.initialize_program(&prog_id, &admin, &token.address);
+        client.initialize_program(&prog_id, &admin, &token.address, &organizer, &None);
         client.pause();
         client.lock_program_funds(&prog_id, &1000);
     }
@@ -57,8 +58,9 @@ mod pause_tests {
         let token = create_token(&env, &admin);
         let recipient = Address::generate(&env);
         let prog_id = String::from_str(&env, "Test");
+        let organizer = Address::generate(&env);
 
-        client.initialize_program(&prog_id, &admin, &token.address);
+        client.initialize_program(&prog_id, &admin, &token.address, &organizer, &None);
         client.pause();
         client.emergency_withdraw(&prog_id, &recipient);
     }

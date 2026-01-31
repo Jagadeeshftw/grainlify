@@ -1,3 +1,33 @@
+//! # Indexing Integration Module
+//!
+//! Bridges the core contract logic with the indexing system and event emission.
+//! This module handles the "side effects" of contract operations: updating indexes
+//! and emitting enhanced events for off-chain trackers.
+//!
+//! ## Architecture
+//!
+//! ```text
+//! ┌─────────────────────────────────────────────────────────────┐
+//! │                 Indexing Integration Logic                  │
+//! ├─────────────────────────────────────────────────────────────┤
+//! │                                                             │
+//! │   ┌────────────────────┐       ┌────────────────────┐       │
+//! │   │   Main Contract    │       │     Event System   │       │
+//! │   └─────────┬──────────┘       └─────────▲──────────┘       │
+//! │             │                            │                  │
+//! │             │ (calls)                    │ (emits)          │
+//! │             ▼                            │                  │
+//! │   on_funds_locked() ─────────────────────┤                  │
+//! │             │                                               │
+//! │             │ (updates)                                     │
+//! │             ▼                                               │
+//! │   ┌────────────────────┐                                    │
+//! │   │   Indexed Storage  │                                    │
+//! │   └────────────────────┘                                    │
+//! │                                                             │
+//! └─────────────────────────────────────────────────────────────┘
+//! ```
+
 use crate::indexed::enhanced_events::{
     _emit_bounty_activity, _emit_bounty_status_changed, _emit_enhanced_funds_locked,
     _emit_enhanced_funds_refunded, _emit_enhanced_funds_released, create_event_metadata,
@@ -10,7 +40,21 @@ use crate::indexed::indexed_storage::{
 use crate::RefundMode;
 use soroban_sdk::{Address, Env};
 
-/// Called when funds are locked in escrow
+/// Handler called when funds are locked in escrow.
+///
+/// Use this hook to update indexes and emit creation events.
+///
+/// # Arguments
+/// * `env` - The contract environment
+/// * `bounty_id` - ID of the new bounty
+/// * `amount` - Amount locked
+/// * `depositor` - Address of the depositor
+/// * `deadline` - Timestamp when refund becomes possible
+///
+/// # State Changes
+/// - Creates new `IndexedBounty` entry
+/// - Emits `EnhancedFundsLocked` event
+/// - Emits `BountyActivity` event
 pub fn on_funds_locked(
     env: &Env,
     bounty_id: u64,
@@ -58,7 +102,21 @@ pub fn on_funds_locked(
     _emit_bounty_activity(env, activity);
 }
 
-/// Called when funds are released to a recipient
+/// Handler called when funds are released to a recipient.
+///
+/// # Arguments
+/// * `env` - The contract environment
+/// * `bounty_id` - ID of the bounty
+/// * `amount` - Amount released in this transaction
+/// * `recipient` - Address receiving the funds
+/// * `remaining_amount` - Funds remaining in escrow (0 for full release)
+/// * `is_partial` - True if this is a partial release
+///
+/// # State Changes
+/// - Updates bounty status filters
+/// - Emits `EnhancedFundsReleased` event
+/// - Emits `BountyStatusChanged` event
+/// - Emits `BountyActivity` event
 pub fn on_funds_released(
     env: &Env,
     bounty_id: u64,
@@ -128,7 +186,22 @@ pub fn on_funds_released(
     _emit_bounty_activity(env, activity);
 }
 
-/// Called when funds are refunded to the depositor
+/// Handler called when funds are refunded to the depositor.
+///
+/// # Arguments
+/// * `env` - The contract environment
+/// * `bounty_id` - ID of the bounty
+/// * `amount` - Amount refunded
+/// * `refund_to` - Address receiving the refund
+/// * `remaining_amount` - Funds remaining in escrow
+/// * `refund_mode` - Type of refund (Full, Partial, etc.)
+/// * `triggered_by` - Address triggering the refund (admin or depositor)
+///
+/// # State Changes
+/// - Updates bounty status filters
+/// - Emits `EnhancedFundsRefunded` event
+/// - Emits `BountyStatusChanged` event
+/// - Emits `BountyActivity` event
 pub fn on_funds_refunded(
     env: &Env,
     bounty_id: u64,
@@ -199,7 +272,12 @@ pub fn on_funds_refunded(
     _emit_bounty_activity(env, activity);
 }
 
-/// Called when a bounty is cancelled
+/// Internal handler for bounty cancellation.
+///
+/// # Arguments
+/// * `env` - The contract environment
+/// * `bounty_id` - ID of the bounty to cancel
+/// * `cancelled_by` - Address initiating cancel
 pub fn _on_bounty_cancelled(env: &Env, bounty_id: u64, cancelled_by: &Address) {
     let timestamp = env.ledger().timestamp();
 
@@ -232,7 +310,14 @@ pub fn _on_bounty_cancelled(env: &Env, bounty_id: u64, cancelled_by: &Address) {
     _emit_bounty_activity(env, activity);
 }
 
-/// Called when a bounty deadline is extended
+/// Internal handler for deadline extension.
+///
+/// # Arguments
+/// * `env` - The contract environment
+/// * `bounty_id` - ID of the bounty
+/// * `old_deadline` - Previous deadline timestamp
+/// * `new_deadline` - new deadline timestamp
+/// * `extended_by` - Address changing the deadline
 pub fn _on_deadline_extended(
     env: &Env,
     bounty_id: u64,
@@ -268,7 +353,14 @@ pub fn _on_deadline_extended(
     _emit_bounty_activity(env, activity);
 }
 
-/// Called when a bounty amount is increased
+/// Internal handler for amount increase.
+///
+/// # Arguments
+/// * `env` - The contract environment
+/// * `bounty_id` - ID of the bounty
+/// * `old_amount` - Previous locked amount
+/// * `increase_amount` - Amount added
+/// * `increased_by` - Address adding funds
 pub fn _on_amount_increased(
     env: &Env,
     bounty_id: u64,

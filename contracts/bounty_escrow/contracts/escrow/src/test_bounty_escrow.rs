@@ -715,3 +715,171 @@ fn test_emergency_withdraw() {
     // Verify pause state still true
     assert_eq!(client.is_paused(), true);
 }
+#[test]
+fn test_expire_after_deadline() {
+    let (env, client, contract_id) = create_test_env();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+
+    let (token_address, token_client, token_admin) = create_token_contract(&env, &admin);
+
+    client.init(&admin, &token_address);
+
+    token_admin.mint(&depositor, &1000_0000000);
+
+    let bounty_id = 1;
+    let amount = 100_0000000;
+    let deadline = env.ledger().timestamp() + 1000;
+
+    token_client.approve(&depositor, &contract_id, &amount, &1000);
+    client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
+
+    let initial_balance = token_client.balance(&depositor);
+
+    env.ledger().with_mut(|li| {
+        li.timestamp = deadline + 1;
+    });
+
+    client.expire(&bounty_id);
+
+    let final_balance = token_client.balance(&depositor);
+    assert_eq!(final_balance, initial_balance + amount);
+
+    let escrow = client.get_escrow_info(&bounty_id);
+    assert_eq!(escrow.status, crate::EscrowStatus::Refunded);
+    assert_eq!(escrow.remaining_amount, 0);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_expire_before_deadline() {
+    let (env, client, contract_id) = create_test_env();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+
+    let (token_address, token_client, token_admin) = create_token_contract(&env, &admin);
+
+    client.init(&admin, &token_address);
+
+    token_admin.mint(&depositor, &1000_0000000);
+
+    let bounty_id = 1;
+    let amount = 100_0000000;
+    let deadline = env.ledger().timestamp() + 1000;
+
+    token_client.approve(&depositor, &contract_id, &amount, &1000);
+    client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
+
+    client.expire(&bounty_id);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #4)")]
+fn test_expire_nonexistent_bounty() {
+    let (env, client, _contract_id) = create_test_env();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let (token_address, _token_client, _token_admin) = create_token_contract(&env, &admin);
+
+    client.init(&admin, &token_address);
+
+    client.expire(&999);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #5)")]
+fn test_expire_already_released() {
+    let (env, client, contract_id) = create_test_env();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let contributor = Address::generate(&env);
+
+    let (token_address, token_client, token_admin) = create_token_contract(&env, &admin);
+
+    client.init(&admin, &token_address);
+
+    token_admin.mint(&depositor, &1000_0000000);
+
+    let bounty_id = 1;
+    let amount = 100_0000000;
+    let deadline = env.ledger().timestamp() + 1000;
+
+    token_client.approve(&depositor, &contract_id, &amount, &1000);
+    client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
+
+    client.release_funds(&bounty_id, &contributor);
+
+    env.ledger().with_mut(|li| {
+        li.timestamp = deadline + 1;
+    });
+
+    client.expire(&bounty_id);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_release_after_deadline() {
+    let (env, client, contract_id) = create_test_env();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let contributor = Address::generate(&env);
+
+    let (token_address, token_client, token_admin) = create_token_contract(&env, &admin);
+
+    client.init(&admin, &token_address);
+
+    token_admin.mint(&depositor, &1000_0000000);
+
+    let bounty_id = 1;
+    let amount = 100_0000000;
+    let deadline = env.ledger().timestamp() + 1000;
+
+    token_client.approve(&depositor, &contract_id, &amount, &1000);
+    client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
+
+    env.ledger().with_mut(|li| {
+        li.timestamp = deadline + 1;
+    });
+
+    client.release_funds(&bounty_id, &contributor);
+}
+
+#[test]
+fn test_expire_event_emission() {
+    let (env, client, contract_id) = create_test_env();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+
+    let (token_address, token_client, token_admin) = create_token_contract(&env, &admin);
+
+    client.init(&admin, &token_address);
+
+    token_admin.mint(&depositor, &1000_0000000);
+
+    let bounty_id = 1;
+    let amount = 100_0000000;
+    let deadline = env.ledger().timestamp() + 1000;
+
+    token_client.approve(&depositor, &contract_id, &amount, &1000);
+    client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
+
+    env.ledger().with_mut(|li| {
+        li.timestamp = deadline + 1;
+    });
+
+    client.expire(&bounty_id);
+
+    let events = env.events().all();
+    assert!(events.len() > 0);
+}

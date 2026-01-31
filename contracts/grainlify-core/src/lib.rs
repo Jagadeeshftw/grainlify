@@ -143,22 +143,28 @@
 //!
 //! ## Common Pitfalls
 //!
-//! - ❌ Not testing upgrades on testnet
-//! - ❌ Losing admin private key
-//! - ❌ Breaking state compatibility between versions
-//! - ❌ Not documenting migration steps
-//! - ❌ Upgrading without proper testing
-//! - ❌ Not having a rollback plan
+//! -  Not testing upgrades on testnet
+//! -  Losing admin private key
+//! -  Breaking state compatibility between versions
+//! -  Not documenting migration steps
+//! -  Upgrading without proper testing
+//! -  Not having a rollback plan
 
 #![no_std]
 
 mod governance;
 mod multisig;
+mod multisig;
+mod state_verifier;
 #[cfg(test)]
 mod test;
+mod test_audit;
+
 pub use governance::{
     Error as GovError, GovernanceConfig, Proposal, ProposalStatus, Vote, VoteType, VotingScheme,
 };
+use grainlify_common::AuditReport;
+use multisig::MultiSig;
 use multisig::MultiSig;
 use soroban_sdk::{
     contract, contractimpl, contracttype, symbol_short, Address, BytesN, Env, String, Symbol, Vec,
@@ -491,6 +497,57 @@ pub struct MigrationEvent {
 ///
 /// // Subsequent init attempts will panic
 /// // contract.init(&env, &another_admin); // ❌ Panics!
+/// ```
+///
+/// # Gas Cost
+/// Low - Two storage writes
+///
+/// # Production Deployment
+/// ```bash
+/// # Deploy contract
+/// stellar contract deploy \
+///   --wasm target/wasm32-unknown-unknown/release/grainlify.wasm \
+///   --source ADMIN_SECRET_KEY
+///
+/// # Initialize with admin address
+/// stellar contract invoke \
+///   --id CONTRACT_ID \
+///   --source ADMIN_SECRET_KEY \
+///   -- init \
+///   --admin GADMIN_ADDRESS
+/// ```
+
+/// Initializes the contract with an admin address.
+///
+/// # Arguments
+/// * `env` - The contract environment
+/// * `admin` - Address authorized to perform upgrades
+///
+/// # Panics
+/// * If contract is already initialized
+///
+/// # State Changes
+/// - Sets Admin address in instance storage
+/// - Sets initial Version number
+///
+/// # Security Considerations
+/// - Can only be called once (prevents admin takeover)
+/// - Admin address is immutable after initialization
+/// - Admin should be a secure address (hardware wallet/multi-sig)
+/// - No authorization required for initialization (first-caller pattern)
+///
+/// # Example
+/// ```rust
+/// use soroban_sdk::{Address, Env};
+///
+/// let env = Env::default();
+/// let admin = Address::generate(&env);
+///
+/// // Initialize contract
+/// contract.init(&env, &admin);
+///
+/// // Subsequent init attempts will panic
+/// // contract.init(&env, &another_admin); // Panics!
 /// ```
 ///
 /// # Gas Cost

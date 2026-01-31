@@ -207,6 +207,7 @@ func New(cfg config.Config, deps Deps) *fiber.App {
 	// Public landing stats
 	landingStats := handlers.NewLandingStatsHandler(deps.DB)
 	app.Get("/stats/landing", landingStats.Get())
+	app.Get("/stats/contributors", landingStats.GetContributorStats())
 
 	// Public projects list with filtering
 	projectsPublic := handlers.NewProjectsPublicHandler(cfg, deps.DB)

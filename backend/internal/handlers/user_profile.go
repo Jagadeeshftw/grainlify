@@ -50,12 +50,12 @@ WHERE user_id = $1
 `, userID).Scan(&githubLogin)
 
 		// Get user profile fields (bio, website, social links) from users table
-		var bio, website, telegram, linkedin, whatsapp, twitter, discord *string
+		var bio, website, telegram, linkedin, whatsapp, twitter, discord, firstName, lastName *string
 		_ = h.db.Pool.QueryRow(c.Context(), `
-SELECT bio, website, telegram, linkedin, whatsapp, twitter, discord
+SELECT bio, website, telegram, linkedin, whatsapp, twitter, discord, first_name, last_name
 FROM users
 WHERE id = $1
-`, userID).Scan(&bio, &website, &telegram, &linkedin, &whatsapp, &twitter, &discord)
+`, userID).Scan(&bio, &website, &telegram, &linkedin, &whatsapp, &twitter, &discord, &firstName, &lastName)
 		if err != nil {
 			// User doesn't have GitHub account linked
 			return c.Status(fiber.StatusOK).JSON(fiber.Map{
@@ -295,6 +295,12 @@ WHERE p.status = 'verified'
 		}
 		if discord != nil && *discord != "" {
 			response["discord"] = *discord
+		}
+		if firstName != nil && *firstName != "" {
+			response["first_name"] = *firstName
+		}
+		if lastName != nil && *lastName != "" {
+			response["last_name"] = *lastName
 		}
 
 		return c.Status(fiber.StatusOK).JSON(response)
@@ -781,7 +787,7 @@ func (h *UserProfileHandler) PublicProfile() fiber.Handler {
 
 		var githubLogin *string
 		var userID *uuid.UUID
-		var bio, website, telegram, linkedin, whatsapp, twitter, discord *string
+		var bio, website, telegram, linkedin, whatsapp, twitter, discord, firstName, lastName *string
 
 		// If user_id is provided, get GitHub login from it
 		if userIDParam != "" {
@@ -803,10 +809,10 @@ WHERE user_id = $1
 
 			// Get profile fields
 			_ = h.db.Pool.QueryRow(c.Context(), `
-SELECT bio, website, telegram, linkedin, whatsapp, twitter, discord
+SELECT bio, website, telegram, linkedin, whatsapp, twitter, discord, first_name, last_name
 FROM users
 WHERE id = $1
-`, parsedUserID).Scan(&bio, &website, &telegram, &linkedin, &whatsapp, &twitter, &discord)
+`, parsedUserID).Scan(&bio, &website, &telegram, &linkedin, &whatsapp, &twitter, &discord, &firstName, &lastName)
 		} else {
 			// If login is provided, get user_id from it
 			loginParamLower := strings.ToLower(loginParam)
@@ -827,6 +833,8 @@ WHERE LOWER(ga.login) = $1
 					"ecosystems":          []fiber.Map{},
 					"bio":                 nil,
 					"website":             nil,
+					"first_name":          nil,
+					"last_name":           nil,
 					"rank": fiber.Map{
 						"position":   nil,
 						"tier":       "unranked",
@@ -840,10 +848,10 @@ WHERE LOWER(ga.login) = $1
 
 			// Get profile fields
 			_ = h.db.Pool.QueryRow(c.Context(), `
-SELECT bio, website, telegram, linkedin, whatsapp, twitter, discord
+SELECT bio, website, telegram, linkedin, whatsapp, twitter, discord, first_name, last_name
 FROM users
 WHERE id = $1
-`, foundUserID).Scan(&bio, &website, &telegram, &linkedin, &whatsapp, &twitter, &discord)
+`, foundUserID).Scan(&bio, &website, &telegram, &linkedin, &whatsapp, &twitter, &discord, &firstName, &lastName)
 		}
 
 		if githubLogin == nil || *githubLogin == "" {
@@ -1090,6 +1098,12 @@ WHERE u.id = $1
 		}
 		if discord != nil && *discord != "" {
 			response["discord"] = *discord
+		}
+		if firstName != nil && *firstName != "" {
+			response["first_name"] = *firstName
+		}
+		if lastName != nil && *lastName != "" {
+			response["last_name"] = *lastName
 		}
 
 		return c.Status(fiber.StatusOK).JSON(response)

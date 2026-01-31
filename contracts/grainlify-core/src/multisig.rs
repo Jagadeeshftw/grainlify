@@ -1,3 +1,68 @@
+//! # Multi-Signature Control Module
+//!
+//! A flexible multi-signature scheme for secure contract management.
+//! This module enables N-of-M authorization for critical operations.
+//!
+//! ## Overview
+//!
+//! The MultiSig module provides:
+//! 1. **Proposal Management**: Queue of actions requiring approval
+//! 2. **Threshold Enforcement**: N-of-M signature verification
+//! 3. **Execution Tracking**: Prevents double execution of proposals
+//!
+//! ## Architecture
+//!
+//! ```text
+//! ┌─────────────────────────────────────────────────────────────┐
+//! │                   Multi-Signature Layout                    │
+//! ├─────────────────────────────────────────────────────────────┤
+//! │                                                             │
+//! │  ┌────────────┐   ┌────────────┐   ┌────────────┐           │
+//! │  │  Signer 1  │   │  Signer 2  │   │  Signer 3  │           │
+//! │  └──────┬─────┘   └──────┬─────┘   └──────┬─────┘           │
+//! │         │                │                │                 │
+//! │         ▼                ▼                ▼                 │
+//! │   approve(ID)       approve(ID)      approve(ID)            │
+//! │         │                │                │                 │
+//! │         └───────┬────────┴────────┬───────┘                 │
+//! │                 │                 │                         │
+//! │                 ▼                 ▼                         │
+//! │          ┌───────────────────────────────────┐              │
+//! │          │        MultiSig Contract          │              │
+//! │          │  Threshold: 2 of 3 (Example)      │              │
+//! │          └────────────────┬──────────────────┘              │
+//! │                           │                                 │
+//! │                           ▼                                 │
+//! │                   mark_executed()                           │
+//! │                           │                                 │
+//! │                           ▼                                 │
+//! │                   [Action Executed]                         │
+//! │                                                             │
+//! └─────────────────────────────────────────────────────────────┘
+//! ```
+//!
+//! ## Security Model
+//!
+//! - **Threshold Security**: Compromise of (N-1) keys is safe
+//! - **Signer Authority**: Only defined signers can approve
+//! - **Execution One-Time**: Replay protection via `executed` flag
+//!
+//! ## Usage Example
+//!
+//! ```rust
+//! // 1. Propose an action
+//! let prop_id = MultiSig::propose(&env, proposer_addr);
+//!
+//! // 2. Signers approve
+//! MultiSig::approve(&env, prop_id, signer1);
+//! MultiSig::approve(&env, prop_id, signer2);
+//!
+//! // 3. Execute check
+//! if MultiSig::can_execute(&env, prop_id) {
+//!     MultiSig::mark_executed(&env, prop_id);
+//!     // Perform action...
+//! }
+//! ```
 
 use soroban_sdk::{
     contracttype, symbol_short, Address, Env, Vec,
@@ -52,7 +117,20 @@ pub enum MultiSigError {
 pub struct MultiSig;
 
 impl MultiSig {
-    /// Initialize multisig configuration
+    /// Initialize multisig configuration.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `signers` - List of addresses authorized to sign
+    /// * `threshold` - Minimum number of signatures required
+    ///
+    /// # Panics
+    /// * If threshold is 0
+    /// * If threshold > number of signers
+    ///
+    /// # State Changes
+    /// - Stores `MultiSigConfig`
+    /// - Initializes `ProposalCounter` to 0
     pub fn init(env: &Env, signers: Vec<Address>, threshold: u32) {
         if threshold == 0 || threshold > signers.len() as u32 {
             panic!("{:?}", MultiSigError::InvalidThreshold);
@@ -65,7 +143,21 @@ impl MultiSig {
             .set(&DataKey::ProposalCounter, &0u64);
     }
 
-    /// Create a new proposal
+    /// Create a new proposal requiring multisig approval.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `proposer` - Address creating the proposal (must be a signer)
+    ///
+    /// # Returns
+    /// * `u64` - The unique ID of the created proposal
+    ///
+    /// # Security Considerations
+    /// - Proposer must be in the signer set
+    /// - Requires authentication of proposer
+    ///
+    /// # Events
+    /// Emits: `proposal(id)`
     pub fn propose(env: &Env, proposer: Address) -> u64 {
         proposer.require_auth();
 
@@ -100,7 +192,20 @@ impl MultiSig {
         counter
     }
 
-    /// Approve an existing proposal
+    /// Approve an existing proposal.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `proposal_id` - ID of the proposal to approve
+    /// * `signer` - Address approving the proposal
+    ///
+    /// # Panics
+    /// * If signer not authorized
+    /// * If proposal already executed
+    /// * If signer already approved
+    ///
+    /// # Events
+    /// Emits: `approved(proposal_id, signer)`
     pub fn approve(env: &Env, proposal_id: u64, signer: Address) {
         signer.require_auth();
 
@@ -129,7 +234,14 @@ impl MultiSig {
         );
     }
 
-    /// Check if proposal is executable
+    /// Check if a proposal has met requirements for execution.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `proposal_id` - ID of the proposal to check
+    ///
+    /// # Returns
+    /// * `bool` - True if threshold met and not executed
     pub fn can_execute(env: &Env, proposal_id: u64) -> bool {
         let config = Self::get_config(env);
         let proposal = Self::get_proposal(env, proposal_id);
@@ -137,7 +249,21 @@ impl MultiSig {
         !proposal.executed && proposal.approvals.len() >= config.threshold
     }
 
-    /// Mark proposal as executed (caller executes action externally)
+    /// Mark a proposal as executed.
+    ///
+    /// This should be called by the consuming contract when performing the action.
+    /// It verifies the threshold is met and prevents replay.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `proposal_id` - ID of the proposal being executed
+    ///
+    /// # Panics
+    /// * If already executed
+    /// * If threshold not met
+    ///
+    /// # Events
+    /// Emits: `executed(proposal_id)`
     pub fn mark_executed(env: &Env, proposal_id: u64) {
         let mut proposal = Self::get_proposal(env, proposal_id);
 

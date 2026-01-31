@@ -61,6 +61,8 @@ export function LeaderboardPage() {
             trendValue: item.trendValue,
             contributions: item.contributions,
             ecosystems: item.ecosystems || [],
+            first_name: item.first_name,
+            last_name: item.last_name,
           }));
           setLeaderboardData(transformedData);
           setHasMore(data.length === 10); // If we got 10 items, there might be more
@@ -112,6 +114,8 @@ export function LeaderboardPage() {
         trendValue: item.trendValue,
         contributions: item.contributions,
         ecosystems: item.ecosystems || [],
+        first_name: item.first_name,
+        last_name: item.last_name,
       }));
 
       setLeaderboardData((prev) => [...prev, ...transformedData]);
@@ -243,7 +247,7 @@ export function LeaderboardPage() {
                 onUserClick={(username, userId) => {
                   // Navigate to profile page with user identifier
                   const identifier = userId || username;
-                  window.location.href = `/dashboard?tab=profile&user=${identifier}`;
+                  window.location.href = `/dashboard?page=profile&user=${identifier}`;
                 }}
               />
               {hasMore && (

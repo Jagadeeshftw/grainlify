@@ -442,9 +442,36 @@ pub struct DeadlineExtended {
 /// * `event` - The deadline extended event data
 ///
 /// # Event Structure
-/// Topic: `(symbol_short!("deadline_ext"), event.bounty_id)`
+/// Topic: `(symbol_short!("dead_ext"), event.bounty_id)`
 /// Data: Complete `DeadlineExtended` struct
 pub fn emit_deadline_extended(env: &Env, event: DeadlineExtended) {
     let topics = (symbol_short!("dead_ext"), event.bounty_id);
+    env.events().publish(topics, event.clone());
+}
+
+// ============================================================================
+// Escrow Expired Event
+// ============================================================================
+
+/// Event emitted when an escrow expires and is automatically refunded.
+///
+/// # Fields
+/// * `bounty_id` - The bounty identifier
+/// * `amount` - Amount refunded
+/// * `refunded_to` - Address receiving the refund (original depositor)
+/// * `triggered_by` - Address that triggered the expiration
+/// * `timestamp` - Unix timestamp of expiration
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct EscrowExpired {
+    pub bounty_id: u64,
+    pub amount: i128,
+    pub refunded_to: Address,
+    pub triggered_by: Address,
+    pub timestamp: u64,
+}
+
+pub fn emit_escrow_expired(env: &Env, event: EscrowExpired) {
+    let topics = (symbol_short!("expired"), event.bounty_id);
     env.events().publish(topics, event.clone());
 }

@@ -230,8 +230,8 @@ export function MaintainersPage({ onNavigate }: MaintainersPageProps) {
                   {isLoading ? (
                     <div className="px-6 space-y-2">
                       {[...Array(5)].map((_, idx) => (
-                        <div key={idx} className="flex items-center gap-3 py-3">
-                          <SkeletonLoader variant="circle" className="w-5 h-5 flex-shrink-0" />
+                        <div key={idx} className="flex items-center gap-4 py-3">
+                          <SkeletonLoader variant="circle" className="w-6 h-6 flex-shrink-0" />
                           <SkeletonLoader className="h-4 w-32" />
                           <SkeletonLoader className="h-4 w-20 ml-auto" />
                         </div>
@@ -265,7 +265,20 @@ export function MaintainersPage({ onNavigate }: MaintainersPageProps) {
                               }`}
                             onClick={() => group.repos.length > 0 && toggleOrgExpansion(group.org)}
                           >
-                            <div className="flex items-center gap-3 flex-1">
+                            <div className="flex items-center gap-4 flex-1">
+                             
+                              {failedAvatars.has(getRepoAvatar(group.org, 24)) ? (
+                                <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#c9983a] to-[#d4af37] flex items-center justify-center flex-shrink-0 border border-[#c9983a]/40">
+                                  <span className="text-[10px] font-bold text-white uppercase">{group.org.charAt(0)}</span>
+                                </div>
+                              ) : (
+                                <img
+                                  src={getRepoAvatar(group.org, 24)}
+                                  alt={group.org}
+                                  className="w-6 h-6 rounded-full border border-[#c9983a]/40 flex-shrink-0 object-cover"
+                                  onError={() => setFailedAvatars(prev => new Set(prev).add(getRepoAvatar(group.org, 24)))}
+                                />
+                              )}
                               <span className={`text-[15px] font-bold group-hover/repo:text-[#c9983a] transition-colors ${theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
                                 }`}>
                                 {group.org}
@@ -311,23 +324,23 @@ export function MaintainersPage({ onNavigate }: MaintainersPageProps) {
                                       justifyContent: 'center'
                                     }}
                                   />
-                                  <div className="flex items-center gap-2 flex-1">
-                                    {failedAvatars.has(getRepoAvatar(repo.fullName, 20)) ? (
-                                      <div className="w-5 h-5 rounded-md bg-gradient-to-br from-[#c9983a] to-[#d4af37] flex items-center justify-center flex-shrink-0">
-                                        <Package className="w-3 h-3 text-white" />
-                                      </div>
-                                    ) : (
-                                      <img
-                                        src={getRepoAvatar(repo.fullName, 20)}
-                                        alt={repo.name}
-                                        className="w-5 h-5 rounded-md border border-[#c9983a]/40 flex-shrink-0"
-                                        onError={() => setFailedAvatars(prev => new Set(prev).add(getRepoAvatar(repo.fullName, 20)))}
-                                      />
-                                    )}
-                                    <span className={`text-[14px] font-semibold group-hover/subrepo:text-[#c9983a] transition-colors ${theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
-                                      }`}>
-                                      {repo.name}
-                                    </span>
+                                    <div className="flex items-center gap-4 flex-1">
+                                      {failedAvatars.has(getRepoAvatar(repo.fullName, 24)) ? (
+                                        <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#c9983a] to-[#d4af37] flex items-center justify-center flex-shrink-0 border border-[#c9983a]/40">
+                                          <Package className="w-3.5 h-3.5 text-white" />
+                                        </div>
+                                      ) : (
+                                        <img
+                                          src={getRepoAvatar(repo.fullName, 24)}
+                                          alt={repo.name}
+                                          className="w-6 h-6 rounded-full border border-[#c9983a]/40 flex-shrink-0 object-cover"
+                                          onError={() => setFailedAvatars(prev => new Set(prev).add(getRepoAvatar(repo.fullName, 24)))}
+                                        />
+                                      )}
+                                      <span className={`text-[14px] font-semibold group-hover/subrepo:text-[#c9983a] transition-colors ${theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
+                                        }`}>
+                                        {repo.name}
+                                      </span>
                                     {repo.status === 'pending_verification' && (
                                       <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${theme === 'dark'
                                         ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'

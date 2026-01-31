@@ -13,6 +13,8 @@ export interface LeaderData {
   trendValue: number;
   contributions?: number;
   ecosystems?: string[];
+  first_name?: string;
+  last_name?: string;
 }
 
 export interface ProjectData {

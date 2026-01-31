@@ -704,6 +704,8 @@ pub struct ProgramData {
     pub authorized_payout_key: Address,
     pub payout_history: Vec<PayoutRecord>,
     pub token_address: Address,
+    pub deadline: Option<u64>,
+    pub organizer: Address,
 }
 
 /// Storage key type for individual programs
@@ -865,27 +867,32 @@ impl ProgramEscrowContract {
         program_id: String,
         authorized_payout_key: Address,
         token_address: Address,
+        organizer: Address,
+        deadline: Option<u64>,
     ) -> ProgramData {
-        // Apply rate limiting
         anti_abuse::check_rate_limit(&env, authorized_payout_key.clone());
 
         let start = env.ledger().timestamp();
         let caller = authorized_payout_key.clone();
 
-        // Validate program_id
         if program_id.is_empty() {
             monitoring::track_operation(&env, symbol_short!("init_prg"), caller, false);
             panic!("Program ID cannot be empty");
         }
 
-        // Check if program already exists
         let program_key = DataKey::Program(program_id.clone());
         if env.storage().instance().has(&program_key) {
             monitoring::track_operation(&env, symbol_short!("init_prg"), caller, false);
             panic!("Program already exists");
         }
 
-        // Create program data
+        if let Some(dl) = deadline {
+            if dl <= env.ledger().timestamp() {
+                monitoring::track_operation(&env, symbol_short!("init_prg"), caller, false);
+                panic!("Deadline must be in the future");
+            }
+        }
+
         let program_data = ProgramData {
             program_id: program_id.clone(),
             total_funds: 0,
@@ -893,9 +900,10 @@ impl ProgramEscrowContract {
             authorized_payout_key: authorized_payout_key.clone(),
             payout_history: vec![&env],
             token_address: token_address.clone(),
+            deadline,
+            organizer: organizer.clone(),
         };
 
-        // Initialize fee config with zero fees (disabled by default)
         let fee_config = FeeConfig {
             lock_fee_rate: 0,
             payout_fee_rate: 0,
@@ -904,10 +912,8 @@ impl ProgramEscrowContract {
         };
         env.storage().instance().set(&FEE_CONFIG, &fee_config);
 
-        // Store program data
         env.storage().instance().set(&program_key, &program_data);
 
-        // Update registry
         let mut registry: Vec<String> = env
             .storage()
             .instance()
@@ -916,13 +922,11 @@ impl ProgramEscrowContract {
         registry.push_back(program_id.clone());
         env.storage().instance().set(&PROGRAM_REGISTRY, &registry);
 
-        // Emit registration event
         env.events().publish(
             (PROGRAM_REGISTERED,),
             (program_id, authorized_payout_key, token_address, 0i128),
         );
 
-        // Track successful operation
         monitoring::track_operation(&env, symbol_short!("init_prg"), caller, true);
 
         // Track performance
@@ -2292,6 +2296,59 @@ impl ProgramEscrowContract {
             .get(&DataKey::ReleaseHistory(program_id))
             .unwrap_or(vec![&env])
     }
+
+    pub fn expire_program(env: Env, program_id: String) {
+        if Self::is_paused_internal(&env) {
+            panic!("Contract is paused");
+        }
+
+        let program_key = DataKey::Program(program_id.clone());
+        let program_data: ProgramData = env
+            .storage()
+            .instance()
+            .get(&program_key)
+            .unwrap_or_else(|| panic!("Program not found"));
+
+        let deadline = program_data
+            .deadline
+            .unwrap_or_else(|| panic!("Program has no deadline"));
+
+        let now = env.ledger().timestamp();
+        if now < deadline {
+            panic!("Deadline has not passed yet");
+        }
+
+        if program_data.remaining_balance <= 0 {
+            panic!("No funds to refund");
+        }
+
+        let token_client = token::Client::new(&env, &program_data.token_address);
+        let contract_balance = token_client.balance(&env.current_contract_address());
+
+        if contract_balance < program_data.remaining_balance {
+            panic!("Insufficient contract balance");
+        }
+
+        token_client.transfer(
+            &env.current_contract_address(),
+            &program_data.organizer,
+            &program_data.remaining_balance,
+        );
+
+        let mut updated_program = program_data.clone();
+        updated_program.remaining_balance = 0;
+        env.storage().instance().set(&program_key, &updated_program);
+
+        env.events().publish(
+            (symbol_short!("expired"),),
+            (
+                program_id,
+                program_data.remaining_balance,
+                program_data.organizer,
+                now,
+            ),
+        );
+    }
 }
 
 /// Helper function to calculate total scheduled amount for a program.
@@ -2356,7 +2413,7 @@ mod test {
         release_timestamp: u64,
     ) {
         // Register program
-        client.initialize_program(program_id, authorized_key, token);
+        client.initialize_program(program_id, authorized_key, token, authorized_key, &None);
 
         // Create and fund token
         let token_client = create_token_contract(env, authorized_key);
@@ -2441,7 +2498,7 @@ mod test {
         env.mock_all_auths();
 
         // Register program
-        client.initialize_program(&program_id, &authorized_key, &token);
+        client.initialize_program(&program_id, &authorized_key, &token, &authorized_key, &None);
 
         // Create and fund token
         let token_client = create_token_contract(&env, &authorized_key);
@@ -2607,7 +2664,7 @@ mod test {
         env.mock_all_auths();
 
         // Register program
-        client.initialize_program(&program_id, &authorized_key, &token);
+        client.initialize_program(&program_id, &authorized_key, &token, &authorized_key, &None);
 
         // Create and fund token
         let token_client = create_token_contract(&env, &authorized_key);
@@ -2686,7 +2743,7 @@ mod test {
         env.mock_all_auths();
 
         // Register program
-        client.initialize_program(&program_id, &authorized_key, &token);
+        client.initialize_program(&program_id, &authorized_key, &token, &authorized_key, &None);
 
         // Create and fund token
         let token_client = create_token_contract(&env, &authorized_key);
@@ -2763,7 +2820,7 @@ mod test {
         let prog_id = String::from_str(&env, "Hackathon2024");
 
         // Register program
-        let program = client.initialize_program(&prog_id, &backend, &token);
+        let program = client.initialize_program(&prog_id, &backend, &token, &backend, &None);
 
         // Verify program data
         assert_eq!(program.program_id, prog_id);
@@ -2794,9 +2851,9 @@ mod test {
         let prog2 = String::from_str(&env, "Stellar2024");
         let prog3 = String::from_str(&env, "BuildathonQ1");
 
-        client.initialize_program(&prog1, &backend1, &token);
-        client.initialize_program(&prog2, &backend2, &token);
-        client.initialize_program(&prog3, &backend3, &token);
+        client.initialize_program(&prog1, &backend1, &token, &backend1, &None);
+        client.initialize_program(&prog2, &backend2, &token, &backend2, &None);
+        client.initialize_program(&prog3, &backend3, &token, &backend3, &None);
 
         // Verify all exist
         assert!(client.program_exists(&prog1));
@@ -2834,10 +2891,10 @@ mod test {
         let prog_id = String::from_str(&env, "Hackathon2024");
 
         // Register once - should succeed
-        client.initialize_program(&prog_id, &backend, &token);
+        client.initialize_program(&prog_id, &backend, &token, &backend, &None);
 
         // Register again - should panic
-        client.initialize_program(&prog_id, &backend, &token);
+        client.initialize_program(&prog_id, &backend, &token, &backend, &None);
     }
 
     #[test]
@@ -2851,7 +2908,7 @@ mod test {
         let token = Address::generate(&env);
         let empty_id = String::from_str(&env, "");
 
-        client.initialize_program(&empty_id, &backend, &token);
+        client.initialize_program(&empty_id, &backend, &token, &backend, &None);
     }
 
     #[test]
@@ -2883,7 +2940,7 @@ mod test {
         let prog_id = String::from_str(&env, "Hackathon2024");
 
         // Register program
-        client.initialize_program(&prog_id, &backend, &token_client.address);
+        client.initialize_program(&prog_id, &backend, &token_client.address, &backend, &None);
 
         // Lock funds
         let amount = 10_000_0000000i128; // 10,000 USDC
@@ -2910,8 +2967,8 @@ mod test {
         let prog2 = String::from_str(&env, "Program2");
 
         // Register programs
-        client.initialize_program(&prog1, &backend1, &token_client.address);
-        client.initialize_program(&prog2, &backend2, &token_client.address);
+        client.initialize_program(&prog1, &backend1, &token_client.address, &backend1, &None);
+        client.initialize_program(&prog2, &backend2, &token_client.address, &backend2, &None);
 
         // Lock different amounts in each program
         let amount1 = 5_000_0000000i128;
@@ -2943,7 +3000,7 @@ mod test {
         let backend = Address::generate(&env);
         let prog_id = String::from_str(&env, "Hackathon2024");
 
-        client.initialize_program(&prog_id, &backend, &token_client.address);
+        client.initialize_program(&prog_id, &backend, &token_client.address, &backend, &None);
 
         // Lock funds multiple times
         client.lock_program_funds(&prog_id, &1_000_0000000);
@@ -2966,7 +3023,7 @@ mod test {
         let token = Address::generate(&env);
         let prog_id = String::from_str(&env, "Hackathon2024");
 
-        client.initialize_program(&prog_id, &backend, &token);
+        client.initialize_program(&prog_id, &backend, &token, &backend, &None);
         client.lock_program_funds(&prog_id, &0);
     }
 
@@ -2988,7 +3045,7 @@ mod test {
         let backend = Address::generate(&env);
         let prog_id = String::from_str(&env, "Test");
 
-        client.initialize_program(&prog_id, &backend, &token_client.address);
+        client.initialize_program(&prog_id, &backend, &token_client.address, &backend, &None);
         client.lock_program_funds(&prog_id, &10_000_0000000);
 
         let recipients = soroban_sdk::vec![&env, Address::generate(&env), Address::generate(&env)];
@@ -3011,7 +3068,7 @@ mod test {
         let backend = Address::generate(&env);
         let prog_id = String::from_str(&env, "Test");
 
-        client.initialize_program(&prog_id, &backend, &token_client.address);
+        client.initialize_program(&prog_id, &backend, &token_client.address, &backend, &None);
         client.lock_program_funds(&prog_id, &5_000_0000000);
 
         let recipients = soroban_sdk::vec![&env, Address::generate(&env)];
@@ -3031,13 +3088,13 @@ mod test {
         let backend = Address::generate(&env);
         let token = Address::generate(&env);
 
-        client.initialize_program(&String::from_str(&env, "P1"), &backend, &token);
+        client.initialize_program(&String::from_str(&env, "P1"), &backend, &token, &backend, &None);
         assert_eq!(client.get_program_count(), 1);
 
-        client.initialize_program(&String::from_str(&env, "P2"), &backend, &token);
+        client.initialize_program(&String::from_str(&env, "P2"), &backend, &token, &backend, &None);
         assert_eq!(client.get_program_count(), 2);
 
-        client.initialize_program(&String::from_str(&env, "P3"), &backend, &token);
+        client.initialize_program(&String::from_str(&env, "P3"), &backend, &token, &backend, &None);
         assert_eq!(client.get_program_count(), 3);
     }
 
@@ -3061,12 +3118,12 @@ mod test {
         let backend = Address::generate(&env);
         let token = Address::generate(&env);
 
-        client.initialize_program(&String::from_str(&env, "P1"), &backend, &token);
+        client.initialize_program(&String::from_str(&env, "P1"), &backend, &token, &backend, &None);
 
         // Advance time by 30s (less than 60s cooldown)
         env.ledger().with_mut(|li| li.timestamp += 30);
 
-        client.initialize_program(&String::from_str(&env, "P2"), &backend, &token);
+        client.initialize_program(&String::from_str(&env, "P2"), &backend, &token, &backend, &None);
     }
 
     #[test]
@@ -3085,9 +3142,9 @@ mod test {
         let backend = Address::generate(&env);
         let token = Address::generate(&env);
 
-        client.initialize_program(&String::from_str(&env, "P1"), &backend, &token);
-        client.initialize_program(&String::from_str(&env, "P2"), &backend, &token);
-        client.initialize_program(&String::from_str(&env, "P3"), &backend, &token);
+        client.initialize_program(&String::from_str(&env, "P1"), &backend, &token, &backend, &None);
+        client.initialize_program(&String::from_str(&env, "P2"), &backend, &token, &backend, &None);
+        client.initialize_program(&String::from_str(&env, "P3"), &backend, &token, &backend, &None);
         // Should panic
     }
 
@@ -3108,8 +3165,8 @@ mod test {
 
         client.set_whitelist(&backend, &true);
 
-        client.initialize_program(&String::from_str(&env, "P1"), &backend, &token);
-        client.initialize_program(&String::from_str(&env, "P2"), &backend, &token);
+        client.initialize_program(&String::from_str(&env, "P1"), &backend, &token, &backend, &None);
+        client.initialize_program(&String::from_str(&env, "P2"), &backend, &token, &backend, &None);
         // Should work because whitelisted
     }
 

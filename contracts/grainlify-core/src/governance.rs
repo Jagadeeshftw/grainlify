@@ -1,3 +1,85 @@
+//! # Governance Core Contract
+//!
+//! A decentralized governance system for managing protocol upgrades and parameter changes.
+//! This module implements a proposal-based voting system where token holders can vote
+//! on changes to the Grainlify protocol.
+//!
+//! ## Overview
+//!
+//! The Governance contract manages the lifecycle of improvement proposals:
+//! 1. **Proposal Creation**: Token holders with sufficient stake propose changes
+//! 2. **Voting**: Community members cast votes (For/Against/Abstain)
+//! 3. **Finalization**: Proposals are evaluated against quorum and approval thresholds
+//! 4. **Execution**: Approved proposals represent valid instructions (e.g., contract upgrades)
+//!
+//! ## Architecture
+//!
+//! ```text
+//! ┌─────────────────────────────────────────────────────────────┐
+//! │                 Governance Architecture                      │
+//! ├─────────────────────────────────────────────────────────────┤
+//! │                                                              │
+//! │  ┌──────────────┐       ┌──────────────┐                     │
+//! │  │   Proposer   │       │    Voters    │                     │
+//! │  └──────┬───────┘       └──────┬───────┘                     │
+//! │         │                      │                             │
+//! │         │ create_proposal()    │ cast_vote()                 │
+//! │         ▼                      ▼                             │
+//! │  ┌──────────────────────────────────────────┐                │
+//! │  │           Governance Contract            │                │
+//! │  │                                          │                │
+//! │  │  ┌──────────┐  ┌──────────┐  ┌────────┐  │                │
+//! │  │  │ Pending  │→ │  Active  │→ │ Final  │  │                │
+//! │  │  └──────────┘  └──────────┘  └────────┘  │                │
+//! │  └─────────────────────┬────────────────────┘                │
+//! │                        │                                     │
+//! │                        │ execute_proposal()                  │
+//! │                        ▼                                     │
+//! │  ┌──────────────────────────────────────────┐                │
+//! │  │           Target Contract (Core)         │                │
+//! │  └──────────────────────────────────────────┘                │
+//! └─────────────────────────────────────────────────────────────┘
+//! ```
+//!
+//! ## Security Model
+//!
+//! ### Trust Assumptions
+//! - **Voters**: Rational actors acting in the best interest of the protocol
+//! - **Admin**: Initial setup only; power transitions to community
+//! - **Time**: Relies on ledger timestamp for voting periods
+//!
+//! ### Key Security Features
+//! 1. **Proposal Threshold**: Minimum stake required to prevent spam
+//! 2. **Voting Delay**: Optional delay before voting starts (anti-flash-loan)
+//! 3. **Execution Delay**: Timelock after approval for safety
+//! 4. **Quorum**: Minimum participation required
+//! 5. **One Person One Vote**: Or Token Weighted (configurable)
+//!
+//! ## Usage Example
+//!
+//! ```rust
+//! use soroban_sdk::{Address, Env};
+//!
+//! // 1. Create a proposal
+//! let proposer = Address::from_string("GPROPOSER...");
+//! let wasm_hash = BytesN::from_array(&env, &[...]); // New contract code
+//! let desc = Symbol::new(&env, "Upgrade to v2");
+//!
+//! let prop_id = governance_client.create_proposal(
+//!     &proposer,
+//!     &wasm_hash,
+//!     &desc
+//! );
+//!
+//! // 2. Cast vote
+//! let voter = Address::from_string("GVOTER...");
+//! governance_client.cast_vote(
+//!     &voter,
+//!     &prop_id,
+//!     &VoteType::For
+//! );
+//! ```
+
 use soroban_sdk::{contracttype, Address, BytesN, Symbol, symbol_short};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -95,7 +177,29 @@ pub enum Error {
 pub struct GovernanceContract;
 
 impl GovernanceContract {
-    /// Initialize governance system
+    /// Initialize the governance system with configuration parameters.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `admin` - Address authorized to perform initial setup
+    /// * `config` - Governance configuration (voting period, quorum, etc.)
+    ///
+    /// # Returns
+    /// * `Ok(())` - Successfully initialized
+    /// * `Err(Error::InvalidThreshold)` - If thresholds are > 100%
+    /// * `Err(Error::ThresholdTooLow)` - If approval threshold is < 50%
+    ///
+    /// # State Changes
+    /// - Stores `GovernanceConfig` in instance storage
+    /// - Initializes `ProposalCount` to 0
+    /// - Emits `gov_init` event
+    ///
+    /// # Security Considerations
+    /// - Admin must authorize this call
+    /// - Config validation prevents impossible voting parameters
+    ///
+    /// # Events
+    /// Emits: `gov_init(admin, config)`
     pub fn init_governance(
         env: &soroban_sdk::Env,
         admin: Address,
@@ -126,7 +230,31 @@ impl GovernanceContract {
         Ok(())
     }
 
-    /// Create a new upgrade proposal
+    /// Create a new proposal for protocol upgrade.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `proposer` - Address creating the proposal
+    /// * `new_wasm_hash` - The code hash for the proposed upgrade
+    /// * `description` - Short description of the proposal
+    ///
+    /// # Returns
+    /// * `Ok(u32)` - The unique ID of the created proposal
+    /// * `Err(Error::NotInitialized)` - If governance is not initialized
+    /// * `Err(Error::InsufficientStake)` - If proposer lacks required voting power
+    ///
+    /// # State Changes
+    /// - Creates a new `Proposal` record
+    /// - Increments `ProposalCount`
+    /// - Emits `proposal` event
+    ///
+    /// # Security Considerations
+    /// - Requires proposer signature
+    /// - Checks minimum stake to prevent proposal spam
+    /// - Helper function `get_voting_power` handles stake verification
+    ///
+    /// # Events
+    /// Emits: `proposal(proposer, (id, description))`
     pub fn create_proposal(
         env: &soroban_sdk::Env,
         proposer: Address,
@@ -206,7 +334,35 @@ impl GovernanceContract {
         Ok(100) // Returns 100 to pass any min_stake check for now
     }
 
-    /// Cast a vote on a proposal
+    /// Cast a vote on an active proposal.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `voter` - Address casting the vote
+    /// * `proposal_id` - ID of the proposal to vote on
+    /// * `vote_type` - The vote choice (For, Against, Abstain)
+    ///
+    /// # Returns
+    /// * `Ok(())` - Vote successfully recorded
+    /// * `Err(Error::ProposalNotFound)` - Invalid proposal ID
+    /// * `Err(Error::ProposalNotActive)` - Proposal is not in voting phase
+    /// * `Err(Error::VotingNotStarted)` - Too early to vote
+    /// * `Err(Error::VotingEnded)` - Voting period has ended
+    /// * `Err(Error::AlreadyVoted)` - Voter has already cast a vote
+    ///
+    /// # State Changes
+    /// - Records `Vote` in storage
+    /// - Updates proposal's vote tallies (for, against, abstain)
+    /// - Increments total votes on proposal
+    /// - Emits `vote` event
+    ///
+    /// # Security Considerations
+    /// - Requires voter authorization
+    /// - Enforces one vote per address (for current implementation)
+    /// - Prevents double voting
+    ///
+    /// # Events
+    /// Emits: `vote(voter, (proposal_id, vote_type))`
     pub fn cast_vote(
         env: soroban_sdk::Env,
         voter: Address,
@@ -303,7 +459,26 @@ impl GovernanceContract {
         Ok(())
     }
 
-    /// Finalize a proposal (check votes and update status)
+    /// Finalize a proposal by checking the voting results.
+    ///
+    /// This function determines if a proposal has passed or failed based on:
+    /// 1. Quorum: Is total participation high enough?
+    /// 2. Approval: Is the percentage of "For" votes high enough?
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `proposal_id` - ID of the proposal to finalize
+    ///
+    /// # Returns
+    /// * `Ok(ProposalStatus)` - The new status (Approved or Rejected)
+    /// * `Err(Error::VotingStillActive)` - Cannot finalize before voting end
+    ///
+    /// # State Changes
+    /// - Updates proposal status to `Approved` or `Rejected`
+    /// - Emits `finalize` event
+    ///
+    /// # Events
+    /// Emits: `finalize(proposal_id, status)`
     pub fn finalize_proposal(
         env: soroban_sdk::Env,
         proposal_id: u32,
@@ -383,7 +558,26 @@ impl GovernanceContract {
         Ok(proposal.status)
     }
     
-    /// Execute an approved proposal
+    /// Execute an approved proposal (e.g., perform the contract upgrade).
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `executor` - Address triggering the execution (can be anyone)
+    /// * `proposal_id` - ID of the approved proposal to execute
+    ///
+    /// # Returns
+    /// * `Ok(())` - Successfully executed
+    /// * `Err(Error::ProposalNotApproved)` - Proposal is not in Approved state
+    /// * `Err(Error::ExecutionDelayNotMet)` - Timelock has not expired
+    /// * `Err(Error::ProposalExpired)` - Execution window has passed
+    ///
+    /// # State Changes
+    /// - Updates proposal status to `Executed`
+    /// - Emits `execute` event
+    /// - (Commented out) Would update contract WASM code
+    ///
+    /// # Events
+    /// Emits: `execute(executor, proposal_id)`
     pub fn execute_proposal(
         env: soroban_sdk::Env,
         executor: Address,

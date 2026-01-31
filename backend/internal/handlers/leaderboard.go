@@ -67,6 +67,8 @@ SELECT
   ac.login as username,
   COALESCE(ga.avatar_url, '') as avatar_url,
   COALESCE(u.id::text, '') as user_id,
+  u.first_name,
+  u.last_name,
   (
     SELECT COUNT(*) 
     FROM github_issues i
@@ -132,8 +134,9 @@ LIMIT $1 OFFSET $2
 			var userID string
 			var contributionCount int
 			var ecosystems []string
+			var firstName, lastName *string
 
-			if err := rows.Scan(&username, &avatarURL, &userID, &contributionCount, &ecosystems); err != nil {
+			if err := rows.Scan(&username, &avatarURL, &userID, &contributionCount, &ecosystems, &firstName, &lastName); err != nil {
 				slog.Error("failed to scan leaderboard row",
 					"error", err,
 				)
@@ -166,6 +169,8 @@ LIMIT $1 OFFSET $2
 				"user_id":        userID,
 				"contributions":  contributionCount,
 				"ecosystems":     ecosystems,
+				"first_name":     firstName,
+				"last_name":      lastName,
 				// For now, set trend to 'same' and score to contribution count
 				// These can be enhanced later with historical data
 				"score":      contributionCount,

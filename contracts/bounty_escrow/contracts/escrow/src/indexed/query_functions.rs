@@ -1,3 +1,52 @@
+//! # Query & Indexing Module
+//!
+//! Provides comprehensive query capabilities for the bounty escrow system.
+//! This module enables efficient retrieval of bounty data through various filters,
+//! pagination, and aggregations.
+//!
+//! ## Architecture
+//!
+//! ```text
+//! ┌─────────────────────────────────────────────────────────────┐
+//! │                   Query & Indexing System                   │
+//! ├─────────────────────────────────────────────────────────────┤
+//! │                                                             │
+//! │   ┌───────────────┐        ┌──────────────────────────┐     │
+//! │   │ Client / GUI  │        │   Events & Operations    │     │
+//! │   └──────┬────────┘        └────────────┬─────────────┘     │
+//! │          │                              │                   │
+//! │          ▼                              ▼                   │
+//! │   query_bounties()            index_bounty()                │
+//! │          │                              │                   │
+//! │          ▼                              ▼                   │
+//! │   ┌─────────────────────────────────────────────────────┐   │
+//! │   │               Bounty Index (Storage)                │   │
+//! │   │                                                     │   │
+//! │   │  • BOUNTY_INDEX: Map<u64, IndexedBounty>            │   │
+//! │   │  • STATUS_INDEX: Map<(Status, u64), ()>             │   │
+//! │   │  • DEPOSITOR_INDEX: Map<(Address, u64), ()>         │   │
+//! │   └─────────────────────────────────────────────────────┘   │
+//! │                                                             │
+//! └─────────────────────────────────────────────────────────────┘
+//! ```
+//!
+//! ## Usage Example
+//!
+//! ```rust
+//! // 1. Query with filters
+//! let filter = QueryFilter {
+//!     status: Some(BountyStatus::Locked),
+//!     min_amount: Some(100),
+//!     ..Default::default()
+//! };
+//!
+//! let page = query_client.query_bounties(&filter, &0, &10);
+//!
+//! // 2. Get Statistics
+//! let stats = query_client.get_bounty_stats();
+//! println!("Total Locked: {}", stats.total_locked);
+//! ```
+
 use crate::indexed::indexed_storage::{
     BountyStatus, IndexedBounty, PaginatedResult, QueryFilter, BOUNTY_INDEX, DEPOSITOR_INDEX,
     STATUS_INDEX,
@@ -8,6 +57,25 @@ use soroban_sdk::{contracttype, Address, Env, Vec};
 // Main Query Function
 // ============================================================================
 
+/// Executes a complex query with filtering and pagination.
+///
+/// This is the main entry point for searching bounties. It supports combination
+/// of multiple filters (status, depositor, amount range, date range) and
+/// returns paginated results to handle large datasets.
+///
+/// # Arguments
+/// * `env` - The contract environment
+/// * `filter` - Struct containing all optional filter criteria
+/// * `page` - Zero-based page index
+/// * `page_size` - Number of items per page (max recommended: 20-50)
+///
+/// # Returns
+/// * `PaginatedResult` - Contains the list of bounties for the current page
+///   and metadata (total count, has_more flag)
+///
+/// # Performance Note
+/// Queries using `status` or `depositor` filters utilize secondary indexes
+/// for faster lookups. Other filters rely on iterating through results.
 pub fn query_bounties(
     env: &Env,
     filter: QueryFilter,
@@ -164,6 +232,14 @@ fn matches_filter(bounty: &IndexedBounty, filter: &QueryFilter) -> bool {
 // Specialized Query Functions
 // ============================================================================
 
+/// Specialized query: Get bounties by status.
+///
+/// # Arguments
+/// * `env` - The contract environment
+/// * `status` - The status to filter by (e.g., Locked, Released)
+///
+/// # Returns
+/// * `Vec<IndexedBounty>` - List of matching bounties
 pub fn get_bounties_by_status(env: &Env, status: BountyStatus) -> Vec<IndexedBounty> {
     let filter = QueryFilter {
         status: status,
@@ -176,6 +252,14 @@ pub fn get_bounties_by_status(env: &Env, status: BountyStatus) -> Vec<IndexedBou
     get_filtered_bounties(env, &filter)
 }
 
+/// Specialized query: Get bounties by depositor address.
+///
+/// # Arguments
+/// * `env` - The contract environment
+/// * `depositor` - The address of the bounty creator
+///
+/// # Returns
+/// * `Vec<IndexedBounty>` - List of bounties created by the depositor
 pub fn get_bounties_by_depositor(env: &Env, depositor: Address) -> Vec<IndexedBounty> {
     let filter = QueryFilter {
         status: BountyStatus::None,
@@ -188,6 +272,15 @@ pub fn get_bounties_by_depositor(env: &Env, depositor: Address) -> Vec<IndexedBo
     get_filtered_bounties(env, &filter)
 }
 
+/// Specialized query: Get bounties within an amount range.
+///
+/// # Arguments
+/// * `env` - The contract environment
+/// * `min` - Minimum amount (inclusive)
+/// * `max` - Maximum amount (inclusive)
+///
+/// # Returns
+/// * `Vec<IndexedBounty>` - List of bounties with amount between min and max
 pub fn get_bounties_by_amount_range(env: &Env, min: i128, max: i128) -> Vec<IndexedBounty> {
     let filter = QueryFilter {
         status: BountyStatus::None,
@@ -200,6 +293,15 @@ pub fn get_bounties_by_amount_range(env: &Env, min: i128, max: i128) -> Vec<Inde
     get_filtered_bounties(env, &filter)
 }
 
+/// Specialized query: Get bounties created within a time range.
+///
+/// # Arguments
+/// * `env` - The contract environment
+/// * `from` - Start timestamp (inclusive)
+/// * `to` - End timestamp (inclusive)
+///
+/// # Returns
+/// * `Vec<IndexedBounty>` - List of bounties created between from and to
 pub fn get_bounties_by_date_range(env: &Env, from: u64, to: u64) -> Vec<IndexedBounty> {
     let filter = QueryFilter {
         status: BountyStatus::None,
@@ -212,6 +314,14 @@ pub fn get_bounties_by_date_range(env: &Env, from: u64, to: u64) -> Vec<IndexedB
     get_filtered_bounties(env, &filter)
 }
 
+/// Get the most recently created bounties.
+///
+/// # Arguments
+/// * `env` - The contract environment
+/// * `count` - Number of bounties to retrieve
+///
+/// # Returns
+/// * `Vec<IndexedBounty>` - List of most recent bounties (newest first)
 pub fn get_recent_bounties(env: &Env, count: u32) -> Vec<IndexedBounty> {
     let mut results = Vec::new(env);
     let mut found = 0u32;
@@ -231,6 +341,13 @@ pub fn get_recent_bounties(env: &Env, count: u32) -> Vec<IndexedBounty> {
     results
 }
 
+/// Calculate the total amount of funds currently locked in escrow.
+///
+/// # Arguments
+/// * `env` - The contract environment
+///
+/// # Returns
+/// * `i128` - Total amount (sum of all bounties with Locked status)
 pub fn get_total_locked_amount(env: &Env) -> i128 {
     let filter = QueryFilter {
         status: BountyStatus::Locked,
@@ -269,6 +386,13 @@ pub struct BountyStats {
     pub total_partially_released: i128,
 }
 
+/// Get comprehensive statistics for the entire bounty system.
+///
+/// # Arguments
+/// * `env` - The contract environment
+///
+/// # Returns
+/// * `BountyStats` - Struct containing counts and volume totals for each status
 pub fn get_bounty_stats(env: &Env) -> BountyStats {
     let mut locked_count = 0u32;
     let mut released_count = 0u32;
@@ -316,6 +440,14 @@ pub fn get_bounty_stats(env: &Env) -> BountyStats {
     }
 }
 
+/// Get statistics for a specific depositor.
+///
+/// # Arguments
+/// * `env` - The contract environment
+/// * `depositor` - Address to calculate stats for
+///
+/// # Returns
+/// * `DepositorStats` - Struct containing user-specific bounty metrics
 pub fn get_depositor_stats(env: &Env, depositor: &Address) -> DepositorStats {
     let bounties = get_bounties_by_depositor(env, depositor.clone());
 
@@ -367,6 +499,18 @@ pub struct DepositorStats {
     pub total_released_value: i128,
 }
 
+/// Generate time-series data for bounty activity.
+///
+/// Useful for generating charts and analytics.
+///
+/// # Arguments
+/// * `env` - The contract environment
+/// * `from` - Start timestamp
+/// * `to` - End timestamp
+/// * `interval` - Time interval in seconds (e.g., 86400 for daily)
+///
+/// # Returns
+/// * `Vec<TimeSeriesPoint>` - List of data points with aggregate stats per interval
 pub fn get_time_series_data(env: &Env, from: u64, to: u64, interval: u64) -> Vec<TimeSeriesPoint> {
     let mut data_points: Vec<TimeSeriesPoint> = Vec::new(env);
     let mut current = from;

@@ -194,6 +194,7 @@ name = "bounty-escrow"
 version = "0.0.0"
 dependencies = [
  "grainlify-interfaces",
+ "grainlify-common",
  "soroban-sdk",
 ]
 
@@ -610,6 +611,13 @@ dependencies = [
 
 [[package]]
 name = "grainlify-interfaces"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
+name = "grainlify-common"
 version = "0.1.0"
 dependencies = [
  "soroban-sdk",

@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Search, Bell, Settings, LogOut, Compass, Grid3x3, Calendar,
-  Globe, Users, FolderGit2, Trophy, User, Database, Plus,
+  Globe, Users, Trophy, User, Database, Plus,
   FileText, ChevronRight, Sparkles, Heart,
-  Star, GitFork, ArrowUpRight, Target, Zap, ChevronDown,
+  Star, GitFork, ArrowUpRight, Target, Zap,
   CircleDot, Clock, Moon, Sun, Shield, Send, X, Menu
 } from 'lucide-react';
 import grainlifyLogo from '../../assets/grainlify_log.svg';
@@ -16,7 +16,6 @@ import { ContributorsPage } from '../../features/dashboard/pages/ContributorsPag
 import { BrowsePage } from '../../features/dashboard/pages/BrowsePage';
 import { MaintainersPage } from '../../features/maintainers/pages/MaintainersPage';
 import { ProfilePage } from '../../features/dashboard/pages/ProfilePage';
-import { DataPage } from '../../features/dashboard/pages/DataPage';
 import { LeaderboardPage } from '../../features/leaderboard/pages/LeaderboardPage';
 import { BlogPage } from '../../features/blog/pages/BlogPage';
 import { SettingsPage } from '../../features/settings/pages/SettingsPage';
@@ -34,6 +33,7 @@ export function DashboardComplete() {
   const [showAdminPasswordModal, setShowAdminPasswordModal] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
   const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [adminAuthenticated, setAdminAuthenticated] = useState(() => {
     return sessionStorage.getItem('admin_authenticated') === 'true';
   });
@@ -46,15 +46,6 @@ export function DashboardComplete() {
     navigate('/');
   };
 
-  const handleAdminClick = () => {
-    // If already authenticated as admin in this session, go directly to admin page
-    if (adminAuthenticated) {
-      setCurrentPage('admin');
-      return;
-    }
-    // Always show password modal for non-authenticated users (even if they have admin role)
-    setShowAdminPasswordModal(true);
-  };
 
   const handleAdminPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -136,7 +127,7 @@ export function DashboardComplete() {
       {/* Mobile Sidebar Overlay Backdrop */}
       {isMobile && isMobileMenuOpen && (
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] transition-opacity duration-300"
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] transition-opacity duration-300 animate-in fade-in"
           onClick={() => setIsMobileMenuOpen(false)}
         />
       )}
@@ -166,6 +157,17 @@ export function DashboardComplete() {
           ? 'bg-[#2d2820]/[0.4] border-white/10 shadow-[inset_0px_0px_9px_0px_rgba(201,152,58,0.1)]'
           : 'bg-white/[0.35] border-white shadow-[inset_0px_0px_9px_0px_rgba(255,255,255,0.5)]'
           }`}>
+          {/* Mobile Close Button */}
+          {isMobile && (
+            <button
+              onClick={() => setIsMobileMenuOpen(false)}
+              className={`absolute top-4 right-4 p-2 rounded-full transition-colors z-50 ${theme === 'dark' ? 'bg-white/5 hover:bg-white/10' : 'bg-black/5 hover:bg-black/10'
+                }`}
+            >
+              <X className="w-5 h-5 text-[#c9983a]" />
+            </button>
+          )}
+
           <div className="flex flex-col h-full px-0 py-[40px]">
             {/* Logo/Avatar */}
             <div className={`flex items-center mb-6 transition-all ${(isSidebarCollapsed && !isMobile) ? 'px-[18px] justify-center' : 'px-6 justify-between lg:justify-start'
@@ -265,8 +267,11 @@ export function DashboardComplete() {
             {isMobile && (
               <button
                 onClick={() => setIsMobileMenuOpen(true)}
-                className={`p-3 rounded-[14px] backdrop-blur-[30px] border transition-all active:scale-95 shadow-md ${theme === 'dark' ? 'bg-white/[0.08] border-white/15' : 'bg-white/[0.15] border-white/25'
+                className={`p-3 rounded-xl backdrop-blur-[30px] border transition-all active:scale-95 shadow-md ${theme === 'dark'
+                  ? 'bg-white/5 border-white/10 hover:bg-white/10'
+                  : 'bg-black/5 border-black/10 hover:bg-black/10'
                   }`}
+                aria-label="Open navigation"
               >
                 <Menu className={`w-6 h-6 ${theme === 'dark' ? 'text-[#e8c77f]' : 'text-[#a2792c]'}`} />
               </button>
@@ -322,7 +327,7 @@ export function DashboardComplete() {
                 </button>
 
                 {/* User Profile Dropdown */}
-                <UserProfileDropdown />
+                <UserProfileDropdown onPageChange={handleNavigation} showMobileNav={false} />
               </div>
             </div>
           </div>
@@ -332,10 +337,9 @@ export function DashboardComplete() {
           {currentPage === 'browse' && <BrowsePage />}
           {currentPage === 'osw' && <OpenSourceWeekPage />}
           {currentPage === 'ecosystems' && <EcosystemsPage />}
-          {currentPage === 'contributors' && <ContributorsPage />}
+          {currentPage === 'contributors' && <ContributorsPage onNavigate={handleNavigation} />}
           {currentPage === 'maintainers' && <MaintainersPage onNavigate={setCurrentPage} />}
           {currentPage === 'profile' && <ProfilePage />}
-          {currentPage === 'data' && <DataPage />}
           {currentPage === 'leaderboard' && <LeaderboardPage />}
           {currentPage === 'blog' && <BlogPage />}
           {currentPage === 'admin' && adminAuthenticated && <AdminPage />}
@@ -382,7 +386,7 @@ export function DashboardComplete() {
               type="password"
               placeholder="Enter admin password"
               value={adminPassword}
-              onChange={(e) => setAdminPassword(e.target.value)}
+              onChange={(value) => setAdminPassword(value)}
               required
               autoFocus
             />
@@ -534,12 +538,10 @@ function DiscoverPage() {
                 </button>
               </div>
 
-              <h4 className={`text-[18px] font-bold mb-2 transition-colors ${
-                theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-              }`}>{project.name}</h4>
-              <p className={`text-[13px] mb-4 line-clamp-2 transition-colors ${
-                theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-              }`}>{project.description?.trim() || "No description"}</p>
+              <h4 className={`text-[18px] font-bold mb-2 transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
+                }`}>{project.name}</h4>
+              <p className={`text-[13px] mb-4 line-clamp-2 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+                }`}>{project.description?.trim() || "No description"}</p>
 
               <div className={`flex items-center space-x-4 text-[13px] mb-4 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
                 }`}>
@@ -1211,6 +1213,7 @@ function EcosystemsPage() {
             );
           })}
         </div>
+      )}
 
       {/* Request Ecosystem Section */}
       <div className={`backdrop-blur-[40px] bg-gradient-to-br rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-10 transition-all overflow-hidden relative ${theme === 'dark'

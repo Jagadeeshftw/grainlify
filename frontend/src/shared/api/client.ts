@@ -168,6 +168,17 @@ export type LandingStats = {
 
 export const getLandingStats = () => apiRequest<LandingStats>("/stats/landing");
 
+// Contributor stats (Data page)
+export type ContributorStats = {
+  kyc_verified_count: number;
+  total_with_kyc_started: number;
+  active_users_count: number;
+  total_signed_users_count: number;
+};
+
+export const getContributorStats = () =>
+  apiRequest<ContributorStats>("/stats/contributors");
+
 // Search
 export const search = (query: string) =>
   apiRequest<SearchResults>(`/search?q=${encodeURIComponent(query)}`);
@@ -309,6 +320,8 @@ export const getPublicProfile = (userId?: string, login?: string) => {
   return apiRequest<{
     login: string;
     user_id: string;
+    first_name?: string;
+    last_name?: string;
     avatar_url?: string;
     contributions_count: number;
     projects_contributed_to_count: number;

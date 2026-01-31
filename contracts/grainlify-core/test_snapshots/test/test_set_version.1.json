@@ -376,7 +376,7 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
               },
               {
-                "symbol": "init"
+                "symbol": "init_admin"
               }
             ],
             "data": {
@@ -503,7 +503,7 @@
                 "symbol": "fn_return"
               },
               {
-                "symbol": "init"
+                "symbol": "init_admin"
               }
             ],
             "data": "void"
