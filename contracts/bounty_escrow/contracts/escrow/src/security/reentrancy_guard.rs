@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Env, Symbol, symbol_short};
+use soroban_sdk::{contracttype, symbol_short, Env, Symbol};
 
 const REENTRANCY_KEY: Symbol = symbol_short!("RE_GUARD");
 

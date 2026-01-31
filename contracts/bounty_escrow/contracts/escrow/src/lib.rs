@@ -1079,7 +1079,9 @@ impl BountyEscrowContract {
             max_payout,
         };
 
-        env.storage().instance().set(&DataKey::AmountLimits, &limits);
+        env.storage()
+            .instance()
+            .set(&DataKey::AmountLimits, &limits);
 
         // Emit event
         env.events().publish(
@@ -2803,7 +2805,7 @@ impl BountyEscrowContract {
                 0
             };
             let net_amount = escrow.amount - fee_amount;
-            
+
             let limits = Self::get_amount_limits(env.clone());
             if net_amount < limits.min_payout || net_amount > limits.max_payout {
                 return Err(Error::InvalidAmount);
@@ -2882,13 +2884,13 @@ impl BountyEscrowContract {
 }
 
 #[cfg(test)]
+mod test_edge_cases;
+#[cfg(test)]
 #[cfg(test)]
 // mod test;  // TODO: disabled due to SDK compatibility issues with RBAC merge
 // mod reentrancy_test;  // TODO: needs env.as_contract() wrapping fix
 #[cfg(test)]
 mod test_fuzz_properties;
-#[cfg(test)]
-mod test_edge_cases;
 
 mod pause_tests;
 #[cfg(test)]
