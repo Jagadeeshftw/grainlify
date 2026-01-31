@@ -589,6 +589,7 @@ fn test_invalid_batch_lock_exceeds_max_size() {
             depositor: setup.depositor.clone(),
             amount: 100i128,
             deadline,
+            token_address: None,
         });
     }
 

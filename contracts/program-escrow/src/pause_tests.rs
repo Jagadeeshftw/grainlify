@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod pause_tests {
-    use crate::{ProgramEscrowContract, ProgramEscrowContractClient, PauseConfig};
+    use crate::{PauseConfig, ProgramEscrowContract, ProgramEscrowContractClient};
     use soroban_sdk::{testutils::Address as _, token, Address, Env, String};
 
     fn create_token<'a>(env: &Env, admin: &Address) -> token::Client<'a> {
@@ -375,12 +375,7 @@ mod pause_tests {
 
         // Create schedule should fail
         let recipient = Address::generate(&env);
-        client.create_program_release_schedule(
-            &prog_id,
-            &1000,
-            &9999999999u64,
-            &recipient,
-        );
+        client.create_program_release_schedule(&prog_id, &1000, &9999999999u64, &recipient);
     }
 
     // ========================================================================
@@ -418,12 +413,7 @@ mod pause_tests {
 
         // Schedule should still work
         let recipient = Address::generate(&env);
-        client.create_program_release_schedule(
-            &prog_id,
-            &1000,
-            &9999999999u64,
-            &recipient,
-        );
+        client.create_program_release_schedule(&prog_id, &1000, &9999999999u64, &recipient);
     }
 
     // ========================================================================

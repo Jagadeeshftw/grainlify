@@ -1669,7 +1669,7 @@ impl ProgramEscrowContract {
         // Transfer net amount to recipient
         // Transfer tokens
         let contract_address = env.current_contract_address();
-        let token_client = token::Client::new(&env, &program_data.token_address, &token_addr);
+        let token_client = token::Client::new(&env, &token_addr);
         token_client.transfer(&contract_address, &recipient, &net_amount);
 
         // Transfer fee to fee recipient if applicable
@@ -2565,12 +2565,37 @@ impl ProgramEscrowContract {
         pending
     }
 
-    /// Internal helper to check if contract is paused.
-    fn is_paused_internal(env: &Env) -> bool {
+    /// Get pause configuration (internal helper)
+    fn get_pause_config_internal(env: &Env) -> PauseConfig {
         env.storage()
             .instance()
-            .get(&DataKey::IsPaused)
-            .unwrap_or(false)
+            .get(&DataKey::PauseConfig)
+            .unwrap_or(PauseConfig {
+                lock_paused: false,
+                payout_paused: false,
+                schedule_paused: false,
+            })
+    }
+
+    /// Check if lock operations are paused (internal helper)
+    fn is_lock_paused_internal(env: &Env) -> bool {
+        Self::get_pause_config_internal(env).lock_paused
+    }
+
+    /// Check if payout operations are paused (internal helper)
+    fn is_payout_paused_internal(env: &Env) -> bool {
+        Self::get_pause_config_internal(env).payout_paused
+    }
+
+    /// Check if schedule operations are paused (internal helper)
+    fn is_schedule_paused_internal(env: &Env) -> bool {
+        Self::get_pause_config_internal(env).schedule_paused
+    }
+
+    /// Check if all operations are paused (backward compatibility)
+    fn is_paused_internal(env: &Env) -> bool {
+        let config = Self::get_pause_config_internal(env);
+        config.lock_paused && config.payout_paused && config.schedule_paused
     }
 
     /// Pause the contract (admin only).
@@ -2708,14 +2733,19 @@ impl ProgramEscrowContract {
         current_admin.require_auth();
 
         let program_key = DataKey::Program(program_id.clone());
-        let mut program_data = Self::get_program_info(env.clone(), program_id);
-        program_data.authorized_payout_key = authorized_payout_key.clone();
+        let mut program_data: ProgramData = env
+            .storage()
+            .instance()
+            .get(&program_key)
+            .unwrap_or_else(|| panic!("Program not found"));
+        let old_auth_key = program_data.auth_key.clone();
+        program_data.auth_key = authorized_payout_key.clone();
         env.storage().instance().set(&program_key, &program_data);
 
         emit_update_authorized_key(
             &env,
             UpdateAuthorizedKeyEvent {
-                old_authorized_payout_key: program_data.authorized_payout_key,
+                old_authorized_payout_key: old_auth_key,
                 new_authorized_payout_key: authorized_payout_key,
                 timestamp: env.ledger().timestamp(),
             },
@@ -2846,7 +2876,7 @@ impl ProgramEscrowContract {
     }
 
     /// Check if a token is whitelisted.
-    pub fn is_whitelisted(env: Env, token: Address) -> bool {
+    pub fn is_token_whitelisted(env: Env, token: Address) -> bool {
         let program_data: ProgramData = env
             .storage()
             .instance()

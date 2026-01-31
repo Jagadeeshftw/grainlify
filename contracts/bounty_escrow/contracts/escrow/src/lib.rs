@@ -87,11 +87,11 @@
 //! ```
 
 #![no_std]
-#[cfg(test)]
-mod invariants;
 mod blacklist;
 mod events;
 mod indexed;
+#[cfg(test)]
+mod invariants;
 mod test_blacklist;
 mod test_bounty_escrow;
 pub mod security {
@@ -111,14 +111,15 @@ use events::{
     emit_contract_unpaused, emit_deadline_extended, emit_emergency_withdrawal, emit_escrow_expired,
     emit_funds_locked, emit_funds_refunded, emit_funds_released, emit_operation_pause_changed,
     emit_payout_key_updated, AdminActionCancelled, AdminActionExecuted, AdminActionProposed,
-    AdminUpdated, BatchFundsLocked, BatchFundsReleased, BountyEscrowInitialized, ConfigLimitsUpdated,
-    ContractPaused, ContractUnpaused, DeadlineExtended, EmergencyWithdrawal, EscrowExpired,
-    FundsLocked, FundsRefunded, FundsReleased, OperationPauseChanged, PayoutKeyUpdated,
+    AdminUpdated, BatchFundsLocked, BatchFundsReleased, BountyEscrowInitialized,
+    ConfigLimitsUpdated, ContractPaused, ContractUnpaused, DeadlineExtended, EmergencyWithdrawal,
+    EscrowExpired, FundsLocked, FundsRefunded, FundsReleased, OperationPauseChanged,
+    PayoutKeyUpdated,
 };
 use indexed::{on_funds_locked, on_funds_refunded, on_funds_released};
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, token, vec, Address, String, Env,
-    Vec, Map,
+    contract, contracterror, contractimpl, contracttype, symbol_short, token, vec, Address, Env,
+    Map, String, Vec,
 };
 
 pub use grainlify_interfaces::{
@@ -464,8 +465,6 @@ pub enum Error {
 
     /// Returned when attempting to whitelist an already whitelisted token
     TokenAlreadyWhitelisted = 9,
-    InvalidFeeRate = 22,
-    FeeRecipientNotSet = 23,
     InvalidBatchSize = 10,
     ContractPaused = 11,
     DuplicateBountyId = 12,
@@ -485,6 +484,10 @@ pub enum Error {
     ActionNotFound = 23,
     ActionNotReady = 24,
     InvalidTimeLock = 25,
+    /// Returned when fee rate is invalid
+    InvalidFeeRate = 29,
+    /// Returned when fee recipient is not set
+    FeeRecipientNotSet = 30,
     /// Returned when lock operations are paused
     LockPaused = 26,
     /// Returned when release operations are paused
@@ -505,14 +508,6 @@ pub enum EscrowStatus {
     Refunded,
     PartiallyRefunded,
     PartiallyReleased,
-}
-
-#[contracttype]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RefundMode {
-    Full,
-    Partial,
-    Custom,
 }
 
 /// Per-operation pause configuration for granular control.
@@ -734,55 +729,6 @@ pub struct EscrowWithMetadata {
 /// # Storage Types
 /// - **Instance Storage**: Admin and Token (never expires, tied to contract)
 /// - **Persistent Storage**: Individual escrow records and metadata (extended TTL on access)
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct LockFundsItem {
-    pub bounty_id: u64,
-    pub depositor: Address,
-    pub amount: i128,
-    pub deadline: u64,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ReleaseFundsItem {
-    pub bounty_id: u64,
-    pub contributor: Address,
-}
-
-// Maximum batch size to prevent gas limit issues
-const MAX_BATCH_SIZE: u32 = 100;
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct FeeConfig {
-    pub lock_fee_rate: i128, // Fee rate for lock operations (basis points, e.g., 100 = 1%)
-    pub release_fee_rate: i128, // Fee rate for release operations (basis points)
-    pub fee_recipient: Address, // Address to receive fees
-    pub fee_enabled: bool,   // Global fee enable/disable flag
-}
-
-impl From<SharedFeeConfig> for FeeConfig {
-    fn from(shared: SharedFeeConfig) -> Self {
-        Self {
-            lock_fee_rate: shared.lock_fee_rate,
-            release_fee_rate: shared.payout_fee_rate,
-            fee_recipient: shared.fee_recipient,
-            fee_enabled: shared.fee_enabled,
-        }
-    }
-}
-
-impl From<FeeConfig> for SharedFeeConfig {
-    fn from(local: FeeConfig) -> Self {
-        Self {
-            lock_fee_rate: local.lock_fee_rate,
-            payout_fee_rate: local.release_fee_rate,
-            fee_recipient: local.fee_recipient,
-            fee_enabled: local.fee_enabled,
-        }
-    }
-}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
@@ -792,11 +738,6 @@ pub struct AmountLimits {
     pub min_payout: i128,
     pub max_payout: i128,
 }
-
-// Fee rate is stored in basis points (1 basis point = 0.01%)
-// Example: 100 basis points = 1%, 1000 basis points = 10%
-const BASIS_POINTS: i128 = 10_000;
-const MAX_FEE_RATE: i128 = 1_000; // Maximum 10% fee
 
 #[contracttype]
 pub enum DataKey {
@@ -1889,6 +1830,37 @@ impl BountyEscrowContract {
         Ok(())
     }
 
+    /// Unpause the contract (admin only) - unpauses ALL operations
+    /// Maintained for backward compatibility
+    pub fn unpause(env: Env) -> Result<(), Error> {
+        if !env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::NotInitialized);
+        }
+
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        let config = PauseConfig {
+            lock_paused: false,
+            release_paused: false,
+            refund_paused: false,
+        };
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::PauseConfig, &config);
+
+        emit_contract_unpaused(
+            &env,
+            ContractUnpaused {
+                unpaused_by: admin.clone(),
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
     pub fn emergency_withdraw(env: Env, recipient: Address) -> Result<(), Error> {
         if !env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::NotInitialized);
@@ -2171,12 +2143,12 @@ impl BountyEscrowContract {
             let mut balances = Map::new(&env);
             balances.set(token_addr.clone(), net_amount);
             Escrow {
-            depositor: depositor.clone(),
-            amount: net_amount, // Store net amount (after fee)
-            status: EscrowStatus::Locked,
-            deadline,
+                depositor: depositor.clone(),
+                amount: net_amount, // Store net amount (after fee)
+                status: EscrowStatus::Locked,
+                deadline,
                 token: token_addr.clone(),
-            refund_history: vec![&env],
+                refund_history: vec![&env],
                 remaining_amount: net_amount,
                 token_address: token_addr.clone(), // Primary token
                 token_balances: balances,
@@ -2520,7 +2492,7 @@ impl BountyEscrowContract {
         // If all tokens are released, mark as Released
         // Simple check: if remaining_amount > 0, there's still balance
         if escrow.remaining_amount == 0 {
-        escrow.status = EscrowStatus::Released;
+            escrow.status = EscrowStatus::Released;
         } else {
             escrow.status = EscrowStatus::PartiallyReleased;
         }
@@ -2533,7 +2505,7 @@ impl BountyEscrowContract {
         emit_funds_released(
             &env,
             FundsReleased {
-            bounty_id,
+                bounty_id,
                 amount: net_amount,
                 recipient: contributor.clone(),
                 token_address: token_addr.clone(),
@@ -2818,7 +2790,7 @@ impl BountyEscrowContract {
         let refund_record = RefundRecord {
             amount: refund_amount,
             recipient: refund_recipient.clone(),
-            mode,
+            mode: mode.clone(),
             timestamp: env.ledger().timestamp(),
         };
         escrow.refund_history.push_back(refund_record);
@@ -2839,11 +2811,11 @@ impl BountyEscrowContract {
         emit_funds_refunded(
             &env,
             FundsRefunded {
-            bounty_id,
+                bounty_id,
                 amount: refund_amount,
                 refund_to: refund_recipient,
                 timestamp: env.ledger().timestamp(),
-                refund_mode: mode,
+                refund_mode: mode.clone(),
                 remaining_amount: escrow.remaining_amount,
                 token_address: token_addr.clone(),
             },
@@ -3495,12 +3467,12 @@ impl BountyEscrowContract {
                 let mut balances = Map::new(&env);
                 balances.set(token_addr.clone(), net_amount);
                 Escrow {
-                depositor: item.depositor.clone(),
+                    depositor: item.depositor.clone(),
                     amount: net_amount,
-                status: EscrowStatus::Locked,
-                deadline: item.deadline,
+                    status: EscrowStatus::Locked,
+                    deadline: item.deadline,
                     token: token_addr.clone(),
-                refund_history: vec![&env],
+                    refund_history: vec![&env],
                     remaining_amount: net_amount,
                     token_address: token_addr.clone(),
                     token_balances: balances,
@@ -3671,7 +3643,7 @@ impl BountyEscrowContract {
 
             // If all tokens are released, mark as Released
             if escrow.remaining_amount == 0 {
-            escrow.status = EscrowStatus::Released;
+                escrow.status = EscrowStatus::Released;
             }
 
             env.storage()
@@ -3811,49 +3783,22 @@ impl BountyEscrowContract {
     }
 }
 
-
-fn validate_metadata_size(_env: &Env, metadata: &EscrowMetadata) -> bool {
-    let mut size: u32 = 0;
-
-    if let Some(v) = &metadata.bounty_type {
-        size += v.len();
-    }
-
-    if let Some(v) = &metadata.repo_id {
-        size += v.len();
-    }
-
-    if let Some(v) = &metadata.issue_id {
-        size += v.len();
-    }
-
-    for (k, v) in metadata.custom_fields.iter() {
-        size += k.len();
-        size += v.len();
-    }
-
-    size <= 2048
-}
-
-
 #[cfg(test)]
 mod reentrancy_test;
 #[cfg(test)]
 #[cfg(test)]
 mod test;
 
-#[contractimpl]
 impl EscrowLock for BountyEscrowContract {
     fn lock_funds(env: Env, depositor: Address, id: u64, amount: i128, deadline: u64) {
-        Self::lock_funds_internal(env.clone(), depositor, id, amount, deadline)
+        Self::lock_funds_internal(env.clone(), depositor, id, amount, deadline, None)
             .unwrap_or_else(|e| env.panic_with_error(e));
     }
 }
 
-#[contractimpl]
 impl EscrowRelease for BountyEscrowContract {
     fn release_funds(env: Env, id: u64, recipient: Address) {
-        Self::release_funds_internal(env.clone(), id, recipient)
+        Self::release_funds(env.clone(), id, recipient, None, None)
             .unwrap_or_else(|e| env.panic_with_error(e));
     }
 
@@ -3864,7 +3809,7 @@ impl EscrowRelease for BountyEscrowContract {
         recipient: Option<Address>,
         mode: RefundMode,
     ) {
-        Self::refund_internal(env.clone(), id, amount, recipient, mode)
+        Self::refund_internal(env.clone(), id, amount, recipient, mode, None)
             .unwrap_or_else(|e| env.panic_with_error(e));
     }
 
@@ -3878,73 +3823,40 @@ impl EscrowRelease for BountyEscrowContract {
     }
 }
 
-#[contractimpl]
 impl ConfigurableFee for BountyEscrowContract {
     fn set_fee_config(env: Env, config: SharedFeeConfig) {
-        let _ = Self::update_fee_config_internal(
-            env,
+        Self::update_fee_config(
+            env.clone(),
             Some(config.lock_fee_rate),
             Some(config.payout_fee_rate),
             Some(config.fee_recipient),
             Some(config.fee_enabled),
-        );
+        )
+        .unwrap_or_else(|e| env.panic_with_error(e));
     }
 
     fn get_fee_config(env: Env) -> SharedFeeConfig {
-        Self::get_fee_config_internal(&env).into()
+        let config = Self::get_fee_config_internal(&env);
+        SharedFeeConfig {
+            lock_fee_rate: config.lock_fee_rate,
+            payout_fee_rate: config.release_fee_rate,
+            fee_recipient: config.fee_recipient,
+            fee_enabled: config.fee_enabled,
+        }
     }
 }
 
-#[contractimpl]
 impl Pausable for BountyEscrowContract {
     fn pause(env: Env) {
-        if !env.storage().instance().has(&DataKey::Admin) {
-            panic!("Not initialized");
-        }
-
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
-        admin.require_auth();
-
-        if Self::is_paused_internal(&env) {
-            return;
-        }
-
-        env.storage().persistent().set(&DataKey::IsPaused, &true);
-
-        emit_contract_paused(
-            &env,
-            ContractPaused {
-                paused_by: admin.clone(),
-                timestamp: env.ledger().timestamp(),
-            },
-        );
+        Self::pause(env.clone()).unwrap_or_else(|e| env.panic_with_error(e));
     }
 
     fn unpause(env: Env) {
-        if !env.storage().instance().has(&DataKey::Admin) {
-            panic!("Not initialized");
-        }
-
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
-        admin.require_auth();
-
-        if !Self::is_paused_internal(&env) {
-            return;
-        }
-
-        env.storage().persistent().set(&DataKey::IsPaused, &false);
-
-        emit_contract_unpaused(
-            &env,
-            ContractUnpaused {
-                unpaused_by: admin.clone(),
-                timestamp: env.ledger().timestamp(),
-            },
-        );
+        Self::unpause(env.clone()).unwrap_or_else(|e| env.panic_with_error(e));
     }
 
     fn is_paused(env: Env) -> bool {
-        Self::is_paused_internal(&env)
+        Self::is_paused(env)
     }
 }
 #[cfg(test)]
