@@ -87,6 +87,8 @@
 //! ```
 
 #![no_std]
+#[cfg(test)]
+mod invariants;
 mod blacklist;
 mod events;
 mod indexed;
@@ -113,8 +115,8 @@ use indexed::{
     BountyEscrowInitialized,
 };
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, token, vec, Address, Env,
-    Map, String, Vec,
+    contract, contracterror, contractimpl, contracttype, symbol_short, token, vec, Address, String, Env,
+    Vec, Map,
 };
 
 pub use grainlify_interfaces::{
@@ -2689,6 +2691,31 @@ impl BountyEscrowContract {
         Ok(released_count)
     }
 }
+
+
+fn validate_metadata_size(_env: &Env, metadata: &EscrowMetadata) -> bool {
+    let mut size: u32 = 0;
+
+    if let Some(v) = &metadata.bounty_type {
+        size += v.len();
+    }
+
+    if let Some(v) = &metadata.repo_id {
+        size += v.len();
+    }
+
+    if let Some(v) = &metadata.issue_id {
+        size += v.len();
+    }
+
+    for (k, v) in metadata.custom_fields.iter() {
+        size += k.len();
+        size += v.len();
+    }
+
+    size <= 2048
+}
+
 
 #[cfg(test)]
 #[cfg(test)]

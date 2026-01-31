@@ -1,5 +1,5 @@
 #![cfg(test)]
-
+use crate::invariants::*;
 use super::*;
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
@@ -267,18 +267,32 @@ fn test_lock_funds_success() {
     let deadline = setup.env.ledger().timestamp() + 1000;
 
     // Lock funds
-    setup
-        .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     // Verify stored escrow data
     // Note: amount stores net_amount (after fee), but fees are disabled by default
     let stored_escrow = setup.escrow.get_escrow_info(&bounty_id);
     assert_eq!(stored_escrow.depositor, setup.depositor);
-    assert_eq!(stored_escrow.amount, amount); // net_amount = amount when fees disabled
-    assert_eq!(stored_escrow.remaining_amount, amount); // remaining_amount stores original
+    assert_eq!(stored_escrow.amount, amount);
+    assert_eq!(stored_escrow.remaining_amount, amount);
     assert_eq!(stored_escrow.status, EscrowStatus::Locked);
     assert_eq!(stored_escrow.deadline, deadline);
+
+    // ✅ NEW: Check invariants after lock
+    check_balance_consistency(
+        &setup.env,
+        &setup.escrow,
+        &setup.escrow_address,
+        &[(bounty_id, amount)],
+    );
+    
+    verify_escrow_invariants(
+        &stored_escrow,
+        &None,
+        "lock_funds",
+        setup.env.ledger().timestamp(),
+        false,
+    );
 
     // Verify contract balance
     assert_eq!(setup.token.balance(&setup.escrow_address), amount);
@@ -340,13 +354,10 @@ fn test_release_funds_success() {
     let amount = 1000;
     let deadline = setup.env.ledger().timestamp() + 1000;
 
-    setup
-        .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
-    // Verify initial balances
-    assert_eq!(setup.token.balance(&setup.escrow_address), amount);
-    assert_eq!(setup.token.balance(&setup.contributor), 0);
+    // ✅ Get escrow before release
+    let escrow_before = setup.escrow.get_escrow_info(&bounty_id);
 
     // Release funds
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
@@ -355,7 +366,23 @@ fn test_release_funds_success() {
     let stored_escrow = setup.escrow.get_escrow_info(&bounty_id);
     assert_eq!(stored_escrow.status, EscrowStatus::Released);
 
-    // Verify balances after release (fees disabled by default, so net_amount = amount)
+    // ✅ NEW: Check invariants after release
+    check_balance_consistency(
+        &setup.env,
+        &setup.escrow,
+        &setup.escrow_address,
+        &[], // No locked bounties after release
+    );
+    
+    verify_escrow_invariants(
+        &stored_escrow,
+        &Some(escrow_before),
+        "release_funds",
+        setup.env.ledger().timestamp(),
+        false,
+    );
+
+    // Verify balances after release
     assert_eq!(setup.token.balance(&setup.escrow_address), 0);
     assert_eq!(setup.token.balance(&setup.contributor), amount);
 }
@@ -1559,4 +1586,78 @@ fn test_extend_refund_deadline_with_partially_refunded() {
     let escrow_after = setup.escrow.get_escrow_info(&bounty_id);
     assert_eq!(escrow_after.deadline, new_deadline);
     assert_eq!(escrow_after.status, EscrowStatus::PartiallyRefunded);
+}
+
+#[test]
+#[should_panic(expected = "Invariant I2 violated")]
+fn test_invariant_violation_invalid_transition() {
+    let env = Env::default();
+    
+    // Create a Released escrow
+    let escrow_before = Escrow {
+        depositor: Address::generate(&env),
+        amount: 1000,
+        status: EscrowStatus::Released,
+        deadline: 1000,
+        refund_history: vec![&env],
+        remaining_amount: 0,
+    };
+    
+    // Try to transition to Locked (invalid!)
+    let escrow_after = Escrow {
+        depositor: escrow_before.depositor.clone(),
+        amount: 1000,
+        status: EscrowStatus::Locked,
+        deadline: 1000,
+        refund_history: vec![&env],
+        remaining_amount: 1000,
+    };
+    
+    // This should panic
+    check_status_transition(&Some(escrow_before), &escrow_after, "invalid_transition");
+}
+
+#[test]
+#[should_panic(expected = "Invariant I6 violated")]
+fn test_invariant_violation_over_refund() {
+    let env = Env::default();
+    
+    // Create an escrow with refunds exceeding locked amount
+    let mut refund_history = vec![&env];
+    refund_history.push_back(RefundRecord {
+        amount: 1500, // More than locked!
+        recipient: Address::generate(&env),
+        mode: RefundMode::Full,
+        timestamp: 1000,
+    });
+    
+    let escrow = Escrow {
+        depositor: Address::generate(&env),
+        amount: 1000,
+        status: EscrowStatus::Refunded,
+        deadline: 1000,
+        refund_history,
+        remaining_amount: -500,
+    };
+    
+    // This should panic
+    check_refunded_amount_bounds(&escrow);
+}
+
+#[test]
+#[should_panic(expected = "Invariant I4 violated")]
+fn test_invariant_violation_negative_amount() {
+    let env = Env::default();
+    
+    let escrow = Escrow {
+        depositor: Address::generate(&env),
+        amount: -100, // Negative!
+        status: EscrowStatus::Locked,
+        deadline: 1000,
+        refund_history: vec![&env],
+        remaining_amount: -100,
+    };
+    
+    // This should panic
+    check_amount_non_negativity(&escrow);
 }
