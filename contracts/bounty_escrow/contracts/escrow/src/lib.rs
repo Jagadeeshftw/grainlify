@@ -87,11 +87,11 @@
 //! ```
 
 #![no_std]
-#[cfg(test)]
-mod invariants;
 mod blacklist;
 mod events;
 mod indexed;
+#[cfg(test)]
+mod invariants;
 mod test_blacklist;
 mod test_bounty_escrow;
 pub mod security {
@@ -109,16 +109,17 @@ use events::{
     emit_admin_updated, emit_batch_funds_locked, emit_batch_funds_released,
     emit_bounty_initialized, emit_config_limits_updated, emit_contract_paused,
     emit_contract_unpaused, emit_deadline_extended, emit_emergency_withdrawal, emit_escrow_expired,
-    emit_funds_locked, emit_funds_refunded, emit_funds_released, emit_payout_key_updated,
-    AdminActionCancelled, AdminActionExecuted, AdminActionProposed, AdminUpdated, BatchFundsLocked,
-    BatchFundsReleased, BountyEscrowInitialized, ConfigLimitsUpdated, ContractPaused,
-    ContractUnpaused, DeadlineExtended, EmergencyWithdrawal, EscrowExpired, FundsLocked,
-    FundsRefunded, FundsReleased, PayoutKeyUpdated,
+    emit_funds_locked, emit_funds_refunded, emit_funds_released, emit_operation_pause_changed,
+    emit_payout_key_updated, AdminActionCancelled, AdminActionExecuted, AdminActionProposed,
+    AdminUpdated, BatchFundsLocked, BatchFundsReleased, BountyEscrowInitialized,
+    ConfigLimitsUpdated, ContractPaused, ContractUnpaused, DeadlineExtended, EmergencyWithdrawal,
+    EscrowExpired, FundsLocked, FundsRefunded, FundsReleased, OperationPauseChanged,
+    PayoutKeyUpdated,
 };
 use indexed::{on_funds_locked, on_funds_refunded, on_funds_released};
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, token, vec, Address, String, Env,
-    Vec, Map,
+    contract, contracterror, contractimpl, contracttype, symbol_short, token, vec, Address, Env,
+    Map, String, Vec,
 };
 
 pub use grainlify_interfaces::{
@@ -464,8 +465,6 @@ pub enum Error {
 
     /// Returned when attempting to whitelist an already whitelisted token
     TokenAlreadyWhitelisted = 9,
-    InvalidFeeRate = 22,
-    FeeRecipientNotSet = 23,
     InvalidBatchSize = 10,
     ContractPaused = 11,
     DuplicateBountyId = 12,
@@ -485,6 +484,16 @@ pub enum Error {
     ActionNotFound = 23,
     ActionNotReady = 24,
     InvalidTimeLock = 25,
+    /// Returned when fee rate is invalid
+    InvalidFeeRate = 29,
+    /// Returned when fee recipient is not set
+    FeeRecipientNotSet = 30,
+    /// Returned when lock operations are paused
+    LockPaused = 26,
+    /// Returned when release operations are paused
+    ReleasePaused = 27,
+    /// Returned when refund operations are paused
+    RefundPaused = 28,
 }
 
 // ============================================================================
@@ -501,12 +510,16 @@ pub enum EscrowStatus {
     PartiallyReleased,
 }
 
+/// Per-operation pause configuration for granular control.
+///
+/// Allows the platform to halt specific operations while allowing others to continue.
+/// For example, new locks can be paused while releases and refunds remain active.
 #[contracttype]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RefundMode {
-    Full,
-    Partial,
-    Custom,
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PauseConfig {
+    pub lock_paused: bool,
+    pub release_paused: bool,
+    pub refund_paused: bool,
 }
 
 #[contracttype]
@@ -716,55 +729,6 @@ pub struct EscrowWithMetadata {
 /// # Storage Types
 /// - **Instance Storage**: Admin and Token (never expires, tied to contract)
 /// - **Persistent Storage**: Individual escrow records and metadata (extended TTL on access)
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct LockFundsItem {
-    pub bounty_id: u64,
-    pub depositor: Address,
-    pub amount: i128,
-    pub deadline: u64,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ReleaseFundsItem {
-    pub bounty_id: u64,
-    pub contributor: Address,
-}
-
-// Maximum batch size to prevent gas limit issues
-const MAX_BATCH_SIZE: u32 = 100;
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct FeeConfig {
-    pub lock_fee_rate: i128, // Fee rate for lock operations (basis points, e.g., 100 = 1%)
-    pub release_fee_rate: i128, // Fee rate for release operations (basis points)
-    pub fee_recipient: Address, // Address to receive fees
-    pub fee_enabled: bool,   // Global fee enable/disable flag
-}
-
-impl From<SharedFeeConfig> for FeeConfig {
-    fn from(shared: SharedFeeConfig) -> Self {
-        Self {
-            lock_fee_rate: shared.lock_fee_rate,
-            release_fee_rate: shared.payout_fee_rate,
-            fee_recipient: shared.fee_recipient,
-            fee_enabled: shared.fee_enabled,
-        }
-    }
-}
-
-impl From<FeeConfig> for SharedFeeConfig {
-    fn from(local: FeeConfig) -> Self {
-        Self {
-            lock_fee_rate: local.lock_fee_rate,
-            payout_fee_rate: local.release_fee_rate,
-            fee_recipient: local.fee_recipient,
-            fee_enabled: local.fee_enabled,
-        }
-    }
-}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
@@ -774,11 +738,6 @@ pub struct AmountLimits {
     pub min_payout: i128,
     pub max_payout: i128,
 }
-
-// Fee rate is stored in basis points (1 basis point = 0.01%)
-// Example: 100 basis points = 1%, 1000 basis points = 10%
-const BASIS_POINTS: i128 = 10_000;
-const MAX_FEE_RATE: i128 = 1_000; // Maximum 10% fee
 
 #[contracttype]
 pub enum DataKey {
@@ -790,7 +749,7 @@ pub enum DataKey {
     AmountLimits,        // Amount limits configuration
     RefundApproval(u64), // bounty_id -> RefundApproval
     ReentrancyGuard,
-    IsPaused,                // Contract pause state
+    IsPaused,                // Contract pause state (legacy, for backward compat)
     TokenWhitelist(Address), // token_address -> bool (whitelist status)
     RegisteredTokens,        // Vec<Address> of all registered tokens
     PayoutKey,
@@ -799,6 +758,7 @@ pub enum DataKey {
     NextActionId,
     AdminAction(u64),
     BountyRegistry, // Vec<u64> of all bounty IDs
+    PauseConfig,    // Per-operation pause configuration
 }
 
 #[contracttype]
@@ -1684,17 +1644,163 @@ impl BountyEscrowContract {
     // Pause and Emergency Functions
     // ========================================================================
 
-    fn is_paused_internal(env: &Env) -> bool {
+    /// Get pause configuration (internal helper)
+    fn get_pause_config_internal(env: &Env) -> PauseConfig {
         env.storage()
             .persistent()
-            .get::<_, bool>(&DataKey::IsPaused)
-            .unwrap_or(false)
+            .get(&DataKey::PauseConfig)
+            .unwrap_or(PauseConfig {
+                lock_paused: false,
+                release_paused: false,
+                refund_paused: false,
+            })
     }
 
+    /// Check if lock operations are paused (internal helper)
+    fn is_lock_paused_internal(env: &Env) -> bool {
+        Self::get_pause_config_internal(env).lock_paused
+    }
+
+    /// Check if release operations are paused (internal helper)
+    fn is_release_paused_internal(env: &Env) -> bool {
+        Self::get_pause_config_internal(env).release_paused
+    }
+
+    /// Check if refund operations are paused (internal helper)
+    fn is_refund_paused_internal(env: &Env) -> bool {
+        Self::get_pause_config_internal(env).refund_paused
+    }
+
+    /// Check if all operations are paused (backward compatibility)
+    fn is_paused_internal(env: &Env) -> bool {
+        let config = Self::get_pause_config_internal(env);
+        config.lock_paused && config.release_paused && config.refund_paused
+    }
+
+    /// Get pause configuration (view function)
+    pub fn get_pause_config(env: Env) -> PauseConfig {
+        Self::get_pause_config_internal(&env)
+    }
+
+    /// Check if lock operations are paused (view function)
+    pub fn is_lock_paused(env: Env) -> bool {
+        Self::is_lock_paused_internal(&env)
+    }
+
+    /// Check if release operations are paused (view function)
+    pub fn is_release_paused(env: Env) -> bool {
+        Self::is_release_paused_internal(&env)
+    }
+
+    /// Check if refund operations are paused (view function)
+    pub fn is_refund_paused(env: Env) -> bool {
+        Self::is_refund_paused_internal(&env)
+    }
+
+    /// Get pause status (view function) - returns true if ALL operations are paused
+    /// Maintained for backward compatibility
     pub fn is_paused(env: Env) -> bool {
         Self::is_paused_internal(&env)
     }
 
+    /// Pause or unpause lock operations (admin only)
+    pub fn set_pause_lock(env: Env, paused: bool) -> Result<(), Error> {
+        if !env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::NotInitialized);
+        }
+
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        let mut config = Self::get_pause_config_internal(&env);
+        if config.lock_paused == paused {
+            return Ok(()); // Already in desired state, idempotent
+        }
+
+        config.lock_paused = paused;
+        env.storage()
+            .persistent()
+            .set(&DataKey::PauseConfig, &config);
+
+        emit_operation_pause_changed(
+            &env,
+            OperationPauseChanged {
+                operation: symbol_short!("lock"),
+                paused,
+                changed_by: admin.clone(),
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Pause or unpause release operations (admin only)
+    pub fn set_pause_release(env: Env, paused: bool) -> Result<(), Error> {
+        if !env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::NotInitialized);
+        }
+
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        let mut config = Self::get_pause_config_internal(&env);
+        if config.release_paused == paused {
+            return Ok(()); // Already in desired state, idempotent
+        }
+
+        config.release_paused = paused;
+        env.storage()
+            .persistent()
+            .set(&DataKey::PauseConfig, &config);
+
+        emit_operation_pause_changed(
+            &env,
+            OperationPauseChanged {
+                operation: symbol_short!("release"),
+                paused,
+                changed_by: admin.clone(),
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Pause or unpause refund operations (admin only)
+    pub fn set_pause_refund(env: Env, paused: bool) -> Result<(), Error> {
+        if !env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::NotInitialized);
+        }
+
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        let mut config = Self::get_pause_config_internal(&env);
+        if config.refund_paused == paused {
+            return Ok(()); // Already in desired state, idempotent
+        }
+
+        config.refund_paused = paused;
+        env.storage()
+            .persistent()
+            .set(&DataKey::PauseConfig, &config);
+
+        emit_operation_pause_changed(
+            &env,
+            OperationPauseChanged {
+                operation: symbol_short!("refund"),
+                paused,
+                changed_by: admin.clone(),
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Pause the contract (admin only) - pauses ALL operations
+    /// Maintained for backward compatibility
     pub fn pause(env: Env) -> Result<(), Error> {
         if !env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::NotInitialized);
@@ -1703,11 +1809,15 @@ impl BountyEscrowContract {
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         admin.require_auth();
 
-        if Self::is_paused_internal(&env) {
-            return Ok(());
-        }
+        let config = PauseConfig {
+            lock_paused: true,
+            release_paused: true,
+            refund_paused: true,
+        };
 
-        env.storage().persistent().set(&DataKey::IsPaused, &true);
+        env.storage()
+            .persistent()
+            .set(&DataKey::PauseConfig, &config);
 
         emit_contract_paused(
             &env,
@@ -1720,6 +1830,8 @@ impl BountyEscrowContract {
         Ok(())
     }
 
+    /// Unpause the contract (admin only) - unpauses ALL operations
+    /// Maintained for backward compatibility
     pub fn unpause(env: Env) -> Result<(), Error> {
         if !env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::NotInitialized);
@@ -1728,11 +1840,15 @@ impl BountyEscrowContract {
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         admin.require_auth();
 
-        if !Self::is_paused_internal(&env) {
-            return Ok(());
-        }
+        let config = PauseConfig {
+            lock_paused: false,
+            release_paused: false,
+            refund_paused: false,
+        };
 
-        env.storage().persistent().set(&DataKey::IsPaused, &false);
+        env.storage()
+            .persistent()
+            .set(&DataKey::PauseConfig, &config);
 
         emit_contract_unpaused(
             &env,
@@ -1939,9 +2055,10 @@ impl BountyEscrowContract {
         let start = env.ledger().timestamp();
         let caller = depositor.clone();
 
-        if Self::is_paused_internal(&env) {
+        // Check if lock operations are paused
+        if Self::is_lock_paused_internal(&env) {
             monitoring::track_operation(&env, symbol_short!("lock"), caller, false);
-            return Err(Error::ContractPaused);
+            return Err(Error::LockPaused);
         }
 
         depositor.require_auth();
@@ -2244,10 +2361,11 @@ impl BountyEscrowContract {
 
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
 
-        if Self::is_paused_internal(&env) {
+        // Check if release operations are paused
+        if Self::is_release_paused_internal(&env) {
             monitoring::track_operation(&env, symbol_short!("release"), admin.clone(), false);
             env.storage().instance().remove(&DataKey::ReentrancyGuard);
-            return Err(Error::ContractPaused);
+            return Err(Error::ReleasePaused);
         }
 
         anti_abuse::check_rate_limit(&env, admin.clone());
@@ -2550,11 +2668,11 @@ impl BountyEscrowContract {
 
         let _guard = ReentrancyGuardRAII::new(&env).map_err(|_| Error::ReentrantCall)?;
 
-        // Check if contract is paused
-        if Self::is_paused_internal(&env) {
+        // Check if refund operations are paused
+        if Self::is_refund_paused_internal(&env) {
             let caller = env.current_contract_address();
             monitoring::track_operation(&env, symbol_short!("refund"), caller, false);
-            return Err(Error::ContractPaused);
+            return Err(Error::RefundPaused);
         }
 
         if !env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
@@ -2672,7 +2790,7 @@ impl BountyEscrowContract {
         let refund_record = RefundRecord {
             amount: refund_amount,
             recipient: refund_recipient.clone(),
-            mode,
+            mode: mode.clone(),
             timestamp: env.ledger().timestamp(),
         };
         escrow.refund_history.push_back(refund_record);
@@ -2697,7 +2815,7 @@ impl BountyEscrowContract {
                 amount: refund_amount,
                 refund_to: refund_recipient,
                 timestamp: env.ledger().timestamp(),
-                refund_mode: mode,
+                refund_mode: mode.clone(),
                 remaining_amount: escrow.remaining_amount,
                 token_address: token_addr.clone(),
             },
@@ -3244,8 +3362,9 @@ impl BountyEscrowContract {
             return Err(Error::InvalidBatchSize);
         }
 
-        if Self::is_paused_internal(&env) {
-            return Err(Error::ContractPaused);
+        // Check if lock operations are paused
+        if Self::is_lock_paused_internal(&env) {
+            return Err(Error::LockPaused);
         }
 
         if !env.storage().instance().has(&DataKey::Admin) {
@@ -3417,8 +3536,9 @@ impl BountyEscrowContract {
             return Err(Error::InvalidBatchSize);
         }
 
-        if Self::is_paused_internal(&env) {
-            return Err(Error::ContractPaused);
+        // Check if release operations are paused
+        if Self::is_release_paused_internal(&env) {
+            return Err(Error::ReleasePaused);
         }
 
         if !env.storage().instance().has(&DataKey::Admin) {
@@ -3663,49 +3783,22 @@ impl BountyEscrowContract {
     }
 }
 
-
-fn validate_metadata_size(_env: &Env, metadata: &EscrowMetadata) -> bool {
-    let mut size: u32 = 0;
-
-    if let Some(v) = &metadata.bounty_type {
-        size += v.len();
-    }
-
-    if let Some(v) = &metadata.repo_id {
-        size += v.len();
-    }
-
-    if let Some(v) = &metadata.issue_id {
-        size += v.len();
-    }
-
-    for (k, v) in metadata.custom_fields.iter() {
-        size += k.len();
-        size += v.len();
-    }
-
-    size <= 2048
-}
-
-
 #[cfg(test)]
 mod reentrancy_test;
 #[cfg(test)]
 #[cfg(test)]
 mod test;
 
-#[contractimpl]
 impl EscrowLock for BountyEscrowContract {
     fn lock_funds(env: Env, depositor: Address, id: u64, amount: i128, deadline: u64) {
-        Self::lock_funds_internal(env.clone(), depositor, id, amount, deadline)
+        Self::lock_funds_internal(env.clone(), depositor, id, amount, deadline, None)
             .unwrap_or_else(|e| env.panic_with_error(e));
     }
 }
 
-#[contractimpl]
 impl EscrowRelease for BountyEscrowContract {
     fn release_funds(env: Env, id: u64, recipient: Address) {
-        Self::release_funds_internal(env.clone(), id, recipient)
+        Self::release_funds(env.clone(), id, recipient, None, None)
             .unwrap_or_else(|e| env.panic_with_error(e));
     }
 
@@ -3716,7 +3809,7 @@ impl EscrowRelease for BountyEscrowContract {
         recipient: Option<Address>,
         mode: RefundMode,
     ) {
-        Self::refund_internal(env.clone(), id, amount, recipient, mode)
+        Self::refund_internal(env.clone(), id, amount, recipient, mode, None)
             .unwrap_or_else(|e| env.panic_with_error(e));
     }
 
@@ -3730,73 +3823,40 @@ impl EscrowRelease for BountyEscrowContract {
     }
 }
 
-#[contractimpl]
 impl ConfigurableFee for BountyEscrowContract {
     fn set_fee_config(env: Env, config: SharedFeeConfig) {
-        let _ = Self::update_fee_config_internal(
-            env,
+        Self::update_fee_config(
+            env.clone(),
             Some(config.lock_fee_rate),
             Some(config.payout_fee_rate),
             Some(config.fee_recipient),
             Some(config.fee_enabled),
-        );
+        )
+        .unwrap_or_else(|e| env.panic_with_error(e));
     }
 
     fn get_fee_config(env: Env) -> SharedFeeConfig {
-        Self::get_fee_config_internal(&env).into()
+        let config = Self::get_fee_config_internal(&env);
+        SharedFeeConfig {
+            lock_fee_rate: config.lock_fee_rate,
+            payout_fee_rate: config.release_fee_rate,
+            fee_recipient: config.fee_recipient,
+            fee_enabled: config.fee_enabled,
+        }
     }
 }
 
-#[contractimpl]
 impl Pausable for BountyEscrowContract {
     fn pause(env: Env) {
-        if !env.storage().instance().has(&DataKey::Admin) {
-            panic!("Not initialized");
-        }
-
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
-        admin.require_auth();
-
-        if Self::is_paused_internal(&env) {
-            return;
-        }
-
-        env.storage().persistent().set(&DataKey::IsPaused, &true);
-
-        emit_contract_paused(
-            &env,
-            ContractPaused {
-                paused_by: admin.clone(),
-                timestamp: env.ledger().timestamp(),
-            },
-        );
+        Self::pause(env.clone()).unwrap_or_else(|e| env.panic_with_error(e));
     }
 
     fn unpause(env: Env) {
-        if !env.storage().instance().has(&DataKey::Admin) {
-            panic!("Not initialized");
-        }
-
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
-        admin.require_auth();
-
-        if !Self::is_paused_internal(&env) {
-            return;
-        }
-
-        env.storage().persistent().set(&DataKey::IsPaused, &false);
-
-        emit_contract_unpaused(
-            &env,
-            ContractUnpaused {
-                unpaused_by: admin.clone(),
-                timestamp: env.ledger().timestamp(),
-            },
-        );
+        Self::unpause(env.clone()).unwrap_or_else(|e| env.panic_with_error(e));
     }
 
     fn is_paused(env: Env) -> bool {
-        Self::is_paused_internal(&env)
+        Self::is_paused(env)
     }
 }
 #[cfg(test)]

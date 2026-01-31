@@ -1,15 +1,15 @@
 // Invariant Checker Module for Bounty Escrow Contract
 // This module contains helper functions to verify contract invariants after operations
+use crate::{Escrow, EscrowStatus};
 #[cfg(test)]
 use soroban_sdk::testutils::Address as _;
-use crate::{BountyEscrowContractClient, Escrow, EscrowStatus};
 use soroban_sdk::{token, Address, Env};
 
 /// Invariant I1: Balance Consistency
 /// Verifies that the sum of all locked escrow amounts never exceeds contract token balance
 pub fn check_balance_consistency(
     env: &Env,
-    escrow_client: &BountyEscrowContractClient,
+    escrow_client: &crate::BountyEscrowContractClient,
     escrow_address: &Address,
     locked_bounties: &[(u64, i128)], // (bounty_id, amount) pairs for locked escrows
 ) {
@@ -34,15 +34,15 @@ pub fn check_status_transition(
     if let Some(before) = escrow_before {
         match (before.status.clone(), escrow_after.status.clone()) {
             // Valid transitions
-            (EscrowStatus::Locked, EscrowStatus::Released) => {},
-            (EscrowStatus::Locked, EscrowStatus::Refunded) => {},
-            (EscrowStatus::Locked, EscrowStatus::PartiallyRefunded) => {},
-            (EscrowStatus::PartiallyRefunded, EscrowStatus::PartiallyRefunded) => {},
-            (EscrowStatus::PartiallyRefunded, EscrowStatus::Refunded) => {},
-            
+            (EscrowStatus::Locked, EscrowStatus::Released) => {}
+            (EscrowStatus::Locked, EscrowStatus::Refunded) => {}
+            (EscrowStatus::Locked, EscrowStatus::PartiallyRefunded) => {}
+            (EscrowStatus::PartiallyRefunded, EscrowStatus::PartiallyRefunded) => {}
+            (EscrowStatus::PartiallyRefunded, EscrowStatus::Refunded) => {}
+
             // Same state is okay (no-op scenarios)
-            (ref s1, ref s2) if s1 == s2 => {},
-            
+            (ref s1, ref s2) if s1 == s2 => {}
+
             // Invalid transitions from final states
             (EscrowStatus::Released, ref new_status) => {
                 panic!(
@@ -56,7 +56,7 @@ pub fn check_status_transition(
                     new_status, operation
                 );
             }
-            
+
             // Any other transition is invalid
             (ref old_status, ref new_status) => {
                 panic!(
@@ -72,7 +72,8 @@ pub fn check_status_transition(
 /// Verifies that a bounty is never both released and refunded
 pub fn check_no_double_spend(escrow: &Escrow) {
     let is_released = escrow.status == EscrowStatus::Released;
-    let is_refunded = escrow.status == EscrowStatus::Refunded || escrow.status == EscrowStatus::PartiallyRefunded;
+    let is_refunded =
+        escrow.status == EscrowStatus::Refunded || escrow.status == EscrowStatus::PartiallyRefunded;
     let has_refund_history = !escrow.refund_history.is_empty();
 
     if is_released && has_refund_history {
@@ -83,9 +84,7 @@ pub fn check_no_double_spend(escrow: &Escrow) {
     }
 
     if is_released && is_refunded {
-        panic!(
-            "Invariant I3 violated: Bounty is both Released and Refunded"
-        );
+        panic!("Invariant I3 violated: Bounty is both Released and Refunded");
     }
 }
 
@@ -97,18 +96,19 @@ pub fn check_amount_non_negativity(escrow: &Escrow) {
         "Invariant I4 violated: escrow.amount ({}) is negative",
         escrow.amount
     );
-    
+
     assert!(
         escrow.remaining_amount >= 0,
         "Invariant I4 violated: escrow.remaining_amount ({}) is negative",
         escrow.remaining_amount
     );
-    
+
     for (i, refund) in escrow.refund_history.iter().enumerate() {
         assert!(
             refund.amount >= 0,
             "Invariant I4 violated: refund_history[{}].amount ({}) is negative",
-            i, refund.amount
+            i,
+            refund.amount
         );
     }
 }
@@ -119,7 +119,7 @@ pub fn check_remaining_amount_consistency(escrow: &Escrow) {
     if escrow.status == EscrowStatus::PartiallyRefunded || escrow.status == EscrowStatus::Refunded {
         let total_refunded: i128 = escrow.refund_history.iter().map(|r| r.amount).sum();
         let expected_remaining = escrow.amount - total_refunded;
-        
+
         assert_eq!(
             escrow.remaining_amount, expected_remaining,
             "Invariant I5 violated: remaining_amount ({}) != amount ({}) - total_refunded ({})",
@@ -132,11 +132,12 @@ pub fn check_remaining_amount_consistency(escrow: &Escrow) {
 /// Verifies total refunded never exceeds original amount
 pub fn check_refunded_amount_bounds(escrow: &Escrow) {
     let total_refunded: i128 = escrow.refund_history.iter().map(|r| r.amount).sum();
-    
+
     assert!(
         total_refunded <= escrow.amount,
         "Invariant I6 violated: total_refunded ({}) > original amount ({})",
-        total_refunded, escrow.amount
+        total_refunded,
+        escrow.amount
     );
 }
 
@@ -146,7 +147,8 @@ pub fn check_deadline_validity_at_lock(deadline: u64, current_timestamp: u64) {
     assert!(
         deadline > current_timestamp,
         "Invariant I7 violated: deadline ({}) must be in future (current: {})",
-        deadline, current_timestamp
+        deadline,
+        current_timestamp
     );
 }
 
@@ -187,7 +189,9 @@ pub fn check_refund_history_monotonicity(
         assert!(
             history_length_after >= history_length_before,
             "Invariant I10 violated: refund history shrank from {} to {} during {}",
-            history_length_before, history_length_after, operation
+            history_length_before,
+            history_length_after,
+            operation
         );
     }
 }
@@ -203,11 +207,14 @@ pub fn check_fee_calculation(
 ) {
     // Check that net + fee = gross
     assert_eq!(
-        net_amount + fee_amount, gross_amount,
+        net_amount + fee_amount,
+        gross_amount,
         "Invariant I11 violated: net_amount ({}) + fee_amount ({}) != gross_amount ({})",
-        net_amount, fee_amount, gross_amount
+        net_amount,
+        fee_amount,
+        gross_amount
     );
-    
+
     // Check fee calculation
     let expected_fee = (gross_amount * fee_rate) / basis_points;
     assert_eq!(
@@ -228,22 +235,22 @@ pub fn verify_escrow_invariants(
 ) {
     // I2: Status transitions
     check_status_transition(escrow_before, escrow, operation);
-    
+
     // I3: No double-spend
     check_no_double_spend(escrow);
-    
+
     // I4: Non-negative amounts
     check_amount_non_negativity(escrow);
-    
+
     // I5: Remaining amount consistency
     check_remaining_amount_consistency(escrow);
-    
+
     // I6: Refunded amount bounds
     check_refunded_amount_bounds(escrow);
-    
+
     // I9: Released funds finality
     check_released_funds_finality(escrow);
-    
+
     // I10: Refund history monotonicity
     if let Some(before) = escrow_before {
         check_refund_history_monotonicity(
@@ -278,7 +285,7 @@ pub fn create_double_spend_violation() -> &'static str {
 #[cfg(test)]
 mod invariant_tests {
     use super::*;
-    use crate::{EscrowStatus, Escrow, RefundMode, RefundRecord};
+    use crate::{Escrow, EscrowStatus, RefundMode, RefundRecord};
     use soroban_sdk::{vec, Env};
 
     #[test]
@@ -294,7 +301,7 @@ mod invariant_tests {
         // Simulate violation by claiming more locked than balance
         let env = Env::default();
         let escrow_address = Address::generate(&env);
-        
+
         // Mock client that returns lower balance than locked amount
         // Actual panic test in test.rs
         panic!("Invariant I1 violated: total_locked (1000) > contract_balance (500)");
@@ -313,7 +320,7 @@ mod invariant_tests {
             refund_history: vec![&env],
             remaining_amount: 0,
         };
-        
+
         let after = Escrow {
             depositor: before.depositor.clone(),
             amount: 1000,
@@ -322,7 +329,7 @@ mod invariant_tests {
             refund_history: vec![&env],
             remaining_amount: 1000,
         };
-        
+
         check_status_transition(&Some(before), &after, "test");
     }
 
@@ -338,7 +345,7 @@ mod invariant_tests {
             refund_history: vec![&env],
             remaining_amount: 0,
         };
-        
+
         check_amount_non_negativity(&escrow);
     }
 
@@ -346,7 +353,7 @@ mod invariant_tests {
     #[should_panic(expected = "Invariant I5 violated")]
     fn test_remaining_amount_consistency_fail() {
         let env = Env::default();
-        
+
         let mut refund_history = vec![&env];
         refund_history.push_back(RefundRecord {
             amount: 300,
@@ -354,7 +361,7 @@ mod invariant_tests {
             mode: RefundMode::Partial,
             timestamp: 1000,
         });
-        
+
         let escrow = Escrow {
             depositor: Address::generate(&env),
             amount: 1000,
@@ -363,7 +370,7 @@ mod invariant_tests {
             refund_history,
             remaining_amount: 800, // Should be 700!
         };
-        
+
         check_remaining_amount_consistency(&escrow);
     }
 
@@ -371,7 +378,7 @@ mod invariant_tests {
     #[should_panic(expected = "Invariant I6 violated")]
     fn test_refunded_amount_bounds_fail() {
         let env = Env::default();
-        
+
         let mut refund_history = vec![&env];
         refund_history.push_back(RefundRecord {
             amount: 1200, // More than amount!
@@ -379,7 +386,7 @@ mod invariant_tests {
             mode: RefundMode::Full,
             timestamp: 1000,
         });
-        
+
         let escrow = Escrow {
             depositor: Address::generate(&env),
             amount: 1000,
@@ -388,7 +395,7 @@ mod invariant_tests {
             refund_history,
             remaining_amount: -200,
         };
-        
+
         check_refunded_amount_bounds(&escrow);
     }
 
@@ -404,7 +411,7 @@ mod invariant_tests {
             refund_history: vec![&env],
             remaining_amount: 100, // Should be 0!
         };
-        
+
         check_released_funds_finality(&escrow);
     }
 }

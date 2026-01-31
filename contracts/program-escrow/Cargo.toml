@@ -8,18 +8,11 @@ license = "MIT"
 crate-type = ["cdylib"]
 
 [dependencies]
-<<<<<<< HEAD
-soroban-sdk = "22.0.0"
+soroban-sdk = "22.0.8"
 grainlify-interfaces = { path = "../interfaces" }
 
 [dev-dependencies]
-soroban-sdk = { version = "22.0.0", features = ["testutils"] }
-=======
-soroban-sdk = "22.0.8"
-
-[dev-dependencies]
 soroban-sdk = { version = "22.0.8", features = ["testutils"] }
->>>>>>> master
 
 [profile.release]
 opt-level = "z"

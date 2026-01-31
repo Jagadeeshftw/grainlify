@@ -204,6 +204,28 @@ pub fn emit_contract_unpaused(env: &Env, event: ContractUnpaused) {
     env.events().publish(topics, event.clone());
 }
 
+/// Event emitted when a specific operation's pause state changes.
+///
+/// This event provides granular tracking of pause state changes for individual
+/// operations (lock, release, refund) rather than the global pause state.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct OperationPauseChanged {
+    pub operation: soroban_sdk::Symbol,
+    pub paused: bool,
+    pub changed_by: Address,
+    pub timestamp: u64,
+}
+
+pub fn emit_operation_pause_changed(env: &Env, event: OperationPauseChanged) {
+    let topics = (symbol_short!("op_pause"), event.operation.clone());
+    env.events().publish(topics, event.clone());
+}
+
+// ============================================================================
+// Emergency Withdrawal Event
+// ============================================================================
+
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct EmergencyWithdrawal {
