@@ -97,8 +97,10 @@ mod test_bounty_escrow;
 pub mod security {
     pub mod reentrancy_guard;
 }
+pub mod rbac;
 
 use security::reentrancy_guard::{ReentrancyGuard, ReentrancyGuardRAII};
+use rbac::{grant_role, revoke_role, has_role, require_role, require_admin, require_operator, is_admin, Role};
 
 use blacklist::{
     add_to_blacklist, add_to_whitelist, is_participant_allowed, remove_from_blacklist,
@@ -1026,6 +1028,9 @@ impl BountyEscrowContract {
             .set(&DataKey::TimeLockDuration, &0u64);
         env.storage().instance().set(&DataKey::NextActionId, &1u64);
 
+        // Initialize RBAC: grant Admin role to the provided admin for backward compatibility
+        rbac::grant_role(&env, &admin, rbac::Role::Admin);
+
         emit_bounty_initialized(
             &env,
             BountyEscrowInitialized {
@@ -1695,13 +1700,14 @@ impl BountyEscrowContract {
         Self::is_paused_internal(&env)
     }
 
-    pub fn pause(env: Env) -> Result<(), Error> {
+    pub fn pause(env: Env, caller: Address) -> Result<(), Error> {
         if !env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::NotInitialized);
         }
 
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
-        admin.require_auth();
+        // Require Pauser or Admin role
+        require_pauser(&env, &caller);
+        caller.require_auth();
 
         if Self::is_paused_internal(&env) {
             return Ok(());
@@ -1712,7 +1718,7 @@ impl BountyEscrowContract {
         emit_contract_paused(
             &env,
             ContractPaused {
-                paused_by: admin.clone(),
+                paused_by: caller.clone(),
                 timestamp: env.ledger().timestamp(),
             },
         );
@@ -1720,13 +1726,14 @@ impl BountyEscrowContract {
         Ok(())
     }
 
-    pub fn unpause(env: Env) -> Result<(), Error> {
+    pub fn unpause(env: Env, caller: Address) -> Result<(), Error> {
         if !env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::NotInitialized);
         }
 
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
-        admin.require_auth();
+        // Require Admin role (only admin can unpause)
+        require_admin(&env, &caller);
+        caller.require_auth();
 
         if !Self::is_paused_internal(&env) {
             return Ok(());
@@ -1737,12 +1744,50 @@ impl BountyEscrowContract {
         emit_contract_unpaused(
             &env,
             ContractUnpaused {
-                unpaused_by: admin.clone(),
+                unpaused_by: caller.clone(),
                 timestamp: env.ledger().timestamp(),
             },
         );
 
         Ok(())
+    }
+
+    // ========================================================================
+    // RBAC Functions (Role Management)
+    // ========================================================================
+
+    pub fn grant_role(env: Env, address: Address, role: Role) -> Result<(), Error> {
+        if !env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::NotInitialized);
+        }
+
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        // Only admin can grant roles
+        require_admin(&env, &admin);
+        rbac::grant_role(&env, &address, role);
+
+        Ok(())
+    }
+
+    pub fn revoke_role(env: Env, address: Address) -> Result<(), Error> {
+        if !env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::NotInitialized);
+        }
+
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        // Only admin can revoke roles
+        require_admin(&env, &admin);
+        rbac::revoke_role(&env, &address);
+
+        Ok(())
+    }
+
+    pub fn get_role(env: Env, address: Address) -> Option<Role> {
+        rbac::get_role(&env, &address)
     }
 
     pub fn emergency_withdraw(env: Env, recipient: Address) -> Result<(), Error> {

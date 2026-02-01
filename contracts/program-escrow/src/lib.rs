@@ -142,12 +142,14 @@
 pub mod security {
     pub mod reentrancy_guard;
 }
+pub mod rbac;
 #[cfg(test)]
 mod pause_tests;
 #[cfg(test)]
 mod reentrancy_test;
 
 use security::reentrancy_guard::{ReentrancyGuard, ReentrancyGuardRAII};
+use rbac::{grant_role, revoke_role, has_role, require_role, require_admin, require_operator, require_pauser, is_admin, Role};
 
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, token, vec, Address, Env,
@@ -771,8 +773,6 @@ pub enum DataKey {
     ReleaseHistory(String),       // program_id -> Vec<ProgramReleaseHistory>
     NextScheduleId(String),       // program_id -> next schedule_id
     AmountLimits,                 // Amount limits configuration
-    ReleaseHistory(String),       // program_id -> Vec<ProgramReleaseHistory>
-    NextScheduleId(String),       // program_id -> next schedule_id
     IsPaused,                     // Global contract pause state
     TokenWhitelist(Address),      // token_address -> bool (whitelist status)
     RegisteredTokens,             // Vec<Address> of all registered tokens
@@ -958,6 +958,9 @@ impl ProgramEscrowContract {
             (PROGRAM_INITIALIZED,),
             (program_id, auth_key.clone(), token_addr, 0i128),
         );
+
+        // Initialize RBAC: grant Admin role to the auth_key for backward compatibility
+        grant_role(&env, &auth_key, Role::Admin);
 
         // Track successful operation
         monitoring::track_operation(&env, symbol_short!("init_prg"), caller, true);
@@ -1651,7 +1654,7 @@ impl ProgramEscrowContract {
         // Transfer net amount to recipient
         // Transfer tokens
         let contract_address = env.current_contract_address();
-        let token_client = token::Client::new(&env, &program_data.token_address, &token_addr);
+        let token_client = token::Client::new(&env, &program_data.token_address);
         token_client.transfer(&contract_address, &recipient, &net_amount);
 
         // Transfer fee to fee recipient if applicable
@@ -2553,28 +2556,70 @@ impl ProgramEscrowContract {
             .unwrap_or(false)
     }
 
-    /// Pause the contract (admin only).
-    pub fn pause_contract(env: Env) {
+    /// Pause the contract (admin or pauser role).
+    pub fn pause_contract(env: Env, caller: Address) {
         let program_data: ProgramData = env
             .storage()
             .instance()
             .get(&PROGRAM_DATA)
             .unwrap_or_else(|| panic!("Program not initialized"));
-        program_data.auth_key.require_auth();
+        
+        // Require Pauser or Admin role
+        require_pauser(&env, &caller);
+        caller.require_auth();
 
         env.storage().instance().set(&DataKey::IsPaused, &true);
     }
 
     /// Unpause the contract (admin only).
-    pub fn unpause_contract(env: Env) {
+    pub fn unpause_contract(env: Env, caller: Address) {
         let program_data: ProgramData = env
             .storage()
             .instance()
             .get(&PROGRAM_DATA)
             .unwrap_or_else(|| panic!("Program not initialized"));
-        program_data.auth_key.require_auth();
+        
+        // Require Admin role (only admin can unpause)
+        require_admin(&env, &caller);
+        caller.require_auth();
 
         env.storage().instance().set(&DataKey::IsPaused, &false);
+    }
+
+    // ========================================================================
+    // RBAC Functions (Role Management)
+    // ========================================================================
+
+    pub fn grant_role(env: Env, address: Address, role: Role) {
+        let program_data: ProgramData = env
+            .storage()
+            .instance()
+            .get(&PROGRAM_DATA)
+            .unwrap_or_else(|| panic!("Program not initialized"));
+        
+        program_data.auth_key.require_auth();
+        
+        // Only admin can grant roles
+        require_admin(&env, &program_data.auth_key);
+        grant_role(&env, &address, role);
+    }
+
+    pub fn revoke_role(env: Env, address: Address) {
+        let program_data: ProgramData = env
+            .storage()
+            .instance()
+            .get(&PROGRAM_DATA)
+            .unwrap_or_else(|| panic!("Program not initialized"));
+        
+        program_data.auth_key.require_auth();
+        
+        // Only admin can revoke roles
+        require_admin(&env, &program_data.auth_key);
+        revoke_role(&env, &address);
+    }
+
+    pub fn get_role(env: Env, address: Address) -> Option<Role> {
+        crate::rbac::get_role(&env, &address)
     }
 
     /// Expire a program and refund remaining balance to organizer after deadline.
@@ -2688,14 +2733,14 @@ impl ProgramEscrowContract {
         current_admin.require_auth();
 
         let program_key = DataKey::Program(program_id.clone());
-        let mut program_data = Self::get_program_info(env.clone(), program_id);
-        program_data.authorized_payout_key = authorized_payout_key.clone();
+        let mut program_data = Self::get_program_info(env.clone());
+        program_data.auth_key = authorized_payout_key.clone();
         env.storage().instance().set(&program_key, &program_data);
 
         emit_update_authorized_key(
             &env,
             UpdateAuthorizedKeyEvent {
-                old_authorized_payout_key: program_data.authorized_payout_key,
+                old_authorized_payout_key: program_data.auth_key,
                 new_authorized_payout_key: authorized_payout_key,
                 timestamp: env.ledger().timestamp(),
             },
@@ -2823,22 +2868,6 @@ impl ProgramEscrowContract {
         } else {
             panic!("Token not whitelisted");
         }
-    }
-
-    /// Check if a token is whitelisted.
-    pub fn is_whitelisted(env: Env, token: Address) -> bool {
-        let program_data: ProgramData = env
-            .storage()
-            .instance()
-            .get(&PROGRAM_DATA)
-            .unwrap_or_else(|| panic!("Program not initialized"));
-
-        for i in 0..program_data.whitelist.len() {
-            if program_data.whitelist.get(i).unwrap() == token {
-                return true;
-            }
-        }
-        false
     }
 
     /// Get all whitelisted tokens.
