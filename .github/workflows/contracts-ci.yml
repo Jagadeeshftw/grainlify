@@ -61,14 +61,13 @@ jobs:
       - name: Build contracts
         run: |
           source $HOME/.cargo/env
-          cd bounty_escrow/contracts/escrow
           cd contracts/bounty_escrow/contracts/escrow
           cargo build --release --target wasm32v1-none
 
       - name: Run tests
         run: |
           source $HOME/.cargo/env
-          cd bounty_escrow/contracts/escrow
+          cd contracts/bounty_escrow/contracts/escrow
           cargo test --verbose --lib
 
       - name: Build Soroban contract
@@ -79,7 +78,7 @@ jobs:
       - name: Build Program Escrow contract
         run: |
           source $HOME/.cargo/env
-          cd program-escrow
+          cd contracts/program-escrow
           cargo build --release --target wasm32v1-none
           cargo test --verbose --lib
           stellar contract build --verbose
