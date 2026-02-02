@@ -120,7 +120,8 @@ LIMIT 1
 		if issueURL == "" {
 			issueURL = fmt.Sprintf("https://github.com/%s/issues/%d", fullName, issueNumber)
 		}
-		commentBody := fmt.Sprintf("%s\n\n**@%s has applied to work on this issue as part of the Grainlify program.**\n\n%s\n\nRepo Maintainers: To accept this application, [review their application](%s) or [assign @%s](%s) to this issue.",
+		// Keep prefix for frontend detection; add a formatted header so it renders nicely on GitHub
+		commentBody := fmt.Sprintf("%s\n\n**📋 Grainlify Application**\n\n**@%s has applied to work on this issue as part of the Grainlify program.**\n\n%s\n\n---\n\n**Repo Maintainers:** To accept this application, [review their application](%s) or [assign @%s](%s) to this issue.",
 			grainlifyApplicationPrefix, linked.Login, quotedMsg, reviewURL, linked.Login, issueURL)
 		gh := github.NewClient()
 		// Post as the applicant (user token) so the commenter is the user, not the bot (like Drips Wave: user + "with Drips Wave").
@@ -317,19 +318,55 @@ func (h *IssueApplicationsHandler) Withdraw() fiber.Handler {
 		}
 
 		var fullName string
+		var commentsJSON []byte
 		if err := h.db.Pool.QueryRow(c.Context(), `
-SELECT p.github_full_name FROM projects p
+SELECT p.github_full_name, COALESCE(gi.comments, '[]'::jsonb)
+FROM projects p
 JOIN github_issues gi ON gi.project_id = p.id
 WHERE p.id = $1 AND p.status = 'verified' AND p.deleted_at IS NULL AND gi.number = $2
-`, projectID, issueNumber).Scan(&fullName); err != nil {
+`, projectID, issueNumber).Scan(&fullName, &commentsJSON); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "issue_not_found"})
 			}
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "project_lookup_failed"})
 		}
 
+		// Verify the comment exists and belongs to the current user before calling GitHub (avoids 403/502)
+		var comments []struct {
+			ID   int64  `json:"id"`
+			Body string `json:"body"`
+			User struct {
+				Login string `json:"login"`
+			} `json:"user"`
+		}
+		if err := json.Unmarshal(commentsJSON, &comments); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "comments_parse_failed"})
+		}
+		var commentOwned bool
+		for _, com := range comments {
+			if com.ID == req.CommentID {
+				if !strings.EqualFold(strings.TrimSpace(com.User.Login), strings.TrimSpace(linked.Login)) {
+					return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "you_can_only_withdraw_your_own_application"})
+				}
+				commentOwned = true
+				break
+			}
+		}
+		if !commentOwned {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "comment_not_found"})
+		}
+
 		gh := github.NewClient()
 		if err := gh.DeleteIssueComment(c.Context(), linked.AccessToken, fullName, req.CommentID); err != nil {
+			var ghErr *github.GitHubAPIError
+			if errors.As(err, &ghErr) {
+				if ghErr.StatusCode == 403 {
+					return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "cannot_delete_comment_forbidden"})
+				}
+				if ghErr.StatusCode == 404 {
+					return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "comment_not_found"})
+				}
+			}
 			slog.Warn("failed to delete github comment for withdraw",
 				"project_id", projectID.String(), "issue_number", issueNumber, "comment_id", req.CommentID,
 				"user_id", userID.String(), "error", err)
@@ -441,10 +478,10 @@ WHERE project_id = $1 AND number = $2
 		if base == "" || !strings.HasPrefix(base, "http") {
 			manageURL = "/dashboard?tab=browse&project=" + projectID.String() + "&issue=" + fmt.Sprintf("%d", githubIssueID)
 		}
-		botBody := fmt.Sprintf("Congratulations, @%s! 🎉 Your application was accepted by the repo's maintainers.\n\n"+
+		botBody := fmt.Sprintf("Congratulations, **@%s**! 🎉 Your application was accepted by the repo's maintainers.\n\n"+
 			"Please resolve the issue such that the repo's maintainers have enough time to review your contribution.\n\n"+
-			"**Warning:** When opening a PR, please link it to this issue to ensure it gets tracked accurately.\n\n"+
-			"Repo maintainers: You can manage this issue, including adjusting complexity and points, [here](%s).",
+			"> ⚠️ **Warning:** When opening a PR, please link it to this issue to ensure it gets tracked accurately.\n\n"+
+			"**Repo maintainers:** You can manage this issue, including adjusting complexity and points, [here](%s).",
 			req.Assignee, manageURL)
 
 		ghComment, err := gh.CreateIssueComment(c.Context(), token, fullName, issueNumber, botBody)

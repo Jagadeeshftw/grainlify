@@ -467,7 +467,14 @@ Only applications submitted via the apply link above will be considered. Please 
         )
       );
     } catch (e: any) {
-      setApplicationError(e?.message || 'Failed to withdraw application');
+      const msg = e?.message ?? '';
+      if (msg.includes('you_can_only_withdraw_your_own') || msg.includes('cannot_delete_comment_forbidden')) {
+        setApplicationError('You can only withdraw your own application.');
+      } else if (msg.includes('comment_not_found')) {
+        setApplicationError('Application comment not found. It may have already been removed.');
+      } else {
+        setApplicationError(msg || 'Failed to withdraw application');
+      }
     } finally {
       setActionInProgress(null);
     }
