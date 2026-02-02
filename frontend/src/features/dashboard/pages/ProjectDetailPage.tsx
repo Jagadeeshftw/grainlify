@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { ExternalLink, Copy, Circle, ArrowLeft, GitPullRequest } from 'lucide-react';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
@@ -7,11 +7,99 @@ import { SkeletonLoader } from '../../../shared/components/SkeletonLoader';
 import ReactMarkdown from 'react-markdown';
 import { LanguageIcon } from '../../../shared/components/LanguageIcon';
 
+const InPreContext = createContext(false);
+
 interface ProjectDetailPageProps {
   onBack?: () => void;
   onIssueClick?: (issueId: string, projectId: string) => void;
   projectId?: string;
   onClose?: () => void;
+}
+
+function OverviewMarkdown({ readme, theme }: { readme: string; theme: string }) {
+  const inPre = useContext(InPreContext);
+  const dark = theme === 'dark';
+  const textColor = dark ? 'text-[#d4d4d4]' : 'text-[#4a3f2f]';
+  const headingColor = dark ? 'text-[#f5f5f5]' : 'text-[#2d2820]';
+
+  return (
+    <ReactMarkdown
+      components={{
+        h1: ({ ...props }) => (
+          <h1 className={`text-[24px] font-bold mb-4 mt-6 first:mt-0 ${headingColor}`} {...props} />
+        ),
+        h2: ({ ...props }) => (
+          <h2 className={`text-[20px] font-bold mb-3 mt-5 ${headingColor}`} {...props} />
+        ),
+        h3: ({ ...props }) => (
+          <h3 className={`text-[18px] font-semibold mb-2 mt-4 ${headingColor}`} {...props} />
+        ),
+        h4: ({ ...props }) => (
+          <h4 className={`text-[16px] font-semibold mb-2 mt-3 ${headingColor}`} {...props} />
+        ),
+        p: ({ ...props }) => (
+          <p className={`mb-4 leading-relaxed ${textColor}`} {...props} />
+        ),
+        a: ({ ...props }) => (
+          <a
+            className={`font-semibold hover:underline ${dark ? 'text-[#f5c563] hover:text-[#ffd700]' : 'text-[#b8872f] hover:text-[#8b6f3a]'}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            {...props}
+          />
+        ),
+        code: ({ ...props }) => {
+          if (inPre) {
+            return (
+              <code
+                className={`text-[13px] font-mono ${textColor}`}
+                {...props}
+              />
+            );
+          }
+          return (
+            <code
+              className={`inline px-1.5 py-0.5 rounded text-[13px] font-mono ${dark ? 'bg-white/[0.15] text-[#f5c563]' : 'bg-[#e8e0d0] text-[#6b5d4d]'}`}
+              {...props}
+            />
+          );
+        },
+        pre: ({ children, ...props }) => (
+          <InPreContext.Provider value={true}>
+            <pre
+              className={`mb-4 overflow-x-auto rounded-[12px] p-4 font-mono text-[13px] ${dark ? 'bg-white/[0.12] border border-white/20 text-[#e8dfd0]' : 'bg-white/[0.20] border border-white/30 text-[#2d2820]'}`}
+              {...props}
+            >
+              {children}
+            </pre>
+          </InPreContext.Provider>
+        ),
+        ul: ({ ...props }) => (
+          <ul className={`list-disc pl-6 mb-4 space-y-1.5 ${textColor}`} {...props} />
+        ),
+        ol: ({ ...props }) => (
+          <ol className={`list-decimal pl-6 mb-4 space-y-1.5 ${textColor}`} {...props} />
+        ),
+        li: ({ ...props }) => (
+          <li className={`leading-relaxed ${textColor}`} {...props} />
+        ),
+        blockquote: ({ ...props }) => (
+          <blockquote
+            className={`border-l-4 pl-4 italic my-4 ${dark ? 'border-[#c9983a]/60 text-[#d4d4d4] bg-white/[0.05]' : 'border-[#c9983a]/70 text-[#4a3f2f] bg-white/[0.10]'}`}
+            {...props}
+          />
+        ),
+        img: ({ ...props }) => (
+          <img className="rounded-[12px] max-w-full h-auto my-4" alt="" {...props} />
+        ),
+        strong: ({ ...props }) => (
+          <strong className={`font-bold ${headingColor}`} {...props} />
+        ),
+      }}
+    >
+      {readme}
+    </ReactMarkdown>
+  );
 }
 
 export function ProjectDetailPage({ onBack, onIssueClick, projectId: propProjectId, onClose }: ProjectDetailPageProps) {
@@ -658,96 +746,8 @@ export function ProjectDetailPage({ onBack, onIssueClick, projectId: propProject
               <SkeletonLoader className="h-4 w-3/4" />
             </div>
           ) : project?.readme ? (
-            <div className="prose prose-sm max-w-none">
-              <ReactMarkdown
-                components={{
-                  h1: ({node, ...props}: any) => (
-                    <h1 className={`text-[24px] font-bold mb-4 mt-6 first:mt-0 transition-colors ${
-                      theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-                    }`} {...props} />
-                  ),
-                  h2: ({node, ...props}: any) => (
-                    <h2 className={`text-[20px] font-bold mb-3 mt-5 transition-colors ${
-                      theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-                    }`} {...props} />
-                  ),
-                  h3: ({node, ...props}: any) => (
-                    <h3 className={`text-[18px] font-semibold mb-2 mt-4 transition-colors ${
-                      theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-                    }`} {...props} />
-                  ),
-                  p: ({node, ...props}: any) => (
-                    <p className={`mb-4 leading-relaxed transition-colors ${
-                      theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#4a3f2f]'
-                    }`} {...props} />
-                  ),
-                  a: ({node, ...props}: any) => (
-                    <a 
-                      className={`font-semibold hover:underline transition-colors ${
-                        theme === 'dark' 
-                          ? 'text-[#f5c563] hover:text-[#ffd700]' 
-                          : 'text-[#b8872f] hover:text-[#8b6f3a]'
-                      }`} 
-                      target="_blank" 
-                      rel="noopener noreferrer" 
-                      {...props} 
-                    />
-                  ),
-                  code: ({node, inline, ...props}: any) => 
-                    inline ? (
-                      <code className={`px-1.5 py-0.5 rounded text-[13px] font-mono transition-colors ${
-                        theme === 'dark'
-                          ? 'bg-white/[0.15] text-[#f5c563] border border-[#c9983a]/30'
-                          : 'bg-white/[0.25] text-[#8b6f3a] border border-[#c9983a]/40'
-                      }`} {...props} />
-                    ) : (
-                      <code className={`block p-4 rounded-[12px] text-[13px] font-mono overflow-x-auto transition-colors ${
-                        theme === 'dark'
-                          ? 'bg-white/[0.12] text-[#e8dfd0] border border-white/20'
-                          : 'bg-white/[0.20] text-[#2d2820] border border-white/30'
-                      }`} {...props} />
-                    ),
-                  pre: ({node, ...props}: any) => (
-                    <pre className={`mb-4 overflow-x-auto rounded-[12px] p-4 transition-colors ${
-                      theme === 'dark'
-                        ? 'bg-white/[0.12] border border-white/20 text-[#e8dfd0]'
-                        : 'bg-white/[0.20] border border-white/30 text-[#2d2820]'
-                    }`} {...props} />
-                  ),
-                  ul: ({node, ...props}: any) => (
-                    <ul className={`list-disc list-inside mb-4 space-y-2 transition-colors ${
-                      theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#4a3f2f]'
-                    }`} {...props} />
-                  ),
-                  ol: ({node, ...props}: any) => (
-                    <ol className={`list-decimal list-inside mb-4 space-y-2 transition-colors ${
-                      theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#4a3f2f]'
-                    }`} {...props} />
-                  ),
-                  li: ({node, ...props}: any) => (
-                    <li className={`ml-4 transition-colors ${
-                      theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#4a3f2f]'
-                    }`} {...props} />
-                  ),
-                  blockquote: ({node, ...props}: any) => (
-                    <blockquote className={`border-l-4 pl-4 italic my-4 transition-colors ${
-                      theme === 'dark'
-                        ? 'border-[#c9983a]/60 text-[#d4d4d4] bg-white/[0.05]'
-                        : 'border-[#c9983a]/70 text-[#4a3f2f] bg-white/[0.10]'
-                    }`} {...props} />
-                  ),
-                  img: ({node, ...props}: any) => (
-                    <img className="rounded-[12px] max-w-full h-auto my-4" {...props} />
-                  ),
-                  strong: ({node, ...props}: any) => (
-                    <strong className={`font-bold transition-colors ${
-                      theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-                    }`} {...props} />
-                  ),
-                }}
-              >
-                {project.readme}
-              </ReactMarkdown>
+            <div className="prose prose-sm max-w-none [&_pre]:my-4 [&_pre]:overflow-x-auto [&_pre]:rounded-[12px] [&_pre]:p-4 [&_pre_code]:!p-0 [&_pre_code]:!bg-transparent [&_pre_code]:!border-0 [&_pre_code]:!text-inherit [&_pre_code]:block">
+              <OverviewMarkdown readme={project.readme} theme={theme} />
             </div>
           ) : description ? (
             <p className={`text-[15px] leading-relaxed transition-colors ${
