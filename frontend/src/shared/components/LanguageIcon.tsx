@@ -33,6 +33,8 @@ import {
   siFortran,
   siAssemblyscript,
   siWebassembly,
+  siDocker,
+  siMake,
 } from 'simple-icons';
 
 interface LanguageIconProps {
@@ -75,12 +77,17 @@ const languageMapping: Record<string, { icon: typeof siTypescript; color: string
   Fortran: { icon: siFortran, color: '#734F96' },
   AssemblyScript: { icon: siAssemblyscript, color: '#007AAC' },
   WebAssembly: { icon: siWebassembly, color: '#654FF0' },
+  Dockerfile: { icon: siDocker, color: '#2496ED' },
+  Makefile: { icon: siMake, color: '#2E7D32' },
   // Languages without icons will show fallback colored dot:
   // CSS, Java, C#, MATLAB, PowerShell, D, COBOL
 };
 
 // Custom CSS icon SVG path (CSS3 logo)
 const cssIconPath = "M1.5 0h21l-1.91 21.563L11.977 24l-8.564-2.438L1.5 0zm17.09 4.413L5.41 4.41l.213 2.622h10.125l-.255 2.716h-6.64l.24 2.573h6.182l-.366 3.523-2.91.804-2.955-.81-.188-2.11H6.496l.33 4.171L12 19.288l5.379-1.443.744-8.157H8.957l-.276-2.97h10.999z";
+
+// Batchfile (Windows CMD) - terminal-style icon
+const batchfileIconPath = "M2 4h20v16H2V4zm2 2v2h16V6H4zm0 4h16v2H4v-2zm0 4h10v2H4v-2z";
 
 export function LanguageIcon({ language, className = 'w-4 h-4' }: LanguageIconProps) {
   const config = languageMapping[language];
@@ -97,6 +104,22 @@ export function LanguageIcon({ language, className = 'w-4 h-4' }: LanguageIconPr
       >
         <title>CSS</title>
         <path d={cssIconPath} />
+      </svg>
+    );
+  }
+
+  // Batchfile (Windows CMD) - custom terminal icon
+  if (language === 'Batchfile') {
+    return (
+      <svg
+        role="img"
+        viewBox="0 0 24 24"
+        xmlns="http://www.w3.org/2000/svg"
+        className={className}
+        fill="#0078D4"
+      >
+        <title>Batchfile</title>
+        <path d={batchfileIconPath} />
       </svg>
     );
   }

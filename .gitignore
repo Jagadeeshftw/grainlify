@@ -1,3 +1,7 @@
+# Issue tracking (local notes, not for version control)
+frontend-issues.md
+contract-issues.md
+
 # Elastic Beanstalk Files
 .elasticbeanstalk/*
 !.elasticbeanstalk/*.cfg.yml

@@ -1,14 +1,19 @@
 import { Link } from "react-router-dom";
 import { Menu, X, Moon, Sun } from "lucide-react";
 import { useState } from "react";
+import { useModeAnimation } from "react-theme-switch-animation";
 import { useTheme } from "../../../shared/contexts/ThemeContext";
 import { useAuth } from "../../../shared/contexts/AuthContext";
 import grainlifyLogo from "../../../assets/grainlify_log.svg";
 
 export function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { theme, toggleTheme } = useTheme();
+  const { theme, setThemeFromAnimation } = useTheme();
   const { isAuthenticated, logout } = useAuth();
+  const { ref, toggleSwitchTheme } = useModeAnimation({
+    isDarkMode: theme === "dark",
+    onDarkModeChange: (isDark) => setThemeFromAnimation(isDark),
+  });
 
   return (
     <nav
@@ -84,7 +89,10 @@ export function Navbar() {
           <div className="hidden md:flex items-center space-x-4">
             {/* Theme Toggle */}
             <button
-              onClick={toggleTheme}
+              ref={ref}
+              onClick={() => {
+                toggleSwitchTheme();
+              }}
               className={`p-2.5 rounded-[12px] backdrop-blur-[30px] border transition-all ${
                 theme === "dark"
                   ? "bg-white/[0.08] border-white/15 hover:bg-white/[0.12] text-[#e8dfd0]"
@@ -194,7 +202,10 @@ export function Navbar() {
             <div className="flex flex-col space-y-2 pt-2">
               {/* Theme Toggle Mobile */}
               <button
-                onClick={toggleTheme}
+                ref={ref}
+                onClick={() => {
+                  toggleSwitchTheme();
+                }}
                 className={`px-5 py-2.5 rounded-[12px] backdrop-blur-[30px] border transition-all flex items-center justify-center space-x-2 font-medium ${
                   theme === "dark"
                     ? "bg-white/[0.08] border-white/15 hover:bg-white/[0.12] text-[#e8dfd0]"

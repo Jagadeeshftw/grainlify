@@ -1,11 +1,12 @@
-import { useState, useEffect, forwardRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Search, ChevronDown, Award, Briefcase, GitPullRequest, FolderGit2, Trophy, Github, Code, Globe, Sparkles, TrendingUp, Star, Users, GitFork, DollarSign, GitMerge, Calendar, ChevronRight, Filter, Circle, Eye, Crown, Link, ArrowLeft, Medal, LucideIcon } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
 import { useAuth } from '../../../shared/contexts/AuthContext';
-import { getUserProfile, getProjectsContributed, getProfileCalendar, getProfileActivity, getPublicProfile } from '../../../shared/api/client';
+import { getUserProfile, getProjectsContributed, getProjectsLed, getProfileCalendar, getProfileActivity, getPublicProfile } from '../../../shared/api/client';
 import { SkeletonLoader } from '../../../shared/components/SkeletonLoader';
 import { LanguageIcon } from '../../../shared/components/LanguageIcon';
+import { Modal } from '../../../shared/components/ui/Modal';
 
 interface ProfileData {
   contributions_count: number;
@@ -49,10 +50,11 @@ interface ProfilePageProps {
   viewingUserId?: string | null;
   viewingUserLogin?: string | null;
   onBack?: () => void;
+  onProjectClick?: (projectId: string) => void;
   onIssueClick?: (issueId: string, projectId: string) => void;
 }
 
-export function ProfilePage({ viewingUserId, viewingUserLogin, onBack, onIssueClick }: ProfilePageProps) {
+export function ProfilePage({ viewingUserId, viewingUserLogin, onBack, onProjectClick, onIssueClick }: ProfilePageProps) {
   const { theme } = useTheme();
   const { user, userRole } = useAuth();
   const [profileData, setProfileData] = useState<ProfileData | null>(null);
@@ -78,79 +80,135 @@ export function ProfilePage({ viewingUserId, viewingUserLogin, onBack, onIssueCl
   const [selectedMonth, setSelectedMonth] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedMonths, setExpandedMonths] = useState<{ [key: string]: boolean }>({});
+  const [contributorModalOpen, setContributorModalOpen] = useState(false);
+  const [leadModalOpen, setLeadModalOpen] = useState(false);
+  const [showAllProjects, setShowAllProjects] = useState(false);
+  const [projectsLed, setProjectsLed] = useState<Project[]>([]);
+  const [isLoadingProjectsLed, setIsLoadingProjectsLed] = useState(true);
+
+  // Ref to avoid applying stale fetch results when the viewed user changes mid-request
+  const viewingRef = useRef({ viewingUserId, viewingUserLogin });
+  viewingRef.current = { viewingUserId, viewingUserLogin };
 
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-  // Fetch profile data
+  const isSameView = (uid: string | null | undefined, login: string | null | undefined) =>
+    (uid === viewingRef.current.viewingUserId && login === viewingRef.current.viewingUserLogin) ||
+    (uid == null && login == null && viewingRef.current.viewingUserId == null && viewingRef.current.viewingUserLogin == null);
+
+  // Fetch profile data for the viewed user (or own profile when viewingUserId/viewingUserLogin are null)
   useEffect(() => {
+    const isViewingOther = !!(viewingUserId || viewingUserLogin);
+    const requestedUserId = viewingUserId;
+    const requestedLogin = viewingUserLogin;
+    if (isViewingOther) {
+      setProfileData(null);
+      setViewingUser(null);
+    } else {
+      // Viewing own profile: clear viewingUser so name/avatar use user?.github, not last viewed user
+      setViewingUser(null);
+    }
     const fetchProfile = async () => {
       setIsLoadingProfile(true);
       try {
         let data;
-        if (viewingUserId || viewingUserLogin) {
-          // Fetch public profile for another user
-          data = await getPublicProfile(viewingUserId || undefined, viewingUserLogin || undefined);
+        if (isViewingOther) {
+          data = await getPublicProfile(requestedUserId || undefined, requestedLogin || undefined);
+          if (!isSameView(requestedUserId, requestedLogin)) return;
           setViewingUser({
             login: data.login,
             avatar_url: data.avatar_url || `https://github.com/${data.login}.png?size=200`
           });
         } else {
-          // Fetch own profile
           data = await getUserProfile();
+          if (!isSameView(requestedUserId, requestedLogin)) return;
         }
         setProfileData(data);
-        setIsLoadingProfile(false);
       } catch (error) {
-        console.error('Failed to fetch profile:', error);
-        // Keep loading state true to show skeleton forever when backend is down
-        // Don't set isLoadingProfile to false - keep showing skeleton
+        if (isSameView(requestedUserId, requestedLogin)) console.error('Failed to fetch profile:', error);
+      } finally {
+        if (isSameView(requestedUserId, requestedLogin)) setIsLoadingProfile(false);
       }
     };
     fetchProfile();
   }, [viewingUserId, viewingUserLogin]);
 
-  // Fetch user's contributed projects
+  // Fetch user's contributed projects (for viewed user or self)
   useEffect(() => {
+    const requestedUserId = viewingUserId;
+    const requestedLogin = viewingUserLogin;
+    if (requestedUserId || requestedLogin) setProjects([]);
     const fetchProjects = async () => {
       setIsLoadingProjects(true);
       try {
-        const data = await getProjectsContributed(viewingUserId || undefined, viewingUserLogin || undefined);
-        // Limit to 3 and map to Project format
-        const contributedProjects = data
-          .slice(0, 3)
-          .map((p: any) => ({
-            id: p.id,
-            github_full_name: p.github_full_name,
-            status: p.status,
-            ecosystem_name: p.ecosystem_name,
-            language: p.language,
-            owner_avatar_url: undefined, // Will be fetched from GitHub if needed
-            stars_count: 0,
-            forks_count: 0,
-            contributors_count: 0,
-          }));
+        const data = await getProjectsContributed(requestedUserId || undefined, requestedLogin || undefined);
+        if (!isSameView(requestedUserId, requestedLogin)) return;
+        const contributedProjects = data.map((p: any) => ({
+          id: p.id,
+          github_full_name: p.github_full_name,
+          status: p.status,
+          ecosystem_name: p.ecosystem_name,
+          language: p.language,
+          owner_avatar_url: p.owner_avatar_url,
+          stars_count: 0,
+          forks_count: 0,
+          contributors_count: 0,
+        }));
         setProjects(contributedProjects);
-        setIsLoadingProjects(false);
       } catch (error) {
-        console.error('Failed to fetch projects:', error);
-        setIsLoadingProjects(false)
-        // Keep loading state true to show skeleton forever when backend is down
+        if (isSameView(requestedUserId, requestedLogin)) console.error('Failed to fetch projects:', error);
+      } finally {
+        if (isSameView(requestedUserId, requestedLogin)) setIsLoadingProjects(false);
       }
     };
     fetchProjects();
   }, [viewingUserId, viewingUserLogin]);
 
-  // Fetch contribution calendar
+  // Fetch projects led (for viewed user or self)
   useEffect(() => {
+    const requestedUserId = viewingUserId;
+    const requestedLogin = viewingUserLogin;
+    setProjectsLed([]);
+    const fetchLed = async () => {
+      setIsLoadingProjectsLed(true);
+      try {
+        const data = await getProjectsLed(requestedUserId || undefined, requestedLogin || undefined);
+        if (!isSameView(requestedUserId, requestedLogin)) return;
+        setProjectsLed(data.map((p: any) => ({
+          id: p.id,
+          github_full_name: p.github_full_name,
+          status: p.status,
+          ecosystem_name: p.ecosystem_name,
+          language: p.language,
+          owner_avatar_url: p.owner_avatar_url,
+          stars_count: 0,
+          forks_count: 0,
+          contributors_count: 0,
+        })));
+      } catch (error) {
+        if (isSameView(requestedUserId, requestedLogin)) console.error('Failed to fetch projects led:', error);
+      } finally {
+        if (isSameView(requestedUserId, requestedLogin)) setIsLoadingProjectsLed(false);
+      }
+    };
+    fetchLed();
+  }, [viewingUserId, viewingUserLogin]);
+
+  // Fetch contribution calendar (for viewed user or self)
+  useEffect(() => {
+    const requestedUserId = viewingUserId;
+    const requestedLogin = viewingUserLogin;
+    if (requestedUserId || requestedLogin) setContributionCalendar([]);
     const fetchCalendar = async () => {
       setIsLoadingCalendar(true);
       try {
-        const data = await getProfileCalendar(viewingUserId || undefined, viewingUserLogin || undefined);
+        const data = await getProfileCalendar(requestedUserId || undefined, requestedLogin || undefined);
+        if (!isSameView(requestedUserId, requestedLogin)) return;
         setContributionCalendar(data.calendar || []);
-        setIsLoadingCalendar(false);
       } catch (error) {
-        console.error('Failed to fetch calendar:', error);
-        // Keep loading state true to show skeleton forever when backend is down
+        if (isSameView(requestedUserId, requestedLogin)) console.error('Failed to fetch calendar:', error);
+      } finally {
+        if (isSameView(requestedUserId, requestedLogin)) setIsLoadingCalendar(false);
       }
     };
     fetchCalendar();
@@ -158,27 +216,28 @@ export function ProfilePage({ viewingUserId, viewingUserLogin, onBack, onIssueCl
 
   // Fetch contribution activity
   useEffect(() => {
+    const requestedUserId = viewingUserId;
+    const requestedLogin = viewingUserLogin;
+    if (requestedUserId || requestedLogin) setContributionActivity([]);
     const fetchActivity = async () => {
       setIsLoadingActivity(true);
       try {
-        const data = await getProfileActivity(100, 0, viewingUserId || undefined, viewingUserLogin || undefined);
+        const data = await getProfileActivity(100, 0, requestedUserId || undefined, requestedLogin || undefined);
+        if (!isSameView(requestedUserId, requestedLogin)) return;
         setContributionActivity(data.activities || []);
-        // Initialize expanded months based on activity data
         const monthsSet = new Set<string>();
         data.activities?.forEach((activity: any) => {
-          if (activity.month_year) {
-            monthsSet.add(activity.month_year);
-          }
+          if (activity.month_year) monthsSet.add(activity.month_year);
         });
         const monthsObj: { [key: string]: boolean } = {};
         Array.from(monthsSet).forEach((month, idx) => {
-          monthsObj[month] = idx === 0; // Expand first month by default
+          monthsObj[month] = idx === 0;
         });
         setExpandedMonths(monthsObj);
-        setIsLoadingActivity(false);
       } catch (error) {
-        console.error('Failed to fetch activity:', error);
-        // Keep loading state true to show skeleton forever when backend is down
+        if (isSameView(requestedUserId, requestedLogin)) console.error('Failed to fetch activity:', error);
+      } finally {
+        if (isSameView(requestedUserId, requestedLogin)) setIsLoadingActivity(false);
       }
     };
     fetchActivity();
@@ -548,7 +607,7 @@ export function ProfilePage({ viewingUserId, viewingUserLogin, onBack, onIssueCl
                   </div>
                 </div>
 
-                {/* Row 2 - Projects Stats */}
+                {/* Row 2 - Projects Stats (clickable to open project list modals) */}
                 <div className="flex items-center gap-8">
                   <div className="flex items-center gap-3 group/stat">
                     <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#c9983a]/30 to-[#d4af37]/20 border-2 border-[#c9983a]/50 flex items-center justify-center shadow-[0_3px_12px_rgba(201,152,58,0.25),inset_0_1px_2px_rgba(255,255,255,0.2)] group-hover/stat:scale-110 group-hover/stat:shadow-[0_5px_20px_rgba(201,152,58,0.4)] transition-all duration-300">
@@ -557,11 +616,16 @@ export function ProfilePage({ viewingUserId, viewingUserLogin, onBack, onIssueCl
                     {isLoadingProfile ? (
                       <SkeletonLoader variant="text" width="180px" height="15px" />
                     ) : (
-                      <span className={`text-[15px] font-medium transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-                        }`}>
+                      <button
+                        type="button"
+                        onClick={() => (profileData?.projects_contributed_to_count ?? 0) > 0 && setContributorModalOpen(true)}
+                        disabled={(profileData?.projects_contributed_to_count ?? 0) === 0}
+                        className={`text-[15px] font-medium transition-colors text-left hover:opacity-90 disabled:opacity-60 disabled:cursor-default ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+                          } ${(profileData?.projects_contributed_to_count ?? 0) > 0 ? 'cursor-pointer' : ''}`}
+                      >
                         Contributor on <span className={`font-black text-[16px] transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
                           }`}>{profileData?.projects_contributed_to_count || 0}</span> projects
-                      </span>
+                      </button>
                     )}
                   </div>
                 </div>
@@ -574,11 +638,16 @@ export function ProfilePage({ viewingUserId, viewingUserLogin, onBack, onIssueCl
                     {isLoadingProfile ? (
                       <SkeletonLoader variant="text" width="150px" height="15px" />
                     ) : (
-                      <span className={`text-[15px] font-medium transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-                        }`}>
+                      <button
+                        type="button"
+                        onClick={() => (profileData?.projects_led_count ?? 0) > 0 && setLeadModalOpen(true)}
+                        disabled={(profileData?.projects_led_count ?? 0) === 0}
+                        className={`text-[15px] font-medium transition-colors text-left hover:opacity-90 disabled:opacity-60 disabled:cursor-default ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+                          } ${(profileData?.projects_led_count ?? 0) > 0 ? 'cursor-pointer' : ''}`}
+                      >
                         Lead <span className={`font-black text-[16px] transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
                           }`}>{profileData?.projects_led_count || 0}</span> projects
-                      </span>
+                      </button>
                     )}
                   </div>
                 </div>
@@ -654,12 +723,17 @@ export function ProfilePage({ viewingUserId, viewingUserLogin, onBack, onIssueCl
         <div className="relative flex items-center justify-between mb-6">
           <h2 className={`text-[20px] font-bold transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
             }`}>Projects led / Most</h2>
-          <button className="text-[13px] text-[#c9983a] hover:text-[#a67c2e] font-medium transition-all hover:scale-105 hover:translate-x-1 duration-200">
-            See all →
+          <button
+            type="button"
+            onClick={() => setShowAllProjects((prev) => !prev)}
+            className="text-[13px] text-[#c9983a] hover:text-[#a67c2e] font-medium transition-all hover:scale-105 hover:translate-x-1 duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={projects.length <= 3}
+          >
+            {showAllProjects ? 'Show less' : 'See all →'}
           </button>
         </div>
 
-        <div className="relative grid grid-cols-3 gap-5">
+        <div className={`relative grid gap-5 ${showAllProjects ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' : 'grid-cols-3'}`}>
           {isLoadingProjects ? (
             // Skeleton loaders for projects
             Array.from({ length: 3 }).map((_, idx) => (
@@ -685,12 +759,16 @@ export function ProfilePage({ viewingUserId, viewingUserLogin, onBack, onIssueCl
                 </div>
               </div>
             ))
-          ) : projects.length > 0 ? (
-            projects.map((project, idx) => {
+          ) : (showAllProjects ? projects : projects.slice(0, 3)).length > 0 ? (
+            (showAllProjects ? projects : projects.slice(0, 3)).map((project, idx) => {
               const projectName = project.github_full_name.split('/')[1] || project.github_full_name;
               return (
                 <div
                   key={project.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onProjectClick?.(project.id)}
+                  onKeyDown={(e) => e.key === 'Enter' && onProjectClick?.(project.id)}
                   className={`backdrop-blur-[20px] rounded-[16px] border p-5 hover:scale-105 hover:shadow-[0_12px_36px_rgba(0,0,0,0.12)] transition-all duration-300 cursor-pointer group/project ${theme === 'dark'
                     ? 'bg-white/[0.08] border-white/10 hover:bg-white/[0.12] hover:border-white/15'
                     : 'bg-white/[0.15] border-white/25 hover:bg-white/[0.2] hover:border-white/40'
@@ -1197,6 +1275,86 @@ export function ProfilePage({ viewingUserId, viewingUserLogin, onBack, onIssueCl
           </div>
         )}
       </div>
+
+      {/* Contributor projects modal */}
+      <Modal
+        isOpen={contributorModalOpen}
+        onClose={() => setContributorModalOpen(false)}
+        title="Projects contributed to"
+        icon={<Users className="w-5 h-5 text-[#c9983a]" />}
+        width="md"
+      >
+        <div className={`max-h-[60vh] overflow-y-auto space-y-2 ${theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'}`}>
+          {projects.length === 0 ? (
+            <p className="text-[14px]">No projects yet.</p>
+          ) : (
+            projects.map((project) => {
+              const name = project.github_full_name.split('/')[1] || project.github_full_name;
+              return (
+                <button
+                  key={project.id}
+                  type="button"
+                  onClick={() => {
+                    onProjectClick?.(project.id);
+                    setContributorModalOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-3 p-3 rounded-[12px] text-left transition-all hover:bg-white/10 ${theme === 'dark' ? 'bg-white/[0.06]' : 'bg-white/[0.1]'}`}
+                >
+                  {project.owner_avatar_url ? (
+                    <img src={project.owner_avatar_url} alt="" className="w-10 h-10 rounded-[10px] object-cover flex-shrink-0" />
+                  ) : project.language ? (
+                    <LanguageIcon language={project.language} className="w-10 h-10 flex-shrink-0" />
+                  ) : (
+                    <FolderGit2 className="w-10 h-10 flex-shrink-0 text-[#c9983a]" />
+                  )}
+                  <span className="font-medium truncate">{name}</span>
+                </button>
+              );
+            })
+          )}
+        </div>
+      </Modal>
+
+      {/* Lead projects modal */}
+      <Modal
+        isOpen={leadModalOpen}
+        onClose={() => setLeadModalOpen(false)}
+        title="Projects led"
+        icon={<Star className="w-5 h-5 text-[#c9983a] fill-[#c9983a]" />}
+        width="md"
+      >
+        <div className={`max-h-[60vh] overflow-y-auto space-y-2 ${theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'}`}>
+          {isLoadingProjectsLed ? (
+            <p className="text-[14px]">Loading...</p>
+          ) : projectsLed.length === 0 ? (
+            <p className="text-[14px]">No projects led yet.</p>
+          ) : (
+            projectsLed.map((project) => {
+              const name = project.github_full_name.split('/')[1] || project.github_full_name;
+              return (
+                <button
+                  key={project.id}
+                  type="button"
+                  onClick={() => {
+                    onProjectClick?.(project.id);
+                    setLeadModalOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-3 p-3 rounded-[12px] text-left transition-all hover:bg-white/10 ${theme === 'dark' ? 'bg-white/[0.06]' : 'bg-white/[0.1]'}`}
+                >
+                  {project.owner_avatar_url ? (
+                    <img src={project.owner_avatar_url} alt="" className="w-10 h-10 rounded-[10px] object-cover flex-shrink-0" />
+                  ) : project.language ? (
+                    <LanguageIcon language={project.language} className="w-10 h-10 flex-shrink-0" />
+                  ) : (
+                    <FolderGit2 className="w-10 h-10 flex-shrink-0 text-[#c9983a]" />
+                  )}
+                  <span className="font-medium truncate">{name}</span>
+                </button>
+              );
+            })
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }

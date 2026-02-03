@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react';
 import { ChevronDown, Info, Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { ChevronDown, Info, Sun, Moon } from 'lucide-react';
+import { ChevronDown, Info } from 'lucide-react';
 import { BarChart, Bar, LineChart, Line as RechartsLine, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart } from 'recharts';
 import { ComposableMap, Geographies, Geography, Marker, ZoomableGroup, Line as MapLine } from "react-simple-maps";
 import { useTheme } from '../../../shared/contexts/ThemeContext';
 import { getContributorStats, ContributorStats } from '../../../shared/api/client';
 
 export function DataPage() {
-  const { theme, toggleTheme } = useTheme();
+  const { theme } = useTheme();
   const [mapZoom, setMapZoom] = useState(1);
   const [mapCenter, setMapCenter] = useState<[number, number]>([0, 0]);
 
@@ -180,33 +180,7 @@ export function DataPage() {
   };
 
   return (
-    <div className={`min-h-screen space-y-6 ${theme === 'dark' ? 'bg-[#1a1612]' : 'bg-gray-50'}`}>
-      {/* Navbar */}
-      <div className={`fixed top-0 left-0 right-0 z-50 backdrop-blur-[40px] border-b p-4 transition-colors ${
-        theme === 'dark'
-          ? 'bg-[#2d2820]/[0.95] border-white/20'
-          : 'bg-white/[0.55] border-white/20'
-      }`}>
-        <div className="flex justify-between items-center">
-          <h1 className={`text-xl font-bold ${theme === 'dark' ? 'text-white' : 'text-[#2d2820]'}`}>
-            DataPage
-          </h1>
-          <button
-            onClick={toggleTheme}
-            className={`p-2 rounded-full transition-colors ${
-              theme === 'dark'
-                ? 'bg-white/[0.1] hover:bg-white/[0.2] text-white'
-                : 'bg-black/[0.1] hover:bg-black/[0.2] text-black'
-            }`}
-            title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
-          >
-            {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
-          </button>
-        </div>
-      </div>
-
-      {/* Content with top padding to account for fixed navbar */}
-      <div className="pt-20">
+    <div className="space-y-6">
       {/* Header Tabs */}
       <div className={`backdrop-blur-[40px] rounded-[24px] border p-2 transition-colors ${theme === 'dark'
         ? 'bg-white/[0.12] border-white/20'
@@ -215,8 +189,9 @@ export function DataPage() {
       <div className={`backdrop-blur-[40px] rounded-[24px] border p-2 transition-colors ${
         theme === 'dark'
           ? 'bg-white/[0.08] border-white/20'
+          ? 'bg-white/[0.12] border-white/20'
           : 'bg-white/[0.12] border-white/20'
-      }`}>
+        }`}>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setActiveTab('overview')}
@@ -254,46 +229,28 @@ export function DataPage() {
       {/* Main Content Grid */}
       <div className="grid grid-cols-2 gap-6">
         {/* Left Column - Project Activity */}
-        <div className={`backdrop-blur-[40px] rounded-[24px] border border-white/20 p-8 transition-colors ${
-          theme === 'dark'
-            ? 'bg-white/[0.15] shadow-[0_8px_32px_rgba(0,0,0,0.12)]'
-            : 'bg-white/[0.12] shadow-[0_8px_32px_rgba(0,0,0,0.08)]'
-        }`}>
+        <div className="backdrop-blur-[40px] bg-white/[0.12] rounded-[24px] border border-white/20 p-8">
           <div className="flex items-center justify-between mb-6">
             <h2 className={`text-[18px] font-bold transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
               }`}>Project activity</h2>
             <div className="relative">
               <button
                 onClick={() => setShowProjectIntervalDropdown(!showProjectIntervalDropdown)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-[10px] backdrop-blur-[20px] border transition-all ${
-                  theme === 'dark'
-                    ? 'bg-white/[0.08] border-white/20 hover:bg-white/[0.12] text-[#f5f5f5]'
-                    : 'bg-white/[0.15] border-white/25 hover:bg-white/[0.2] text-[#2d2820]'
-                }`}
+                className="flex items-center gap-2 px-4 py-2 rounded-[10px] backdrop-blur-[20px] bg-white/[0.15] border border-white/25 hover:bg-white/[0.2] transition-all"
               >
-                <span className={`text-[13px] font-semibold transition-colors ${
-                  theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-                }`}>{projectInterval}</span>
-                <ChevronDown className={`w-4 h-4 transition-colors ${
-                  theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-                }`} />
+                <span className={`text-[13px] font-semibold transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
+                  }`}>{projectInterval}</span>
+                <ChevronDown className={`w-4 h-4 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+                  }`} />
               </button>
               {showProjectIntervalDropdown && (
-                <div className={`absolute right-0 mt-2 w-[180px] backdrop-blur-[30px] rounded-[12px] shadow-[0_8px_32px_rgba(0,0,0,0.15)] overflow-hidden z-50 ${
-                  theme === 'dark'
-                    ? 'bg-[#2d2820]/[0.95] border-2 border-[#c9983a]/30'
-                    : 'bg-white/[0.55] border-2 border-white/30'
-                }`}>
+                <div className="absolute right-0 mt-2 w-[180px] backdrop-blur-[30px] bg-white/[0.55] border-2 border-white/30 rounded-[12px] shadow-[0_8px_32px_rgba(0,0,0,0.15)] overflow-hidden z-50">
                   <button
                     onClick={() => {
                       setProjectInterval('Daily interval');
                       setShowProjectIntervalDropdown(false);
                     }}
-                    className={`w-full px-4 py-3 text-left text-[13px] font-medium transition-all ${
-                      theme === 'dark'
-                        ? 'text-[#f5f5f5] hover:bg-white/[0.05]'
-                        : 'text-[#2d2820] hover:bg-white/[0.3]'
-                    }`}
+                    className="w-full px-4 py-3 text-left text-[13px] font-medium text-[#2d2820] hover:bg-white/[0.3] transition-all"
                   >
                     Daily interval
                   </button>
@@ -302,11 +259,7 @@ export function DataPage() {
                       setProjectInterval('Weekly interval');
                       setShowProjectIntervalDropdown(false);
                     }}
-                    className={`w-full px-4 py-3 text-left text-[13px] font-medium transition-all ${
-                      theme === 'dark'
-                        ? 'text-[#f5f5f5] hover:bg-white/[0.05]'
-                        : 'text-[#2d2820] hover:bg-white/[0.3]'
-                    }`}
+                    className="w-full px-4 py-3 text-left text-[13px] font-medium text-[#2d2820] hover:bg-white/[0.3] transition-all"
                   >
                     Weekly interval
                   </button>
@@ -326,8 +279,9 @@ export function DataPage() {
                           : 'bg-white/[0.35] text-[#2d2820] font-bold'
                         : theme === 'dark'
                         ? 'text-[#f5f5f5] hover:bg-white/[0.05]'
+                        ? 'bg-white/[0.35] text-[#2d2820] font-bold'
                         : 'text-[#2d2820] hover:bg-white/[0.3]'
-                    }`}
+                      }`}
                   >
                     Monthly interval
                   </button>
@@ -336,11 +290,7 @@ export function DataPage() {
                       setProjectInterval('Quarterly interval');
                       setShowProjectIntervalDropdown(false);
                     }}
-                    className={`w-full px-4 py-3 text-left text-[13px] font-medium transition-all ${
-                      theme === 'dark'
-                        ? 'text-[#f5f5f5] hover:bg-white/[0.05]'
-                        : 'text-[#2d2820] hover:bg-white/[0.3]'
-                    }`}
+                    className="w-full px-4 py-3 text-left text-[13px] font-medium text-[#2d2820] hover:bg-white/[0.3] transition-all"
                   >
                     Quarterly interval
                   </button>
@@ -349,11 +299,7 @@ export function DataPage() {
                       setProjectInterval('Yearly interval');
                       setShowProjectIntervalDropdown(false);
                     }}
-                    className={`w-full px-4 py-3 text-left text-[13px] font-medium transition-all ${
-                      theme === 'dark'
-                        ? 'text-[#f5f5f5] hover:bg-white/[0.05]'
-                        : 'text-[#2d2820] hover:bg-white/[0.3]'
-                    }`}
+                    className="w-full px-4 py-3 text-left text-[13px] font-medium text-[#2d2820] hover:bg-white/[0.3] transition-all"
                   >
                     Yearly interval
                   </button>
@@ -451,11 +397,7 @@ export function DataPage() {
         </div>
 
         {/* Right Column - Contributors Map */}
-        <div className={`backdrop-blur-[40px] rounded-[24px] border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${
-          theme === 'dark'
-            ? 'bg-white/[0.15]'
-            : 'bg-white/[0.12]'
-        }`}>
+        <div className="backdrop-blur-[40px] bg-white/[0.12] rounded-[24px] border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8">
           <h2 className={`text-[18px] font-bold mb-6 transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
             }`}>Contributors map</h2>
 
@@ -616,46 +558,28 @@ export function DataPage() {
       {/* Bottom Grid */}
       <div className="grid grid-cols-2 gap-6">
         {/* Contributor Activity */}
-        <div className={`backdrop-blur-[40px] rounded-[24px] border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${
-          theme === 'dark'
-            ? 'bg-white/[0.15]'
-            : 'bg-white/[0.12]'
-        }`}>
+        <div className="backdrop-blur-[40px] bg-white/[0.12] rounded-[24px] border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8">
           <div className="flex items-center justify-between mb-6">
             <h2 className={`text-[18px] font-bold transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
               }`}>Contributor activity</h2>
             <div className="relative">
               <button
                 onClick={() => setShowContributorIntervalDropdown(!showContributorIntervalDropdown)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-[10px] backdrop-blur-[20px] border transition-all ${
-                  theme === 'dark'
-                    ? 'bg-white/[0.08] border-white/20 hover:bg-white/[0.12] text-[#f5f5f5]'
-                    : 'bg-white/[0.15] border-white/25 hover:bg-white/[0.2] text-[#2d2820]'
-                }`}
+                className="flex items-center gap-2 px-4 py-2 rounded-[10px] backdrop-blur-[20px] bg-white/[0.15] border border-white/25 hover:bg-white/[0.2] transition-all"
               >
-                <span className={`text-[13px] font-semibold transition-colors ${
-                  theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-                }`}>{contributorInterval}</span>
-                <ChevronDown className={`w-4 h-4 transition-colors ${
-                  theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-                }`} />
+                <span className={`text-[13px] font-semibold transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
+                  }`}>{contributorInterval}</span>
+                <ChevronDown className={`w-4 h-4 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+                  }`} />
               </button>
               {showContributorIntervalDropdown && (
-                <div className={`absolute right-0 mt-2 w-[180px] backdrop-blur-[30px] rounded-[12px] shadow-[0_8px_32px_rgba(0,0,0,0.15)] overflow-hidden z-50 ${
-                  theme === 'dark'
-                    ? 'bg-[#2d2820]/[0.95] border-2 border-[#c9983a]/30'
-                    : 'bg-white/[0.55] border-2 border-white/30'
-                }`}>
+                <div className="absolute right-0 mt-2 w-[180px] backdrop-blur-[30px] bg-white/[0.55] border-2 border-white/30 rounded-[12px] shadow-[0_8px_32px_rgba(0,0,0,0.15)] overflow-hidden z-50">
                   <button
                     onClick={() => {
                       setContributorInterval('Daily interval');
                       setShowContributorIntervalDropdown(false);
                     }}
-                    className={`w-full px-4 py-3 text-left text-[13px] font-medium transition-all ${
-                      theme === 'dark'
-                        ? 'text-[#f5f5f5] hover:bg-white/[0.05]'
-                        : 'text-[#2d2820] hover:bg-white/[0.3]'
-                    }`}
+                    className="w-full px-4 py-3 text-left text-[13px] font-medium text-[#2d2820] hover:bg-white/[0.3] transition-all"
                   >
                     Daily interval
                   </button>
@@ -664,11 +588,7 @@ export function DataPage() {
                       setContributorInterval('Weekly interval');
                       setShowContributorIntervalDropdown(false);
                     }}
-                    className={`w-full px-4 py-3 text-left text-[13px] font-medium transition-all ${
-                      theme === 'dark'
-                        ? 'text-[#f5f5f5] hover:bg-white/[0.05]'
-                        : 'text-[#2d2820] hover:bg-white/[0.3]'
-                    }`}
+                    className="w-full px-4 py-3 text-left text-[13px] font-medium text-[#2d2820] hover:bg-white/[0.3] transition-all"
                   >
                     Weekly interval
                   </button>
@@ -688,8 +608,9 @@ export function DataPage() {
                           : 'bg-white/[0.35] text-[#2d2820] font-bold'
                         : theme === 'dark'
                         ? 'text-[#f5f5f5] hover:bg-white/[0.05]'
+                        ? 'bg-white/[0.35] text-[#2d2820] font-bold'
                         : 'text-[#2d2820] hover:bg-white/[0.3]'
-                    }`}
+                      }`}
                   >
                     Monthly interval
                   </button>
@@ -698,11 +619,7 @@ export function DataPage() {
                       setContributorInterval('Quarterly interval');
                       setShowContributorIntervalDropdown(false);
                     }}
-                    className={`w-full px-4 py-3 text-left text-[13px] font-medium transition-all ${
-                      theme === 'dark'
-                        ? 'text-[#f5f5f5] hover:bg-white/[0.05]'
-                        : 'text-[#2d2820] hover:bg-white/[0.3]'
-                    }`}
+                    className="w-full px-4 py-3 text-left text-[13px] font-medium text-[#2d2820] hover:bg-white/[0.3] transition-all"
                   >
                     Quarterly interval
                   </button>
@@ -711,11 +628,7 @@ export function DataPage() {
                       setContributorInterval('Yearly interval');
                       setShowContributorIntervalDropdown(false);
                     }}
-                    className={`w-full px-4 py-3 text-left text-[13px] font-medium transition-all ${
-                      theme === 'dark'
-                        ? 'text-[#f5f5f5] hover:bg-white/[0.05]'
-                        : 'text-[#2d2820] hover:bg-white/[0.3]'
-                    }`}
+                    className="w-full px-4 py-3 text-left text-[13px] font-medium text-[#2d2820] hover:bg-white/[0.3] transition-all"
                   >
                     Yearly interval
                   </button>
@@ -897,7 +810,6 @@ export function DataPage() {
           background: rgba(201, 152, 58, 0.7);
         }
       `}</style>
-    </div>
     </div>
   );
 }

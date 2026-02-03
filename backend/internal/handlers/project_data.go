@@ -21,14 +21,34 @@ func NewProjectDataHandler(d *db.DB) *ProjectDataHandler {
 	return &ProjectDataHandler{db: d}
 }
 
+// projectIDForRead returns project ID if the user is authenticated and the project exists (verified).
+// Any authenticated user can read project issues/PRs/events (e.g. contributors browsing issues).
+func (h *ProjectDataHandler) projectIDForRead(c *fiber.Ctx) (uuid.UUID, error) {
+	if h.db == nil || h.db.Pool == nil {
+		return uuid.Nil, c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "db_not_configured"})
+	}
+	if _, ok := c.Locals(auth.LocalUserID).(string); !ok {
+		return uuid.Nil, c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid_user"})
+	}
+	projectID, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return uuid.Nil, c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_project_id"})
+	}
+	var exists bool
+	err = h.db.Pool.QueryRow(c.Context(), `
+SELECT EXISTS(SELECT 1 FROM projects WHERE id = $1 AND status = 'verified' AND deleted_at IS NULL)
+`, projectID).Scan(&exists)
+	if err != nil || !exists {
+		return uuid.Nil, c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "project_not_found"})
+	}
+	return projectID, nil
+}
+
 func (h *ProjectDataHandler) Issues() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		projectID, ownerOK, err := h.authorizeProject(c)
+		projectID, err := h.projectIDForRead(c)
 		if err != nil {
 			return err
-		}
-		if !ownerOK {
-			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "forbidden"})
 		}
 
 		rows, err := h.db.Pool.Query(c.Context(), `
@@ -93,12 +113,9 @@ LIMIT 50
 
 func (h *ProjectDataHandler) PRs() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		projectID, ownerOK, err := h.authorizeProject(c)
+		projectID, err := h.projectIDForRead(c)
 		if err != nil {
 			return err
-		}
-		if !ownerOK {
-			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "forbidden"})
 		}
 
 		rows, err := h.db.Pool.Query(c.Context(), `
@@ -146,12 +163,9 @@ LIMIT 50
 
 func (h *ProjectDataHandler) Events() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		projectID, ownerOK, err := h.authorizeProject(c)
+		projectID, err := h.projectIDForRead(c)
 		if err != nil {
 			return err
-		}
-		if !ownerOK {
-			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "forbidden"})
 		}
 
 		rows, err := h.db.Pool.Query(c.Context(), `

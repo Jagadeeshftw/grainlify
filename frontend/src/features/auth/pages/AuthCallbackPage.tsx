@@ -11,11 +11,18 @@ export function AuthCallbackPage() {
   const [isProcessing, setIsProcessing] = useState(true);
   const hasProcessed = useRef(false);
 
-  // Redirect to dashboard once authenticated
+  // Redirect to dashboard (or returnTo from "review their application" link) once authenticated
   useEffect(() => {
     if (isAuthenticated && !error) {
-      console.log('User is authenticated, redirecting to dashboard...');
-      navigate('/dashboard', { replace: true });
+      const returnTo = sessionStorage.getItem('authReturnTo');
+      sessionStorage.removeItem('authReturnTo');
+      if (returnTo && returnTo.startsWith('/dashboard')) {
+        console.log('User is authenticated, redirecting to', returnTo);
+        navigate(returnTo, { replace: true });
+      } else {
+        console.log('User is authenticated, redirecting to dashboard...');
+        navigate('/dashboard', { replace: true });
+      }
     }
   }, [isAuthenticated, error, navigate]);
 

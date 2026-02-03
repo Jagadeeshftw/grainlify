@@ -2,6 +2,10 @@ import { Medal, Trophy, Crown, Sparkles } from 'lucide-react';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
 import { ProjectData } from '../types';
 
+function isLogoUrl(logo: string): boolean {
+  return typeof logo === 'string' && (logo.startsWith('http://') || logo.startsWith('https://'));
+}
+
 interface ProjectsPodiumProps {
   topThree: ProjectData[];
   isLoaded: boolean;
@@ -18,8 +22,12 @@ export function ProjectsPodium({ topThree, isLoaded }: ProjectsPodiumProps) {
       }`}>
         <div className="backdrop-blur-[30px] bg-gradient-to-br from-white/[0.25] to-white/[0.15] border-2 border-white/40 rounded-[18px] p-6 w-[150px] shadow-[0_6px_24px_rgba(0,0,0,0.1)] mb-3 hover:shadow-[0_8px_28px_rgba(0,0,0,0.15)] hover:scale-105 transition-all duration-300 group">
           <div className="relative">
-            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#c9983a]/80 to-[#a67c2e]/70 flex items-center justify-center mx-auto mb-3 border-2 border-white/30 shadow-lg text-2xl group-hover:rotate-12 transition-transform duration-300">
-              {topThree[1].logo}
+            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#c9983a]/80 to-[#a67c2e]/70 flex items-center justify-center mx-auto mb-3 border-2 border-white/30 shadow-lg text-2xl overflow-hidden group-hover:rotate-12 transition-transform duration-300">
+              {isLogoUrl(topThree[1].logo) ? (
+                <img src={topThree[1].logo} alt="" className="w-full h-full object-cover" />
+              ) : (
+                topThree[1].logo
+              )}
             </div>
             <Sparkles className="absolute -top-1 -right-1 w-4 h-4 text-[#c9983a] opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
@@ -79,8 +87,12 @@ export function ProjectsPodium({ topThree, isLoaded }: ProjectsPodiumProps) {
           <div className="absolute -inset-3 border-2 border-[#c9983a]/20 rounded-[24px] animate-ping-gentle" />
           
           <div className="relative">
-            <div className="relative w-20 h-20 rounded-full bg-gradient-to-br from-[#c9983a] to-[#a67c2e] flex items-center justify-center mx-auto mb-3 border-2 border-[#d4af37] shadow-xl text-3xl group-hover:rotate-[360deg] transition-transform duration-700">
-              {topThree[0].logo}
+            <div className="relative w-20 h-20 rounded-full bg-gradient-to-br from-[#c9983a] to-[#a67c2e] flex items-center justify-center mx-auto mb-3 border-2 border-[#d4af37] shadow-xl text-3xl overflow-hidden group-hover:rotate-[360deg] transition-transform duration-700">
+              {isLogoUrl(topThree[0].logo) ? (
+                <img src={topThree[0].logo} alt="" className="w-full h-full object-cover" />
+              ) : (
+                topThree[0].logo
+              )}
               <Crown className="absolute -top-6 left-1/2 -translate-x-1/2 w-6 h-6 text-[#d4af37] animate-float" />
             </div>
             <div className="text-center">
@@ -108,8 +120,12 @@ export function ProjectsPodium({ topThree, isLoaded }: ProjectsPodiumProps) {
       }`}>
         <div className="backdrop-blur-[30px] bg-gradient-to-br from-white/[0.25] to-white/[0.15] border-2 border-white/40 rounded-[18px] p-6 w-[150px] shadow-[0_6px_24px_rgba(0,0,0,0.1)] mb-3 hover:shadow-[0_8px_28px_rgba(0,0,0,0.15)] hover:scale-105 transition-all duration-300 group">
           <div className="relative">
-            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#b89968]/80 to-[#9a7d4f]/70 flex items-center justify-center mx-auto mb-3 border-2 border-white/30 shadow-lg text-2xl group-hover:rotate-12 transition-transform duration-300">
-              {topThree[2].logo}
+            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#b89968]/80 to-[#9a7d4f]/70 flex items-center justify-center mx-auto mb-3 border-2 border-white/30 shadow-lg text-2xl overflow-hidden group-hover:rotate-12 transition-transform duration-300">
+              {isLogoUrl(topThree[2].logo) ? (
+                <img src={topThree[2].logo} alt="" className="w-full h-full object-cover" />
+              ) : (
+                topThree[2].logo
+              )}
             </div>
             <Sparkles className="absolute -top-1 -right-1 w-4 h-4 text-[#b89968] opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>

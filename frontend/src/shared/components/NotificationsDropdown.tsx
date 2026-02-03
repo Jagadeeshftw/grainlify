@@ -33,7 +33,7 @@ export function NotificationsDropdown({
   // Derived state for badge count
   const unreadCount = notifications.filter((n) => !n.read).length;
 
-  // TODO: Replace with actual API call
+  // Use real count when notifications API is available; until then show 0 (badge hidden)
   useEffect(() => {
     // Example: Fetch notifications from API
     const fetchNotifications = async () => {
@@ -67,6 +67,15 @@ export function NotificationsDropdown({
         
       } catch (error) {
         // console.error("Failed to fetch notifications:", error);
+    const fetchNotificationCount = async () => {
+      try {
+        // When backend provides GET /notifications/count or similar, wire it here:
+        // const data = await getNotificationCount();
+        // setNotificationCount(data.count ?? 0);
+        setNotificationCount(0);
+      } catch (error) {
+        console.error("Failed to fetch notification count:", error);
+        setNotificationCount(0);
       }
     };
 
@@ -107,6 +116,22 @@ export function NotificationsDropdown({
             <div className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-gradient-to-br from-[#e8c571] to-[#c9983a] rounded-full shadow-[0_2px_8px_rgba(201,152,58,0.9),0_0_12px_rgba(201,152,58,0.7)] z-20 border-[2px] border-white flex items-center justify-center">
               <span className="text-[10px] font-bold text-white leading-none">
                 {formatCount(unreadCount)}
+  {
+          showMobileNav && <span className={`ml-2 ${darkTheme ? 'text-[#e8dfd0]' : 'text-[#2d2820]'}`}>
+          Notification
+          </span>
+               }
+          {/* Notification Count Badge - Only show when count > 0; high-contrast for visibility */}
+          {notificationCount > 0 && (
+            <div
+              className={`absolute -top-0.5 -right-0.5 lg:-top-1 lg:-right-1 min-w-[18px] h-[18px] px-1 rounded-full z-20 border-2 flex items-center justify-center ${
+                darkTheme
+                  ? "bg-[#2d2820] border-[#c9983a] text-[#fef5e7] shadow-[0_2px_8px_rgba(0,0,0,0.4)]"
+                  : "bg-[#2d2820] border-white/90 text-white shadow-[0_2px_8px_rgba(0,0,0,0.25)]"
+              }`}
+            >
+              <span className="text-[10px] font-bold leading-none tabular-nums">
+                {formatCount(notificationCount)}
               </span>
             </div>
           )}

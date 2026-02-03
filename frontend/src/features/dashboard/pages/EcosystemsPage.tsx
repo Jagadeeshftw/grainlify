@@ -5,7 +5,7 @@ import { Modal, ModalFooter, ModalButton, ModalInput, ModalSelect } from '../../
 import { getEcosystems } from '../../../shared/api/client';
 
 interface EcosystemsPageProps {
-  onEcosystemClick: (id: string, name: string) => void;
+  onEcosystemClick: (id: string, name: string, description?: string | null, logoUrl?: string | null) => void;
 }
 
 export function EcosystemsPage({ onEcosystemClick }: EcosystemsPageProps) {
@@ -84,6 +84,7 @@ export function EcosystemsPage({ onEcosystemClick }: EcosystemsPageProps) {
           description: eco.description || 'No description available.',
           projects: eco.project_count || 0,
           contributors: eco.user_count || 0,
+          logo_url: eco.logo_url || null,
           website_url: eco.website_url || null,
           status: eco.status || 'active',
           letter: firstLetter,
@@ -286,7 +287,7 @@ export function EcosystemsPage({ onEcosystemClick }: EcosystemsPageProps) {
             return (
           <div
             key={ecosystem.id}
-            onClick={() => onEcosystemClick(ecosystem.id, ecosystem.name)}
+            onClick={() => onEcosystemClick(ecosystem.id, ecosystem.name, ecosystem.description, ecosystem.logo_url)}
             className={`backdrop-blur-[30px] rounded-[16px] md:rounded-[20px] border p-4 md:p-6 transition-all cursor-pointer group touch-manipulation ${
               theme === 'dark'
                 ? 'bg-white/[0.08] border-white/10 hover:bg-white/[0.12] hover:shadow-[0_8px_24px_rgba(201,152,58,0.15)] active:bg-white/[0.15]'
@@ -295,8 +296,21 @@ export function EcosystemsPage({ onEcosystemClick }: EcosystemsPageProps) {
           >
             {/* Header with Icon */}
             <div className="flex items-start justify-between mb-4 md:mb-5">
-              <div className={`w-12 h-12 md:w-14 md:h-14 rounded-[12px] md:rounded-[14px] bg-gradient-to-br ${ecosystem.color} flex items-center justify-center shadow-lg border border-white/20`}>
-                <span className="text-white text-[20px] md:text-[24px] font-bold">{ecosystem.letter}</span>
+              <div className={`w-12 h-12 md:w-14 md:h-14 rounded-[12px] md:rounded-[14px] flex items-center justify-center shadow-lg border border-white/20 overflow-hidden ${ecosystem.logo_url ? 'bg-white' : `bg-gradient-to-br ${ecosystem.color}`}`}>
+                {ecosystem.logo_url ? (
+                  <img
+                    src={ecosystem.logo_url}
+                    alt={`${ecosystem.name} logo`}
+                    className="w-full h-full object-cover"
+                    onError={(event) => {
+                      (event.target as HTMLImageElement).style.display = 'none';
+                    }}
+                  />
+                ) : (
+                  <span className="text-white text-[20px] md:text-[24px] font-bold">
+                    {ecosystem.letter}
+                  </span>
+                )}
               </div>
             </div>
 

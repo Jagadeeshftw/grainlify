@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
-import { LeaderboardType, FilterType, Petal, LeaderData } from "../types";
-import { projectsData } from "../data/leaderboardData";
-import { getLeaderboard } from "../../../shared/api/client";
+import { LeaderboardType, FilterType, Petal, LeaderData, ProjectData } from "../types";
+import { getLeaderboard, getRecommendedProjects } from "../../../shared/api/client";
 import { useTheme } from "../../../shared/contexts/ThemeContext";
 import { FallingPetals } from "../components/FallingPetals";
 import { LeaderboardTypeToggle } from "../components/LeaderboardTypeToggle";
@@ -28,10 +27,17 @@ export function LeaderboardPage() {
   const [petals, setPetals] = useState<Petal[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
   const [leaderboardData, setLeaderboardData] = useState<LeaderData[]>([]);
+  const [projectsData, setProjectsData] = useState<ProjectData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+
+  const getProjectIcon = (githubFullName: string) => {
+    const [owner] = githubFullName.split("/");
+    return `https://github.com/${owner}.png?size=40`;
+  };
 
   // Fetch leaderboard data
   useEffect(() => {
@@ -73,13 +79,55 @@ export function LeaderboardPage() {
           setIsLoading(false); // Set loading to false to show empty state instead of skeleton
         }
       } else {
-        // For projects, we don't fetch from API, so set loading to false
         setIsLoading(false);
       }
     };
 
     fetchLeaderboard();
   }, [leaderboardType, activeFilter, selectedEcosystem.value]);
+
+  // Fetch projects leaderboard (top projects by contributors count)
+  useEffect(() => {
+    if (leaderboardType !== "projects") return;
+    let cancelled = false;
+    const fetchProjects = async () => {
+      setIsLoadingProjects(true);
+      try {
+        const res = await getRecommendedProjects(50);
+        const projects = res?.projects ?? [];
+        if (cancelled) return;
+        const mapped: ProjectData[] = projects
+          .filter((p) => (p.github_full_name.split("/")[1] || "") !== ".github")
+          .map((p, idx) => {
+            const repoName = p.github_full_name.split("/")[1] || p.github_full_name;
+            const contributors = p.contributors_count ?? 0;
+            const openIssues = p.open_issues_count ?? 0;
+            const activity =
+              openIssues > 10 ? "Very High" : openIssues > 5 ? "High" : openIssues > 2 ? "Medium" : "Low";
+            return {
+              rank: idx + 1,
+              name: repoName,
+              logo: getProjectIcon(p.github_full_name),
+              score: contributors,
+              trend: "same" as const,
+              trendValue: 0,
+              contributors,
+              ecosystems: p.ecosystem_name ? [p.ecosystem_name] : [],
+              activity,
+            };
+          });
+        setProjectsData(mapped);
+      } catch (err) {
+        if (!cancelled) setProjectsData([]);
+      } finally {
+        if (!cancelled) setIsLoadingProjects(false);
+      }
+    };
+    fetchProjects();
+    return () => {
+      cancelled = true;
+    };
+  }, [leaderboardType]);
 
   // Load more leaderboard data
   const loadMore = async () => {
@@ -171,7 +219,22 @@ export function LeaderboardPage() {
       })),
   ].slice(0, 3) as LeaderData[];
 
-  const projectTopThree = projectsData.slice(0, 3);
+  const projectTopThree: ProjectData[] = [
+    ...projectsData.slice(0, 3),
+    ...Array(Math.max(0, 3 - projectsData.length))
+      .fill(null)
+      .map((_, i) => ({
+        rank: projectsData.length + i + 1,
+        name: "-",
+        logo: "📦",
+        score: 0,
+        trend: "same" as const,
+        trendValue: 0,
+        contributors: 0,
+        ecosystems: [] as string[],
+        activity: "Low",
+      })),
+  ].slice(0, 3) as ProjectData[];
 
   return (
     <div className="space-y-6 relative">
@@ -213,8 +276,20 @@ export function LeaderboardPage() {
           )}
 
         {/* Top 3 Podium - Projects */}
-        {leaderboardType === "projects" && (
+        {leaderboardType === "projects" && isLoadingProjects && (
+          <ContributorsPodiumSkeleton />
+        )}
+        {leaderboardType === "projects" && !isLoadingProjects && projectsData.length > 0 && (
           <ProjectsPodium topThree={projectTopThree} isLoaded={isLoaded} />
+        )}
+        {leaderboardType === "projects" && !isLoadingProjects && projectsData.length === 0 && (
+          <div
+            className={`text-center py-8 transition-colors ${
+              theme === "dark" ? "text-[#b8a898]" : "text-[#7a6b5a]"
+            }`}
+          >
+            No projects yet. Complete project setup to appear here.
+          </div>
         )}
       </LeaderboardHero>
 
@@ -275,11 +350,17 @@ export function LeaderboardPage() {
 
       {/* Leaderboard Table - Projects */}
       {leaderboardType === "projects" && (
-        <ProjectsTable
-          data={projectsData}
-          activeFilter={activeFilter}
-          isLoaded={isLoaded}
-        />
+        <>
+          {isLoadingProjects ? (
+            <ContributorsTableSkeleton />
+          ) : (
+            <ProjectsTable
+              data={projectsData}
+              activeFilter={activeFilter}
+              isLoaded={isLoaded}
+            />
+          )}
+        </>
       )}
 
       {/* CSS Animations */}

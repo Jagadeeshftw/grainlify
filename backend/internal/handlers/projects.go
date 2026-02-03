@@ -166,7 +166,9 @@ SELECT
   e.name AS ecosystem_name,
   p.language,
   p.tags,
-  p.category
+  p.category,
+  p.description,
+  p.needs_metadata
 FROM projects p
 LEFT JOIN ecosystems e ON p.ecosystem_id = e.id
 WHERE p.owner_user_id = $1
@@ -206,8 +208,10 @@ ORDER BY p.created_at DESC
 			var language *string
 			var tagsJSON []byte
 			var category *string
+			var description *string
+			var needsMetadata bool
 
-			if err := rows.Scan(&id, &fullName, &status, &repoID, &verifiedAt, &verErr, &webhookID, &webhookURL, &webhookCreatedAt, &createdAt, &updatedAt, &ecosystemName, &language, &tagsJSON, &category); err != nil {
+			if err := rows.Scan(&id, &fullName, &status, &repoID, &verifiedAt, &verErr, &webhookID, &webhookURL, &webhookCreatedAt, &createdAt, &updatedAt, &ecosystemName, &language, &tagsJSON, &category, &description, &needsMetadata); err != nil {
 				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "projects_list_failed"})
 			}
 
@@ -260,6 +264,8 @@ WHERE id = $1
 				"language":           language,
 				"tags":               tags,
 				"category":           category,
+				"description":        description,
+				"needs_metadata":     needsMetadata,
 			}
 
 			// Add owner avatar if available
@@ -282,6 +288,164 @@ WHERE id = $1
 		)
 
 		return c.Status(fiber.StatusOK).JSON(out)
+	}
+}
+
+// PendingSetup returns projects for the current user that need metadata (needs_metadata = true).
+func (h *ProjectsHandler) PendingSetup() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		if h.db == nil || h.db.Pool == nil {
+			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "db_not_configured"})
+		}
+
+		sub, _ := c.Locals(auth.LocalUserID).(string)
+		userID, err := uuid.Parse(sub)
+		if err != nil {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid_user"})
+		}
+
+		rows, err := h.db.Pool.Query(c.Context(), `
+SELECT p.id, p.github_full_name, p.description, p.ecosystem_id, e.name AS ecosystem_name, p.language, p.tags, p.category
+FROM projects p
+LEFT JOIN ecosystems e ON p.ecosystem_id = e.id
+WHERE p.owner_user_id = $1
+  AND p.needs_metadata = true
+  AND p.deleted_at IS NULL
+ORDER BY p.created_at ASC
+`, userID)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "pending_setup_failed"})
+		}
+		defer rows.Close()
+
+		var out []fiber.Map
+		for rows.Next() {
+			var id uuid.UUID
+			var fullName string
+			var description *string
+			var ecosystemID *uuid.UUID
+			var ecosystemName *string
+			var language *string
+			var tagsJSON []byte
+			var category *string
+
+			if err := rows.Scan(&id, &fullName, &description, &ecosystemID, &ecosystemName, &language, &tagsJSON, &category); err != nil {
+				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "pending_setup_failed"})
+			}
+
+			var tags []string
+			if len(tagsJSON) > 0 {
+				json.Unmarshal(tagsJSON, &tags)
+			}
+
+			ecoID := ""
+			if ecosystemID != nil {
+				ecoID = ecosystemID.String()
+			}
+			ecoName := ""
+			if ecosystemName != nil {
+				ecoName = *ecosystemName
+			}
+
+			out = append(out, fiber.Map{
+				"id":               id.String(),
+				"github_full_name": fullName,
+				"description":      description,
+				"ecosystem_id":     ecoID,
+				"ecosystem_name":   ecoName,
+				"language":         language,
+				"tags":             tags,
+				"category":         category,
+			})
+		}
+
+		if out == nil {
+			out = []fiber.Map{}
+		}
+		return c.Status(fiber.StatusOK).JSON(out)
+	}
+}
+
+type updateMetadataRequest struct {
+	Description   *string  `json:"description,omitempty"`
+	EcosystemName *string  `json:"ecosystem_name,omitempty"`
+	Language      *string  `json:"language,omitempty"`
+	Tags          []string `json:"tags,omitempty"`
+	Category      *string  `json:"category,omitempty"`
+}
+
+// UpdateMetadata updates project metadata and sets needs_metadata = false.
+func (h *ProjectsHandler) UpdateMetadata() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		if h.db == nil || h.db.Pool == nil {
+			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "db_not_configured"})
+		}
+
+		sub, _ := c.Locals(auth.LocalUserID).(string)
+		userID, err := uuid.Parse(sub)
+		if err != nil {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid_user"})
+		}
+
+		projectID, err := uuid.Parse(c.Params("id"))
+		if err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_project_id"})
+		}
+
+		var req updateMetadataRequest
+		if err := c.BodyParser(&req); err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_json"})
+		}
+
+		var ownerUserID uuid.UUID
+		err = h.db.Pool.QueryRow(c.Context(), `
+SELECT owner_user_id FROM projects WHERE id = $1 AND deleted_at IS NULL
+`, projectID).Scan(&ownerUserID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "project_not_found"})
+		}
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "project_lookup_failed"})
+		}
+		if ownerUserID != userID {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "forbidden"})
+		}
+
+		// Resolve ecosystem if name provided
+		var ecosystemID *uuid.UUID
+		if req.EcosystemName != nil && strings.TrimSpace(*req.EcosystemName) != "" {
+			var ecoID uuid.UUID
+			err := h.db.Pool.QueryRow(c.Context(), `
+SELECT id FROM ecosystems WHERE LOWER(TRIM(name)) = LOWER(TRIM($1)) AND status = 'active'
+`, *req.EcosystemName).Scan(&ecoID)
+			if err != nil {
+				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "ecosystem_not_found", "message": "No active ecosystem found with that name."})
+			}
+			ecosystemID = &ecoID
+		}
+
+		var tagsJSON []byte = []byte("[]")
+		if len(req.Tags) > 0 {
+			tagsJSON, _ = json.Marshal(req.Tags)
+		}
+
+		// Build dynamic update: set needs_metadata = false and provided fields
+		_, err = h.db.Pool.Exec(c.Context(), `
+UPDATE projects
+SET description = COALESCE($2, description),
+    ecosystem_id = COALESCE($3, ecosystem_id),
+    language = COALESCE($4, language),
+    tags = COALESCE($5, tags),
+    category = COALESCE($6, category),
+    needs_metadata = false,
+    updated_at = now()
+WHERE id = $1
+`, projectID, req.Description, ecosystemID, req.Language, tagsJSON, req.Category)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "metadata_update_failed"})
+		}
+
+		return c.Status(fiber.StatusOK).JSON(fiber.Map{"ok": true})
 	}
 }
 

@@ -18,23 +18,29 @@ interface Project {
 
 interface DashboardTabProps {
   selectedProjects: Project[];
+  /** When true, parent is still loading the project list; show loading skeleton instead of empty state */
+  isLoadingProjects?: boolean;
   onRefresh?: () => void;
   onNavigateToIssue?: (issueId: string, projectId: string) => void;
 }
 
-export function DashboardTab({ selectedProjects, onRefresh, onNavigateToIssue }: DashboardTabProps) {
+export function DashboardTab({ selectedProjects, isLoadingProjects = false, onRefresh, onNavigateToIssue }: DashboardTabProps) {
   const { theme } = useTheme();
   const [issues, setIssues] = useState<any[]>([]);
   const [prs, setPrs] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showAllActivities, setShowAllActivities] = useState(false);
 
-  // Fetch data from selected projects
+  // Show loading when parent is loading projects OR when we're loading dashboard data
+  const showLoading = isLoadingProjects || isLoading;
+
+  // Fetch data from selected projects (only when parent has finished loading and we have projects)
   useEffect(() => {
+    if (isLoadingProjects) return;
     loadData();
     // Reset expanded state when projects change
     setShowAllActivities(false);
-  }, [selectedProjects]);
+  }, [selectedProjects, isLoadingProjects]);
 
   const loadData = async () => {
     setIsLoading(true);
@@ -301,7 +307,7 @@ export function DashboardTab({ selectedProjects, onRefresh, onNavigateToIssue }:
     <>
       {/* Stats Cards */}
       <div className="grid grid-cols-5 gap-5">
-        {isLoading ? (
+        {showLoading ? (
           [...Array(5)].map((_, idx) => (
             <StatsCardSkeleton key={idx} />
           ))
@@ -327,7 +333,7 @@ export function DashboardTab({ selectedProjects, onRefresh, onNavigateToIssue }:
               }`}>Last activity</h2>
 
             {/* Activity List */}
-            {isLoading ? (
+            {showLoading ? (
               <div className="space-y-3">
                 {[...Array(5)].map((_, idx) => (
                   <ActivityItemSkeleton key={idx} />
@@ -378,7 +384,7 @@ export function DashboardTab({ selectedProjects, onRefresh, onNavigateToIssue }:
           ? 'bg-[#2d2820]/[0.4] border-white/10'
           : 'bg-white/[0.12] border-white/20'
           }`}>
-          {isLoading ? (
+          {showLoading ? (
             <ChartSkeleton />
           ) : (
             <ApplicationsChart data={chartData} />

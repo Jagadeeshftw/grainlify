@@ -147,6 +147,7 @@ type ProjectType = {
   description: string;
   tags: string[];
   color: string;
+  ecosystem_name: string | null;
 };
 
 type IssueType = {
@@ -235,6 +236,7 @@ export function DiscoverPage({
             description: truncateDescription(p.description) || "",
             tags: Array.isArray(p.tags) ? p.tags.slice(0, 2) : [],
             color: getProjectColor(repoName),
+            ecosystem_name: p.ecosystem_name ?? null,
           };
         });
 
@@ -246,7 +248,7 @@ export function DiscoverPage({
     loadRecommendedProjects();
   }, [fetchProjects]);
 
-  // Fetch recommended issues from top projects
+  // Fetch recommended issues from top projects (useOptimisticData manages loading state)
   useEffect(() => {
     const loadRecommendedIssues = async () => {
       // Only fetch issues if we have projects and they're loaded
@@ -294,7 +296,7 @@ export function DiscoverPage({
     };
 
     loadRecommendedIssues();
-  }, [projects, isLoadingProjects, fetchIssues]);
+  }, [projects, fetchIssues]);
 
   // If an issue is selected, show the detail page instead
   if (selectedIssue) {
@@ -503,6 +505,16 @@ export function DiscoverPage({
                 </div>
 
                 <div className="flex flex-wrap gap-2">
+                  {project.ecosystem_name && (
+                    <span
+                      className={`px-3 py-1.5 rounded-[10px] border text-[12px] font-semibold ${theme === 'dark'
+                        ? 'bg-white/10 border-white/25 text-[#e8dfd0]'
+                        : 'bg-white/20 border-white/30 text-[#2d2820]'
+                        }`}
+                    >
+                      {project.ecosystem_name}
+                    </span>
+                  )}
                   {project.tags.map((tag, idx) => (
                     <span
                       key={idx}

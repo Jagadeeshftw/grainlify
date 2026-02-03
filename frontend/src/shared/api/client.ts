@@ -313,6 +313,23 @@ export const getProjectsContributed = (userId?: string, login?: string) => {
   >(`/profile/projects${query}`, { requiresAuth: true });
 };
 
+export const getProjectsLed = (userId?: string, login?: string) => {
+  const params = new URLSearchParams();
+  if (userId) params.append("user_id", userId);
+  if (login) params.append("login", login);
+  const query = params.toString() ? `?${params.toString()}` : "";
+  return apiRequest<
+    Array<{
+      id: string;
+      github_full_name: string;
+      status: string;
+      ecosystem_name?: string;
+      language?: string;
+      owner_avatar_url?: string;
+    }>
+  >(`/profile/projects-led${query}`, { requiresAuth: true });
+};
+
 export const getPublicProfile = (userId?: string, login?: string) => {
   const params = new URLSearchParams();
   if (userId) params.append("user_id", userId);
@@ -508,6 +525,7 @@ export const getEcosystems = () =>
       slug: string;
       name: string;
       description: string | null;
+      logo_url: string | null;
       website_url: string | null;
       status: string;
       project_count: number;
@@ -516,6 +534,29 @@ export const getEcosystems = () =>
       updated_at: string;
     }>;
   }>("/ecosystems");
+
+export type EcosystemDetail = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  website_url: string | null;
+  logo_url: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  about?: string | null;
+  links?: Array<{ label: string; url: string }> | null;
+  key_areas?: Array<{ title: string; description: string }> | null;
+  technologies?: string[] | null;
+  project_count: number;
+  contributors_count: number;
+  open_issues_count: number;
+  open_prs_count: number;
+};
+
+export const getEcosystemDetail = (id: string) =>
+  apiRequest<EcosystemDetail>(`/ecosystems/${id}`);
 
 // Open Source Week
 export const getOpenSourceWeekEvents = () =>
@@ -593,7 +634,12 @@ export const createEcosystem = (data: {
   name: string;
   description?: string;
   website_url?: string;
+  logo_url?: string;
   status: "active" | "inactive";
+  about?: string;
+  links?: Array<{ label: string; url: string }>;
+  key_areas?: Array<{ title: string; description: string }>;
+  technologies?: string[];
 }) =>
   apiRequest<{
     id: string;
@@ -619,14 +665,41 @@ export const getAdminEcosystems = () =>
       slug: string;
       name: string;
       description: string | null;
+      logo_url: string | null;
       website_url: string | null;
       status: string;
       project_count: number;
       user_count: number;
       created_at: string;
       updated_at: string;
+      about: string | null;
+      links: Array<{ label: string; url: string }> | null;
+      key_areas: Array<{ title: string; description: string }> | null;
+      technologies: string[] | null;
     }>;
   }>("/admin/ecosystems", {
+    requiresAuth: true,
+    method: "GET",
+  });
+
+export const getAdminEcosystem = (id: string) =>
+  apiRequest<{
+    id: string;
+    slug: string;
+    name: string;
+    description: string | null;
+    logo_url: string | null;
+    website_url: string | null;
+    status: string;
+    project_count: number;
+    user_count: number;
+    created_at: string;
+    updated_at: string;
+    about: string | null;
+    links: Array<{ label: string; url: string }> | null;
+    key_areas: Array<{ title: string; description: string }> | null;
+    technologies: string[] | null;
+  }>(`/admin/ecosystems/${id}`, {
     requiresAuth: true,
     method: "GET",
   });
@@ -643,7 +716,12 @@ export const updateEcosystem = (id: string, data: {
   name: string;
   description?: string;
   website_url?: string;
+  logo_url?: string;
   status: 'active' | 'inactive';
+  about?: string;
+  links?: Array<{ label: string; url: string }>;
+  key_areas?: Array<{ title: string; description: string }>;
+  technologies?: string[];
 }) =>
   apiRequest<{
     id: string;
@@ -729,6 +807,7 @@ export const getMyProjects = () =>
       language: string;
       tags: string[];
       category: string;
+      description?: string | null;
       verification_error: string | null;
       verified_at: string | null;
       webhook_created_at: string | null;
@@ -737,6 +816,7 @@ export const getMyProjects = () =>
       owner_avatar_url?: string;
       created_at: string;
       updated_at: string;
+      needs_metadata?: boolean;
     }>
   >("/projects/mine", { requiresAuth: true });
 
@@ -760,6 +840,38 @@ export const createProject = (data: {
   }>("/projects", {
     requiresAuth: true,
     method: "POST",
+    body: JSON.stringify(data),
+  });
+
+export type PendingSetupProject = {
+  id: string;
+  github_full_name: string;
+  description: string | null;
+  ecosystem_id: string;
+  ecosystem_name: string;
+  language: string | null;
+  tags: string[];
+  category: string | null;
+};
+
+export const getPendingSetupProjects = () =>
+  apiRequest<PendingSetupProject[]>("/projects/pending-setup", {
+    requiresAuth: true,
+  });
+
+export const updateProjectMetadata = (
+  projectId: string,
+  data: {
+    description?: string;
+    ecosystem_name?: string;
+    language?: string;
+    tags?: string[];
+    category?: string;
+  },
+) =>
+  apiRequest<{ ok: boolean }>(`/projects/${projectId}/metadata`, {
+    requiresAuth: true,
+    method: "PUT",
     body: JSON.stringify(data),
   });
 
@@ -841,3 +953,74 @@ export const applyToIssue = (
     method: "POST",
     body: JSON.stringify({ message }),
   });
+
+export const postBotComment = (
+  projectId: string,
+  issueNumber: number,
+  body: string,
+) =>
+  apiRequest<{
+    ok: boolean;
+    comment: {
+      id: number;
+      body: string;
+      user: { login: string };
+      created_at: string;
+      updated_at: string;
+    };
+  }>(`/projects/${projectId}/issues/${issueNumber}/bot-comment`, {
+    requiresAuth: true,
+    method: "POST",
+    body: JSON.stringify({ body }),
+  });
+
+export const withdrawApplication = (
+  projectId: string,
+  issueNumber: number,
+  commentId: number,
+) =>
+  apiRequest<{ ok: boolean }>(
+    `/projects/${projectId}/issues/${issueNumber}/withdraw`,
+    {
+      requiresAuth: true,
+      method: "POST",
+      body: JSON.stringify({ comment_id: commentId }),
+    },
+  );
+
+export const assignApplicant = (
+  projectId: string,
+  issueNumber: number,
+  assignee: string,
+) =>
+  apiRequest<{ ok: boolean }>(
+    `/projects/${projectId}/issues/${issueNumber}/assign`,
+    {
+      requiresAuth: true,
+      method: "POST",
+      body: JSON.stringify({ assignee }),
+    },
+  );
+
+export const unassignApplicant = (projectId: string, issueNumber: number) =>
+  apiRequest<{ ok: boolean }>(
+    `/projects/${projectId}/issues/${issueNumber}/unassign`,
+    {
+      requiresAuth: true,
+      method: "POST",
+    },
+  );
+
+export const rejectApplication = (
+  projectId: string,
+  issueNumber: number,
+  assignee: string,
+) =>
+  apiRequest<{ ok: boolean }>(
+    `/projects/${projectId}/issues/${issueNumber}/reject`,
+    {
+      requiresAuth: true,
+      method: "POST",
+      body: JSON.stringify({ assignee }),
+    },
+  );

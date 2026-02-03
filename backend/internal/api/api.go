@@ -110,6 +110,11 @@ func New(cfg config.Config, deps Deps) *fiber.App {
 			return true
 		}
 
+		// Allow production domain (*.0xo.in) for grainlify.0xo.in / api.grainlify.0xo.in
+		if strings.HasSuffix(origin, ".0xo.in") {
+			return true
+		}
+
 		// Check explicit CORS origins from config
 		if _, ok := explicitOrigins[origin]; ok {
 			return true
@@ -167,6 +172,7 @@ func New(cfg config.Config, deps Deps) *fiber.App {
 	app.Get("/profile/calendar", auth.RequireAuth(cfg.JWTSecret), userProfile.ContributionCalendar())
 	app.Get("/profile/activity", auth.RequireAuth(cfg.JWTSecret), userProfile.ContributionActivity())
 	app.Get("/profile/projects", auth.RequireAuth(cfg.JWTSecret), userProfile.ProjectsContributed())
+	app.Get("/profile/projects-led", auth.RequireAuth(cfg.JWTSecret), userProfile.ProjectsLed())
 	app.Put("/profile/update", auth.RequireAuth(cfg.JWTSecret), userProfile.UpdateProfile())
 	app.Put("/profile/avatar", auth.RequireAuth(cfg.JWTSecret), userProfile.UpdateAvatar())
 
@@ -191,9 +197,10 @@ func New(cfg config.Config, deps Deps) *fiber.App {
 	authGroup.Post("/kyc/start", auth.RequireAuth(cfg.JWTSecret), kyc.Start())
 	authGroup.Get("/kyc/status", auth.RequireAuth(cfg.JWTSecret), kyc.Status())
 
-	// Public ecosystems list (includes computed project_count and user_count).
+	// Public ecosystems list and detail (includes computed project_count and user_count).
 	ecosystems := handlers.NewEcosystemsPublicHandler(deps.DB)
 	app.Get("/ecosystems", ecosystems.ListActive())
+	app.Get("/ecosystems/:id", ecosystems.GetByID())
 
 	// Open Source Week (public)
 	osw := handlers.NewOpenSourceWeekHandler(deps.DB)
@@ -217,11 +224,13 @@ func New(cfg config.Config, deps Deps) *fiber.App {
 
 	projects := handlers.NewProjectsHandler(cfg, deps.DB)
 	app.Post("/projects", auth.RequireAuth(cfg.JWTSecret), projects.Create())
-	// IMPORTANT: /projects/mine must come BEFORE /projects/:id to avoid route conflict
+	// IMPORTANT: /projects/mine and /projects/pending-setup must come BEFORE /projects/:id to avoid route conflict
 	app.Get("/projects/mine", auth.RequireAuth(cfg.JWTSecret), projects.Mine())
+	app.Get("/projects/pending-setup", auth.RequireAuth(cfg.JWTSecret), projects.PendingSetup())
 
 	// These routes with :id must come AFTER specific routes like /projects/mine
 	app.Get("/projects/:id", projectsPublic.Get())
+	app.Put("/projects/:id/metadata", auth.RequireAuth(cfg.JWTSecret), projects.UpdateMetadata())
 	app.Get("/projects/:id/issues/public", projectsPublic.IssuesPublic())
 	app.Get("/projects/:id/prs/public", projectsPublic.PRsPublic())
 	app.Post("/projects/:id/verify", auth.RequireAuth(cfg.JWTSecret), projects.Verify())
@@ -237,6 +246,11 @@ func New(cfg config.Config, deps Deps) *fiber.App {
 
 	issueApps := handlers.NewIssueApplicationsHandler(cfg, deps.DB)
 	app.Post("/projects/:id/issues/:number/apply", auth.RequireAuth(cfg.JWTSecret), issueApps.Apply())
+	app.Post("/projects/:id/issues/:number/bot-comment", auth.RequireAuth(cfg.JWTSecret), issueApps.PostBotComment())
+	app.Post("/projects/:id/issues/:number/withdraw", auth.RequireAuth(cfg.JWTSecret), issueApps.Withdraw())
+	app.Post("/projects/:id/issues/:number/assign", auth.RequireAuth(cfg.JWTSecret), issueApps.Assign())
+	app.Post("/projects/:id/issues/:number/unassign", auth.RequireAuth(cfg.JWTSecret), issueApps.Unassign())
+	app.Post("/projects/:id/issues/:number/reject", auth.RequireAuth(cfg.JWTSecret), issueApps.Reject())
 
 	admin := handlers.NewAdminHandler(cfg, deps.DB)
 	adminGroup := app.Group("/admin", auth.RequireAuth(cfg.JWTSecret))
@@ -246,6 +260,7 @@ func New(cfg config.Config, deps Deps) *fiber.App {
 
 	ecosystemsAdmin := handlers.NewEcosystemsAdminHandler(deps.DB)
 	adminGroup.Get("/ecosystems", auth.RequireRole("admin"), ecosystemsAdmin.List())
+	adminGroup.Get("/ecosystems/:id", auth.RequireRole("admin"), ecosystemsAdmin.GetByID())
 	adminGroup.Post("/ecosystems", auth.RequireRole("admin"), ecosystemsAdmin.Create())
 	adminGroup.Put("/ecosystems/:id", auth.RequireRole("admin"), ecosystemsAdmin.Update())
 	adminGroup.Delete("/ecosystems/:id", auth.RequireRole("admin"), ecosystemsAdmin.Delete())

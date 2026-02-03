@@ -1,117 +1,231 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChevronRight, ExternalLink, Users, FolderGit2, AlertCircle, GitPullRequest } from 'lucide-react';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
 import { ProjectCard, Project } from '../components/ProjectCard';
 import { SearchWithFilter } from '../components/SearchWithFilter';
+import { getPublicProjects, getEcosystemDetail, type EcosystemDetail } from '../../../shared/api/client';
+import { SkeletonLoader } from '../../../shared/components/SkeletonLoader';
+
+const formatNumber = (num: number): string => {
+  if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
+  if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
+  return num.toString();
+};
+
+const getProjectIcon = (githubFullName: string): string => {
+  const [owner] = githubFullName.split('/');
+  return `https://github.com/${owner}.png?size=40`;
+};
+
+const getProjectColor = (name: string): string => {
+  const colors = [
+    'from-blue-500 to-cyan-500',
+    'from-purple-500 to-pink-500',
+    'from-green-500 to-emerald-500',
+    'from-red-500 to-pink-500',
+    'from-orange-500 to-red-500',
+    'from-gray-600 to-gray-800',
+    'from-green-600 to-green-800',
+    'from-cyan-500 to-blue-600',
+  ];
+  const hash = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return colors[hash % colors.length];
+};
 
 interface EcosystemDetailPageProps {
   ecosystemId: string;
   ecosystemName: string;
+  /** From list page (GET /ecosystems) so detail page shows same icon/description when detail fetch is pending or empty */
+  initialDescription?: string | null;
+  initialLogoUrl?: string | null;
   onBack: () => void;
   onProjectClick?: (id: string) => void;
 }
 
-export function EcosystemDetailPage({ ecosystemId, ecosystemName, onBack, onProjectClick }: EcosystemDetailPageProps) {
+export function EcosystemDetailPage({ ecosystemId, ecosystemName, initialDescription, initialLogoUrl, onBack, onProjectClick }: EcosystemDetailPageProps) {
   const { theme } = useTheme();
   const [activeTab, setActiveTab] = useState<'overview' | 'projects' | 'community'>('overview');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLanguages, setSelectedLanguages] = useState<string[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [ecosystemProjects, setEcosystemProjects] = useState<Project[]>([]);
+  const [isLoadingProjects, setIsLoadingProjects] = useState(true);
+  const [ecosystemDetail, setEcosystemDetail] = useState<EcosystemDetail | null>(null);
+  const [isLoadingDetail, setIsLoadingDetail] = useState(true);
 
-  // Mock data - in real app this would come from API
-  const ecosystemData = {
-    name: ecosystemName,
-    logo: ecosystemName.charAt(0).toUpperCase(),
-    description: 'Projects building decentralized protocols, tooling, and infrastructure.',
-    languages: [
-      { name: 'Q#', percentage: 0 },
-      { name: 'M', percentage: 0 },
-    ],
-    links: [
-      { label: 'Official Website', url: 'web3.ecosystem.example', icon: 'website' },
-      { label: 'Discord Community', url: 'discord.gg', icon: 'discord' },
-      { label: 'Twitter', url: 'twitter.com', icon: 'twitter' },
-    ],
-    stats: {
-      activeContributors: { value: 260, change: '+12' },
-      activeProjects: { value: 24, change: '+3' },
-      availableIssues: { value: 180, change: '-5' },
-      mergedPullRequests: { value: 920, change: '+45' },
-    },
-    about: `The ${ecosystemName} ecosystem represents a paradigm shift towards decentralized applications, protocols, and infrastructure. This ecosystem brings together innovative projects that are building the next generation of the internet.`,
-    keyAreas: [
-      { title: 'Blockchain Protocols', description: 'Core blockchain technologies and consensus mechanisms' },
-      { title: 'DeFi (Decentralized Finance)', description: 'Financial applications built on blockchain' },
-      { title: 'NFTs & Digital Assets', description: 'Tokenization and digital ownership' },
-      { title: `${ecosystemName} Infrastructure`, description: 'Wallets, nodes, and developer tools' },
-      { title: 'DAOs', description: 'Decentralized autonomous organizations' },
-    ],
-    technologies: [
-      'TypeScript for smart contract development and tooling',
-      'Rust for high-performance blockchain infrastructure',
-      'Solidity for Ethereum smart contracts',
-      'JavaScript/TypeScript for dApp frontends',
-    ],
+  const fetchEcosystemDetail = React.useCallback(async () => {
+    if (!ecosystemId) {
+      setEcosystemDetail(null);
+      setIsLoadingDetail(false);
+      return;
+    }
+    setIsLoadingDetail(true);
+    try {
+      const detail = await getEcosystemDetail(ecosystemId);
+      setEcosystemDetail(detail);
+    } catch {
+      setEcosystemDetail(null);
+    } finally {
+      setIsLoadingDetail(false);
+    }
+  }, [ecosystemId]);
+
+  useEffect(() => {
+    fetchEcosystemDetail();
+  }, [fetchEcosystemDetail]);
+
+  // Refetch when user returns to this tab (e.g. after editing in admin) so logo/description stay in sync
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && ecosystemId) {
+        fetchEcosystemDetail();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [ecosystemId, fetchEcosystemDetail]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setIsLoadingProjects(true);
+      try {
+        const res = await getPublicProjects({ ecosystem: ecosystemName, limit: 100 });
+        if (cancelled || !res?.projects) return;
+        const mapped: Project[] = (res.projects as Array<{
+          id: string;
+          github_full_name: string;
+          language: string | null;
+          tags: string[];
+          category: string | null;
+          stars_count: number;
+          forks_count: number;
+          contributors_count: number;
+          open_issues_count: number;
+          open_prs_count: number;
+          ecosystem_name: string | null;
+          description?: string | null;
+        }>).filter((p) => (p.github_full_name.split('/')[1] || '') !== '.github').map((p) => {
+          const repoName = p.github_full_name.split('/')[1] || p.github_full_name;
+          return {
+            id: p.id,
+            name: repoName,
+            icon: getProjectIcon(p.github_full_name),
+            stars: formatNumber(p.stars_count || 0),
+            forks: formatNumber(p.forks_count || 0),
+            contributors: p.contributors_count || 0,
+            openIssues: p.open_issues_count || 0,
+            prs: p.open_prs_count || 0,
+            description: (p.description && p.description.trim()) || `${repoName} project`,
+            tags: Array.isArray(p.tags) ? p.tags.slice(0, 4) : [],
+            color: getProjectColor(repoName),
+          };
+        });
+        setEcosystemProjects(mapped);
+      } catch {
+        if (!cancelled) setEcosystemProjects([]);
+      } finally {
+        if (!cancelled) setIsLoadingProjects(false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [ecosystemName]);
+
+  // Prefer API detail when loaded; use hardcoded fallbacks only when detail is null (loading/error)
+  const detail = ecosystemDetail;
+  const hasDetail = detail != null;
+
+  const normalizeLinks = (raw: unknown): Array<{ label: string; url: string }> => {
+    if (!Array.isArray(raw) || raw.length === 0) return [];
+    return raw.map((l) => ({
+      label: (l && typeof l === 'object' && 'label' in l && typeof (l as { label?: unknown }).label === 'string') ? (l as { label: string }).label : '',
+      url: (l && typeof l === 'object' && 'url' in l && typeof (l as { url?: unknown }).url === 'string') ? (l as { url: string }).url : '',
+    })).filter((l) => l.label.trim() || l.url.trim());
+  };
+  const normalizeKeyAreas = (raw: unknown): Array<{ title: string; description: string }> => {
+    if (!Array.isArray(raw) || raw.length === 0) return [];
+    return raw.map((k) => ({
+      title: (k && typeof k === 'object' && 'title' in k && typeof (k as { title?: unknown }).title === 'string') ? (k as { title: string }).title : '',
+      description: (k && typeof k === 'object' && 'description' in k && typeof (k as { description?: unknown }).description === 'string') ? (k as { description: string }).description : '',
+    })).filter((k) => k.title.trim() || k.description.trim());
+  };
+  const normalizeTechnologies = (raw: unknown): string[] => {
+    if (!Array.isArray(raw) || raw.length === 0) return [];
+    return raw.map((t) => (typeof t === 'string' ? t.trim() : '')).filter(Boolean);
   };
 
-  const projectsData: Project[] = [
-    {
-      id: '1',
-      name: 'React Ecosystem',
-      icon: '⚛️',
-      stars: '4.9M',
-      forks: '2.6M',
-      contributors: 45,
-      openIssues: 12,
-      prs: 0,
-      description: 'A modern React framework for building user interfaces with TypeScript support',
-      tags: ['TypeScript', 'good first issue'],
-      color: 'from-blue-500 to-cyan-500',
-    },
-    {
-      id: '2',
-      name: 'Nextjs Framework',
-      icon: '▲',
-      stars: '120K',
-      forks: '24K',
-      contributors: 78,
-      openIssues: 20,
-      prs: 0,
-      description: 'The React framework for production with server-side rendering',
-      tags: ['Frontend'],
-      color: 'from-purple-500 to-pink-500',
-    },
-    {
-      id: '3',
-      name: 'Vue.js',
-      icon: 'V',
-      stars: '214K',
-      forks: '36K',
-      contributors: 94,
-      openIssues: 8,
-      prs: 0,
-      description: 'Progressive JavaScript framework for building user interfaces',
-      tags: ['Framework'],
-      color: 'from-green-500 to-emerald-500',
-    },
-    {
-      id: '4',
-      name: 'Angular',
-      icon: 'A',
-      stars: '93.5K',
-      forks: '24K',
-      contributors: 120,
-      openIssues: 35,
-      prs: 0,
-      description: 'A platform and framework for building single-page client applications',
-      tags: ['Frontend', 'TypeScript'],
-      color: 'from-red-500 to-pink-500',
-    },
-  ];
+  const apiLinks = normalizeLinks(detail?.links);
+  const apiKeyAreas = normalizeKeyAreas(detail?.key_areas);
+  const apiTechnologies = normalizeTechnologies(detail?.technologies);
 
-  const filteredProjects = projectsData.filter(project =>
-    project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    project.description.toLowerCase().includes(searchQuery.toLowerCase())
+  // Prefer API (detail fetch) for logo/description; fall back to list data (initialDescription/initialLogoUrl) so same icon/description as list page
+  const apiDescription = hasDetail && detail?.description != null ? String(detail.description).trim() : '';
+  const apiLogoUrl = hasDetail && detail?.logo_url != null && String(detail.logo_url).trim() !== '' ? String(detail.logo_url).trim() : null;
+  const displayDescription = apiDescription || (initialDescription != null && initialDescription !== '' ? String(initialDescription).trim() : '') || (hasDetail ? '' : 'Projects building decentralized protocols, tooling, and infrastructure.');
+  const displayLogoUrl = apiLogoUrl || (initialLogoUrl != null && initialLogoUrl !== '' ? String(initialLogoUrl).trim() : null);
+
+  const ecosystemData = {
+    name: (hasDetail && detail?.name) ? detail.name : ecosystemName,
+    logo: displayLogoUrl ? undefined : ecosystemName.charAt(0).toUpperCase(),
+    logoUrl: displayLogoUrl,
+    description: displayDescription,
+    languages: [] as { name: string; percentage: number }[],
+    links: hasDetail && apiLinks.length > 0
+      ? apiLinks
+      : hasDetail
+        ? []
+        : [
+            { label: 'Official Website', url: detail?.website_url || 'web3.ecosystem.example', icon: 'website' },
+            { label: 'Discord Community', url: 'discord.gg', icon: 'discord' },
+            { label: 'Twitter', url: 'twitter.com', icon: 'twitter' },
+          ].map(({ label, url }) => ({ label, url })),
+    // Use detail API counts when available; when detail returns 0 but we have projects (from Projects tab), use aggregated counts so Overview matches what user sees
+    stats: (() => {
+      const fromDetail = hasDetail && detail != null;
+      const detailProjects = fromDetail ? Number(detail?.project_count) || 0 : 0;
+      const detailContributors = fromDetail ? Number(detail?.contributors_count) || 0 : 0;
+      const detailIssues = fromDetail ? Number(detail?.open_issues_count) || 0 : 0;
+      const detailPrs = fromDetail ? Number(detail?.open_prs_count) || 0 : 0;
+      const fromProjects = {
+        projects: ecosystemProjects.length,
+        contributors: ecosystemProjects.reduce((s, p) => s + (p.contributors || 0), 0),
+        issues: ecosystemProjects.reduce((s, p) => s + p.openIssues, 0),
+        prs: ecosystemProjects.reduce((s, p) => s + (p.prs || 0), 0),
+      };
+      const useProjectsFallback = fromProjects.projects > 0 && detailProjects === 0;
+      return {
+        activeContributors: { value: useProjectsFallback ? fromProjects.contributors : (fromDetail ? detailContributors : fromProjects.contributors), change: '' },
+        activeProjects: { value: useProjectsFallback ? fromProjects.projects : (fromDetail ? detailProjects : fromProjects.projects), change: '' },
+        availableIssues: { value: useProjectsFallback ? fromProjects.issues : (fromDetail ? detailIssues : fromProjects.issues), change: '' },
+        mergedPullRequests: { value: useProjectsFallback ? fromProjects.prs : (fromDetail ? detailPrs : fromProjects.prs), change: '' },
+      };
+    })(),
+    about: hasDetail
+      ? (detail?.about?.trim() || '')
+      : `The ${ecosystemName} ecosystem represents a paradigm shift towards decentralized applications, protocols, and infrastructure.`,
+    keyAreas: hasDetail && apiKeyAreas.length > 0
+      ? apiKeyAreas
+      : hasDetail
+        ? []
+        : [
+            { title: 'Blockchain Protocols', description: 'Core blockchain technologies and consensus mechanisms' },
+            { title: 'DeFi (Decentralized Finance)', description: 'Financial applications built on blockchain' },
+            { title: 'NFTs & Digital Assets', description: 'Tokenization and digital ownership' },
+            { title: `${ecosystemName} Infrastructure`, description: 'Wallets, nodes, and developer tools' },
+            { title: 'DAOs', description: 'Decentralized autonomous organizations' },
+          ],
+    technologies: hasDetail && apiTechnologies.length > 0
+      ? apiTechnologies
+      : hasDetail
+        ? []
+        : ['TypeScript for smart contract development and tooling', 'Rust for high-performance blockchain infrastructure', 'Solidity for Ethereum smart contracts', 'JavaScript/TypeScript for dApp frontends'],
+  };
+
+  const filteredProjects = ecosystemProjects.filter(
+    (project) =>
+      project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      project.description.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const isDark = theme === 'dark';
@@ -150,8 +264,12 @@ export function EcosystemDetailPage({ ecosystemId, ecosystemName, onBack, onProj
           {/* Ecosystem Header */}
           <div className="backdrop-blur-[40px] rounded-[16px] md:rounded-[24px] border bg-white/[0.12] border-white/20 p-4 md:p-6">
             <div className="flex items-center gap-3 md:gap-4 mb-3 md:mb-4">
-              <div className="w-12 h-12 md:w-16 md:h-16 rounded-full bg-gradient-to-br from-[#c9983a] to-[#d4af37] flex items-center justify-center flex-shrink-0">
-                <span className="text-[18px] md:text-[24px] font-bold text-white">{ecosystemData.logo}</span>
+              <div className={`w-12 h-12 md:w-16 md:h-16 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden ${ecosystemData.logoUrl ? 'bg-white' : 'bg-gradient-to-br from-[#c9983a] to-[#d4af37]'}`}>
+                {ecosystemData.logoUrl ? (
+                  <img src={ecosystemData.logoUrl} alt="" className="w-full h-full object-contain p-0.5" />
+                ) : (
+                  <span className="text-[18px] md:text-[24px] font-bold text-white">{ecosystemData.logo}</span>
+                )}
               </div>
               <div className="flex-1 min-w-0">
                 <h1 className={`text-[16px] md:text-[20px] font-bold transition-colors ${
@@ -163,13 +281,13 @@ export function EcosystemDetailPage({ ecosystemId, ecosystemName, onBack, onProj
                   <div className="flex items-center gap-1.5 md:gap-2">
                     <Users className={`w-3 h-3 md:w-3.5 md:h-3.5 flex-shrink-0 ${isDark ? 'text-[#c9983a]' : 'text-[#8b6914]'}`} />
                     <span className={`text-[11px] md:text-[13px] font-bold ${isDark ? 'text-[#c9983a]' : 'text-[#8b6914]'}`}>
-                      420
+                      {isLoadingDetail ? '—' : ecosystemData.stats.activeContributors.value}
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5 md:gap-2">
                     <FolderGit2 className={`w-3 h-3 md:w-3.5 md:h-3.5 flex-shrink-0 ${isDark ? 'text-[#c9983a]' : 'text-[#8b6914]'}`} />
                     <span className={`text-[11px] md:text-[13px] font-bold ${isDark ? 'text-[#c9983a]' : 'text-[#8b6914]'}`}>
-                      {ecosystemData.stats.activeProjects.value}
+                      {isLoadingDetail ? '—' : ecosystemData.stats.activeProjects.value}
                     </span>
                   </div>
                 </div>
@@ -191,27 +309,29 @@ export function EcosystemDetailPage({ ecosystemId, ecosystemName, onBack, onProj
             </p>
           </div>
 
-          {/* Languages */}
-          <div className="backdrop-blur-[40px] rounded-[16px] md:rounded-[24px] border bg-white/[0.12] border-white/20 p-4 md:p-6">
-            <h2 className={`text-[14px] md:text-[16px] font-bold mb-2 md:mb-3 transition-colors ${
-              isDark ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-            }`}>
-              Languages
-            </h2>
-            <div className="flex flex-wrap gap-2 md:gap-3">
-              {ecosystemData.languages.map((lang, idx) => (
-                <div
-                  key={idx}
-                  className="px-2.5 md:px-3 py-1 md:py-1.5 rounded-[6px] md:rounded-[8px] backdrop-blur-[20px] border border-white/25 bg-white/[0.08]"
-                >
-                  <span className="text-[11px] md:text-[12px] font-semibold text-[#c9983a]">{lang.name}</span>
-                  <span className={`ml-1.5 md:ml-2 text-[10px] md:text-[11px] ${isDark ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'}`}>
-                    {lang.percentage}%
-                  </span>
-                </div>
-              ))}
+          {/* Languages - only show when configured (optional for future) */}
+          {ecosystemData.languages.length > 0 && (
+            <div className="backdrop-blur-[40px] rounded-[16px] md:rounded-[24px] border bg-white/[0.12] border-white/20 p-4 md:p-6">
+              <h2 className={`text-[14px] md:text-[16px] font-bold mb-2 md:mb-3 transition-colors ${
+                isDark ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
+              }`}>
+                Languages
+              </h2>
+              <div className="flex flex-wrap gap-2 md:gap-3">
+                {ecosystemData.languages.map((lang, idx) => (
+                  <div
+                    key={idx}
+                    className="px-2.5 md:px-3 py-1 md:py-1.5 rounded-[6px] md:rounded-[8px] backdrop-blur-[20px] border border-white/25 bg-white/[0.08]"
+                  >
+                    <span className="text-[11px] md:text-[12px] font-semibold text-[#c9983a]">{lang.name}</span>
+                    <span className={`ml-1.5 md:ml-2 text-[10px] md:text-[11px] ${isDark ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'}`}>
+                      {lang.percentage}%
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Links */}
           <div className="backdrop-blur-[40px] rounded-[16px] md:rounded-[24px] border bg-white/[0.12] border-white/20 p-4 md:p-6">
@@ -224,7 +344,7 @@ export function EcosystemDetailPage({ ecosystemId, ecosystemName, onBack, onProj
               {ecosystemData.links.map((link, idx) => (
                 <a
                   key={idx}
-                  href={`https://${link.url}`}
+                  href={/^https?:\/\//i.test(link.url) ? link.url : `https://${link.url}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center justify-between p-2.5 md:p-3 rounded-[10px] md:rounded-[12px] backdrop-blur-[20px] border border-white/25 bg-white/[0.08] hover:bg-white/[0.15] active:bg-white/[0.2] transition-all group touch-manipulation min-h-[44px]"
@@ -305,7 +425,7 @@ export function EcosystemDetailPage({ ecosystemId, ecosystemName, onBack, onProj
                   </div>
                   <div className="flex items-end gap-2">
                     <span className={`text-[20px] md:text-[28px] font-bold ${isDark ? 'text-[#c9983a]' : 'text-[#a67c2a]'}`}>
-                      {ecosystemData.stats.activeContributors.value}
+                      {isLoadingDetail ? '—' : ecosystemData.stats.activeContributors.value}
                     </span>
                   </div>
                 </div>
@@ -321,7 +441,7 @@ export function EcosystemDetailPage({ ecosystemId, ecosystemName, onBack, onProj
                   </div>
                   <div className="flex items-end gap-2">
                     <span className={`text-[20px] md:text-[28px] font-bold ${isDark ? 'text-[#c9983a]' : 'text-[#a67c2a]'}`}>
-                      {ecosystemData.stats.activeProjects.value}
+                      {isLoadingDetail ? '—' : ecosystemData.stats.activeProjects.value}
                     </span>
                   </div>
                 </div>
@@ -337,7 +457,7 @@ export function EcosystemDetailPage({ ecosystemId, ecosystemName, onBack, onProj
                   </div>
                   <div className="flex items-end gap-2">
                     <span className={`text-[20px] md:text-[28px] font-bold ${isDark ? 'text-[#c9983a]' : 'text-[#a67c2a]'}`}>
-                      {ecosystemData.stats.availableIssues.value}
+                      {isLoadingDetail ? '—' : ecosystemData.stats.availableIssues.value}
                     </span>
                   </div>
                 </div>
@@ -348,12 +468,12 @@ export function EcosystemDetailPage({ ecosystemId, ecosystemName, onBack, onProj
                     <span className={`text-[9px] md:text-[11px] font-bold uppercase tracking-wide leading-tight ${
                       isDark ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
                     }`}>
-                      Merged PRs
+                      Open PRs
                     </span>
                   </div>
                   <div className="flex items-end gap-2">
                     <span className={`text-[20px] md:text-[28px] font-bold ${isDark ? 'text-[#c9983a]' : 'text-[#a67c2a]'}`}>
-                      {ecosystemData.stats.mergedPullRequests.value}
+                      {isLoadingDetail ? '—' : ecosystemData.stats.mergedPullRequests.value}
                     </span>
                   </div>
                 </div>
@@ -478,11 +598,38 @@ export function EcosystemDetailPage({ ecosystemId, ecosystemName, onBack, onProj
               />
 
               {/* Projects Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
-                {filteredProjects.map(project => (
-                  <ProjectCard key={project.id} project={project} onClick={onProjectClick} />
-                ))}
-              </div>
+              {isLoadingProjects ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
+                  {[1, 2, 3, 4].map((i) => (
+                    <div key={i} className={`rounded-[18px] border p-5 ${isDark ? 'bg-white/[0.08] border-white/15' : 'bg-white/[0.15] border-white/25'}`}>
+                      <SkeletonLoader className="h-11 w-11 rounded-[12px] mb-4" />
+                      <SkeletonLoader className="h-4 w-3/4 mb-2" />
+                      <SkeletonLoader className="h-3 w-full mb-1" />
+                      <SkeletonLoader className="h-3 w-5/6 mb-4" />
+                      <div className="flex gap-2 mb-4">
+                        <SkeletonLoader className="h-4 w-12" />
+                        <SkeletonLoader className="h-4 w-12" />
+                      </div>
+                      <div className="flex gap-2">
+                        <SkeletonLoader className="h-7 w-16 rounded-[8px]" />
+                        <SkeletonLoader className="h-7 w-20 rounded-[8px]" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : filteredProjects.length === 0 ? (
+                <div className={`rounded-[16px] border p-8 text-center ${isDark ? 'bg-white/[0.08] border-white/15 text-[#d4d4d4]' : 'bg-white/[0.15] border-white/25 text-[#7a6b5a]'}`}>
+                  <FolderGit2 className={`w-10 h-10 mx-auto mb-3 ${isDark ? 'text-[#b8a898]' : 'text-[#8a7b6a]'}`} />
+                  <p className="text-[14px] font-semibold">No projects in {ecosystemName} yet</p>
+                  <p className="text-[12px] mt-1">Projects added under this ecosystem will appear here.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
+                  {filteredProjects.map((project) => (
+                    <ProjectCard key={project.id} project={project} onClick={onProjectClick} />
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

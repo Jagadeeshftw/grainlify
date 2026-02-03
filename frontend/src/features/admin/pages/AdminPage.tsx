@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
-import { Shield, Globe, Plus, Sparkles, Trash2, ExternalLink, Calendar, Pencil } from 'lucide-react';
+import { Shield, Globe, Plus, Sparkles, Trash2, ExternalLink, Calendar, Pencil, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Modal, ModalFooter, ModalButton, ModalInput, ModalSelect } from '../../../shared/components/ui/Modal';
 import { DatePicker } from '../../../shared/components/ui/DatePicker';
@@ -8,18 +8,33 @@ import { ProjectCard, Project } from '../../dashboard/components/ProjectCard';
 import { ProjectCardSkeleton } from '../../dashboard/components/ProjectCardSkeleton';
 import { createEcosystem, getAdminEcosystems, deleteEcosystem, updateEcosystem, createOpenSourceWeekEvent, getAdminOpenSourceWeekEvents, deleteOpenSourceWeekEvent, getPublicProjects, deleteAdminProject } from '../../../shared/api/client';
 import { isValidProject, getRepoName } from '../../../shared/utils/projectFilter';
+import { createEcosystem, getAdminEcosystems, getAdminEcosystem, deleteEcosystem, updateEcosystem, createOpenSourceWeekEvent, getAdminOpenSourceWeekEvents, deleteOpenSourceWeekEvent } from '../../../shared/api/client';
+
+interface EcosystemLink {
+  label: string;
+  url: string;
+}
+interface EcosystemKeyArea {
+  title: string;
+  description: string;
+}
 
 interface Ecosystem {
   id: string;
   slug: string;
   name: string;
   description: string | null;
+  logo_url: string | null;
   website_url: string | null;
   status: string;
   project_count: number;
   user_count: number;
   created_at: string;
   updated_at: string;
+  about?: string | null;
+  links?: EcosystemLink[] | null;
+  key_areas?: EcosystemKeyArea[] | null;
+  technologies?: string[] | null;
 }
 
 const formatNumber = (num: number): string => {
@@ -83,14 +98,24 @@ export function AdminPage() {
   const [editFormData, setEditFormData] = useState({
     name: '',
     description: '',
+    logoUrl: '',
     status: 'active',
-    websiteUrl: ''
+    websiteUrl: '',
+    about: '',
+    links: [] as EcosystemLink[],
+    key_areas: [] as EcosystemKeyArea[],
+    technologies: [] as string[],
   });
   const [formData, setFormData] = useState({
     name: '',
     description: '',
+    logoUrl: '',
     status: 'active',
-    websiteUrl: ''
+    websiteUrl: '',
+    about: '',
+    links: [] as EcosystemLink[],
+    key_areas: [] as EcosystemKeyArea[],
+    technologies: [] as string[],
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -103,14 +128,14 @@ export function AdminPage() {
   };
 
   const validateDescription = (description: string) => {
-    if (!description.trim()) return 'Description is required';
+    if (!description.trim()) return null;
     if (description.length < 10) return 'Description must be at least 10 characters';
     if (description.length > 500) return 'Description must be less than 500 characters';
     return null;
   };
 
   const validateWebsiteUrl = (url: string) => {
-    if (!url.trim()) return 'Website URL is required';
+    if (!url.trim()) return null;
     try {
       new URL(url);
       if (!url.startsWith('http')) return 'URL must start with http:// or https://';
@@ -517,7 +542,12 @@ export function AdminPage() {
         name: formData.name,
         description: formData.description || undefined,
         website_url: formData.websiteUrl || undefined,
+        logo_url: formData.logoUrl || undefined,
         status: formData.status as 'active' | 'inactive',
+        about: formData.about || undefined,
+        links: formData.links.filter((l) => l.label.trim() || l.url.trim()).length ? formData.links : undefined,
+        key_areas: formData.key_areas.filter((k) => k.title.trim() || k.description.trim()).length ? formData.key_areas : undefined,
+        technologies: formData.technologies.filter((t) => t.trim()).length ? formData.technologies : undefined,
       });
 
       // Success - close modal and reset form
@@ -526,8 +556,13 @@ export function AdminPage() {
       setFormData({
         name: '',
         description: '',
+        logoUrl: '',
         status: 'active',
-        websiteUrl: ''
+        websiteUrl: '',
+        about: '',
+        links: [],
+        key_areas: [],
+        technologies: [],
       });
 
       // Refresh ecosystems list
@@ -542,15 +577,70 @@ export function AdminPage() {
     }
   };
 
-  const openEditModal = (ecosystem: Ecosystem) => {
-    setEditFormData({
-      name: ecosystem.name,
-      description: ecosystem.description || '',
-      status: ecosystem.status,
-      websiteUrl: ecosystem.website_url || ''
-    });
+  const openEditModal = async (ecosystem: Ecosystem) => {
     setEditingEcosystem(ecosystem);
     setErrors({});
+    let data: {
+      name: string;
+      description: string | null;
+      logo_url: string | null;
+      website_url: string | null;
+      status: string;
+      about: string | null;
+      links: Ecosystem['links'];
+      key_areas: Ecosystem['key_areas'];
+      technologies: Ecosystem['technologies'];
+    } = {
+      name: ecosystem.name ?? '',
+      description: ecosystem.description ?? null,
+      logo_url: ecosystem.logo_url ?? null,
+      website_url: ecosystem.website_url ?? null,
+      status: ecosystem.status ?? 'active',
+      about: ecosystem.about ?? null,
+      links: ecosystem.links ?? null,
+      key_areas: ecosystem.key_areas ?? null,
+      technologies: ecosystem.technologies ?? null,
+    };
+    try {
+      const detail = await getAdminEcosystem(ecosystem.id);
+      data = {
+        name: detail.name ?? '',
+        description: detail.description ?? null,
+        logo_url: detail.logo_url ?? null,
+        website_url: detail.website_url ?? null,
+        status: detail.status ?? 'active',
+        about: detail.about ?? null,
+        links: detail.links ?? null,
+        key_areas: detail.key_areas ?? null,
+        technologies: detail.technologies ?? null,
+      };
+    } catch (err) {
+      console.error('Failed to load ecosystem for edit:', err);
+      toast.error('Failed to load ecosystem details');
+      setEditingEcosystem(null);
+      return;
+    }
+    const rawLinks = data.links;
+    const linksArr = Array.isArray(rawLinks)
+      ? rawLinks.map((l: { label?: string; url?: string }) => ({ label: String(l?.label ?? ''), url: String(l?.url ?? '') }))
+      : [];
+    const rawKeyAreas = data.key_areas;
+    const keyAreasArr = Array.isArray(rawKeyAreas)
+      ? rawKeyAreas.map((k: { title?: string; description?: string }) => ({ title: String(k?.title ?? ''), description: String(k?.description ?? '') }))
+      : [];
+    const rawTech = data.technologies;
+    const technologiesArr = Array.isArray(rawTech) ? rawTech.map((t: unknown) => String(t ?? '')) : [];
+    setEditFormData({
+      name: data.name,
+      description: data.description ?? '',
+      logoUrl: data.logo_url ?? '',
+      status: data.status,
+      websiteUrl: data.website_url ?? '',
+      about: data.about ?? '',
+      links: linksArr,
+      key_areas: keyAreasArr,
+      technologies: technologiesArr,
+    });
   };
 
   const handleEditSubmit = async (e: React.FormEvent) => {
@@ -577,11 +667,20 @@ export function AdminPage() {
 
     try {
       setErrorMessage(null);
+      const linksToSave = (editFormData.links ?? []).filter((l) => (l?.label ?? '').trim() || (l?.url ?? '').trim());
+      const keyAreasToSave = (editFormData.key_areas ?? []).filter((k) => (k?.title ?? '').trim() || (k?.description ?? '').trim());
+      const technologiesToSave = (editFormData.technologies ?? []).filter((t) => String(t).trim());
+
       await updateEcosystem(editingEcosystem.id, {
         name: editFormData.name,
         description: editFormData.description || undefined,
         website_url: editFormData.websiteUrl || undefined,
+        logo_url: editFormData.logoUrl || undefined,
         status: editFormData.status as 'active' | 'inactive',
+        about: editFormData.about ?? '',
+        links: linksToSave,
+        key_areas: keyAreasToSave,
+        technologies: technologiesToSave,
       });
 
       // Success - close modal and reset form
@@ -590,8 +689,13 @@ export function AdminPage() {
       setEditFormData({
         name: '',
         description: '',
+        logoUrl: '',
         status: 'active',
-        websiteUrl: ''
+        websiteUrl: '',
+        about: '',
+        links: [],
+        key_areas: [],
+        technologies: [],
       });
 
       toast.success('Ecosystem updated successfully');
@@ -796,8 +900,20 @@ export function AdminPage() {
                       }`}
                   >
                     <div className="flex items-start justify-between mb-3">
-                      <div className={`w-12 h-12 rounded-[12px] ${bgColor} flex items-center justify-center text-white font-bold text-lg shadow-lg`}>
-                        {firstLetter}
+                      <div className={`w-12 h-12 rounded-[12px] flex items-center justify-center text-white font-bold text-lg shadow-lg overflow-hidden flex-shrink-0 relative ${ecosystem.logo_url ? 'bg-white' : bgColor}`}>
+                        <span className="absolute inset-0 flex items-center justify-center" aria-hidden>
+                          {firstLetter}
+                        </span>
+                        {ecosystem.logo_url ? (
+                          <img
+                            src={ecosystem.logo_url}
+                            alt={`${ecosystem.name} logo`}
+                            className="w-full h-full object-cover relative z-10"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                            }}
+                          />
+                        ) : null}
                       </div>
                       <div className="flex items-center gap-1">
                         <button
@@ -1093,6 +1209,51 @@ export function AdminPage() {
               error={errors.description}
             />
 
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-[#7a6b5a] dark:text-[#d4d4d4]">
+                Logo (optional)
+              </label>
+              <div className="flex items-center gap-4">
+                <label className="inline-flex items-center justify-center px-4 py-2 rounded-[10px] border border-dashed border-[#c9983a]/50 text-[13px] font-semibold cursor-pointer bg-white/40 dark:bg-white/10 hover:bg-white/60 dark:hover:bg-white/20 transition-colors">
+                  <span>Upload image</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (!file) {
+                        setFormData(prev => ({ ...prev, logoUrl: '' }));
+                        return;
+                      }
+                      const reader = new FileReader();
+                      reader.onload = () => {
+                        if (typeof reader.result === 'string') {
+                          setFormData(prev => ({ ...prev, logoUrl: reader.result || '' }));
+                        }
+                      };
+                      reader.readAsDataURL(file);
+                    }}
+                  />
+                </label>
+                {formData.logoUrl && (
+                  <div className="w-10 h-10 rounded-full overflow-hidden border border-white/30 bg-white/20 flex items-center justify-center">
+                    <img
+                      src={formData.logoUrl}
+                      alt="Logo preview"
+                      className="w-full h-full object-cover"
+                      onError={() => {
+                        setFormData(prev => ({ ...prev, logoUrl: '' }));
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+              <p className="text-[11px] text-[#7a6b5a] dark:text-[#b8a898]">
+                PNG or JPG, recommended size 128×128. Stored with the ecosystem.
+              </p>
+            </div>
+
             <ModalSelect
               label="Status"
               value={formData.status}
@@ -1118,6 +1279,49 @@ export function AdminPage() {
               placeholder="https://example.com"
               error={errors.websiteUrl}
             />
+
+            <ModalInput
+              label="About (detail page)"
+              value={formData.about}
+              onChange={(value) => setFormData({ ...formData, about: value })}
+              placeholder="Longer description for the ecosystem detail page..."
+              rows={4}
+            />
+
+            <div className="space-y-2">
+              <label className={`block text-sm font-medium ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'}`}>Links (detail page)</label>
+              {formData.links.map((link, idx) => (
+                <div key={idx} className="flex gap-2 items-start">
+                  <input type="text" placeholder="Label" value={link.label} onChange={(e) => { const next = [...formData.links]; next[idx] = { ...next[idx], label: e.target.value }; setFormData({ ...formData, links: next }); }} className={`flex-1 min-w-0 px-3 py-2 rounded-[10px] border text-[13px] ${theme === 'dark' ? 'bg-white/10 border-white/20 text-[#e8dfd0]' : 'bg-white/40 border-white/30 text-[#2d2820]'}`} />
+                  <input type="url" placeholder="URL" value={link.url} onChange={(e) => { const next = [...formData.links]; next[idx] = { ...next[idx], url: e.target.value }; setFormData({ ...formData, links: next }); }} className={`flex-1 min-w-0 px-3 py-2 rounded-[10px] border text-[13px] ${theme === 'dark' ? 'bg-white/10 border-white/20 text-[#e8dfd0]' : 'bg-white/40 border-white/30 text-[#2d2820]'}`} />
+                  <button type="button" onClick={() => setFormData({ ...formData, links: formData.links.filter((_, i) => i !== idx) })} className={`p-2 rounded-[10px] ${theme === 'dark' ? 'hover:bg-red-500/20 text-red-400' : 'hover:bg-red-500/10 text-red-600'}`}><X className="w-4 h-4" /></button>
+                </div>
+              ))}
+              <button type="button" onClick={() => setFormData({ ...formData, links: [...formData.links, { label: '', url: '' }] })} className={`text-[13px] font-medium flex items-center gap-1.5 ${theme === 'dark' ? 'text-[#c9983a] hover:text-[#e8c77f]' : 'text-[#a67c2e] hover:text-[#c9983a]'}`}><Plus className="w-4 h-4" /> Add link</button>
+            </div>
+
+            <div className="space-y-2">
+              <label className={`block text-sm font-medium ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'}`}>Key Areas (detail page)</label>
+              {formData.key_areas.map((area, idx) => (
+                <div key={idx} className="space-y-1.5 p-3 rounded-[12px] border border-white/20 bg-white/[0.06]">
+                  <div className="flex justify-end"><button type="button" onClick={() => setFormData({ ...formData, key_areas: formData.key_areas.filter((_, i) => i !== idx) })} className={`p-1 rounded ${theme === 'dark' ? 'hover:bg-red-500/20 text-red-400' : 'hover:bg-red-500/10 text-red-600'}`}><X className="w-4 h-4" /></button></div>
+                  <input type="text" placeholder="Title" value={area.title} onChange={(e) => { const next = [...formData.key_areas]; next[idx] = { ...next[idx], title: e.target.value }; setFormData({ ...formData, key_areas: next }); }} className={`w-full px-3 py-2 rounded-[10px] border text-[13px] ${theme === 'dark' ? 'bg-white/10 border-white/20 text-[#e8dfd0]' : 'bg-white/40 border-white/30 text-[#2d2820]'}`} />
+                  <input type="text" placeholder="Description" value={area.description} onChange={(e) => { const next = [...formData.key_areas]; next[idx] = { ...next[idx], description: e.target.value }; setFormData({ ...formData, key_areas: next }); }} className={`w-full px-3 py-2 rounded-[10px] border text-[13px] ${theme === 'dark' ? 'bg-white/10 border-white/20 text-[#e8dfd0]' : 'bg-white/40 border-white/30 text-[#2d2820]'}`} />
+                </div>
+              ))}
+              <button type="button" onClick={() => setFormData({ ...formData, key_areas: [...formData.key_areas, { title: '', description: '' }] })} className={`text-[13px] font-medium flex items-center gap-1.5 ${theme === 'dark' ? 'text-[#c9983a] hover:text-[#e8c77f]' : 'text-[#a67c2e] hover:text-[#c9983a]'}`}><Plus className="w-4 h-4" /> Add key area</button>
+            </div>
+
+            <div className="space-y-2">
+              <label className={`block text-sm font-medium ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'}`}>Technologies (detail page)</label>
+              {formData.technologies.map((tech, idx) => (
+                <div key={idx} className="flex gap-2">
+                  <input type="text" placeholder="e.g. TypeScript, Rust" value={tech} onChange={(e) => { const next = [...formData.technologies]; next[idx] = e.target.value; setFormData({ ...formData, technologies: next }); }} className={`flex-1 min-w-0 px-3 py-2 rounded-[10px] border text-[13px] ${theme === 'dark' ? 'bg-white/10 border-white/20 text-[#e8dfd0]' : 'bg-white/40 border-white/30 text-[#2d2820]'}`} />
+                  <button type="button" onClick={() => setFormData({ ...formData, technologies: formData.technologies.filter((_, i) => i !== idx) })} className={`p-2 rounded-[10px] ${theme === 'dark' ? 'hover:bg-red-500/20 text-red-400' : 'hover:bg-red-500/10 text-red-600'}`}><X className="w-4 h-4" /></button>
+                </div>
+              ))}
+              <button type="button" onClick={() => setFormData({ ...formData, technologies: [...formData.technologies, ''] })} className={`text-[13px] font-medium flex items-center gap-1.5 ${theme === 'dark' ? 'text-[#c9983a] hover:text-[#e8c77f]' : 'text-[#a67c2e] hover:text-[#c9983a]'}`}><Plus className="w-4 h-4" /> Add technology</button>
+            </div>
           </div>
 
           <ModalFooter>
@@ -1176,6 +1380,51 @@ export function AdminPage() {
               error={errors.description}
             />
 
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-[#7a6b5a] dark:text-[#d4d4d4]">
+                Logo (optional)
+              </label>
+              <div className="flex items-center gap-4">
+                <label className="inline-flex items-center justify-center px-4 py-2 rounded-[10px] border border-dashed border-[#c9983a]/50 text-[13px] font-semibold cursor-pointer bg-white/40 dark:bg-white/10 hover:bg-white/60 dark:hover:bg-white/20 transition-colors">
+                  <span>Upload new image</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (!file) {
+                        setEditFormData(prev => ({ ...prev, logoUrl: editingEcosystem?.logo_url || '' }));
+                        return;
+                      }
+                      const reader = new FileReader();
+                      reader.onload = () => {
+                        if (typeof reader.result === 'string') {
+                          setEditFormData(prev => ({ ...prev, logoUrl: reader.result || '' }));
+                        }
+                      };
+                      reader.readAsDataURL(file);
+                    }}
+                  />
+                </label>
+                {editFormData.logoUrl && (
+                  <div className="w-10 h-10 rounded-full overflow-hidden border border-white/30 bg-white/20 flex items-center justify-center">
+                    <img
+                      src={editFormData.logoUrl}
+                      alt="Logo preview"
+                      className="w-full h-full object-cover"
+                      onError={() => {
+                        setEditFormData(prev => ({ ...prev, logoUrl: editingEcosystem?.logo_url || '' }));
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+              <p className="text-[11px] text-[#7a6b5a] dark:text-[#b8a898]">
+                Leave as is to keep the current logo, or upload a new one.
+              </p>
+            </div>
+
             <ModalSelect
               label="Status"
               value={editFormData.status}
@@ -1201,6 +1450,101 @@ export function AdminPage() {
               placeholder="https://example.com"
               error={errors.websiteUrl}
             />
+
+            <ModalInput
+              label="About (detail page)"
+              value={editFormData.about}
+              onChange={(value) => setEditFormData({ ...editFormData, about: value })}
+              placeholder="Longer description for the ecosystem detail page..."
+              rows={4}
+            />
+
+            <div className="space-y-2">
+              <label className={`block text-sm font-medium ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'}`}>Links (detail page)</label>
+              {editFormData.links.map((link, idx) => (
+                <div key={idx} className="flex gap-2 items-start">
+                  <input
+                    type="text"
+                    placeholder="Label"
+                    value={link.label}
+                    onChange={(e) => {
+                      const next = [...editFormData.links];
+                      next[idx] = { ...next[idx], label: e.target.value };
+                      setEditFormData({ ...editFormData, links: next });
+                    }}
+                    className={`flex-1 min-w-0 px-3 py-2 rounded-[10px] border text-[13px] ${theme === 'dark' ? 'bg-white/10 border-white/20 text-[#e8dfd0]' : 'bg-white/40 border-white/30 text-[#2d2820]'}`}
+                  />
+                  <input
+                    type="url"
+                    placeholder="URL"
+                    value={link.url}
+                    onChange={(e) => {
+                      const next = [...editFormData.links];
+                      next[idx] = { ...next[idx], url: e.target.value };
+                      setEditFormData({ ...editFormData, links: next });
+                    }}
+                    className={`flex-1 min-w-0 px-3 py-2 rounded-[10px] border text-[13px] ${theme === 'dark' ? 'bg-white/10 border-white/20 text-[#e8dfd0]' : 'bg-white/40 border-white/30 text-[#2d2820]'}`}
+                  />
+                  <button type="button" onClick={() => setEditFormData({ ...editFormData, links: editFormData.links.filter((_, i) => i !== idx) })} className={`p-2 rounded-[10px] ${theme === 'dark' ? 'hover:bg-red-500/20 text-red-400' : 'hover:bg-red-500/10 text-red-600'}`}><X className="w-4 h-4" /></button>
+                </div>
+              ))}
+              <button type="button" onClick={() => setEditFormData({ ...editFormData, links: [...editFormData.links, { label: '', url: '' }] })} className={`text-[13px] font-medium flex items-center gap-1.5 ${theme === 'dark' ? 'text-[#c9983a] hover:text-[#e8c77f]' : 'text-[#a67c2e] hover:text-[#c9983a]'}`}><Plus className="w-4 h-4" /> Add link</button>
+            </div>
+
+            <div className="space-y-2">
+              <label className={`block text-sm font-medium ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'}`}>Key Areas (detail page)</label>
+              {editFormData.key_areas.map((area, idx) => (
+                <div key={idx} className="space-y-1.5 p-3 rounded-[12px] border border-white/20 bg-white/[0.06]">
+                  <div className="flex justify-end">
+                    <button type="button" onClick={() => setEditFormData({ ...editFormData, key_areas: editFormData.key_areas.filter((_, i) => i !== idx) })} className={`p-1 rounded ${theme === 'dark' ? 'hover:bg-red-500/20 text-red-400' : 'hover:bg-red-500/10 text-red-600'}`}><X className="w-4 h-4" /></button>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Title"
+                    value={area.title}
+                    onChange={(e) => {
+                      const next = [...editFormData.key_areas];
+                      next[idx] = { ...next[idx], title: e.target.value };
+                      setEditFormData({ ...editFormData, key_areas: next });
+                    }}
+                    className={`w-full px-3 py-2 rounded-[10px] border text-[13px] ${theme === 'dark' ? 'bg-white/10 border-white/20 text-[#e8dfd0]' : 'bg-white/40 border-white/30 text-[#2d2820]'}`}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Description"
+                    value={area.description}
+                    onChange={(e) => {
+                      const next = [...editFormData.key_areas];
+                      next[idx] = { ...next[idx], description: e.target.value };
+                      setEditFormData({ ...editFormData, key_areas: next });
+                    }}
+                    className={`w-full px-3 py-2 rounded-[10px] border text-[13px] ${theme === 'dark' ? 'bg-white/10 border-white/20 text-[#e8dfd0]' : 'bg-white/40 border-white/30 text-[#2d2820]'}`}
+                  />
+                </div>
+              ))}
+              <button type="button" onClick={() => setEditFormData({ ...editFormData, key_areas: [...editFormData.key_areas, { title: '', description: '' }] })} className={`text-[13px] font-medium flex items-center gap-1.5 ${theme === 'dark' ? 'text-[#c9983a] hover:text-[#e8c77f]' : 'text-[#a67c2e] hover:text-[#c9983a]'}`}><Plus className="w-4 h-4" /> Add key area</button>
+            </div>
+
+            <div className="space-y-2">
+              <label className={`block text-sm font-medium ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'}`}>Technologies (detail page)</label>
+              {editFormData.technologies.map((tech, idx) => (
+                <div key={idx} className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="e.g. TypeScript, Rust"
+                    value={tech}
+                    onChange={(e) => {
+                      const next = [...editFormData.technologies];
+                      next[idx] = e.target.value;
+                      setEditFormData({ ...editFormData, technologies: next });
+                    }}
+                    className={`flex-1 min-w-0 px-3 py-2 rounded-[10px] border text-[13px] ${theme === 'dark' ? 'bg-white/10 border-white/20 text-[#e8dfd0]' : 'bg-white/40 border-white/30 text-[#2d2820]'}`}
+                  />
+                  <button type="button" onClick={() => setEditFormData({ ...editFormData, technologies: editFormData.technologies.filter((_, i) => i !== idx) })} className={`p-2 rounded-[10px] ${theme === 'dark' ? 'hover:bg-red-500/20 text-red-400' : 'hover:bg-red-500/10 text-red-600'}`}><X className="w-4 h-4" /></button>
+                </div>
+              ))}
+              <button type="button" onClick={() => setEditFormData({ ...editFormData, technologies: [...editFormData.technologies, ''] })} className={`text-[13px] font-medium flex items-center gap-1.5 ${theme === 'dark' ? 'text-[#c9983a] hover:text-[#e8c77f]' : 'text-[#a67c2e] hover:text-[#c9983a]'}`}><Plus className="w-4 h-4" /> Add technology</button>
+            </div>
           </div>
 
           <ModalFooter>

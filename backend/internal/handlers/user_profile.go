@@ -666,12 +666,6 @@ WHERE user_id = $1
 			)
 			return c.Status(fiber.StatusOK).JSON([]fiber.Map{})
 		}
-		slog.Warn("ProjectsContributed: resolved github login",
-			"github_login", githubLogin,
-			"query_user_id", userIDParam,
-			"query_login", loginParam,
-			"jwt_sub", c.Locals(auth.LocalUserID),
-		)
 		// Get distinct projects user has contributed to (via issues or PRs) in verified projects
 		rows, err := h.db.Pool.Query(c.Context(), `
 SELECT DISTINCT
@@ -740,19 +734,15 @@ LIMIT 10
 				continue
 			}
 
-			slog.Warn("ProjectsContributed: no github login resolved",
-				"err", err,
-				"githubLogin", githubLogin,
-				"query_user_id", userIDParam,
-				"query_login", loginParam,
-				"jwt_sub", c.Locals(auth.LocalUserID),
-			)
-
-			// Fetch owner avatar from GitHub (works for public repos even without token)
+			// Fetch owner avatar from GitHub (higher-res with ?s=128)
 			var ownerAvatarURL *string
-			repo, err := gh.GetRepo(c.Context(), accessToken, fullName)
-			if err == nil && !repo.Private {
-				ownerAvatarURL = &repo.Owner.AvatarURL
+			repo, repoErr := gh.GetRepo(c.Context(), accessToken, fullName)
+			if repoErr == nil && !repo.Private && repo.Owner.AvatarURL != "" {
+				url := repo.Owner.AvatarURL
+				if strings.Contains(url, "avatars.githubusercontent.com") && !strings.Contains(url, "?") {
+					url = url + "?s=128"
+				}
+				ownerAvatarURL = &url
 			}
 
 			projects = append(projects, fiber.Map{
@@ -765,6 +755,89 @@ LIMIT 10
 			})
 		}
 
+		return c.Status(fiber.StatusOK).JSON(projects)
+	}
+}
+
+// ProjectsLed returns projects a user leads (owner_user_id = user). Accepts user_id or login.
+func (h *UserProfileHandler) ProjectsLed() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		if h.db == nil || h.db.Pool == nil {
+			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "db_not_configured"})
+		}
+
+		userIDParam := c.Query("user_id")
+		loginParam := c.Query("login")
+
+		var targetUserID *uuid.UUID
+		if userIDParam != "" {
+			parsed, err := uuid.Parse(userIDParam)
+			if err != nil {
+				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid_user_id"})
+			}
+			targetUserID = &parsed
+		} else if loginParam != "" {
+			var found uuid.UUID
+			err := h.db.Pool.QueryRow(c.Context(), `
+SELECT user_id FROM github_accounts WHERE LOWER(login) = LOWER($1)
+`, loginParam).Scan(&found)
+			if err != nil {
+				return c.Status(fiber.StatusOK).JSON([]fiber.Map{})
+			}
+			targetUserID = &found
+		} else {
+			sub, _ := c.Locals(auth.LocalUserID).(string)
+			parsed, err := uuid.Parse(sub)
+			if err != nil {
+				return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid_user"})
+			}
+			targetUserID = &parsed
+		}
+
+		rows, err := h.db.Pool.Query(c.Context(), `
+SELECT p.id, p.github_full_name, p.status, e.name AS ecosystem_name, p.language
+FROM projects p
+LEFT JOIN ecosystems e ON p.ecosystem_id = e.id
+WHERE p.owner_user_id = $1 AND p.status = 'verified' AND p.deleted_at IS NULL
+ORDER BY p.github_full_name ASC
+`, *targetUserID)
+		if err != nil {
+			slog.Error("failed to fetch projects led", "error", err)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "projects_led_fetch_failed"})
+		}
+		defer rows.Close()
+
+		var accessToken string
+		if linkedAccount, errLA := github.GetLinkedAccount(c.Context(), h.db.Pool, *targetUserID, h.cfg.TokenEncKeyB64); errLA == nil {
+			accessToken = linkedAccount.AccessToken
+		}
+		gh := github.NewClient()
+		var projects []fiber.Map
+		for rows.Next() {
+			var id uuid.UUID
+			var fullName, status string
+			var ecosystemName, language *string
+			if err := rows.Scan(&id, &fullName, &status, &ecosystemName, &language); err != nil {
+				continue
+			}
+			var ownerAvatarURL *string
+			repo, repoErr := gh.GetRepo(c.Context(), accessToken, fullName)
+			if repoErr == nil && !repo.Private && repo.Owner.AvatarURL != "" {
+				url := repo.Owner.AvatarURL
+				if strings.Contains(url, "avatars.githubusercontent.com") && !strings.Contains(url, "?") {
+					url = url + "?s=128"
+				}
+				ownerAvatarURL = &url
+			}
+			projects = append(projects, fiber.Map{
+				"id":                 id.String(),
+				"github_full_name":   fullName,
+				"status":             status,
+				"ecosystem_name":     ecosystemName,
+				"language":           language,
+				"owner_avatar_url":   ownerAvatarURL,
+			})
+		}
 		return c.Status(fiber.StatusOK).JSON(projects)
 	}
 }
@@ -957,7 +1030,8 @@ LIMIT 10
 			})
 		}
 
-		// Calculate rank position
+		// Calculate rank position: rank over full leaderboard, then select this user's position.
+		// (Filtering by user before ROW_NUMBER() would make every user appear as 1st.)
 		var rankPosition *int
 		err = h.db.Pool.QueryRow(c.Context(), `
 WITH ranked_contributors AS (
@@ -986,11 +1060,12 @@ WITH ranked_contributors AS (
     INNER JOIN projects p ON pr.project_id = p.id
     WHERE pr.author_login IS NOT NULL AND pr.author_login != '' AND p.status = 'verified'
   ) ac
+),
+ranked AS (
+  SELECT login, ROW_NUMBER() OVER (ORDER BY contribution_count DESC, login ASC) as rank_position
+  FROM ranked_contributors
 )
-SELECT 
-  ROW_NUMBER() OVER (ORDER BY contribution_count DESC, login ASC) as rank_position
-FROM ranked_contributors
-WHERE LOWER(login) = LOWER($1)
+SELECT rank_position FROM ranked WHERE LOWER(login) = LOWER($1)
 `, *githubLogin).Scan(&rankPosition)
 		if err != nil {
 			// User not in ranking, that's okay

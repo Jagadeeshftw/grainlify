@@ -1,0 +1,1 @@
+ALTER TABLE ecosystems ADD COLUMN IF NOT EXISTS logo_url TEXT;

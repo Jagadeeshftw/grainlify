@@ -12,8 +12,12 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
+      // Ensure a single React instance is used everywhere
+      react: path.resolve(__dirname, 'node_modules/react'),
+      'react-dom': path.resolve(__dirname, 'node_modules/react-dom'),
       // Alias @ to the src directory
       '@': path.resolve(__dirname, './src'),
     },
+    dedupe: ['react', 'react-dom'],
   },
 })

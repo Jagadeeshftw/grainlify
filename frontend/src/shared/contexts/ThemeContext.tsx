@@ -5,6 +5,7 @@ type Theme = 'light' | 'dark';
 interface ThemeContextType {
   theme: Theme;
   toggleTheme: () => void;
+  setThemeFromAnimation: (isDark: boolean) => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -23,8 +24,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
   };
 
+  const setThemeFromAnimation = (isDark: boolean) => {
+    setTheme(isDark ? 'dark' : 'light');
+  };
+
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme }}>
+    <ThemeContext.Provider value={{ theme, toggleTheme, setThemeFromAnimation }}>
       {children}
     </ThemeContext.Provider>
   );

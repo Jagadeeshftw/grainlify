@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import {
   Search,
   Compass,
@@ -15,6 +16,7 @@ import {
   X,
   Menu,
 } from "lucide-react";
+import { useModeAnimation } from "react-theme-switch-animation";
 import { useAuth } from "../../shared/contexts/AuthContext";
 import grainlifyLogo from "../../assets/grainlify_log.svg";
 import { useTheme } from "../../shared/contexts/ThemeContext";
@@ -49,6 +51,14 @@ import { SettingsTabType } from "../settings/types";
 export function Dashboard() {
   const { login } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const { userRole, logout, login } = useAuth();
+  const { theme, setThemeFromAnimation } = useTheme();
+  const location = useLocation();
+  const { ref: themeToggleRef, toggleSwitchTheme } = useModeAnimation({
+    isDarkMode: theme === "dark",
+    onDarkModeChange: (isDark) => setThemeFromAnimation(isDark),
+  });
+  const navigate = useNavigate();
   // const [currentPage, setCurrentPage] = useState('discover');
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
     null,
@@ -63,6 +73,8 @@ export function Dashboard() {
   const [selectedEcosystemName, setSelectedEcosystemName] = useState<
     string | null
   >(null);
+  const [selectedEcosystemDescription, setSelectedEcosystemDescription] = useState<string | null>(null);
+  const [selectedEcosystemLogoUrl, setSelectedEcosystemLogoUrl] = useState<string | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [selectedEventName, setSelectedEventName] = useState<string | null>(
     null,
@@ -79,6 +91,32 @@ export function Dashboard() {
   >("contributor");
   const [viewingUserId, setViewingUserId] = useState<string | null>(null);
   const [viewingUserLogin, setViewingUserLogin] = useState<string | null>(null);
+  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
+  // Initialize viewing user from URL so profile page gets correct user on first render (avoids race with own profile fetch)
+  const [viewingUserId, setViewingUserId] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    const params = new URLSearchParams(window.location.search);
+    const userParam = params.get("user");
+    const tabParam = params.get("tab") || params.get("page");
+    if (tabParam === "profile" && userParam) {
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (uuidRegex.test(userParam)) return userParam;
+      return null;
+    }
+    return null;
+  });
+  const [viewingUserLogin, setViewingUserLogin] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    const params = new URLSearchParams(window.location.search);
+    const userParam = params.get("user");
+    const tabParam = params.get("tab") || params.get("page");
+    if (tabParam === "profile" && userParam) {
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(userParam)) return userParam;
+      return null;
+    }
+    return null;
+  });
   const [settingsInitialTab, setSettingsInitialTab] =
     useState<SettingsTabType>("profile");
 
@@ -112,13 +150,14 @@ export function Dashboard() {
     "nav" | "role" | null
   >(null);
 
-  // Check URL params for viewing other users' profiles
+  // Check URL params for viewing other users' profiles (tab=profile or page=profile)
+  // Re-run when location.search changes so profile user is correct after navigation or reload
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
+    const params = new URLSearchParams(location.search);
     const userParam = params.get("user");
-    const pageParam = params.get("page");
+    const tabParam = params.get("tab") || params.get("page");
 
-    if (pageParam === "profile" && userParam) {
+    if (tabParam === "profile" && userParam) {
       setCurrentPage("profile");
       // Check if it's a UUID (user_id) or a username (login)
       const uuidRegex =
@@ -130,19 +169,46 @@ export function Dashboard() {
         setViewingUserLogin(userParam);
         setViewingUserId(null);
       }
+    } else if (tabParam === "profile" && !userParam) {
+      setViewingUserId(null);
+      setViewingUserLogin(null);
+    }
+  }, [location.search]);
+
+  // Deep link: open specific issue when URL has tab=browse&project=...&issue=... (e.g. "review their application" link)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const projectParam = params.get("project");
+    const issueParam = params.get("issue");
+    const tabParam = params.get("tab") || params.get("page");
+    if (tabParam === "browse" && projectParam && issueParam) {
+      setCurrentPage("browse");
+      setSelectedProjectId(projectParam);
+      setSelectedIssue({ issueId: issueParam, projectId: projectParam });
     }
   }, []);
 
   // *******************************
+  // Keep URL in sync with tab, profile user, and (when viewing an issue) project + issue for shareable links
   useEffect(() => {
-    // Save tab in URL + localStorage whenever it changes
     const params = new URLSearchParams(window.location.search);
     params.set("tab", currentPage);
+    if (currentPage === "profile" && (viewingUserId || viewingUserLogin)) {
+      params.set("user", viewingUserId || viewingUserLogin || "");
+    } else if (currentPage === "profile") {
+      params.delete("user");
+    }
+    if (selectedProjectId) params.set("project", selectedProjectId);
+    else if (params.get("project")) { /* keep from URL until deep-link effect sets state */ }
+    else params.delete("project");
+    if (selectedIssue?.issueId && selectedIssue?.projectId) params.set("issue", selectedIssue.issueId);
+    else if (params.get("issue")) { /* keep from URL until deep-link effect sets state */ }
+    else params.delete("issue");
     const newUrl = `${window.location.pathname}?${params.toString()}`;
     window.history.replaceState({}, "", newUrl);
 
     localStorage.setItem("dashboardTab", currentPage);
-  }, [currentPage]);
+  }, [currentPage, selectedProjectId, selectedIssue, viewingUserId, viewingUserLogin]);
 
   // Keyboard shortcut for search (Cmd+K / Ctrl+K)
   useEffect(() => {
@@ -164,11 +230,25 @@ export function Dashboard() {
     setSelectedIssue(null);
     setSelectedEcosystemId(null);
     setSelectedEcosystemName(null);
+    setSelectedEcosystemDescription(null);
+    setSelectedEcosystemLogoUrl(null);
     setSelectedEventId(null);
     setSelectedEventName(null);
     if (isMobile) {
       setMobileMenuOpen(false);
     }
+    // When switching to profile tab (e.g. "Public Profile" click), show own profile, not last viewed user
+    if (page === "profile") {
+      setViewingUserId(null);
+      setViewingUserLogin(null);
+    }
+  };
+
+  const handleLogout = () => {
+    logout();
+    setAdminAuthenticated(false);
+    sessionStorage.removeItem("admin_authenticated");
+    navigate("/");
   };
 
   const openAdminAuthModal = (target: "nav" | "role") => {
@@ -217,6 +297,8 @@ export function Dashboard() {
     setSelectedIssue(null);
     setSelectedEcosystemId(null);
     setSelectedEcosystemName(null);
+    setSelectedEcosystemDescription(null);
+    setSelectedEcosystemLogoUrl(null);
     setSelectedEventId(null);
     setSelectedEventName(null);
     if (role === "maintainer") {
@@ -226,14 +308,23 @@ export function Dashboard() {
     }
   };
 
-  const handleEcosystemClick = (ecosystemId: string, ecosystemName: string) => {
+  const handleEcosystemClick = (
+    ecosystemId: string,
+    ecosystemName: string,
+    description?: string | null,
+    logoUrl?: string | null,
+  ) => {
     setSelectedEcosystemId(ecosystemId);
     setSelectedEcosystemName(ecosystemName);
+    setSelectedEcosystemDescription(description ?? null);
+    setSelectedEcosystemLogoUrl(logoUrl ?? null);
   };
 
   const handleBackFromEcosystem = () => {
     setSelectedEcosystemId(null);
     setSelectedEcosystemName(null);
+    setSelectedEcosystemDescription(null);
+    setSelectedEcosystemLogoUrl(null);
   };
 
   // Role-based navigation items
@@ -581,10 +672,12 @@ export function Dashboard() {
               onRoleChange={handleRoleChange}
             />
 
-            {/* Theme Toggle - Separate Pill Button */}
+            {/* Theme Toggle - Separate Pill Button (animated) */}
             <button
+              ref={themeToggleRef}
               onClick={() => {
                 toggleTheme();
+                toggleSwitchTheme();
                 closeMobileNav();
               }}
               className={`h-[46px] lg:w-[46px] overflow-clip relative items-center justify-center backdrop-blur-[40px] transition-all hover:scale-105 shadow-[0px_6px_6.5px_-1px_rgba(0,0,0,0.36),0px_0px_4.2px_0px_rgba(0,0,0,0.69)] ${
@@ -698,6 +791,8 @@ export function Dashboard() {
                     <EcosystemDetailPage
                       ecosystemId={selectedEcosystemId}
                       ecosystemName={selectedEcosystemName}
+                      initialDescription={selectedEcosystemDescription}
+                      initialLogoUrl={selectedEcosystemLogoUrl}
                       onBack={handleBackFromEcosystem}
                       onProjectClick={(id) => setSelectedProjectId(id)}
                     />
@@ -721,6 +816,10 @@ export function Dashboard() {
                         "",
                         "/dashboard?page=leaderboard",
                       );
+                    }}
+                    onProjectClick={(id) => {
+                      setSelectedProjectId(id);
+                      setCurrentPage("discover");
                     }}
                     onIssueClick={(issueId, projectId) => {
                       setSelectedProjectId(projectId);

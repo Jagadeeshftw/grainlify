@@ -81,4 +81,37 @@ func (c *Client) CreateIssueComment(ctx context.Context, accessToken string, ful
 	}, nil
 }
 
+// DeleteIssueComment deletes a comment on a GitHub issue. The accessToken must belong to the comment author or a repo admin.
+func (c *Client) DeleteIssueComment(ctx context.Context, accessToken string, fullName string, commentID int64) error {
+	owner, repo, err := splitFullName(fullName)
+	if err != nil {
+		return err
+	}
+	if commentID <= 0 {
+		return fmt.Errorf("invalid comment id")
+	}
+
+	u := "https://api.github.com/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo) + "/issues/comments/" + fmt.Sprintf("%d", commentID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, u, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	if c.UserAgent != "" {
+		req.Header.Set("User-Agent", c.UserAgent)
+	}
+
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 204 && (resp.StatusCode < 200 || resp.StatusCode >= 300) {
+		return parseGitHubAPIError(resp)
+	}
+	return nil
+}
+
 

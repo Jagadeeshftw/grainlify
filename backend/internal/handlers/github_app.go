@@ -303,10 +303,24 @@ SELECT id FROM ecosystems WHERE status = 'active' ORDER BY created_at ASC LIMIT 
 		)
 	}
 
-	// Create projects for each repository
+	// Create projects for each repository (never add or restore private repos)
 	createdCount := 0
 	updatedCount := 0
 	for _, repo := range repos {
+		if repo.Private {
+			// Never show or consider private repos anywhere in the dashboard
+			var existingID uuid.UUID
+			err := h.db.Pool.QueryRow(ctx, `SELECT id FROM projects WHERE github_full_name = $1`, repo.FullName).Scan(&existingID)
+			if err == nil {
+				_, _ = h.db.Pool.Exec(ctx, `UPDATE projects SET deleted_at = now(), updated_at = now() WHERE id = $1`, existingID)
+				slog.Info("marked private repo as deleted, excluded from dashboard",
+					"project_id", existingID,
+					"repo", repo.FullName,
+				)
+			}
+			continue
+		}
+
 		// Check if project already exists
 		var existingID uuid.UUID
 		var existingStatus string
@@ -315,7 +329,7 @@ SELECT id, status FROM projects WHERE github_full_name = $1
 `, repo.FullName).Scan(&existingID, &existingStatus)
 		
 		if err == nil {
-			// Repository already exists - verify and enqueue sync if needed
+			// Repository already exists - verify and enqueue sync if needed (public only)
 			projectID := existingID
 			
 			// Always verify the project (update github_repo_id and status, restore if deleted)
@@ -366,9 +380,10 @@ VALUES ($1, 'sync_issues', 'pending', now()),
 			ecosystemID = &defaultEcosystemID
 		}
 
+		// Only insert public repos; private repos are never added
 		err = h.db.Pool.QueryRow(ctx, `
-INSERT INTO projects (owner_user_id, github_full_name, ecosystem_id, language, tags, status, github_app_installation_id)
-VALUES ($1, $2, $3, $4, $5, 'pending_verification', $6)
+INSERT INTO projects (owner_user_id, github_full_name, ecosystem_id, language, tags, status, github_app_installation_id, needs_metadata)
+VALUES ($1, $2, $3, $4, $5, 'pending_verification', $6, true)
 ON CONFLICT (github_full_name) DO UPDATE SET
   owner_user_id = EXCLUDED.owner_user_id,
   github_app_installation_id = EXCLUDED.github_app_installation_id,

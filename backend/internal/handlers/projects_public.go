@@ -466,8 +466,11 @@ func (h *ProjectsPublicHandler) List() fiber.Handler {
 		var args []any
 		argPos := 1
 
-		// Only show verified projects
+		// Only show verified projects that have completed setup (have metadata)
 		conditions = append(conditions, "p.status = 'verified'")
+		conditions = append(conditions, "p.needs_metadata = false")
+		// Never show private repos (they are soft-deleted)
+		conditions = append(conditions, "p.deleted_at IS NULL")
 
 		// Exclude special GitHub repositories (owner/.github)
 		conditions = append(conditions, "split_part(p.github_full_name, '/', 2) != '.github'")
@@ -546,7 +549,8 @@ SELECT
   p.created_at,
   p.updated_at,
   e.name AS ecosystem_name,
-  e.slug AS ecosystem_slug
+  e.slug AS ecosystem_slug,
+  p.description
 FROM projects p
 LEFT JOIN ecosystems e ON p.ecosystem_id = e.id
 WHERE %s
@@ -561,11 +565,6 @@ LIMIT $%d OFFSET $%d
 		}
 		defer rows.Close()
 
-		// Enrich with GitHub data (best effort, in background)
-		ctx, cancel := context.WithTimeout(c.Context(), 8*time.Second)
-		defer cancel()
-		gh := github.NewClient()
-
 		var out []fiber.Map
 		for rows.Next() {
 			var id uuid.UUID
@@ -577,8 +576,9 @@ LIMIT $%d OFFSET $%d
 			var openIssuesCount, openPRsCount, contributorsCount int
 			var createdAt, updatedAt time.Time
 			var ecosystemName, ecosystemSlug *string
+			var description *string
 
-			if err := rows.Scan(&id, &fullName, &installationID, &language, &tagsJSON, &category, &starsCount, &forksCount, &openIssuesCount, &openPRsCount, &contributorsCount, &createdAt, &updatedAt, &ecosystemName, &ecosystemSlug); err != nil {
+			if err := rows.Scan(&id, &fullName, &installationID, &language, &tagsJSON, &category, &starsCount, &forksCount, &openIssuesCount, &openPRsCount, &contributorsCount, &createdAt, &updatedAt, &ecosystemName, &ecosystemSlug, &description); err != nil {
 				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "projects_list_failed", "details": err.Error()})
 			}
 
@@ -598,46 +598,9 @@ LIMIT $%d OFFSET $%d
 				forks = *forksCount
 			}
 
-			// Get repo description from GitHub (best effort).
-			// IMPORTANT: Do NOT drop projects if GitHub enrichment fails (rate limits, transient errors).
-			var description string
-			token := ""
-			if installationID != nil {
-				token = h.installationToken(ctx, *installationID)
-			}
-			repo, repoErr := gh.GetRepo(ctx, token, fullName)
-			if repoErr != nil {
-				slog.Warn("github repo enrichment failed (continuing without github metadata)",
-					"project_id", id,
-					"github_full_name", fullName,
-					"error", repoErr,
-				)
-			} else {
-				// Check if repo is private
-				if repo.Private {
-					slog.Info("skipping private repository",
-						"project_id", id,
-						"github_full_name", fullName,
-					)
-					continue // Skip this project
-				}
-				description = repo.Description
-				// If stars or forks are 0, update them from GitHub
-				if stars == 0 {
-					stars = repo.StargazersCount
-				}
-				if forks == 0 {
-					forks = repo.ForksCount
-				}
-				// Best-effort persist (non-blocking)
-				if stars > 0 || forks > 0 {
-					go func(projectID uuid.UUID, st, fk int) {
-						_, _ = h.db.Pool.Exec(context.Background(), `
-UPDATE projects SET stars_count=$2, forks_count=$3, updated_at=now()
-WHERE id=$1
-`, projectID, st, fk)
-					}(id, stars, forks)
-				}
+			descVal := ""
+			if description != nil {
+				descVal = *description
 			}
 
 			out = append(out, fiber.Map{
@@ -653,7 +616,7 @@ WHERE id=$1
 				"open_prs_count":     openPRsCount,
 				"ecosystem_name":     ecosystemName,
 				"ecosystem_slug":     ecosystemSlug,
-				"description":        description,
+				"description":        descVal,
 				"created_at":         createdAt,
 				"updated_at":         updatedAt,
 			})
@@ -732,7 +695,7 @@ SELECT
   e.slug AS ecosystem_slug
 FROM projects p
 LEFT JOIN ecosystems e ON p.ecosystem_id = e.id
-WHERE p.status = 'verified' AND p.deleted_at IS NULL AND split_part(p.github_full_name, '/', 2) != '.github'
+WHERE p.status = 'verified' AND p.deleted_at IS NULL AND p.needs_metadata = false AND split_part(p.github_full_name, '/', 2) != '.github'
 ORDER BY contributors_count DESC, p.stars_count DESC, p.created_at DESC
 LIMIT $1
 `
@@ -741,11 +704,6 @@ LIMIT $1
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "recommended_projects_failed"})
 		}
 		defer rows.Close()
-
-		// Enrich with GitHub data (best effort)
-		ctx, cancel := context.WithTimeout(c.Context(), 8*time.Second)
-		defer cancel()
-		gh := github.NewClient()
 
 		var out []fiber.Map
 		for rows.Next() {
@@ -779,45 +737,10 @@ LIMIT $1
 				forks = *forksCount
 			}
 
-			// Get repo description and fresh data from GitHub (best effort).
-			// IMPORTANT: Do NOT drop projects if GitHub enrichment fails (rate limits, transient errors).
-			var description string
-			token := ""
-			if installationID != nil {
-				token = h.installationToken(ctx, *installationID)
-			}
-			repo, repoErr := gh.GetRepo(ctx, token, fullName)
-			if repoErr != nil {
-				slog.Warn("github repo enrichment failed in recommended (continuing without github metadata)",
-					"project_id", id,
-					"github_full_name", fullName,
-					"error", repoErr,
-				)
-			} else {
-				// Check if repo is private
-				if repo.Private {
-					slog.Info("skipping private repository in recommended",
-						"project_id", id,
-						"github_full_name", fullName,
-					)
-					continue // Skip this project
-				}
-				description = repo.Description
-				// Prefer live counts from GitHub if available
-				if repo.StargazersCount > 0 {
-					stars = repo.StargazersCount
-				}
-				if repo.ForksCount > 0 {
-					forks = repo.ForksCount
-				}
-				// Best-effort persist (non-blocking)
-				go func(projectID uuid.UUID, st, fk int) {
-					_, _ = h.db.Pool.Exec(context.Background(), `
-UPDATE projects SET stars_count=$2, forks_count=$3, updated_at=now()
-WHERE id=$1
-`, projectID, st, fk)
-				}(id, stars, forks)
-			}
+			// Skip per-project GitHub enrichment here to keep /projects/recommended fast.
+			// Description and live star/fork counts can be refreshed via background jobs
+			// or on the project detail endpoint instead.
+			description := ""
 
 			out = append(out, fiber.Map{
 				"id":                 id.String(),
@@ -851,11 +774,11 @@ func (h *ProjectsPublicHandler) FilterOptions() fiber.Handler {
 			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "db_not_configured"})
 		}
 
-		// Get distinct languages
+		// Get distinct languages (only from projects that completed setup / appear on Browse; exclude private)
 		langRows, err := h.db.Pool.Query(c.Context(), `
 SELECT DISTINCT language
 FROM projects
-WHERE status = 'verified' AND language IS NOT NULL AND language != ''
+WHERE status = 'verified' AND needs_metadata = false AND deleted_at IS NULL AND language IS NOT NULL AND language != ''
 ORDER BY language
 `)
 		if err != nil {
@@ -871,11 +794,11 @@ ORDER BY language
 			}
 		}
 
-		// Get distinct categories
+		// Get distinct categories (only from projects that completed setup / appear on Browse; exclude private)
 		catRows, err := h.db.Pool.Query(c.Context(), `
 SELECT DISTINCT category
 FROM projects
-WHERE status = 'verified' AND category IS NOT NULL AND category != ''
+WHERE status = 'verified' AND needs_metadata = false AND deleted_at IS NULL AND category IS NOT NULL AND category != ''
 ORDER BY category
 `)
 		if err != nil {
@@ -891,11 +814,11 @@ ORDER BY category
 			}
 		}
 
-		// Get all unique tags from verified projects
+		// Get all unique tags from verified projects that completed setup / appear on Browse; exclude private
 		tagRows, err := h.db.Pool.Query(c.Context(), `
 SELECT DISTINCT jsonb_array_elements_text(tags) AS tag
 FROM projects
-WHERE status = 'verified' AND tags IS NOT NULL AND jsonb_array_length(tags) > 0
+WHERE status = 'verified' AND needs_metadata = false AND deleted_at IS NULL AND tags IS NOT NULL AND jsonb_array_length(tags) > 0
 ORDER BY tag
 `)
 		if err != nil {
