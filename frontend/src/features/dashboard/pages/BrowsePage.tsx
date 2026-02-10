@@ -30,7 +30,8 @@ const formatNumber = (num: number): string => {
 // Helper function to get project icon/avatar
 const getProjectIcon = (githubFullName: string): string => {
   const [owner] = githubFullName.split("/");
-  return `https://github.com/${owner}.png?size=40`;
+  // Use higher‑resolution owner avatar so cards look crisp
+  return `https://github.com/${owner}.png?size=200`;
 };
 
 // Helper function to get gradient color based on project name

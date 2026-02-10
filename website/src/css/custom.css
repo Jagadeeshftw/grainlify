@@ -1,0 +1,539 @@
+/**
+ * Grainlify docs – custom styles
+ * Add any overrides or theme customizations here.
+ */
+
+/* Page scrolls as one: footer appears when you scroll to the bottom (not fixed at viewport bottom) */
+html,
+body {
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  height: 100%;
+  min-height: 100%;
+}
+#__docusaurus {
+  min-height: 100vh !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+/* Main wrapper: grow with content so footer sits below and is reached by scrolling */
+#__docusaurus [class*="mainWrapper"] {
+  flex: 1 0 auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+/* Doc layout: grow with content */
+#__docusaurus [class*="docRoot"] {
+  flex: 1 0 auto !important;
+  display: flex !important;
+}
+#__docusaurus [class*="docsWrapper"] {
+  flex: 1 0 auto !important;
+  display: flex !important;
+}
+/* Sidebar: fixed width, sticky so it stays visible while page scrolls; scroll only when nav is long */
+#__docusaurus .theme-doc-sidebar-container {
+  flex: 0 0 var(--doc-sidebar-width, 300px) !important;
+  width: var(--doc-sidebar-width, 300px) !important;
+  min-width: var(--doc-sidebar-width, 300px) !important;
+  transition: width 0.2s ease !important;
+}
+#__docusaurus .theme-doc-sidebar-container [class*='sidebarViewport'] {
+  position: sticky !important;
+  top: 0 !important;
+  max-height: 100vh !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+/* When collapsed: force narrow width so collapse/expand toggle works */
+#__docusaurus .theme-doc-sidebar-container[class*='docSidebarContainerHidden'] {
+  flex: 0 0 var(--doc-sidebar-hidden-width, 30px) !important;
+  min-width: var(--doc-sidebar-hidden-width, 30px) !important;
+  width: var(--doc-sidebar-hidden-width, 30px) !important;
+}
+/* Hide sidebar content as soon as collapse starts so we don’t see squashed text during the width transition. The expand arrow only appears after onTransitionEnd; this avoids the “text then arrow after 1s” flash. */
+#__docusaurus .theme-doc-sidebar-container[class*='docSidebarContainerHidden'] [class*='sidebarViewport'] > *:first-child {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+/* Main content: no own scroll; flows so the page scrolls and footer appears at bottom */
+#__docusaurus [class*="docMainContainer"] {
+  flex: 1 1 0 !important;
+  min-width: 0 !important;
+}
+
+/* Brand-aligned warm palette (matches app landing/dashboard) */
+:root {
+  /* Primary brand (golden) */
+  --ifm-color-primary: #c9983a;
+  --ifm-color-primary-dark: #a67c2e;
+  --ifm-color-primary-darker: #8b6527;
+  --ifm-color-primary-darkest: #6c4e1f;
+  --ifm-color-primary-light: #d4c4b0;
+  --ifm-color-primary-lighter: #e3d5c4;
+  --ifm-color-primary-lightest: #f3e9d8;
+
+  /* Light theme background + surfaces */
+  --ifm-background-color: #e8dfd0;          /* matches --background in app */
+  --ifm-background-surface-color: #f5f1e8;  /* slightly lighter card-style surface */
+
+  /* Typography / emphasis */
+  --ifm-color-emphasis-1000: #2d2820;       /* main text */
+  --ifm-color-emphasis-700: #4a4034;
+
+  /* Layout pieces */
+  --ifm-navbar-background-color: var(--ifm-background-surface-color);
+  --ifm-footer-background-color: #d4c4b0;
+  /* Footer text on light background */
+  --ifm-footer-color: #2d2820;
+  --ifm-footer-link-color: #4a4034;
+  --ifm-footer-link-hover-color: #a67c2e;
+  --ifm-footer-title-color: #2d2820;
+}
+
+/* Dark theme: warm brown from landing/dashboard (override Infima's black) */
+html[data-theme='dark'],
+[data-theme='dark'] {
+  /* App dark palette - same as .dark in frontend theme.css */
+  --ifm-background-color: #1a1512 !important;
+  --ifm-background-surface-color: #221b17 !important;
+
+  --ifm-color-primary: #c9983a;
+  --ifm-color-primary-dark: #a67c2e;
+  --ifm-color-primary-darker: #8b6527;
+  --ifm-color-primary-light: #d4c4b0;
+  --ifm-color-primary-lighter: #e3d5c4;
+
+  --ifm-color-emphasis-1000: #f5f5f5;
+  --ifm-color-emphasis-700: #d4c4b0;
+  --ifm-color-emphasis-600: #b8a898;
+  --ifm-color-emphasis-500: #a89780;
+  --ifm-color-emphasis-400: #8b7a66;
+  --ifm-color-emphasis-300: #6d5f4f;
+  --ifm-color-emphasis-200: #4a4034;
+  --ifm-color-emphasis-100: #2d2820;
+
+  --ifm-navbar-background-color: #1a1512 !important;
+  --ifm-footer-background-color: #1a1512 !important;
+}
+
+/* Force body and main content to use warm dark background (Infima uses #1b1b1d otherwise) */
+html[data-theme='dark'] body,
+html[data-theme='dark'] #__docusaurus,
+html[data-theme='dark'] .main-wrapper,
+html[data-theme='dark'] [class*='mainWrapper'],
+html[data-theme='dark'] .theme-doc-markdown {
+  background-color: #1a1512 !important;
+}
+
+html[data-theme='dark'] .navbar,
+html[data-theme='dark'] .footer {
+  background-color: #1a1512 !important;
+}
+
+/* Doc sidebar in dark mode */
+html[data-theme='dark'] [class*='sidebar'],
+html[data-theme='dark'] .theme-doc-sidebar-container {
+  background-color: #221b17 !important;
+}
+
+/* Collapse button: center icon vertically, small margin above, solid background */
+.theme-doc-sidebar-container [class*='collapseSidebarButton'] {
+  margin-top: 0.5rem !important;
+  background-color: var(--ifm-background-surface-color) !important;
+  opacity: 1 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+.theme-doc-sidebar-container [class*='collapseSidebarButton'] [class*='collapseSidebarButtonIcon'] {
+  margin-top: 0 !important;
+}
+.theme-doc-sidebar-container [class*='collapseSidebarButton']:hover,
+.theme-doc-sidebar-container [class*='collapseSidebarButton']:focus {
+  background-color: var(--ifm-color-emphasis-100) !important;
+  opacity: 1 !important;
+}
+html[data-theme='dark'] .theme-doc-sidebar-container [class*='collapseSidebarButton'] {
+  background-color: #221b17 !important;
+}
+html[data-theme='dark'] .theme-doc-sidebar-container [class*='collapseSidebarButton']:hover,
+html[data-theme='dark'] .theme-doc-sidebar-container [class*='collapseSidebarButton']:focus {
+  background-color: #2d2520 !important;
+}
+/* Expand button (when sidebar collapsed): center icon vertically and horizontally */
+.theme-doc-sidebar-container [class*='expandButton'] {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background-color: var(--ifm-background-surface-color) !important;
+  opacity: 1 !important;
+}
+.theme-doc-sidebar-container [class*='expandButton'] [class*='expandButtonIcon'] {
+  margin: 0 !important;
+}
+html[data-theme='dark'] .theme-doc-sidebar-container [class*='expandButton'] {
+  background-color: #221b17 !important;
+}
+html[data-theme='dark'] .theme-doc-sidebar-container [class*='expandButton']:hover,
+html[data-theme='dark'] .theme-doc-sidebar-container [class*='expandButton']:focus {
+  background-color: #2d2520 !important;
+}
+
+/* Align footer with active theme (light/dark) instead of fixed dark gray */
+.footer,
+.footer--dark {
+  background-color: var(--ifm-background-color) !important;
+}
+
+/* Light theme: footer has style 'dark' so Infima gives it light text; force dark text on our light background */
+html:not([data-theme='dark']) .footer,
+html:not([data-theme='dark']) .footer--dark {
+  color: #2d2820 !important;
+  --ifm-footer-color: #2d2820;
+  --ifm-footer-link-color: #4a4034;
+  --ifm-footer-link-hover-color: #a67c2e;
+  --ifm-footer-title-color: #2d2820;
+}
+
+html:not([data-theme='dark']) .footer .footer__title,
+html:not([data-theme='dark']) .footer .footer__link-item,
+html:not([data-theme='dark']) .footer .footer__copyright {
+  color: #2d2820 !important;
+}
+
+html:not([data-theme='dark']) .footer .footer__link-item:hover {
+  color: #a67c2e !important;
+}
+
+/* ========== Local search (easyops) – match golden theme ========== */
+:root {
+  --search-local-modal-background: #f5f1e8;
+  --search-local-hit-background: #fff;
+  --search-local-hit-color: #2d2820;
+  --search-local-highlight-color: #c9983a;
+  --search-local-muted-color: #4a4034;
+  --search-local-hit-active-color: #fff;
+  --search-local-input-active-border-color: #c9983a;
+}
+
+[data-theme='dark'] {
+  --search-local-modal-background: #1a1512;
+  --search-local-hit-background: #221b17;
+  --search-local-hit-color: #f5f5f5;
+  --search-local-highlight-color: #c9983a;
+  --search-local-muted-color: #d4c4b0;
+  --search-local-hit-active-color: #1a1512;
+  --search-local-input-active-border-color: #c9983a;
+}
+
+/* ========== @cmfcmf/docusaurus-search-local (Algolia autocomplete) – golden theme ========== */
+:root {
+  --aa-primary-color-rgb: 201, 152, 58;
+  --aa-primary-color-alpha: 0.25;
+  --aa-text-color-rgb: 45, 40, 32;
+  --aa-text-color-alpha: 1;
+  --aa-muted-color-rgb: 74, 64, 52;
+  --aa-muted-color-alpha: 0.8;
+  --aa-icon-color-rgb: 74, 64, 52;
+  --aa-input-border-color-rgb: 180, 164, 132;
+  --aa-input-border-color-alpha: 0.8;
+  --aa-panel-border-color-rgb: 180, 164, 132;
+  --aa-panel-border-color-alpha: 0.4;
+  --aa-background-color-rgb: 245, 241, 232;
+  --aa-background-color-alpha: 1;
+  --aa-input-background-color-rgb: 255, 255, 255;
+  --aa-input-background-color-alpha: 1;
+  --aa-selected-color-rgb: 201, 152, 58;
+  --aa-selected-color-alpha: 0.2;
+  --aa-description-highlight-background-color-rgb: 201, 152, 58;
+  --aa-description-highlight-background-color-alpha: 0.35;
+  --aa-overlay-color-rgb: 45, 40, 32;
+  --aa-overlay-color-alpha: 0.5;
+  --aa-panel-shadow: 0 0 0 1px rgba(45, 40, 32, 0.1), 0 6px 16px -4px rgba(45, 40, 32, 0.15);
+}
+
+html[data-theme='dark'] body,
+body[data-theme='dark'],
+body.dark {
+  --aa-primary-color-rgb: 201, 152, 58;
+  --aa-primary-color-alpha: 0.25;
+  --aa-text-color-rgb: 245, 245, 245;
+  --aa-text-color-alpha: 1;
+  --aa-muted-color-rgb: 212, 196, 176;
+  --aa-muted-color-alpha: 0.9;
+  --aa-icon-color-rgb: 212, 196, 176;
+  --aa-input-border-color-rgb: 201, 152, 58;
+  --aa-input-border-color-alpha: 0.6;
+  --aa-panel-border-color-rgb: 74, 64, 52;
+  --aa-panel-border-color-alpha: 0.6;
+  --aa-background-color-rgb: 26, 21, 18;
+  --aa-background-color-alpha: 1;
+  --aa-input-background-color-rgb: 34, 27, 23;
+  --aa-input-background-color-alpha: 1;
+  --aa-selected-color-rgb: 201, 152, 58;
+  --aa-selected-color-alpha: 0.25;
+  --aa-description-highlight-background-color-rgb: 201, 152, 58;
+  --aa-description-highlight-background-color-alpha: 0.3;
+  --aa-overlay-color-rgb: 0, 0, 0;
+  --aa-overlay-color-alpha: 0.6;
+  --aa-panel-shadow: inset 1px 1px 0 0 rgba(74, 64, 52, 0.4), 0 3px 8px 0 rgba(0, 0, 0, 0.4);
+  --aa-scrollbar-track-background-color-rgb: 34, 27, 23;
+}
+
+/* Navbar search bar: strict fixed width so it never expands when typing in the modal */
+.navbar [class*="navbarSearchContainer"],
+.navbar [class*="SearchContainer"] {
+  width: 200px !important;
+  min-width: 200px !important;
+  max-width: 200px !important;
+  flex: 0 0 200px !important;
+  overflow: hidden !important;
+}
+.navbar .dsla-search-wrapper,
+.navbar .dsla-search-wrapper > * {
+  width: 200px !important;
+  min-width: 0 !important;
+  max-width: 200px !important;
+  flex: 0 0 200px !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+.navbar .aa-Form,
+.navbar .dsla-search-wrapper .aa-Form,
+.navbar .aa-DetachedSearchButton {
+  width: 200px !important;
+  min-width: 0 !important;
+  max-width: 200px !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+.navbar .aa-InputWrapper,
+.navbar .dsla-search-wrapper .aa-InputWrapper {
+  min-width: 0 !important;
+  width: 100% !important;
+  overflow: hidden !important;
+}
+.navbar .aa-Input,
+.navbar .aa-DetachedSearchButtonQuery {
+  min-width: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  box-sizing: border-box !important;
+}
+
+/* Force golden colors and full border on navbar search bar (override theme load order) */
+/* Use border + inset box-shadow for right edge so it's never clipped by overflow */
+.navbar .aa-Form,
+.navbar .dsla-search-wrapper .aa-Form,
+.navbar .aa-DetachedSearchButton {
+  border: 1px solid rgba(180, 164, 132, 0.8) !important;
+  box-shadow: inset -1px 0 0 0 rgba(180, 164, 132, 0.8) !important;
+}
+.navbar .aa-Form:focus-within,
+.navbar .dsla-search-wrapper .aa-Form:focus-within,
+.navbar .aa-DetachedSearchButton:focus {
+  border-color: #c9983a !important;
+  box-shadow: 0 0 0 2px rgba(201, 152, 58, 0.25), inset -1px 0 0 0 #c9983a !important;
+}
+.navbar .aa-Input,
+.navbar .dsla-search-wrapper .aa-Input {
+  color: #2d2820 !important;
+}
+.navbar .aa-Input::placeholder,
+.navbar .aa-Input::-moz-placeholder,
+.navbar .dsla-search-wrapper .aa-Input::placeholder,
+.navbar .dsla-search-wrapper .aa-Input::-moz-placeholder {
+  color: rgba(74, 64, 52, 0.9) !important;
+}
+/* Light theme: force golden icon (override any blue from theme) */
+.navbar .aa-Label svg,
+.navbar .aa-InputWrapperPrefix svg,
+.navbar .dsla-search-wrapper .aa-Label svg,
+.navbar .dsla-search-wrapper .aa-InputWrapperPrefix svg,
+.navbar .aa-DetachedSearchButtonIcon,
+.navbar .dsla-search-wrapper .aa-DetachedSearchButtonIcon {
+  color: #c9983a !important;
+  fill: #c9983a !important;
+  stroke: #c9983a !important;
+}
+html:not([data-theme='dark']) .navbar .aa-Label svg,
+html:not([data-theme='dark']) .navbar .aa-InputWrapperPrefix svg,
+html:not([data-theme='dark']) .navbar .aa-DetachedSearchButtonIcon,
+html:not([data-theme='dark']) .navbar .dsla-search-wrapper .aa-Label svg,
+html:not([data-theme='dark']) .navbar .dsla-search-wrapper .aa-InputWrapperPrefix svg,
+html:not([data-theme='dark']) .navbar .dsla-search-wrapper .aa-DetachedSearchButtonIcon {
+  color: #c9983a !important;
+  fill: #c9983a !important;
+  stroke: #c9983a !important;
+}
+
+/* Dark theme: navbar search bar golden */
+html[data-theme='dark'] .navbar .aa-Form,
+html[data-theme='dark'] .navbar .dsla-search-wrapper .aa-Form,
+html[data-theme='dark'] .navbar .aa-DetachedSearchButton,
+body[data-theme='dark'] .navbar .aa-Form,
+body[data-theme='dark'] .navbar .dsla-search-wrapper .aa-Form,
+body[data-theme='dark'] .navbar .aa-DetachedSearchButton {
+  border: 1px solid rgba(201, 152, 58, 0.5) !important;
+  box-shadow: inset -1px 0 0 0 rgba(201, 152, 58, 0.5) !important;
+  background-color: #221b17 !important;
+}
+html[data-theme='dark'] .navbar .aa-Form:focus-within,
+html[data-theme='dark'] .navbar .dsla-search-wrapper .aa-Form:focus-within,
+html[data-theme='dark'] .navbar .aa-DetachedSearchButton:focus,
+body[data-theme='dark'] .navbar .aa-Form:focus-within,
+body[data-theme='dark'] .navbar .dsla-search-wrapper .aa-Form:focus-within,
+body[data-theme='dark'] .navbar .aa-DetachedSearchButton:focus {
+  border-color: #c9983a !important;
+  box-shadow: 0 0 0 2px rgba(201, 152, 58, 0.3), inset -1px 0 0 0 #c9983a !important;
+}
+html[data-theme='dark'] .navbar .aa-Input,
+html[data-theme='dark'] .navbar .dsla-search-wrapper .aa-Input,
+body[data-theme='dark'] .navbar .aa-Input,
+body[data-theme='dark'] .navbar .dsla-search-wrapper .aa-Input {
+  color: #f5f5f5 !important;
+}
+html[data-theme='dark'] .navbar .aa-Input::placeholder,
+html[data-theme='dark'] .navbar .aa-Input::-moz-placeholder,
+html[data-theme='dark'] .navbar .dsla-search-wrapper .aa-Input::placeholder,
+html[data-theme='dark'] .navbar .dsla-search-wrapper .aa-Input::-moz-placeholder,
+body[data-theme='dark'] .navbar .aa-Input::placeholder,
+body[data-theme='dark'] .navbar .aa-Input::-moz-placeholder,
+body[data-theme='dark'] .navbar .dsla-search-wrapper .aa-Input::placeholder,
+body[data-theme='dark'] .navbar .dsla-search-wrapper .aa-Input::-moz-placeholder {
+  color: rgba(212, 196, 176, 0.85) !important;
+}
+html[data-theme='dark'] .navbar .aa-Label svg,
+html[data-theme='dark'] .navbar .aa-InputWrapperPrefix svg,
+html[data-theme='dark'] .navbar .dsla-search-wrapper .aa-Label svg,
+html[data-theme='dark'] .navbar .dsla-search-wrapper .aa-InputWrapperPrefix svg,
+body[data-theme='dark'] .navbar .aa-Label svg,
+body[data-theme='dark'] .navbar .aa-InputWrapperPrefix svg,
+body[data-theme='dark'] .navbar .dsla-search-wrapper .aa-Label svg,
+body[data-theme='dark'] .navbar .dsla-search-wrapper .aa-InputWrapperPrefix svg {
+  color: #c9983a !important;
+  fill: currentColor !important;
+}
+
+/* ---------- Central search modal (detached overlay): force golden, no blue ---------- */
+/* Center the modal horizontally; prevent search input from expanding modal width */
+.aa-DetachedContainer--modal {
+  left: 0 !important;
+  right: 0 !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  width: 90vw !important;
+  max-width: 680px !important;
+}
+.aa-DetachedFormContainer {
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.aa-DetachedContainer .aa-Form,
+.aa-DetachedFormContainer .aa-Form {
+  min-width: 0 !important;
+  width: 0 !important;
+  flex: 1 1 0 !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  border-color: rgba(180, 164, 132, 0.8) !important;
+  box-shadow: none !important;
+}
+.aa-DetachedContainer .aa-InputWrapper,
+.aa-DetachedFormContainer .aa-InputWrapper {
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+}
+.aa-DetachedContainer .aa-Input,
+.aa-DetachedFormContainer .aa-Input {
+  min-width: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+.aa-DetachedContainer .aa-Form:focus-within,
+.aa-DetachedFormContainer .aa-Form:focus-within {
+  border-color: #c9983a !important;
+  box-shadow: 0 0 0 2px rgba(201, 152, 58, 0.25) !important;
+}
+.aa-DetachedContainer .aa-Input,
+.aa-DetachedFormContainer .aa-Input {
+  color: #2d2820 !important;
+}
+.aa-DetachedContainer .aa-Input::placeholder,
+.aa-DetachedContainer .aa-Input::-moz-placeholder,
+.aa-DetachedFormContainer .aa-Input::placeholder,
+.aa-DetachedFormContainer .aa-Input::-moz-placeholder {
+  color: rgba(74, 64, 52, 0.85) !important;
+}
+.aa-DetachedContainer .aa-Label svg,
+.aa-DetachedContainer .aa-InputWrapperPrefix svg,
+.aa-DetachedFormContainer .aa-Label svg,
+.aa-DetachedFormContainer .aa-InputWrapperPrefix svg {
+  color: #c9983a !important;
+  fill: currentColor !important;
+}
+.aa-DetachedFormContainer {
+  border-bottom-color: rgba(180, 164, 132, 0.4) !important;
+}
+.aa-DetachedContainer {
+  box-shadow: 0 0 0 1px rgba(45, 40, 32, 0.08), 0 8px 24px -4px rgba(45, 40, 32, 0.12) !important;
+}
+
+/* Dark theme: central modal golden */
+html[data-theme='dark'] .aa-DetachedContainer .aa-Form,
+body[data-theme='dark'] .aa-DetachedContainer .aa-Form,
+html[data-theme='dark'] .aa-DetachedFormContainer .aa-Form,
+body[data-theme='dark'] .aa-DetachedFormContainer .aa-Form {
+  border-color: rgba(201, 152, 58, 0.5) !important;
+  background-color: #221b17 !important;
+}
+html[data-theme='dark'] .aa-DetachedContainer .aa-Form:focus-within,
+body[data-theme='dark'] .aa-DetachedContainer .aa-Form:focus-within,
+html[data-theme='dark'] .aa-DetachedFormContainer .aa-Form:focus-within,
+body[data-theme='dark'] .aa-DetachedFormContainer .aa-Form:focus-within {
+  border-color: #c9983a !important;
+  box-shadow: 0 0 0 2px rgba(201, 152, 58, 0.3) !important;
+}
+html[data-theme='dark'] .aa-DetachedContainer .aa-Input,
+body[data-theme='dark'] .aa-DetachedContainer .aa-Input,
+html[data-theme='dark'] .aa-DetachedFormContainer .aa-Input,
+body[data-theme='dark'] .aa-DetachedFormContainer .aa-Input {
+  color: #f5f5f5 !important;
+}
+html[data-theme='dark'] .aa-DetachedContainer .aa-Input::placeholder,
+body[data-theme='dark'] .aa-DetachedContainer .aa-Input::placeholder,
+html[data-theme='dark'] .aa-DetachedFormContainer .aa-Input::placeholder,
+body[data-theme='dark'] .aa-DetachedFormContainer .aa-Input::placeholder {
+  color: rgba(212, 196, 176, 0.8) !important;
+}
+html[data-theme='dark'] .aa-DetachedContainer .aa-Label svg,
+body[data-theme='dark'] .aa-DetachedContainer .aa-InputWrapperPrefix svg,
+html[data-theme='dark'] .aa-DetachedFormContainer .aa-Label svg,
+body[data-theme='dark'] .aa-DetachedFormContainer .aa-InputWrapperPrefix svg {
+  color: #c9983a !important;
+  fill: currentColor !important;
+}
+html[data-theme='dark'] .aa-DetachedFormContainer,
+body[data-theme='dark'] .aa-DetachedFormContainer {
+  border-bottom-color: rgba(74, 64, 52, 0.5) !important;
+}
+
+/* When the search modal is open: hide the reflected text in the navbar so it only shows in the center modal */
+body:has(.aa-DetachedContainer) .navbar .aa-Input,
+body:has(.aa-DetachedContainer) .navbar .dsla-search-wrapper .aa-Input {
+  color: transparent !important;
+  caret-color: transparent !important;
+}
+/* Hide the "search button" query text in navbar when modal is open (detached mode shows same query in trigger) */
+body:has(.aa-DetachedContainer) .navbar .aa-DetachedSearchButtonQuery {
+  color: transparent !important;
+}

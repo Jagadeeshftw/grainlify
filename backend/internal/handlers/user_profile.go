@@ -227,6 +227,15 @@ WHERE login = $1
 			rankTierColor = GetRankTierColor(rankTier)
 		}
 
+		// Get user profile fields (bio, website, social links, kyc) from users table
+		var bio, website, telegram, linkedin, whatsapp, twitter, discord *string
+		var kycStatus *string
+		_ = h.db.Pool.QueryRow(c.Context(), `
+SELECT bio, website, telegram, linkedin, whatsapp, twitter, discord, kyc_status
+FROM users
+WHERE id = $1
+`, userID).Scan(&bio, &website, &telegram, &linkedin, &whatsapp, &twitter, &discord, &kycStatus)
+
 		// Count distinct projects user has contributed to (via issues or PRs)
 		var projectsContributedToCount int
 		err = h.db.Pool.QueryRow(c.Context(), `
@@ -266,6 +275,9 @@ WHERE p.status = 'verified'
 			"rewards_count":                 0, // TODO: Implement rewards system
 			"languages":                     languages,
 			"ecosystems":                    ecosystems,
+			"kyc_verified": func() bool {
+				return kycStatus != nil && *kycStatus == "verified"
+			}(),
 			"rank": fiber.Map{
 				"position":   rankPosition,
 				"tier":       string(rankTier),
@@ -830,12 +842,12 @@ ORDER BY p.github_full_name ASC
 				ownerAvatarURL = &url
 			}
 			projects = append(projects, fiber.Map{
-				"id":                 id.String(),
-				"github_full_name":   fullName,
-				"status":             status,
-				"ecosystem_name":     ecosystemName,
-				"language":           language,
-				"owner_avatar_url":   ownerAvatarURL,
+				"id":               id.String(),
+				"github_full_name": fullName,
+				"status":           status,
+				"ecosystem_name":   ecosystemName,
+				"language":         language,
+				"owner_avatar_url": ownerAvatarURL,
 			})
 		}
 		return c.Status(fiber.StatusOK).JSON(projects)
@@ -861,6 +873,8 @@ func (h *UserProfileHandler) PublicProfile() fiber.Handler {
 		var githubLogin *string
 		var userID *uuid.UUID
 		var bio, website, telegram, linkedin, whatsapp, twitter, discord, firstName, lastName *string
+		var bio, website, telegram, linkedin, whatsapp, twitter, discord *string
+		var kycStatus *string
 
 		// If user_id is provided, get GitHub login from it
 		if userIDParam != "" {
@@ -886,6 +900,10 @@ SELECT bio, website, telegram, linkedin, whatsapp, twitter, discord, first_name,
 FROM users
 WHERE id = $1
 `, parsedUserID).Scan(&bio, &website, &telegram, &linkedin, &whatsapp, &twitter, &discord, &firstName, &lastName)
+SELECT bio, website, telegram, linkedin, whatsapp, twitter, discord, kyc_status
+FROM users
+WHERE id = $1
+`, parsedUserID).Scan(&bio, &website, &telegram, &linkedin, &whatsapp, &twitter, &discord, &kycStatus)
 		} else {
 			// If login is provided, get user_id from it
 			loginParamLower := strings.ToLower(loginParam)
@@ -925,6 +943,10 @@ SELECT bio, website, telegram, linkedin, whatsapp, twitter, discord, first_name,
 FROM users
 WHERE id = $1
 `, foundUserID).Scan(&bio, &website, &telegram, &linkedin, &whatsapp, &twitter, &discord, &firstName, &lastName)
+SELECT bio, website, telegram, linkedin, whatsapp, twitter, discord, kyc_status
+FROM users
+WHERE id = $1
+`, foundUserID).Scan(&bio, &website, &telegram, &linkedin, &whatsapp, &twitter, &discord, &kycStatus)
 		}
 
 		if githubLogin == nil || *githubLogin == "" {
@@ -1145,6 +1167,9 @@ WHERE u.id = $1
 			"projects_led_count":            projectsLedCount,
 			"languages":                     languages,
 			"ecosystems":                    ecosystems,
+			"kyc_verified": func() bool {
+				return kycStatus != nil && *kycStatus == "verified"
+			}(),
 			"rank": fiber.Map{
 				"position":   rankPosition,
 				"tier":       string(rankTier),

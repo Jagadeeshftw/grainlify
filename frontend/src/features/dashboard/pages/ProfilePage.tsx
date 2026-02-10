@@ -1,12 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
-import { Search, ChevronDown, Award, Briefcase, GitPullRequest, FolderGit2, Trophy, Github, Code, Globe, Sparkles, TrendingUp, Star, Users, GitFork, DollarSign, GitMerge, Calendar, ChevronRight, Filter, Circle, Eye, Crown, Link, ArrowLeft, Medal, LucideIcon } from 'lucide-react';
+import { Search, ChevronDown, Award, Briefcase, GitPullRequest, FolderGit2, Trophy, Github, Code, Globe, Sparkles, TrendingUp, Star, Users, GitFork, DollarSign, GitMerge, Calendar, ChevronRight, Filter, Circle, Eye, Crown, Link, ArrowLeft, Medal, Shield, LucideIcon } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
 import { useAuth } from '../../../shared/contexts/AuthContext';
 import { getUserProfile, getProjectsContributed, getProjectsLed, getProfileCalendar, getProfileActivity, getPublicProfile } from '../../../shared/api/client';
 import { SkeletonLoader } from '../../../shared/components/SkeletonLoader';
 import { LanguageIcon } from '../../../shared/components/LanguageIcon';
-import { Modal } from '../../../shared/components/ui/Modal';
 
 interface ProfileData {
   contributions_count: number;
@@ -24,6 +23,7 @@ interface ProfileData {
   whatsapp?: string;
   twitter?: string;
   discord?: string;
+   kyc_verified?: boolean;
   rank: {
     position: number | null;
     tier: string;
@@ -347,7 +347,7 @@ export function ProfilePage({ viewingUserId, viewingUserLogin, onBack, onProject
       )}
 
       {/* Profile Header */}
-      <div className="backdrop-blur-[40px] bg-gradient-to-br from-white/[0.18] to-white/[0.10] rounded-[32px] border-2 border-white/30 shadow-[0_20px_60px_rgba(0,0,0,0.15),0_0_80px_rgba(201,152,58,0.08)] p-12 relative overflow-hidden group">
+      <div className="backdrop-blur-[40px] bg-gradient-to-br from-white/[0.18] to-white/[0.10] rounded-[32px] border-2 border-white/30 shadow-[0_20px_60px_rgba(0,0,0,0.15),0_0_80px_rgba(201,152,58,0.08)] p-12 relative overflow-visible z-20 group">
         {/* Ambient Background Glow - Enhanced */}
         <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-gradient-to-br from-[#c9983a]/15 via-[#d4af37]/10 to-transparent rounded-full blur-3xl pointer-events-none group-hover:scale-110 transition-transform duration-1000" />
         <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-gradient-to-tr from-[#d4af37]/12 to-transparent rounded-full blur-3xl pointer-events-none group-hover:scale-110 transition-transform duration-1000" />
@@ -436,6 +436,40 @@ export function ProfilePage({ viewingUserId, viewingUserLogin, onBack, onProject
               {/* Social Media Links - Show all icons, dimmed if no link */}
               {!isLoadingProfile && (
                 <div className="flex items-center gap-3 flex-wrap mb-4">
+                  {/* GitHub - always enabled */}
+                  <a
+                    href={`https://github.com/${viewingUser?.login || user?.github?.login || ''}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-8 h-8 rounded-full bg-gradient-to-br from-[#c9983a]/30 to-[#d4af37]/20 border-2 border-[#c9983a]/50 flex items-center justify-center hover:scale-110 hover:shadow-[0_4px_12px_rgba(201,152,58,0.4)] transition-all duration-300"
+                    title="GitHub"
+                  >
+                    <Github className="w-4 h-4 text-[#c9983a]" />
+                  </a>
+
+                  {/* KYC badge - always shown, enabled only when verified */}
+                  <div
+                    className={
+                      profileData?.kyc_verified
+                        ? "w-8 h-8 rounded-full bg-gradient-to-br from-[#4ade80]/30 to-[#16a34a]/30 border-2 border-[#22c55e]/60 flex items-center justify-center shadow-[0_4px_12px_rgba(34,197,94,0.5)]"
+                        : `w-8 h-8 rounded-full border-2 flex items-center justify-center ${
+                            theme === 'dark'
+                              ? 'bg-gradient-to-br from-gray-400/20 to-gray-500/10 border-gray-400/30 opacity-60'
+                              : 'bg-gradient-to-br from-gray-300/40 to-gray-400/30 border-gray-400/50 opacity-70'
+                          }`
+                    }
+                    title={profileData?.kyc_verified ? "KYC verified" : "KYC not verified"}
+                  >
+                    <Shield
+                      className={`w-4 h-4 ${
+                        profileData?.kyc_verified
+                          ? 'text-[#16a34a]'
+                          : theme === 'dark'
+                            ? 'text-[#9ca3af]'
+                            : 'text-[#6b7280]'
+                      }`}
+                    />
+                  </div>
                   {/* Telegram */}
                   {profileData?.telegram ? (
                     <a
@@ -609,7 +643,7 @@ export function ProfilePage({ viewingUserId, viewingUserLogin, onBack, onProject
 
                 {/* Row 2 - Projects Stats (clickable to open project list modals) */}
                 <div className="flex items-center gap-8">
-                  <div className="flex items-center gap-3 group/stat">
+                  <div className="relative flex items-center gap-3 group/stat">
                     <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#c9983a]/30 to-[#d4af37]/20 border-2 border-[#c9983a]/50 flex items-center justify-center shadow-[0_3px_12px_rgba(201,152,58,0.25),inset_0_1px_2px_rgba(255,255,255,0.2)] group-hover/stat:scale-110 group-hover/stat:shadow-[0_5px_20px_rgba(201,152,58,0.4)] transition-all duration-300">
                       <Users className="w-5 h-5 text-[#c9983a] drop-shadow-sm" />
                     </div>
@@ -627,11 +661,68 @@ export function ProfilePage({ viewingUserId, viewingUserLogin, onBack, onProject
                           }`}>{profileData?.projects_contributed_to_count || 0}</span> projects
                       </button>
                     )}
+                    {/* Small popover for contributed projects */}
+                    {contributorModalOpen && projects.length > 0 && (
+                      <div
+                        className={`absolute z-[200] top-full mt-2 left-0 w-[260px] rounded-[18px] border shadow-lg ${
+                          theme === 'dark'
+                            ? 'bg-[#3a3228] border-white/15'
+                            : 'bg-[#e4d4c0] border-white/40'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+                          <div className="flex items-center gap-2">
+                            <Users className="w-4 h-4 text-[#c9983a]" />
+                            <span className={`text-[13px] font-semibold ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'}`}>
+                              Projects contributed to
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setContributorModalOpen(false)}
+                            className="text-[13px] text-[#c9983a] hover:text-[#a67c2e]"
+                          >
+                            ×
+                          </button>
+                        </div>
+                        <div className="max-h-[260px] overflow-y-auto p-2 space-y-1">
+                          {projects.map((project) => {
+                            const name = project.github_full_name.split('/')[1] || project.github_full_name;
+                            return (
+                              <button
+                                key={project.id}
+                                type="button"
+                                onClick={() => {
+                                  onProjectClick?.(project.id);
+                                  setContributorModalOpen(false);
+                                }}
+                                className={`w-full flex items-center gap-3 px-3 py-2 rounded-[12px] text-left transition-all hover:bg-white/10 ${
+                                  theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
+                                }`}
+                              >
+                                {project.owner_avatar_url ? (
+                                  <img
+                                    src={project.owner_avatar_url}
+                                    alt=""
+                                    className="w-8 h-8 rounded-[10px] object-cover flex-shrink-0"
+                                  />
+                                ) : project.language ? (
+                                  <LanguageIcon language={project.language} className="w-8 h-8 flex-shrink-0" />
+                                ) : (
+                                  <FolderGit2 className="w-6 h-6 flex-shrink-0 text-[#c9983a]" />
+                                )}
+                                <span className="text-[13px] font-medium truncate">{name}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 <div className="flex items-center gap-8">
-                  <div className="flex items-center gap-3 group/stat">
+                  <div className="relative flex items-center gap-3 group/stat">
                     <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#c9983a]/30 to-[#d4af37]/20 border-2 border-[#c9983a]/50 flex items-center justify-center shadow-[0_3px_12px_rgba(201,152,58,0.25),inset_0_1px_2px_rgba(255,255,255,0.2)] group-hover/stat:scale-110 transition-all duration-300">
                       <Star className="w-5 h-5 text-[#c9983a] fill-[#c9983a] drop-shadow-sm" />
                     </div>
@@ -648,6 +739,63 @@ export function ProfilePage({ viewingUserId, viewingUserLogin, onBack, onProject
                         Lead <span className={`font-black text-[16px] transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
                           }`}>{profileData?.projects_led_count || 0}</span> projects
                       </button>
+                    )}
+                    {/* Small popover for led projects */}
+                    {leadModalOpen && projectsLed.length > 0 && (
+                      <div
+                        className={`absolute z-[200] top-full mt-2 left-0 w-[260px] rounded-[18px] border shadow-lg ${
+                          theme === 'dark'
+                            ? 'bg-[#3a3228] border-white/15'
+                            : 'bg-[#e4d4c0] border-white/40'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+                          <div className="flex items-center gap-2">
+                            <Star className="w-4 h-4 text-[#c9983a] fill-[#c9983a]" />
+                            <span className={`text-[13px] font-semibold ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'}`}>
+                              Projects led
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setLeadModalOpen(false)}
+                            className="text-[13px] text-[#c9983a] hover:text-[#a67c2e]"
+                          >
+                            ×
+                          </button>
+                        </div>
+                        <div className="max-h-[260px] overflow-y-auto p-2 space-y-1">
+                          {projectsLed.map((project) => {
+                            const name = project.github_full_name.split('/')[1] || project.github_full_name;
+                            return (
+                              <button
+                                key={project.id}
+                                type="button"
+                                onClick={() => {
+                                  onProjectClick?.(project.id);
+                                  setLeadModalOpen(false);
+                                }}
+                                className={`w-full flex items-center gap-3 px-3 py-2 rounded-[12px] text-left transition-all hover:bg-white/10 ${
+                                  theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
+                                }`}
+                              >
+                                {project.owner_avatar_url ? (
+                                  <img
+                                    src={project.owner_avatar_url}
+                                    alt=""
+                                    className="w-8 h-8 rounded-[10px] object-cover flex-shrink-0"
+                                  />
+                                ) : project.language ? (
+                                  <LanguageIcon language={project.language} className="w-8 h-8 flex-shrink-0" />
+                                ) : (
+                                  <FolderGit2 className="w-6 h-6 flex-shrink-0 text-[#c9983a]" />
+                                )}
+                                <span className="text-[13px] font-medium truncate">{name}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -1275,86 +1423,6 @@ export function ProfilePage({ viewingUserId, viewingUserLogin, onBack, onProject
           </div>
         )}
       </div>
-
-      {/* Contributor projects modal */}
-      <Modal
-        isOpen={contributorModalOpen}
-        onClose={() => setContributorModalOpen(false)}
-        title="Projects contributed to"
-        icon={<Users className="w-5 h-5 text-[#c9983a]" />}
-        width="md"
-      >
-        <div className={`max-h-[60vh] overflow-y-auto space-y-2 ${theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'}`}>
-          {projects.length === 0 ? (
-            <p className="text-[14px]">No projects yet.</p>
-          ) : (
-            projects.map((project) => {
-              const name = project.github_full_name.split('/')[1] || project.github_full_name;
-              return (
-                <button
-                  key={project.id}
-                  type="button"
-                  onClick={() => {
-                    onProjectClick?.(project.id);
-                    setContributorModalOpen(false);
-                  }}
-                  className={`w-full flex items-center gap-3 p-3 rounded-[12px] text-left transition-all hover:bg-white/10 ${theme === 'dark' ? 'bg-white/[0.06]' : 'bg-white/[0.1]'}`}
-                >
-                  {project.owner_avatar_url ? (
-                    <img src={project.owner_avatar_url} alt="" className="w-10 h-10 rounded-[10px] object-cover flex-shrink-0" />
-                  ) : project.language ? (
-                    <LanguageIcon language={project.language} className="w-10 h-10 flex-shrink-0" />
-                  ) : (
-                    <FolderGit2 className="w-10 h-10 flex-shrink-0 text-[#c9983a]" />
-                  )}
-                  <span className="font-medium truncate">{name}</span>
-                </button>
-              );
-            })
-          )}
-        </div>
-      </Modal>
-
-      {/* Lead projects modal */}
-      <Modal
-        isOpen={leadModalOpen}
-        onClose={() => setLeadModalOpen(false)}
-        title="Projects led"
-        icon={<Star className="w-5 h-5 text-[#c9983a] fill-[#c9983a]" />}
-        width="md"
-      >
-        <div className={`max-h-[60vh] overflow-y-auto space-y-2 ${theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'}`}>
-          {isLoadingProjectsLed ? (
-            <p className="text-[14px]">Loading...</p>
-          ) : projectsLed.length === 0 ? (
-            <p className="text-[14px]">No projects led yet.</p>
-          ) : (
-            projectsLed.map((project) => {
-              const name = project.github_full_name.split('/')[1] || project.github_full_name;
-              return (
-                <button
-                  key={project.id}
-                  type="button"
-                  onClick={() => {
-                    onProjectClick?.(project.id);
-                    setLeadModalOpen(false);
-                  }}
-                  className={`w-full flex items-center gap-3 p-3 rounded-[12px] text-left transition-all hover:bg-white/10 ${theme === 'dark' ? 'bg-white/[0.06]' : 'bg-white/[0.1]'}`}
-                >
-                  {project.owner_avatar_url ? (
-                    <img src={project.owner_avatar_url} alt="" className="w-10 h-10 rounded-[10px] object-cover flex-shrink-0" />
-                  ) : project.language ? (
-                    <LanguageIcon language={project.language} className="w-10 h-10 flex-shrink-0" />
-                  ) : (
-                    <FolderGit2 className="w-10 h-10 flex-shrink-0 text-[#c9983a]" />
-                  )}
-                  <span className="font-medium truncate">{name}</span>
-                </button>
-              );
-            })
-          )}
-        </div>
-      </Modal>
     </div>
   );
 }

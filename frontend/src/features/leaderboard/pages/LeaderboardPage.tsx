@@ -36,7 +36,8 @@ export function LeaderboardPage() {
 
   const getProjectIcon = (githubFullName: string) => {
     const [owner] = githubFullName.split("/");
-    return `https://github.com/${owner}.png?size=40`;
+    // Use higher‑resolution owner avatar so leaderboard projects look crisp
+    return `https://github.com/${owner}.png?size=200`;
   };
 
   // Fetch leaderboard data

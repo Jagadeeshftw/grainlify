@@ -14,6 +14,7 @@ interface ProjectDetailPageProps {
   onIssueClick?: (issueId: string, projectId: string) => void;
   projectId?: string;
   onClose?: () => void;
+  backLabel?: string;
 }
 
 function OverviewMarkdown({ readme, theme }: { readme: string; theme: string }) {
@@ -102,7 +103,7 @@ function OverviewMarkdown({ readme, theme }: { readme: string; theme: string }) 
   );
 }
 
-export function ProjectDetailPage({ onBack, onIssueClick, projectId: propProjectId, onClose }: ProjectDetailPageProps) {
+export function ProjectDetailPage({ onBack, onIssueClick, projectId: propProjectId, onClose, backLabel }: ProjectDetailPageProps) {
   const { theme } = useTheme();
   const { projectId: paramProjectId } = useParams<{ projectId: string }>();
   const projectId = propProjectId || paramProjectId;
@@ -683,7 +684,7 @@ export function ProjectDetailPage({ onBack, onIssueClick, projectId: propProject
             }`}
           >
             <ArrowLeft className="w-5 h-5" />
-            <span className="font-semibold text-[14px]">Back to Browse</span>
+            <span className="font-semibold text-[14px]">{backLabel || 'Back'}</span>
           </button>
         )}
 

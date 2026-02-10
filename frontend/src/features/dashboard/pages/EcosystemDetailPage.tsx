@@ -14,7 +14,8 @@ const formatNumber = (num: number): string => {
 
 const getProjectIcon = (githubFullName: string): string => {
   const [owner] = githubFullName.split('/');
-  return `https://github.com/${owner}.png?size=40`;
+  // Use higher‑resolution owner avatar so cards look crisp
+  return `https://github.com/${owner}.png?size=200`;
 };
 
 const getProjectColor = (name: string): string => {

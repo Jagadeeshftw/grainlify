@@ -13,6 +13,7 @@ interface ModalProps {
   showCloseButton?: boolean;
   maxHeight?: boolean;
   footer?: ReactNode;
+  dimBackdrop?: boolean;
 }
 
 const widthClasses = {
@@ -31,7 +32,8 @@ export function Modal({
   width = 'md',
   showCloseButton = true,
   maxHeight = false,
-  footer
+  footer,
+  dimBackdrop = true
 }: ModalProps) {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
@@ -51,7 +53,7 @@ export function Modal({
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[10000] animate-in fade-in duration-200"
+      className={`fixed inset-0 ${dimBackdrop ? 'bg-black/50 backdrop-blur-sm' : 'bg-transparent'} flex items-center justify-center z-[10000] animate-in fade-in duration-200`}
       onClick={onClose}
     >
       <div
