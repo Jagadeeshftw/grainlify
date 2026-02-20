@@ -9,6 +9,7 @@ const PROGRAM_INITIALIZED: Symbol = symbol_short!("PrgInit");
 const FUNDS_LOCKED: Symbol = symbol_short!("FndsLock");
 const BATCH_PAYOUT: Symbol = symbol_short!("BatchPay");
 const PAYOUT: Symbol = symbol_short!("Payout");
+const PAUSE_STATE_CHANGED: Symbol = symbol_short!("PauseSt");
 
 // Storage keys
 const PROGRAM_DATA: Symbol = symbol_short!("ProgData");
@@ -35,6 +36,38 @@ pub struct ProgramData {
     pub authorized_payout_key: Address,
     pub payout_history: Vec<PayoutRecord>,
     pub token_address: Address, // Token contract address for transfers
+}
+
+/// Storage key type for individual programs
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DataKey {
+    Program(String),                 // program_id -> ProgramData
+    Admin,                           // Contract Admin
+    ReleaseSchedule(String, u64),    // program_id, schedule_id -> ProgramReleaseSchedule
+    ReleaseHistory(String),          // program_id -> Vec<ProgramReleaseHistory>
+    NextScheduleId(String),          // program_id -> next schedule_id
+    MultisigConfig(String),          // program_id -> MultisigConfig
+    PayoutApproval(String, Address), // program_id, recipient -> PayoutApproval
+    PendingClaim(String, u64),       // (program_id, schedule_id) -> ClaimRecord
+    ClaimWindow,                     // u64 seconds (global config)
+    PauseFlags,                      // PauseFlags struct
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PauseFlags {
+    pub lock_paused: bool,
+    pub release_paused: bool,
+    pub refund_paused: bool,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PauseStateChanged {
+    pub operation: Symbol,
+    pub paused: bool,
+    pub admin: Address,
 }
 
 #[contracttype]
@@ -120,6 +153,19 @@ impl ProgramEscrowContract {
         program_data
     }
 
+    /// Check if a program exists
+    ///
+    /// # Returns
+    /// * `bool` - True if program exists, false otherwise
+    pub fn program_exists(env: Env, program_id: String) -> bool {
+        let program_key = DataKey::Program(program_id);
+        env.storage().instance().has(&program_key)
+    }
+
+    // ========================================================================
+    // Fund Management
+    // ========================================================================
+
     /// Lock initial funds into the program escrow
     ///
     /// # Arguments
@@ -128,6 +174,10 @@ impl ProgramEscrowContract {
     /// # Returns
     /// Updated ProgramData with locked funds
     pub fn lock_program_funds(env: Env, amount: i128) -> ProgramData {
+        if Self::check_paused(&env, symbol_short!("lock")) {
+            panic!("Funds Paused");
+        }
+
         if amount <= 0 {
             panic!("Amount must be greater than zero");
         }
@@ -158,6 +208,90 @@ impl ProgramEscrowContract {
         program_data
     }
 
+    // ========================================================================
+    // Initialization & Admin
+    // ========================================================================
+
+    /// Initialize the contract with an admin.
+    /// This must be called before any admin protected functions (like pause) can be used.
+    pub fn initialize_contract(env: Env, admin: Address) {
+        if env.storage().instance().has(&DataKey::Admin) {
+            panic!("Already initialized");
+        }
+        env.storage().instance().set(&DataKey::Admin, &admin);
+    }
+
+    /// Update pause flags (admin only)
+    pub fn set_paused(
+        env: Env,
+        lock: Option<bool>,
+        release: Option<bool>,
+        refund: Option<bool>,
+    ) {
+        if !env.storage().instance().has(&DataKey::Admin) {
+            panic!("Not initialized");
+        }
+
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        let mut flags = Self::get_pause_flags(&env);
+
+        if let Some(paused) = lock {
+            flags.lock_paused = paused;
+            env.events().publish(
+                (PAUSE_STATE_CHANGED,),
+                (symbol_short!("lock"), paused, admin.clone()),
+            );
+        }
+
+        if let Some(paused) = release {
+            flags.release_paused = paused;
+            env.events().publish(
+                (PAUSE_STATE_CHANGED,),
+                (symbol_short!("release"), paused, admin.clone()),
+            );
+        }
+
+        if let Some(paused) = refund {
+            flags.refund_paused = paused;
+            env.events().publish(
+                (PAUSE_STATE_CHANGED,),
+                (symbol_short!("refund"), paused, admin.clone()),
+            );
+        }
+
+        env.storage().instance().set(&DataKey::PauseFlags, &flags);
+    }
+
+    /// Get current pause flags
+    pub fn get_pause_flags(env: &Env) -> PauseFlags {
+        env.storage().instance().get(&DataKey::PauseFlags).unwrap_or(
+            PauseFlags {
+                lock_paused: false,
+                release_paused: false,
+                refund_paused: false,
+            }
+        )
+    }
+
+    /// Check if an operation is paused
+    fn check_paused(env: &Env, operation: Symbol) -> bool {
+        let flags = Self::get_pause_flags(env);
+        if operation == symbol_short!("lock") {
+            return flags.lock_paused;
+        } else if operation == symbol_short!("release") {
+            return flags.release_paused;
+        } else if operation == symbol_short!("refund") {
+            return flags.refund_paused;
+        }
+        false
+    }
+
+    // ========================================================================
+    // Payout Functions
+    // ========================================================================
+
     /// Execute batch payouts to multiple recipients
     ///
     /// # Arguments
@@ -167,6 +301,10 @@ impl ProgramEscrowContract {
     /// # Returns
     /// Updated ProgramData after payouts
     pub fn batch_payout(env: Env, recipients: Vec<Address>, amounts: Vec<i128>) -> ProgramData {
+        if Self::check_paused(&env, symbol_short!("release")) {
+            panic!("Funds Paused");
+        }
+
         // Verify authorization
         let program_data: ProgramData = env
             .storage()
@@ -254,6 +392,10 @@ impl ProgramEscrowContract {
     /// # Returns
     /// Updated ProgramData after payout
     pub fn single_payout(env: Env, recipient: Address, amount: i128) -> ProgramData {
+        if Self::check_paused(&env, symbol_short!("release")) {
+            panic!("Funds Paused");
+        }
+
         // Verify authorization
         let program_data: ProgramData = env
             .storage()
