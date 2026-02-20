@@ -1362,5 +1362,53 @@ mod test {
         let events = env.events().all();
         assert!(events.len() > initial_event_count);
     }
+
+    #[test]
+    fn test_admin_initialization() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, GrainlifyContract);
+        let client = GrainlifyContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.init_admin(&admin);
+
+        assert_eq!(client.get_version(), 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "Already initialized")]
+    fn test_cannot_reinitialize_admin() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, GrainlifyContract);
+        let client = GrainlifyContractClient::new(&env, &contract_id);
+
+        let admin1 = Address::generate(&env);
+        let admin2 = Address::generate(&env);
+
+        client.init_admin(&admin1);
+        client.init_admin(&admin2);
+    }
+
+    #[test]
+    fn test_admin_persists_across_version_updates() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, GrainlifyContract);
+        let client = GrainlifyContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.init_admin(&admin);
+
+        client.set_version(&3);
+        assert_eq!(client.get_version(), 3);
+
+        client.set_version(&4);
+        assert_eq!(client.get_version(), 4);
+    }
 }
 

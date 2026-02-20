@@ -651,3 +651,60 @@ fn test_complete_bounty_workflow_lock_refund() {
     let depositor_balance = token_client.balance(&depositor);
     assert_eq!(depositor_balance, amount);
 }
+
+#[test]
+fn test_admin_can_update_fee_config() {
+    let (env, client, _contract_id) = create_test_env();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+
+    client.init(&admin, &token);
+
+    client.update_fee_config(&Some(100), &Some(50), &Some(admin.clone()), &Some(true));
+
+    let config = client.get_fee_config();
+    assert_eq!(config.lock_fee_rate, 100);
+    assert_eq!(config.release_fee_rate, 50);
+    assert_eq!(config.fee_enabled, true);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #2)")]
+fn test_non_admin_cannot_update_fee_config() {
+    let (env, client, _contract_id) = create_test_env();
+    env.mock_all_auths();
+
+    client.update_fee_config(&Some(100), &Some(50), &None, &Some(true));
+}
+
+#[test]
+fn test_admin_can_update_multisig_config() {
+    let (env, client, _contract_id) = create_test_env();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    let signer1 = Address::generate(&env);
+    let signer2 = Address::generate(&env);
+
+    client.init(&admin, &token);
+
+    let signers = vec![&env, signer1, signer2];
+    client.update_multisig_config(&1000000, &signers, &2);
+
+    let config = client.get_multisig_config();
+    assert_eq!(config.threshold_amount, 1000000);
+    assert_eq!(config.required_signatures, 2);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #2)")]
+fn test_non_admin_cannot_update_multisig_config() {
+    let (env, client, _contract_id) = create_test_env();
+    env.mock_all_auths();
+
+    let signers = vec![&env];
+    client.update_multisig_config(&1000000, &signers, &1);
+}

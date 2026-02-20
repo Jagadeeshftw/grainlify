@@ -2633,6 +2633,11 @@ impl ProgramEscrowContract {
         anti_abuse::get_config(&env)
     }
 
+    /// Gets the current admin address.
+    pub fn get_admin(env: Env) -> Option<Address> {
+        anti_abuse::get_admin(&env)
+    }
+
     // ========================================================================
     // Schedule View Functions
     // ========================================================================
@@ -3598,5 +3603,54 @@ mod test {
         assert_eq!(config.window_size, 7200);
         assert_eq!(config.max_operations, 5);
         assert_eq!(config.cooldown_period, 120);
+    }
+
+    #[test]
+    fn test_admin_rotation() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, ProgramEscrowContract);
+        let client = ProgramEscrowContractClient::new(&env, &contract_id);
+
+        let old_admin = Address::generate(&env);
+        let new_admin = Address::generate(&env);
+
+        client.set_admin(&old_admin);
+        assert_eq!(client.get_admin(), Some(old_admin.clone()));
+
+        client.set_admin(&new_admin);
+        assert_eq!(client.get_admin(), Some(new_admin));
+    }
+
+    #[test]
+    fn test_new_admin_can_update_config() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, ProgramEscrowContract);
+        let client = ProgramEscrowContractClient::new(&env, &contract_id);
+
+        let old_admin = Address::generate(&env);
+        let new_admin = Address::generate(&env);
+
+        client.set_admin(&old_admin);
+        client.set_admin(&new_admin);
+
+        client.update_rate_limit_config(&3600, &10, &30);
+
+        let config = client.get_rate_limit_config();
+        assert_eq!(config.window_size, 3600);
+        assert_eq!(config.max_operations, 10);
+        assert_eq!(config.cooldown_period, 30);
+    }
+
+    #[test]
+    #[should_panic(expected = "Admin not set")]
+    fn test_non_admin_cannot_update_config() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, ProgramEscrowContract);
+        let client = ProgramEscrowContractClient::new(&env, &contract_id);
+
+        client.update_rate_limit_config(&3600, &10, &30);
     }
 }
