@@ -360,6 +360,101 @@ fn test_release_schedule_overlapping_schedules() {
     assert_eq!(history.len(), 3);
 }
 
+#[test]
+fn test_anti_abuse_whitelist_bypass() {
+    let env = Env::default();
+    let (contract, admin, _, _) = setup_program(&env);
+
+    let config = contract.get_rate_limit_config(&env);
+    let max_ops = config.max_operations;
+    let recipient = Address::generate(&env);
+
+    // Initial time setup
+    let start_time = 1_000_000;
+    env.ledger().set_timestamp(start_time);
+
+    contract.lock_program_funds(&env, 100_000_000_000);
+
+    // Add admin to whitelist
+    contract.set_whitelist(&env, admin.clone(), true);
+
+    // Provide a valid timestamp just after the cooldown period
+    env.ledger().set_timestamp(start_time + config.cooldown_period + 1);
+    
+    // We should be able to do theoretically unlimited operations at the exact same timestamp
+    // We'll do `max_ops + 5` to prove it bypasses both cooldown (same timestamp) and rate limit (more than max_ops)
+    for _ in 0..(max_ops + 5) {
+        env.as_contract(&contract, || {
+            env.set_invoker(&admin);
+            contract.single_payout(&env, recipient.clone(), 100);
+        });
+    }
+
+    // Verify successful payouts
+    let info = contract.get_program_info(&env);
+    assert_eq!(info.payout_history.len() as u32, max_ops + 5);
+}
+
+// =============================================================================
+// TESTS FOR batch_initialize_programs
+// =============================================================================
+
+#[test]
+fn test_batch_initialize_programs_success() {
+    let env = Env::default();
+    let contract = ProgramEscrowContract;
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    let items = vec![
+        &env,
+        ProgramInitItem {
+            program_id: String::from_str(&env, "prog-1"),
+            authorized_payout_key: admin.clone(),
+            token_address: token.clone(),
+        },
+        ProgramInitItem {
+            program_id: String::from_str(&env, "prog-2"),
+            authorized_payout_key: admin.clone(),
+            token_address: token.clone(),
+        },
+    ];
+    let count = contract.batch_initialize_programs(&env, &items).unwrap();
+    assert_eq!(count, 2);
+    assert!(contract.program_exists(&env, &String::from_str(&env, "prog-1")));
+    assert!(contract.program_exists(&env, &String::from_str(&env, "prog-2")));
+}
+
+#[test]
+fn test_batch_initialize_programs_empty_err() {
+    let env = Env::default();
+    let contract = ProgramEscrowContract;
+    let items: Vec<ProgramInitItem> = vec![&env];
+    let res = contract.batch_initialize_programs(&env, &items);
+    assert_eq!(res, Err(BatchError::InvalidBatchSize));
+}
+
+#[test]
+fn test_batch_initialize_programs_duplicate_id_err() {
+    let env = Env::default();
+    let contract = ProgramEscrowContract;
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    let pid = String::from_str(&env, "same-id");
+    let items = vec![
+        &env,
+        ProgramInitItem {
+            program_id: pid.clone(),
+            authorized_payout_key: admin.clone(),
+            token_address: token.clone(),
+        },
+        ProgramInitItem {
+            program_id: pid,
+            authorized_payout_key: admin.clone(),
+            token_address: token.clone(),
+        },
+    ];
+    let res = contract.batch_initialize_programs(&env, &items);
+    assert_eq!(res, Err(BatchError::DuplicateProgramId));
 // =============================================================================
 // TESTS FOR MULTI-TENANT ISOLATION
 // =============================================================================

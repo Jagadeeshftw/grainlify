@@ -288,8 +288,8 @@ pub fn emergency_open_circuit(env: Env, admin: Address) {
 // integration, use the `try_*` variants of client calls where available.
 
 use soroban_sdk::{
-    contract, contractimpl, contracttype, symbol_short, token, vec, Address, Env, String, Symbol,
-    Vec,
+    contract, contracterror, contractimpl, contracttype, symbol_short, token, vec, Address, Env,
+    String, Symbol, Vec,
 };
 
 // Event types
@@ -422,6 +422,62 @@ pub struct ProgramReleaseHistory {
 pub struct ProgramAggregateStats {
     pub total_funds: i128,
     pub remaining_balance: i128,
+    pub authorized_payout_key: Address,
+    pub payout_history: Vec<PayoutRecord>,
+    pub token_address: Address,
+}
+
+/// Input item for batch program registration.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProgramInitItem {
+    pub program_id: String,
+    pub authorized_payout_key: Address,
+    pub token_address: Address,
+}
+
+/// Maximum number of programs per batch (aligned with bounty_escrow).
+pub const MAX_BATCH_SIZE: u32 = 100;
+
+/// Errors for batch program registration.
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum BatchError {
+    InvalidBatchSize = 1,
+    ProgramAlreadyExists = 2,
+    DuplicateProgramId = 3,
+}
+
+/// Storage key type for individual programs
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DataKey {
+    Program(String),                 // program_id -> ProgramData
+    ReleaseSchedule(String, u64),    // program_id, schedule_id -> ProgramReleaseSchedule
+    ReleaseHistory(String),          // program_id -> Vec<ProgramReleaseHistory>
+    NextScheduleId(String),          // program_id -> next schedule_id
+    MultisigConfig(String),          // program_id -> MultisigConfig
+    PayoutApproval(String, Address), // program_id, recipient -> PayoutApproval
+    PendingClaim(String, u64),       // (program_id, schedule_id) -> ClaimRecord
+    ClaimWindow,                     // u64 seconds (global config)
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MultisigConfig {
+    pub threshold_amount: i128,
+    pub signers: Vec<Address>,
+    pub required_signatures: u32,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PayoutApproval {
+    pub program_id: String,
+    pub recipient: Address,
+    pub amount: i128,
+    pub approvals: Vec<Address>,
     pub total_paid_out: i128,
     pub payout_count: u32,
     pub scheduled_count: u32,
@@ -487,6 +543,116 @@ impl ProgramEscrowContract {
         program_data
     }
 
+    /// Batch-initialize multiple programs in one transaction (all-or-nothing).
+    ///
+    /// # Errors
+    /// * `BatchError::InvalidBatchSize` - empty or len > MAX_BATCH_SIZE
+    /// * `BatchError::DuplicateProgramId` - duplicate program_id in items
+    /// * `BatchError::ProgramAlreadyExists` - a program_id already registered
+    pub fn batch_initialize_programs(
+        env: Env,
+        items: Vec<ProgramInitItem>,
+    ) -> Result<u32, BatchError> {
+        let batch_size = items.len() as u32;
+        if batch_size == 0 || batch_size > MAX_BATCH_SIZE {
+            return Err(BatchError::InvalidBatchSize);
+        }
+        for i in 0..batch_size {
+            for j in (i + 1)..batch_size {
+                if items.get(i).unwrap().program_id == items.get(j).unwrap().program_id {
+                    return Err(BatchError::DuplicateProgramId);
+                }
+            }
+        }
+        for i in 0..batch_size {
+            let program_key = DataKey::Program(items.get(i).unwrap().program_id.clone());
+            if env.storage().instance().has(&program_key) {
+                return Err(BatchError::ProgramAlreadyExists);
+            }
+        }
+
+        let mut registry: Vec<String> = env
+            .storage()
+            .instance()
+            .get(&PROGRAM_REGISTRY)
+            .unwrap_or(vec![&env]);
+
+        for i in 0..batch_size {
+            let item = items.get(i).unwrap();
+            let program_id = item.program_id.clone();
+            let authorized_payout_key = item.authorized_payout_key.clone();
+            let token_address = item.token_address.clone();
+
+            if program_id.is_empty() {
+                return Err(BatchError::InvalidBatchSize);
+            }
+
+            let program_data = ProgramData {
+                program_id: program_id.clone(),
+                total_funds: 0,
+                remaining_balance: 0,
+                authorized_payout_key: authorized_payout_key.clone(),
+                payout_history: vec![&env],
+                token_address: token_address.clone(),
+            };
+            let program_key = DataKey::Program(program_id.clone());
+            env.storage().instance().set(&program_key, &program_data);
+
+            if i == 0 {
+                let fee_config = FeeConfig {
+                    lock_fee_rate: 0,
+                    payout_fee_rate: 0,
+                    fee_recipient: authorized_payout_key.clone(),
+                    fee_enabled: false,
+                };
+                env.storage().instance().set(&FEE_CONFIG, &fee_config);
+            }
+
+            let multisig_config = MultisigConfig {
+                threshold_amount: i128::MAX,
+                signers: vec![&env],
+                required_signatures: 0,
+            };
+            env.storage().persistent().set(
+                &DataKey::MultisigConfig(program_id.clone()),
+                &multisig_config,
+            );
+
+            registry.push_back(program_id.clone());
+            env.events().publish(
+                (PROGRAM_REGISTERED,),
+                (program_id, authorized_payout_key, token_address, 0i128),
+            );
+        }
+        env.storage().instance().set(&PROGRAM_REGISTRY, &registry);
+
+        Ok(batch_size as u32)
+    }
+
+    /// Calculate fee amount based on rate (in basis points)
+    fn calculate_fee(amount: i128, fee_rate: i128) -> i128 {
+        if fee_rate == 0 {
+            return 0;
+        }
+        // Fee = (amount * fee_rate) / BASIS_POINTS
+        amount
+            .checked_mul(fee_rate)
+            .and_then(|x| x.checked_div(BASIS_POINTS))
+            .unwrap_or(0)
+    }
+
+    /// Get fee configuration (internal helper)
+    fn get_fee_config_internal(env: &Env) -> FeeConfig {
+        env.storage()
+            .instance()
+            .get(&FEE_CONFIG)
+            .unwrap_or_else(|| FeeConfig {
+                lock_fee_rate: 0,
+                payout_fee_rate: 0,
+                fee_recipient: env.current_contract_address(),
+                fee_enabled: false,
+            })
+    }
     /// Check if a program exists
     ///
     /// # Returns
@@ -1846,6 +2012,67 @@ mod test {
     }
 
     // ========================================================================
+    // Batch program registration tests
+    // ========================================================================
+
+    #[test]
+    fn test_batch_initialize_programs_success() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, ProgramEscrowContract);
+        let client = ProgramEscrowContractClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let token = Address::generate(&env);
+        let mut items = Vec::new(&env);
+        items.push_back(ProgramInitItem {
+            program_id: String::from_str(&env, "prog-1"),
+            authorized_payout_key: admin.clone(),
+            token_address: token.clone(),
+        });
+        items.push_back(ProgramInitItem {
+            program_id: String::from_str(&env, "prog-2"),
+            authorized_payout_key: admin.clone(),
+            token_address: token.clone(),
+        });
+        let count = client.try_batch_initialize_programs(&items).unwrap().unwrap();
+        assert_eq!(count, 2);
+        assert!(client.program_exists(&String::from_str(&env, "prog-1")));
+        assert!(client.program_exists(&String::from_str(&env, "prog-2")));
+    }
+
+    #[test]
+    fn test_batch_initialize_programs_empty_err() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, ProgramEscrowContract);
+        let client = ProgramEscrowContractClient::new(&env, &contract_id);
+        let items: Vec<ProgramInitItem> = Vec::new(&env);
+        let res = client.try_batch_initialize_programs(&items);
+        assert!(matches!(res, Err(Ok(BatchError::InvalidBatchSize))));
+    }
+
+    #[test]
+    fn test_batch_initialize_programs_duplicate_id_err() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, ProgramEscrowContract);
+        let client = ProgramEscrowContractClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let token = Address::generate(&env);
+        let pid = String::from_str(&env, "same-id");
+        let mut items = Vec::new(&env);
+        items.push_back(ProgramInitItem {
+            program_id: pid.clone(),
+            authorized_payout_key: admin.clone(),
+            token_address: token.clone(),
+        });
+        items.push_back(ProgramInitItem {
+            program_id: pid,
+            authorized_payout_key: admin.clone(),
+            token_address: token.clone(),
+        });
+        let res = client.try_batch_initialize_programs(&items);
+        assert!(matches!(res, Err(Ok(BatchError::DuplicateProgramId))));
+    }
+
+    // ========================================================================
     // Fund Locking Tests
     // ========================================================================
 
@@ -2357,6 +2584,55 @@ mod test {
         assert_eq!(config.window_size, 7200);
         assert_eq!(config.max_operations, 5);
         assert_eq!(config.cooldown_period, 120);
+    }
+
+    #[test]
+    fn test_admin_rotation() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, ProgramEscrowContract);
+        let client = ProgramEscrowContractClient::new(&env, &contract_id);
+
+        let old_admin = Address::generate(&env);
+        let new_admin = Address::generate(&env);
+
+        client.set_admin(&old_admin);
+        assert_eq!(client.get_admin(), Some(old_admin.clone()));
+
+        client.set_admin(&new_admin);
+        assert_eq!(client.get_admin(), Some(new_admin));
+    }
+
+    #[test]
+    fn test_new_admin_can_update_config() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, ProgramEscrowContract);
+        let client = ProgramEscrowContractClient::new(&env, &contract_id);
+
+        let old_admin = Address::generate(&env);
+        let new_admin = Address::generate(&env);
+
+        client.set_admin(&old_admin);
+        client.set_admin(&new_admin);
+
+        client.update_rate_limit_config(&3600, &10, &30);
+
+        let config = client.get_rate_limit_config();
+        assert_eq!(config.window_size, 3600);
+        assert_eq!(config.max_operations, 10);
+        assert_eq!(config.cooldown_period, 30);
+    }
+
+    #[test]
+    #[should_panic(expected = "Admin not set")]
+    fn test_non_admin_cannot_update_config() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, ProgramEscrowContract);
+        let client = ProgramEscrowContractClient::new(&env, &contract_id);
+
+        client.update_rate_limit_config(&3600, &10, &30);
     }
 }
 mod test;
