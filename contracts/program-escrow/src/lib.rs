@@ -149,6 +149,7 @@ mod reentrancy_guard;
 mod error_recovery_tests;
 
 #[cfg(test)]
+mod test_dispute_resolution;
 mod reentrancy_tests;
 
 #[cfg(test)]

@@ -2017,6 +2017,7 @@ mod test_analytics_monitoring;
 #[cfg(test)]
 mod test_auto_refund_permissions;
 #[cfg(test)]
+mod test_dispute_resolution;
 mod test_expiration_and_dispute;
 #[cfg(test)]
 mod test_pause;
