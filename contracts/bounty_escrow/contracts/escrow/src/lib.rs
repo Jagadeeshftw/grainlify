@@ -2019,4 +2019,6 @@ mod test_auto_refund_permissions;
 #[cfg(test)]
 mod test_expiration_and_dispute;
 #[cfg(test)]
+mod test_granular_pause;
+#[cfg(test)]
 mod test_pause;
