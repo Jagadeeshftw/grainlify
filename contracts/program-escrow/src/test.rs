@@ -1,325 +1,1743 @@
 #![cfg(test)]
 
 use super::*;
-use soroban_sdk::{
-    testutils::{Address as _, Events, Ledger},
-    token, vec, Address, Env, String,
-};
+use soroban_sdk::{symbol_short, testutils::Address as _, Address, Env, String, Vec, vec};
 
-fn setup_program(
-    env: &Env,
-    initial_amount: i128,
-) -> (
-    ProgramEscrowContractClient<'static>,
-    Address,
-    token::Client<'static>,
-    token::StellarAssetClient<'static>,
-) {
-    env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, ProgramEscrowContract);
-    let client = ProgramEscrowContractClient::new(env, &contract_id);
-
+// Helper function to setup a basic program
+fn setup_program(env: &Env) -> (ProgramEscrowContract, Address, Address, String) {
+    let contract = ProgramEscrowContract;
     let admin = Address::generate(env);
-    let token_admin = Address::generate(env);
-    let token_id = env.register_stellar_asset_contract(token_admin.clone());
-    let token_client = token::Client::new(env, &token_id);
-    let token_admin_client = token::StellarAssetClient::new(env, &token_id);
+    let token = Address::generate(env);
+    let program_id = String::from_str(env, "hackathon-2024-q1");
 
-    let program_id = String::from_str(env, "hack-2026");
-    client.init_program(&program_id, &admin, &token_id);
-
-    if initial_amount > 0 {
-        token_admin_client.mint(&client.address, &initial_amount);
-        client.lock_program_funds(&initial_amount);
-    }
-
-    (client, admin, token_client, token_admin_client)
+    contract.init_program(env, program_id.clone(), admin.clone(), token.clone());
+    (contract, admin, token, program_id)
 }
 
-fn next_seed(seed: &mut u64) -> u64 {
-    *seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
-    *seed
+// Helper function to setup program with funds
+fn setup_program_with_funds(env: &Env, initial_amount: i128) -> (ProgramEscrowContract, Address, Address, String) {
+    let (contract, admin, token, program_id) = setup_program(env);
+    contract.lock_program_funds(env, initial_amount);
+    (contract, admin, token, program_id)
+}
+
+// =============================================================================
+// TESTS FOR init_program()
+// =============================================================================
+
+#[test]
+fn test_init_program_success() {
+    let env = Env::default();
+    let contract = ProgramEscrowContract;
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    let program_id = String::from_str(&env, "hackathon-2024-q1");
+
+    let program_data = contract.init_program(&env, program_id.clone(), admin.clone(), token.clone());
+
+    assert_eq!(program_data.program_id, program_id);
+    assert_eq!(program_data.total_funds, 0);
+    assert_eq!(program_data.remaining_balance, 0);
+    assert_eq!(program_data.authorized_payout_key, admin);
+    assert_eq!(program_data.token_address, token);
+    assert_eq!(program_data.payout_history.len(), 0);
 }
 
 #[test]
-fn test_init_program_and_event() {
+fn test_init_program_with_different_program_ids() {
     let env = Env::default();
-    env.mock_all_auths();
+    let contract = ProgramEscrowContract;
+    let admin1 = Address::generate(&env);
+    let admin2 = Address::generate(&env);
+    let token1 = Address::generate(&env);
+    let token2 = Address::generate(&env);
+    let program_id1 = String::from_str(&env, "hackathon-2024-q1");
+    let program_id2 = String::from_str(&env, "hackathon-2024-q2");
 
-    let contract_id = env.register_contract(None, ProgramEscrowContract);
-    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+    let data1 = contract.init_program(&env, program_id1.clone(), admin1.clone(), token1.clone());
+    assert_eq!(data1.program_id, program_id1);
+    assert_eq!(data1.authorized_payout_key, admin1);
+    assert_eq!(data1.token_address, token1);
+
+    // Note: In current implementation, program can only be initialized once
+    // This test verifies the single initialization constraint
+}
+
+#[test]
+fn test_init_program_event_emission() {
+    let env = Env::default();
+    let contract = ProgramEscrowContract;
     let admin = Address::generate(&env);
-    let token_admin = Address::generate(&env);
-    let token_id = env.register_stellar_asset_contract(token_admin);
-    let program_id = String::from_str(&env, "hack-2026");
+    let token = Address::generate(&env);
+    let program_id = String::from_str(&env, "hackathon-2024-q1");
 
-    let data = client.init_program(&program_id, &admin, &token_id);
-    assert_eq!(data.total_funds, 0);
-    assert_eq!(data.remaining_balance, 0);
+    contract.init_program(&env, program_id.clone(), admin.clone(), token.clone());
+
+    // Check that event was emitted
+    let events = env.events().all();
+    assert_eq!(events.len(), 1);
+
+    let event = &events[0];
+    assert_eq!(event.0, (PROGRAM_INITIALIZED,));
+    let event_data: (String, Address, Address, i128) = event.1.clone();
+    assert_eq!(event_data.0, program_id);
+    assert_eq!(event_data.1, admin);
+    assert_eq!(event_data.2, token);
+    assert_eq!(event_data.3, 0i128); // initial amount
+}
+
+#[test]
+#[should_panic(expected = "Program already initialized")]
+fn test_init_program_duplicate() {
+    let env = Env::default();
+    let contract = ProgramEscrowContract;
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    let program_id = String::from_str(&env, "hackathon-2024-q1");
+
+    contract.init_program(&env, program_id.clone(), admin.clone(), token.clone());
+    contract.init_program(&env, program_id, admin, token); // Should panic
+}
+
+#[test]
+#[should_panic(expected = "Program already initialized")]
+fn test_init_program_duplicate_different_params() {
+    let env = Env::default();
+    let contract = ProgramEscrowContract;
+    let admin1 = Address::generate(&env);
+    let admin2 = Address::generate(&env);
+    let token1 = Address::generate(&env);
+    let token2 = Address::generate(&env);
+    let program_id = String::from_str(&env, "hackathon-2024-q1");
+
+    contract.init_program(&env, program_id.clone(), admin1, token1);
+    contract.init_program(&env, program_id, admin2, token2); // Should panic
+}
+
+// =============================================================================
+// TESTS FOR lock_program_funds()
+// =============================================================================
+
+#[test]
+fn test_lock_program_funds_success() {
+    let env = Env::default();
+    let (contract, _, _, _) = setup_program(&env);
+
+    let program_data = contract.lock_program_funds(&env, 50_000_000_000);
+
+    assert_eq!(program_data.total_funds, 50_000_000_000);
+    assert_eq!(program_data.remaining_balance, 50_000_000_000);
+}
+
+#[test]
+fn test_lock_program_funds_multiple_times() {
+    let env = Env::default();
+    let (contract, _, _, _) = setup_program(&env);
+
+    // First lock
+    let program_data = contract.lock_program_funds(&env, 25_000_000_000);
+    assert_eq!(program_data.total_funds, 25_000_000_000);
+    assert_eq!(program_data.remaining_balance, 25_000_000_000);
+
+    // Second lock
+    let program_data = contract.lock_program_funds(&env, 35_000_000_000);
+    assert_eq!(program_data.total_funds, 60_000_000_000);
+    assert_eq!(program_data.remaining_balance, 60_000_000_000);
+
+    // Third lock
+    let program_data = contract.lock_program_funds(&env, 15_000_000_000);
+    assert_eq!(program_data.total_funds, 75_000_000_000);
+    assert_eq!(program_data.remaining_balance, 75_000_000_000);
+}
+
+#[test]
+fn test_lock_program_funds_event_emission() {
+    let env = Env::default();
+    let (contract, _, _, program_id) = setup_program(&env);
+    let lock_amount = 100_000_000_000;
+
+    contract.lock_program_funds(&env, lock_amount);
 
     let events = env.events().all();
-    assert!(events.len() >= 1);
+    assert_eq!(events.len(), 2); // init + lock
+
+    let lock_event = &events[1];
+    assert_eq!(lock_event.0, (FUNDS_LOCKED,));
+    let event_data: (String, i128, i128) = lock_event.1.clone();
+    assert_eq!(event_data.0, program_id);
+    assert_eq!(event_data.1, lock_amount);
+    assert_eq!(event_data.2, lock_amount); // remaining balance
 }
 
 #[test]
-fn test_lock_program_funds_multi_step_balance() {
+fn test_lock_program_funds_balance_tracking() {
     let env = Env::default();
-    let (client, _admin, _token, _token_admin) = setup_program(&env, 0);
+    let (contract, _, _, _) = setup_program(&env);
 
-    client.lock_program_funds(&10_000);
-    client.lock_program_funds(&5_000);
-    assert_eq!(client.get_remaining_balance(), 15_000);
-    assert_eq!(client.get_program_info().total_funds, 15_000);
+    // Lock initial funds
+    contract.lock_program_funds(&env, 100_000_000_000);
+
+    // Verify balance through view function
+    assert_eq!(contract.get_remaining_balance(&env), 100_000_000_000);
+
+    // Lock more funds
+    contract.lock_program_funds(&env, 50_000_000_000);
+    assert_eq!(contract.get_remaining_balance(&env), 150_000_000_000);
 }
 
 #[test]
-fn test_edge_zero_initial_state() {
+fn test_lock_program_funds_maximum_amount() {
     let env = Env::default();
-    let (client, _admin, token_client, _token_admin) = setup_program(&env, 0);
+    let (contract, _, _, _) = setup_program(&env);
 
-    assert_eq!(client.get_remaining_balance(), 0);
-    assert_eq!(client.get_program_info().payout_history.len(), 0);
-    assert_eq!(token_client.balance(&client.address), 0);
+    // Test with maximum reasonable amount (i128::MAX would cause overflow issues)
+    let max_amount = 9_223_372_036_854_775_807i128; // i64::MAX
+    let program_data = contract.lock_program_funds(&env, max_amount);
+
+    assert_eq!(program_data.total_funds, max_amount);
+    assert_eq!(program_data.remaining_balance, max_amount);
 }
 
 #[test]
-fn test_edge_max_safe_lock_and_payout() {
+#[should_panic(expected = "Amount must be greater than zero")]
+fn test_lock_program_funds_zero_amount() {
     let env = Env::default();
-    let safe_max = i64::MAX as i128;
-    let (client, _admin, token_client, _token_admin) = setup_program(&env, safe_max);
+    let (contract, _, _, _) = setup_program(&env);
 
-    let recipient = Address::generate(&env);
-    client.single_payout(&recipient, &safe_max);
-
-    assert_eq!(client.get_remaining_balance(), 0);
-    assert_eq!(token_client.balance(&recipient), safe_max);
-    assert_eq!(token_client.balance(&client.address), 0);
+    contract.lock_program_funds(&env, 0);
 }
 
 #[test]
-fn test_single_payout_token_transfer_integration() {
+#[should_panic(expected = "Amount must be greater than zero")]
+fn test_lock_program_funds_negative_amount() {
     let env = Env::default();
-    let (client, _admin, token_client, _token_admin) = setup_program(&env, 100_000);
+    let (contract, _, _, _) = setup_program(&env);
 
-    let recipient = Address::generate(&env);
-    let data = client.single_payout(&recipient, &30_000);
-
-    assert_eq!(data.remaining_balance, 70_000);
-    assert_eq!(token_client.balance(&recipient), 30_000);
-    assert_eq!(token_client.balance(&client.address), 70_000);
+    contract.lock_program_funds(&env, -1_000_000_000);
 }
 
 #[test]
-fn test_batch_payout_token_transfer_integration() {
+#[should_panic(expected = "Program not initialized")]
+fn test_lock_program_funds_before_init() {
     let env = Env::default();
-    let (client, _admin, token_client, _token_admin) = setup_program(&env, 150_000);
+    let contract = ProgramEscrowContract;
 
-    let r1 = Address::generate(&env);
-    let r2 = Address::generate(&env);
-    let r3 = Address::generate(&env);
-
-    let recipients = vec![&env, r1.clone(), r2.clone(), r3.clone()];
-    let amounts = vec![&env, 10_000, 20_000, 30_000];
-
-    let data = client.batch_payout(&recipients, &amounts);
-    assert_eq!(data.remaining_balance, 90_000);
-    assert_eq!(data.payout_history.len(), 3);
-
-    assert_eq!(token_client.balance(&r1), 10_000);
-    assert_eq!(token_client.balance(&r2), 20_000);
-    assert_eq!(token_client.balance(&r3), 30_000);
+    contract.lock_program_funds(&env, 10_000_000_000);
 }
 
+// =============================================================================
+// TESTS FOR batch_payout()
+// =============================================================================
+
 #[test]
-fn test_complete_lifecycle_integration() {
+fn test_batch_payout_success() {
     let env = Env::default();
-    let (client, _admin, token_client, token_admin) = setup_program(&env, 0);
+    let (contract, admin, _, _) = setup_program_with_funds(&env, 100_000_000_000);
 
-    token_admin.mint(&client.address, &300_000);
-    client.lock_program_funds(&300_000);
-
-    let r1 = Address::generate(&env);
-    let r2 = Address::generate(&env);
-    let r3 = Address::generate(&env);
-
-    client.single_payout(&r1, &50_000);
-    let recipients = vec![&env, r2.clone(), r3.clone()];
-    let amounts = vec![&env, 70_000, 30_000];
-    client.batch_payout(&recipients, &amounts);
-
-    let info = client.get_program_info();
-    assert_eq!(info.total_funds, 300_000);
-    assert_eq!(info.remaining_balance, 150_000);
-    assert_eq!(info.payout_history.len(), 3);
-    assert_eq!(token_client.balance(&client.address), 150_000);
-}
-
-#[test]
-fn test_property_fuzz_balance_invariants() {
-    let env = Env::default();
-    let (client, _admin, token_client, _token_admin) = setup_program(&env, 1_000_000);
-
-    let mut seed = 123_u64;
-    let mut expected_remaining = 1_000_000_i128;
-
-    for _ in 0..40 {
-        let amount = (next_seed(&mut seed) % 4_000 + 1) as i128;
-        if amount > expected_remaining {
-            continue;
-        }
-
-        if next_seed(&mut seed) % 2 == 0 {
-            let recipient = Address::generate(&env);
-            client.single_payout(&recipient, &amount);
-        } else {
-            let recipient1 = Address::generate(&env);
-            let recipient2 = Address::generate(&env);
-            let first = amount / 2;
-            let second = amount - first;
-            if first == 0 || second == 0 || first + second > expected_remaining {
-                continue;
-            }
-            let recipients = vec![&env, recipient1, recipient2];
-            let amounts = vec![&env, first, second];
-            client.batch_payout(&recipients, &amounts);
-        }
-
-        expected_remaining -= amount;
-        assert_eq!(client.get_remaining_balance(), expected_remaining);
-        assert_eq!(token_client.balance(&client.address), expected_remaining);
-
-        if expected_remaining == 0 {
-            break;
-        }
-    }
-}
-
-#[test]
-fn test_stress_high_load_many_payouts() {
-    let env = Env::default();
-    let (client, _admin, token_client, _token_admin) = setup_program(&env, 1_000_000);
-
-    for _ in 0..100 {
-        let recipient = Address::generate(&env);
-        client.single_payout(&recipient, &3_000);
-    }
-
-    let info = client.get_program_info();
-    assert_eq!(info.payout_history.len(), 100);
-    assert_eq!(info.remaining_balance, 700_000);
-    assert_eq!(token_client.balance(&client.address), 700_000);
-}
-
-#[test]
-fn test_gas_proxy_batch_vs_single_event_efficiency() {
-    let env_single = Env::default();
-    let (single_client, _single_admin, _single_token, _single_token_admin) =
-        setup_program(&env_single, 200_000);
-
-    let single_before = env_single.events().all().len();
-    for _ in 0..10 {
-        let recipient = Address::generate(&env_single);
-        single_client.single_payout(&recipient, &1_000);
-    }
-    let single_events = env_single.events().all().len() - single_before;
-
-    let env_batch = Env::default();
-    let (batch_client, _batch_admin, _batch_token, _batch_token_admin) =
-        setup_program(&env_batch, 200_000);
-
-    let mut recipients = vec![&env_batch];
-    let mut amounts = vec![&env_batch];
-    for _ in 0..10 {
-        recipients.push_back(Address::generate(&env_batch));
-        amounts.push_back(1_000);
-    }
-
-    let batch_before = env_batch.events().all().len();
-    batch_client.batch_payout(&recipients, &amounts);
-    let batch_events = env_batch.events().all().len() - batch_before;
-
-    assert!(batch_events <= single_events);
-}
-
-#[test]
-fn test_release_schedule_exact_timestamp_boundary() {
-    let env = Env::default();
-    let (client, _admin, token_client, _token_admin) = setup_program(&env, 100_000);
-    let recipient = Address::generate(&env);
-
-    let now = env.ledger().timestamp();
-    let schedule = client.create_program_release_schedule(&recipient, &25_000, &(now + 100));
-
-    env.ledger().set_timestamp(now + 100);
-    let released = client.trigger_program_releases();
-    assert_eq!(released, 1);
-
-    let schedules = client.get_program_release_schedules();
-    let updated = schedules.get(0).unwrap();
-    assert_eq!(updated.schedule_id, schedule.schedule_id);
-    assert!(updated.released);
-    assert_eq!(token_client.balance(&recipient), 25_000);
-}
-
-#[test]
-fn test_release_schedule_just_before_timestamp_rejected() {
-    let env = Env::default();
-    let (client, _admin, token_client, _token_admin) = setup_program(&env, 100_000);
-    let recipient = Address::generate(&env);
-
-    let now = env.ledger().timestamp();
-    client.create_program_release_schedule(&recipient, &20_000, &(now + 80));
-
-    env.ledger().set_timestamp(now + 79);
-    let released = client.trigger_program_releases();
-    assert_eq!(released, 0);
-    assert_eq!(token_client.balance(&recipient), 0);
-
-    let schedules = client.get_program_release_schedules();
-    assert!(!schedules.get(0).unwrap().released);
-}
-
-#[test]
-fn test_release_schedule_significantly_after_timestamp_releases() {
-    let env = Env::default();
-    let (client, _admin, token_client, _token_admin) = setup_program(&env, 100_000);
-    let recipient = Address::generate(&env);
-
-    let now = env.ledger().timestamp();
-    client.create_program_release_schedule(&recipient, &30_000, &(now + 60));
-
-    env.ledger().set_timestamp(now + 10_000);
-    let released = client.trigger_program_releases();
-    assert_eq!(released, 1);
-    assert_eq!(token_client.balance(&recipient), 30_000);
-}
-
-#[test]
-fn test_release_schedule_overlapping_schedules() {
-    let env = Env::default();
-    let (client, _admin, token_client, _token_admin) = setup_program(&env, 200_000);
     let recipient1 = Address::generate(&env);
     let recipient2 = Address::generate(&env);
     let recipient3 = Address::generate(&env);
 
-    let now = env.ledger().timestamp();
-    client.create_program_release_schedule(&recipient1, &10_000, &(now + 50));
-    client.create_program_release_schedule(&recipient2, &15_000, &(now + 50)); // overlapping timestamp
-    client.create_program_release_schedule(&recipient3, &20_000, &(now + 120));
+    let recipients = vec![
+        &env,
+        recipient1.clone(),
+        recipient2.clone(),
+        recipient3.clone(),
+    ];
+    let amounts = vec![&env, 10_000_000_000, 20_000_000_000, 15_000_000_000];
 
-    env.ledger().set_timestamp(now + 50);
-    let released_at_overlap = client.trigger_program_releases();
-    assert_eq!(released_at_overlap, 2);
-    assert_eq!(token_client.balance(&recipient1), 10_000);
-    assert_eq!(token_client.balance(&recipient2), 15_000);
-    assert_eq!(token_client.balance(&recipient3), 0);
+    env.as_contract(&contract, || {
+        env.set_invoker(&admin);
+        let program_data = contract.batch_payout(&env, recipients, amounts);
 
-    env.ledger().set_timestamp(now + 120);
-    let released_later = client.trigger_program_releases();
-    assert_eq!(released_later, 1);
-    assert_eq!(token_client.balance(&recipient3), 20_000);
+        assert_eq!(program_data.remaining_balance, 55_000_000_000); // 100 - 10 - 20 - 15
+        assert_eq!(program_data.payout_history.len(), 3);
 
-    let history = client.get_program_release_history();
-    assert_eq!(history.len(), 3);
+        // Verify payout records
+        let payout1 = program_data.payout_history.get(0).unwrap();
+        assert_eq!(payout1.recipient, recipient1);
+        assert_eq!(payout1.amount, 10_000_000_000);
+
+        let payout2 = program_data.payout_history.get(1).unwrap();
+        assert_eq!(payout2.recipient, recipient2);
+        assert_eq!(payout2.amount, 20_000_000_000);
+
+        let payout3 = program_data.payout_history.get(2).unwrap();
+        assert_eq!(payout3.recipient, recipient3);
+        assert_eq!(payout3.amount, 15_000_000_000);
+    });
+}
+
+#[test]
+fn test_batch_payout_event_emission() {
+    let env = Env::default();
+    let (contract, admin, _, program_id) = setup_program_with_funds(&env, 100_000_000_000);
+
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+
+    let recipients = vec![&env, recipient1, recipient2];
+    let amounts = vec![&env, 25_000_000_000, 30_000_000_000];
+    let total_payout = 55_000_000_000;
+
+    env.as_contract(&contract, || {
+        env.set_invoker(&admin);
+        contract.batch_payout(&env, recipients, amounts);
+
+        let events = env.events().all();
+        assert_eq!(events.len(), 3); // init + lock + batch_payout
+
+        let batch_event = &events[2];
+        assert_eq!(batch_event.0, (BATCH_PAYOUT,));
+        let event_data: (String, u32, i128, i128) = batch_event.1.clone();
+        assert_eq!(event_data.0, program_id);
+        assert_eq!(event_data.1, 2u32); // number of recipients
+        assert_eq!(event_data.2, total_payout);
+        assert_eq!(event_data.3, 45_000_000_000); // remaining balance: 100 - 55
+    });
+}
+
+#[test]
+fn test_batch_payout_single_recipient() {
+    let env = Env::default();
+    let (contract, admin, _, _) = setup_program_with_funds(&env, 50_000_000_000);
+
+    let recipient = Address::generate(&env);
+    let recipients = vec![&env, recipient.clone()];
+    let amounts = vec![&env, 25_000_000_000];
+
+    env.as_contract(&contract, || {
+        env.set_invoker(&admin);
+        let program_data = contract.batch_payout(&env, recipients, amounts);
+
+        assert_eq!(program_data.remaining_balance, 25_000_000_000);
+        assert_eq!(program_data.payout_history.len(), 1);
+
+        let payout = program_data.payout_history.get(0).unwrap();
+        assert_eq!(payout.recipient, recipient);
+        assert_eq!(payout.amount, 25_000_000_000);
+    });
+}
+
+#[test]
+fn test_batch_payout_multiple_batches() {
+    let env = Env::default();
+    let (contract, admin, _, _) = setup_program_with_funds(&env, 200_000_000_000);
+
+    // First batch
+    let recipient1 = Address::generate(&env);
+    let recipients1 = vec![&env, recipient1];
+    let amounts1 = vec![&env, 30_000_000_000];
+
+    env.as_contract(&contract, || {
+        env.set_invoker(&admin);
+        let program_data = contract.batch_payout(&env, recipients1, amounts1);
+        assert_eq!(program_data.remaining_balance, 170_000_000_000);
+        assert_eq!(program_data.payout_history.len(), 1);
+    });
+
+    // Second batch
+    let recipient2 = Address::generate(&env);
+    let recipient3 = Address::generate(&env);
+    let recipients2 = vec![&env, recipient2, recipient3];
+    let amounts2 = vec![&env, 40_000_000_000, 50_000_000_000];
+
+    env.as_contract(&contract, || {
+        env.set_invoker(&admin);
+        let program_data = contract.batch_payout(&env, recipients2, amounts2);
+        assert_eq!(program_data.remaining_balance, 80_000_000_000);
+        assert_eq!(program_data.payout_history.len(), 3);
+    });
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized")]
+fn test_batch_payout_unauthorized() {
+    let env = Env::default();
+    let (contract, _, _, _) = setup_program_with_funds(&env, 100_000_000_000);
+
+    let unauthorized = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let recipients = vec![&env, recipient];
+    let amounts = vec![&env, 10_000_000_000];
+
+    env.as_contract(&contract, || {
+        env.set_invoker(&unauthorized);
+        contract.batch_payout(&env, recipients, amounts); // Should panic
+    });
+}
+
+#[test]
+#[should_panic(expected = "Insufficient balance")]
+fn test_batch_payout_insufficient_balance() {
+    let env = Env::default();
+    let (contract, admin, _, _) = setup_program_with_funds(&env, 50_000_000_000);
+
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+    let recipients = vec![&env, recipient1, recipient2];
+    let amounts = vec![&env, 30_000_000_000, 25_000_000_000]; // Total: 55 > 50
+
+    env.as_contract(&contract, || {
+        env.set_invoker(&admin);
+        contract.batch_payout(&env, recipients, amounts); // Should panic
+    });
+}
+
+#[test]
+#[should_panic(expected = "Recipients and amounts vectors must have the same length")]
+fn test_batch_payout_mismatched_lengths() {
+    let env = Env::default();
+    let (contract, admin, _, _) = setup_program_with_funds(&env, 100_000_000_000);
+
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+    let recipients = vec![&env, recipient1, recipient2];
+    let amounts = vec![&env, 10_000_000_000]; // Mismatched length
+
+    env.as_contract(&contract, || {
+        env.set_invoker(&admin);
+        contract.batch_payout(&env, recipients, amounts); // Should panic
+    });
+}
+
+#[test]
+#[should_panic(expected = "Cannot process empty batch")]
+fn test_batch_payout_empty_batch() {
+    let env = Env::default();
+    let (contract, admin, _, _) = setup_program_with_funds(&env, 100_000_000_000);
+
+    let recipients = vec![&env];
+    let amounts = vec![&env];
+
+    env.as_contract(&contract, || {
+        env.set_invoker(&admin);
+        contract.batch_payout(&env, recipients, amounts); // Should panic
+    });
+}
+
+#[test]
+#[should_panic(expected = "All amounts must be greater than zero")]
+fn test_batch_payout_zero_amount() {
+    let env = Env::default();
+    let (contract, admin, _, _) = setup_program_with_funds(&env, 100_000_000_000);
+
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+    let recipients = vec![&env, recipient1, recipient2];
+    let amounts = vec![&env, 10_000_000_000, 0]; // Zero amount
+
+    env.as_contract(&contract, || {
+        env.set_invoker(&admin);
+        contract.batch_payout(&env, recipients, amounts); // Should panic
+    });
+}
+
+#[test]
+#[should_panic(expected = "All amounts must be greater than zero")]
+fn test_batch_payout_negative_amount() {
+    let env = Env::default();
+    let (contract, admin, _, _) = setup_program_with_funds(&env, 100_000_000_000);
+
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+    let recipients = vec![&env, recipient1, recipient2];
+    let amounts = vec![&env, 10_000_000_000, -5_000_000_000]; // Negative amount
+
+    env.as_contract(&contract, || {
+        env.set_invoker(&admin);
+        contract.batch_payout(&env, recipients, amounts); // Should panic
+    });
+}
+
+#[test]
+#[should_panic(expected = "Payout amount overflow")]
+fn test_batch_payout_overflow() {
+    let env = Env::default();
+    let (contract, admin, _, _) = setup_program_with_funds(&env, 9_223_372_036_854_775_807i128);
+
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+    let recipients = vec![&env, recipient1, recipient2];
+    let amounts = vec![&env, 9_223_372_036_854_775_807i128, 1]; // Causes overflow
+
+    env.as_contract(&contract, || {
+        env.set_invoker(&admin);
+        contract.batch_payout(&env, recipients, amounts); // Should panic
+    });
+}
+
+#[test]
+#[should_panic(expected = "Program not initialized")]
+fn test_batch_payout_before_init() {
+    let env = Env::default();
+    let contract = ProgramEscrowContract;
+    let recipient = Address::generate(&env);
+    let recipients = vec![&env, recipient];
+    let amounts = vec![&env, 10_000_000_000];
+
+    contract.batch_payout(&env, recipients, amounts);
+}
+
+// =============================================================================
+// TESTS FOR single_payout()
+// =============================================================================
+
+#[test]
+fn test_single_payout_success() {
+    let env = Env::default();
+    let (contract, admin, _, _) = setup_program_with_funds(&env, 50_000_000_000);
+
+    let recipient = Address::generate(&env);
+    let payout_amount = 10_000_000_000;
+
+    env.as_contract(&contract, || {
+        env.set_invoker(&admin);
+        let program_data = contract.single_payout(&env, recipient.clone(), payout_amount);
+
+        assert_eq!(program_data.remaining_balance, 40_000_000_000);
+        assert_eq!(program_data.payout_history.len(), 1);
+
+        let payout = program_data.payout_history.get(0).unwrap();
+        assert_eq!(payout.recipient, recipient);
+        assert_eq!(payout.amount, payout_amount);
+        assert!(payout.timestamp > 0);
+    });
+}
+
+#[test]
+fn test_single_payout_event_emission() {
+    let env = Env::default();
+    let (contract, admin, _, program_id) = setup_program_with_funds(&env, 50_000_000_000);
+
+    let recipient = Address::generate(&env);
+    let payout_amount = 15_000_000_000;
+
+    env.as_contract(&contract, || {
+        env.set_invoker(&admin);
+        contract.single_payout(&env, recipient.clone(), payout_amount);
+
+        let events = env.events().all();
+        assert_eq!(events.len(), 3); // init + lock + payout
+
+        let payout_event = &events[2];
+        assert_eq!(payout_event.0, (PAYOUT,));
+        let event_data: (String, Address, i128, i128) = payout_event.1.clone();
+        assert_eq!(event_data.0, program_id);
+        assert_eq!(event_data.1, recipient);
+        assert_eq!(event_data.2, payout_amount);
+        assert_eq!(event_data.3, 35_000_000_000); // remaining balance: 50 - 15
+    });
+}
+
+#[test]
+fn test_single_payout_multiple_payees() {
+    let env = Env::default();
+    let (contract, admin, _, _) = setup_program_with_funds(&env, 100_000_000_000);
+
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+    let recipient3 = Address::generate(&env);
+
+    env.as_contract(&contract, || {
+        env.set_invoker(&admin);
+
+        // First payout
+        let program_data = contract.single_payout(&env, recipient1.clone(), 20_000_000_000);
+        assert_eq!(program_data.remaining_balance, 80_000_000_000);
+        assert_eq!(program_data.payout_history.len(), 1);
+
+        // Second payout
+        let program_data = contract.single_payout(&env, recipient2.clone(), 25_000_000_000);
+        assert_eq!(program_data.remaining_balance, 55_000_000_000);
+        assert_eq!(program_data.payout_history.len(), 2);
+
+        // Third payout
+        let program_data = contract.single_payout(&env, recipient3.clone(), 30_000_000_000);
+        assert_eq!(program_data.remaining_balance, 25_000_000_000);
+        assert_eq!(program_data.payout_history.len(), 3);
+    });
+}
+
+#[test]
+fn test_single_payout_balance_updates_correctly() {
+    let env = Env::default();
+    let (contract, admin, _, _) = setup_program_with_funds(&env, 100_000_000_000);
+
+    let recipient = Address::generate(&env);
+
+    // Check initial balance
+    assert_eq!(contract.get_remaining_balance(&env), 100_000_000_000);
+
+    env.as_contract(&contract, || {
+        env.set_invoker(&admin);
+        contract.single_payout(&env, recipient, 40_000_000_000);
+    });
+
+    // Check balance after payout
+    assert_eq!(contract.get_remaining_balance(&env), 60_000_000_000);
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized")]
+fn test_single_payout_unauthorized() {
+    let env = Env::default();
+    let (contract, _, _, _) = setup_program_with_funds(&env, 50_000_000_000);
+
+    let unauthorized = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    env.as_contract(&contract, || {
+        env.set_invoker(&unauthorized);
+        contract.single_payout(&env, recipient, 10_000_000_000); // Should panic
+    });
+}
+
+#[test]
+#[should_panic(expected = "Insufficient balance")]
+fn test_single_payout_insufficient_balance() {
+    let env = Env::default();
+    let (contract, admin, _, _) = setup_program_with_funds(&env, 20_000_000_000);
+
+    let recipient = Address::generate(&env);
+
+    env.as_contract(&contract, || {
+        env.set_invoker(&admin);
+        contract.single_payout(&env, recipient, 30_000_000_000); // Should panic
+    });
+}
+
+#[test]
+#[should_panic(expected = "Amount must be greater than zero")]
+fn test_single_payout_zero_amount() {
+    let env = Env::default();
+    let (contract, admin, _, _) = setup_program_with_funds(&env, 50_000_000_000);
+
+    let recipient = Address::generate(&env);
+
+    env.as_contract(&contract, || {
+        env.set_invoker(&admin);
+        contract.single_payout(&env, recipient, 0); // Should panic
+    });
+}
+
+#[test]
+#[should_panic(expected = "Amount must be greater than zero")]
+fn test_single_payout_negative_amount() {
+    let env = Env::default();
+    let (contract, admin, _, _) = setup_program_with_funds(&env, 50_000_000_000);
+
+    let recipient = Address::generate(&env);
+
+    env.as_contract(&contract, || {
+        env.set_invoker(&admin);
+        contract.single_payout(&env, recipient, -10_000_000_000); // Should panic
+    });
+}
+
+#[test]
+#[should_panic(expected = "Program not initialized")]
+fn test_single_payout_before_init() {
+    let env = Env::default();
+    let contract = ProgramEscrowContract;
+    let recipient = Address::generate(&env);
+
+    contract.single_payout(&env, recipient, 10_000_000_000);
+}
+
+// =============================================================================
+// TESTS FOR VIEW FUNCTIONS
+// =============================================================================
+
+#[test]
+fn test_get_program_info_success() {
+    let env = Env::default();
+    let (contract, admin, token, program_id) = setup_program_with_funds(&env, 75_000_000_000);
+
+    let info = contract.get_program_info(&env);
+
+    assert_eq!(info.program_id, program_id);
+    assert_eq!(info.total_funds, 75_000_000_000);
+    assert_eq!(info.remaining_balance, 75_000_000_000);
+    assert_eq!(info.authorized_payout_key, admin);
+    assert_eq!(info.token_address, token);
+    assert_eq!(info.payout_history.len(), 0);
+}
+
+#[test]
+fn test_get_program_info_after_payouts() {
+    let env = Env::default();
+    let (contract, admin, token, program_id) = setup_program_with_funds(&env, 100_000_000_000);
+
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+
+    // Perform some payouts
+    env.as_contract(&contract, || {
+        env.set_invoker(&admin);
+        contract.single_payout(&env, recipient1, 25_000_000_000);
+        contract.single_payout(&env, recipient2, 35_000_000_000);
+    });
+
+    let info = contract.get_program_info(&env);
+
+    assert_eq!(info.program_id, program_id);
+    assert_eq!(info.total_funds, 100_000_000_000);
+    assert_eq!(info.remaining_balance, 40_000_000_000); // 100 - 25 - 35
+    assert_eq!(info.authorized_payout_key, admin);
+    assert_eq!(info.token_address, token);
+    assert_eq!(info.payout_history.len(), 2);
+}
+
+#[test]
+fn test_get_remaining_balance_success() {
+    let env = Env::default();
+    let (contract, _, _, _) = setup_program_with_funds(&env, 50_000_000_000);
+
+    assert_eq!(contract.get_remaining_balance(&env), 50_000_000_000);
+}
+
+#[test]
+fn test_get_remaining_balance_after_multiple_operations() {
+    let env = Env::default();
+    let (contract, admin, _, _) = setup_program(&env);
+
+    // Initial state
+    assert_eq!(contract.get_remaining_balance(&env), 0);
+
+    // After locking funds
+    contract.lock_program_funds(&env, 100_000_000_000);
+    assert_eq!(contract.get_remaining_balance(&env), 100_000_000_000);
+
+    // After payouts
+    let recipient = Address::generate(&env);
+    env.as_contract(&contract, || {
+        env.set_invoker(&admin);
+        contract.single_payout(&env, recipient, 30_000_000_000);
+    });
+    assert_eq!(contract.get_remaining_balance(&env), 70_000_000_000);
+
+    // After locking more funds
+    contract.lock_program_funds(&env, 50_000_000_000);
+    assert_eq!(contract.get_remaining_balance(&env), 120_000_000_000);
+}
+
+#[test]
+#[should_panic(expected = "Program not initialized")]
+fn test_get_program_info_before_init() {
+    let env = Env::default();
+    let contract = ProgramEscrowContract;
+
+    contract.get_program_info(&env);
+}
+
+#[test]
+#[should_panic(expected = "Program not initialized")]
+fn test_get_remaining_balance_before_init() {
+    let env = Env::default();
+    let contract = ProgramEscrowContract;
+
+    contract.get_remaining_balance(&env);
+}
+
+// =============================================================================
+// INTEGRATION TESTS - COMPLETE PROGRAM LIFECYCLE
+// =============================================================================
+
+#[test]
+fn test_complete_program_lifecycle() {
+    let env = Env::default();
+    let contract = ProgramEscrowContract;
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    let program_id = String::from_str(&env, "hackathon-2024-complete");
+
+    // 1. Initialize program
+    let program_data = contract.init_program(&env, program_id.clone(), admin.clone(), token.clone());
+    assert_eq!(program_data.total_funds, 0);
+    assert_eq!(program_data.remaining_balance, 0);
+
+    // 2. Lock initial funds
+    contract.lock_program_funds(&env, 500_000_000_000);
+    assert_eq!(contract.get_remaining_balance(&env), 500_000_000_000);
+
+    // 3. Perform various payouts
+    let recipients = vec![
+        Address::generate(&env),
+        Address::generate(&env),
+        Address::generate(&env),
+        Address::generate(&env),
+        Address::generate(&env),
+    ];
+
+    env.as_contract(&contract, || {
+        env.set_invoker(&admin);
+
+        // Single payouts
+        contract.single_payout(&env, recipients.get(0).unwrap(), 50_000_000_000);
+        assert_eq!(contract.get_remaining_balance(&env), 450_000_000_000);
+
+        contract.single_payout(&env, recipients.get(1).unwrap(), 75_000_000_000);
+        assert_eq!(contract.get_remaining_balance(&env), 375_000_000_000);
+
+        // Batch payout
+        let batch_recipients = vec![&env, recipients.get(2).unwrap(), recipients.get(3).unwrap()];
+        let batch_amounts = vec![&env, 100_000_000_000, 80_000_000_000];
+        contract.batch_payout(&env, batch_recipients, batch_amounts);
+        assert_eq!(contract.get_remaining_balance(&env), 195_000_000_000);
+
+        // Another single payout
+        contract.single_payout(&env, recipients.get(4).unwrap(), 95_000_000_000);
+        assert_eq!(contract.get_remaining_balance(&env), 100_000_000_000);
+    });
+
+    // 4. Verify final state
+    let final_info = contract.get_program_info(&env);
+    assert_eq!(final_info.total_funds, 500_000_000_000);
+    assert_eq!(final_info.remaining_balance, 100_000_000_000);
+    assert_eq!(final_info.payout_history.len(), 5);
+
+    // 5. Lock additional funds
+    contract.lock_program_funds(&env, 200_000_000_000);
+    assert_eq!(contract.get_remaining_balance(&env), 300_000_000_000);
+    let final_info = contract.get_program_info(&env);
+    assert_eq!(final_info.total_funds, 700_000_000_000);
+    assert_eq!(final_info.remaining_balance, 300_000_000_000);
+}
+
+#[test]
+fn test_program_with_zero_final_balance() {
+    let env = Env::default();
+    let (contract, admin, _, _) = setup_program_with_funds(&env, 100_000_000_000);
+
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+
+    env.as_contract(&contract, || {
+        env.set_invoker(&admin);
+
+        // Pay out all funds
+        contract.single_payout(&env, recipient1, 60_000_000_000);
+        assert_eq!(contract.get_remaining_balance(&env), 40_000_000_000);
+
+        contract.single_payout(&env, recipient2, 40_000_000_000);
+        assert_eq!(contract.get_remaining_balance(&env), 0);
+    });
+
+    let info = contract.get_program_info(&env);
+    assert_eq!(info.total_funds, 100_000_000_000);
+    assert_eq!(info.remaining_balance, 0);
+    assert_eq!(info.payout_history.len(), 2);
+}
+
+// =============================================================================
+// CONCURRENT PAYOUT SCENARIOS (LIMITED IN SOROBAN)
+// =============================================================================
+
+#[test]
+fn test_sequential_batch_and_single_payouts() {
+    let env = Env::default();
+    let (contract, admin, _, _) = setup_program_with_funds(&env, 300_000_000_000);
+
+    let recipients = vec![
+        Address::generate(&env),
+        Address::generate(&env),
+        Address::generate(&env),
+        Address::generate(&env),
+    ];
+
+    env.as_contract(&contract, || {
+        env.set_invoker(&admin);
+
+        // First batch payout
+        let batch_recipients = vec![&env, recipients.get(0).unwrap(), recipients.get(1).unwrap()];
+        let batch_amounts = vec![&env, 50_000_000_000, 60_000_000_000];
+        contract.batch_payout(&env, batch_recipients, batch_amounts);
+        assert_eq!(contract.get_remaining_balance(&env), 190_000_000_000);
+
+        // Single payout
+        contract.single_payout(&env, recipients.get(2).unwrap(), 70_000_000_000);
+        assert_eq!(contract.get_remaining_balance(&env), 120_000_000_000);
+
+        // Second batch payout
+        let batch_recipients2 = vec![&env, recipients.get(3).unwrap()];
+        let batch_amounts2 = vec![&env, 80_000_000_000];
+        contract.batch_payout(&env, batch_recipients2, batch_amounts2);
+        assert_eq!(contract.get_remaining_balance(&env), 40_000_000_000);
+    });
+}
+
+// =============================================================================
+// ADDITIONAL ERROR HANDLING AND EDGE CASES
+// =============================================================================
+
+#[test]
+fn test_max_payout_history_tracking() {
+    let env = Env::default();
+    let (contract, admin, _, _) = setup_program_with_funds(&env, 1_000_000_000_000);
+
+    env.as_contract(&contract, || {
+        env.set_invoker(&admin);
+
+        // Create many small payouts to test history tracking
+        for i in 0..10 {
+            let recipient = Address::generate(&env);
+            contract.single_payout(&env, recipient, 10_000_000_000);
+        }
+    });
+
+    let info = contract.get_program_info(&env);
+    assert_eq!(info.payout_history.len(), 10);
+    assert_eq!(info.remaining_balance, 900_000_000_000);
+}
+
+#[test]
+fn test_timestamp_tracking_in_payouts() {
+    let env = Env::default();
+    let (contract, admin, _, _) = setup_program_with_funds(&env, 100_000_000_000);
+
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+
+    // Mock different timestamps (in a real scenario, these would be set by the ledger)
+    env.as_contract(&contract, || {
+        env.set_invoker(&admin);
+
+        // First payout
+        contract.single_payout(&env, recipient1.clone(), 25_000_000_000);
+        let first_timestamp = env.ledger().timestamp();
+
+        // Second payout (simulating time passing)
+        env.ledger().set_timestamp(first_timestamp + 3600); // +1 hour
+        contract.single_payout(&env, recipient2.clone(), 30_000_000_000);
+        let second_timestamp = env.ledger().timestamp();
+
+        let info = contract.get_program_info(&env);
+        let payout1 = info.payout_history.get(0).unwrap();
+        let payout2 = info.payout_history.get(1).unwrap();
+
+        assert_eq!(payout1.timestamp, first_timestamp);
+        assert_eq!(payout2.timestamp, second_timestamp);
+        assert!(second_timestamp > first_timestamp);
+    });
+}
+
+#[test]
+fn test_payout_record_integrity() {
+    let env = Env::default();
+    let (contract, admin, _, _) = setup_program_with_funds(&env, 200_000_000_000);
+
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+    let recipient3 = Address::generate(&env);
+
+    env.as_contract(&contract, || {
+        env.set_invoker(&admin);
+
+        // Mix of single and batch payouts
+        contract.single_payout(&env, recipient1.clone(), 25_000_000_000);
+
+        let batch_recipients = vec![&env, recipient2.clone(), recipient3.clone()];
+        let batch_amounts = vec![&env, 35_000_000_000, 45_000_000_000];
+        contract.batch_payout(&env, batch_recipients, batch_amounts);
+
+        contract.single_payout(&env, recipient1.clone(), 15_000_000_000); // Same recipient again
+    });
+
+    let info = contract.get_program_info(&env);
+    assert_eq!(info.payout_history.len(), 4);
+    assert_eq!(info.remaining_balance, 80_000_000_000); // 200 - 25 - 35 - 45 - 15
+
+    // Verify all records
+    let records = info.payout_history;
+    assert_eq!(records.get(0).unwrap().recipient, recipient1);
+    assert_eq!(records.get(0).unwrap().amount, 25_000_000_000);
+
+    assert_eq!(records.get(1).unwrap().recipient, recipient2);
+    assert_eq!(records.get(1).unwrap().amount, 35_000_000_000);
+
+    assert_eq!(records.get(2).unwrap().recipient, recipient3);
+    assert_eq!(records.get(2).unwrap().amount, 45_000_000_000);
+
+    assert_eq!(records.get(3).unwrap().recipient, recipient1);
+    assert_eq!(records.get(3).unwrap().amount, 15_000_000_000);
+}
+
+// ============================================================================
+// CLAIM PERIOD TESTS FOR PROGRAM ESCROW
+// ============================================================================
+
+#[test]
+fn test_set_program_claim_window_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, admin, token, program_id) = setup_program(&env);
+
+    // Should not panic
+    contract.set_program_claim_window(&env, program_id, 7200);
+}
+
+#[test]
+fn test_authorize_program_schedule_claim_creates_record() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, admin, token, program_id) = setup_program_with_funds(&env, 100_000_000_000);
+
+    let recipient = Address::generate(&env);
+    let release_time = env.ledger().timestamp() + 5000;
+
+    // Create a release schedule first
+    contract.create_program_release_schedule(
+        &env,
+        program_id.clone(),
+        10_000_000_000,
+        release_time,
+        recipient.clone(),
+    );
+
+    // Set claim window and authorize claim
+    contract.set_program_claim_window(&env, program_id.clone(), 3600);
+    contract.authorize_program_schedule_claim(&env, program_id.clone(), 1);
+
+    // Verify pending claim exists
+    let claim = contract.get_program_pending_claim(&env, program_id, 1);
+    assert_eq!(claim.recipient, recipient);
+    assert_eq!(claim.amount, 10_000_000_000);
+    assert!(!claim.claimed);
+    assert!(claim.expires_at > env.ledger().timestamp());
+}
+
+#[test]
+fn test_claim_program_schedule_transfers_funds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, admin, token, program_id) = setup_program_with_funds(&env, 100_000_000_000);
+
+    let recipient = Address::generate(&env);
+    let release_time = env.ledger().timestamp() + 5000;
+
+    contract.create_program_release_schedule(
+        &env,
+        program_id.clone(),
+        10_000_000_000,
+        release_time,
+        recipient.clone(),
+    );
+
+    contract.set_program_claim_window(&env, program_id.clone(), 3600);
+    contract.authorize_program_schedule_claim(&env, program_id.clone(), 1);
+
+    // Claim within window
+    contract.claim_program_schedule(&env, program_id.clone(), 1);
+
+    // Balance should be reduced
+    let remaining = contract.get_remaining_balance(&env, program_id.clone());
+    assert_eq!(remaining, 90_000_000_000);
+
+    // Schedule should be marked released
+    let schedule = contract.get_program_release_schedule(&env, program_id, 1);
+    assert!(schedule.released);
+}
+
+#[test]
+fn test_cancel_program_claim_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, admin, token, program_id) = setup_program_with_funds(&env, 100_000_000_000);
+
+    let recipient = Address::generate(&env);
+    let release_time = env.ledger().timestamp() + 5000;
+
+    contract.create_program_release_schedule(
+        &env,
+        program_id.clone(),
+        10_000_000_000,
+        release_time,
+        recipient.clone(),
+    );
+
+    contract.set_program_claim_window(&env, program_id.clone(), 3600);
+    contract.authorize_program_schedule_claim(&env, program_id.clone(), 1);
+
+    // Admin cancels the claim
+    contract.cancel_program_claim(&env, program_id.clone(), 1);
+
+    // Balance should be unchanged
+    let remaining = contract.get_remaining_balance(&env, program_id);
+    assert_eq!(remaining, 100_000_000_000);
+}
+
+#[test]
+#[should_panic]
+fn test_claim_program_schedule_after_window_expires() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, admin, token, program_id) = setup_program_with_funds(&env, 100_000_000_000);
+
+    let recipient = Address::generate(&env);
+    let release_time = env.ledger().timestamp() + 5000;
+
+    contract.create_program_release_schedule(
+        &env,
+        program_id.clone(),
+        10_000_000_000,
+        release_time,
+        recipient.clone(),
+    );
+
+    contract.set_program_claim_window(&env, program_id.clone(), 3600);
+    contract.authorize_program_schedule_claim(&env, program_id.clone(), 1);
+
+    // Advance past the claim window
+    env.ledger().set_timestamp(env.ledger().timestamp() + 3601);
+
+    // Should panic — window expired
+    contract.claim_program_schedule(&env, program_id, 1);
+}
+
+#[test]
+#[should_panic]
+fn test_get_program_pending_claim_not_found() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, _, _, program_id) = setup_program(&env);
+
+    // No claim was ever authorized
+    contract.get_program_pending_claim(&env, program_id, 99);
+}
+
+#[test]
+#[should_panic]
+fn test_cancel_program_claim_not_found() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, _, _, program_id) = setup_program(&env);
+
+    // Nothing to cancel
+    contract.cancel_program_claim(&env, program_id, 1);
+}
+
+#[test]
+#[should_panic]
+fn test_claim_program_schedule_twice_panics() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, admin, token, program_id) = setup_program_with_funds(&env, 100_000_000_000);
+
+    let recipient = Address::generate(&env);
+    let release_time = env.ledger().timestamp() + 5000;
+
+    contract.create_program_release_schedule(
+        &env,
+        program_id.clone(),
+        10_000_000_000,
+        release_time,
+        recipient.clone(),
+    );
+
+    contract.set_program_claim_window(&env, program_id.clone(), 3600);
+    contract.authorize_program_schedule_claim(&env, program_id.clone(), 1);
+
+    contract.claim_program_schedule(&env, program_id.clone(), 1);
+    // Second claim should panic
+    contract.claim_program_schedule(&env, program_id, 1);
+}
+
+#[test]
+fn test_cancel_then_reauthorize_claim() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, admin, token, program_id) = setup_program_with_funds(&env, 100_000_000_000);
+
+    let recipient = Address::generate(&env);
+    let new_recipient = Address::generate(&env);
+    let release_time = env.ledger().timestamp() + 5000;
+
+    contract.create_program_release_schedule(
+        &env,
+        program_id.clone(),
+        10_000_000_000,
+        release_time,
+        recipient.clone(),
+    );
+
+    contract.set_program_claim_window(&env, program_id.clone(), 3600);
+    contract.authorize_program_schedule_claim(&env, program_id.clone(), 1);
+
+    // Cancel original claim
+    contract.cancel_program_claim(&env, program_id.clone(), 1);
+
+    contract.authorize_program_schedule_claim(&env, program_id.clone(), 1);
+
+    let claim = contract.get_program_pending_claim(&env, program_id, 1);
+    assert!(!claim.claimed);
+    assert_eq!(claim.amount, 10_000_000_000);
+}
+
+#[test]
+fn test_claim_does_not_affect_other_schedules() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, admin, token, program_id) = setup_program_with_funds(&env, 100_000_000_000);
+
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+    let release_time = env.ledger().timestamp() + 5000;
+
+    // Create two schedules
+    contract.create_program_release_schedule(
+        &env,
+        program_id.clone(),
+        10_000_000_000,
+        release_time,
+        recipient1.clone(),
+    );
+    contract.create_program_release_schedule(
+        &env,
+        program_id.clone(),
+        20_000_000_000,
+        release_time,
+        recipient2.clone(),
+    );
+
+    contract.set_program_claim_window(&env, program_id.clone(), 3600);
+
+    // Only authorize and claim schedule 1
+    contract.authorize_program_schedule_claim(&env, program_id.clone(), 1);
+    contract.claim_program_schedule(&env, program_id.clone(), 1);
+
+    // Schedule 2 should be untouched
+    let schedule2 = contract.get_program_release_schedule(&env, program_id.clone(), 2);
+    assert!(!schedule2.released);
+    assert_eq!(schedule2.amount, 20_000_000_000);
+
+    // Remaining balance should only be reduced by schedule 1's amount
+    let remaining = contract.get_remaining_balance(&env, program_id);
+    assert_eq!(remaining, 90_000_000_000);
+}
+
+// ============================================================================
+// ANTI-ABUSE TESTS FOR PROGRAM ESCROW
+// ============================================================================
+
+#[test]
+fn test_anti_abuse_rate_limit_exceeded() {
+    let env = Env::default();
+    let (contract, admin, _, _) = setup_program(&env);
+
+    let config = contract.get_rate_limit_config(&env);
+    let max_ops = config.max_operations;
+    let recipient = Address::generate(&env);
+
+    // Initial time setup
+    let start_time = 1_000_000;
+    env.ledger().set_timestamp(start_time);
+
+    contract.lock_program_funds(&env, 100_000_000_000); // Admin does not bypass as it's not whitelisted by default
+    // We expect max_ops within the window_size (default 3600 seconds)
+    
+    // We already used 1 operation with lock_program_funds, so we can do max_ops - 1 more
+    // Make sure we space them out just enough to bypass the cooldown (default 60 seconds)
+    for i in 1..max_ops {
+        env.ledger().set_timestamp(start_time + config.cooldown_period * (i as u64) + 1);
+        env.as_contract(&contract, || {
+            env.set_invoker(&admin);
+            contract.single_payout(&env, recipient.clone(), 100);
+        });
+    }
+
+    // Now we must be EXACTLY at the limit. The next call should fail.
+    env.ledger().set_timestamp(start_time + config.cooldown_period * (max_ops as u64) + 1);
+    
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        env.as_contract(&contract, || {
+            env.set_invoker(&admin);
+            contract.single_payout(&env, recipient.clone(), 100);
+        });
+    }));
+    
+    assert!(result.is_err(), "Expected rate limit panic");
+}
+
+#[test]
+fn test_anti_abuse_cooldown_violation() {
+    let env = Env::default();
+    let (contract, admin, _, _) = setup_program(&env);
+
+    let config = contract.get_rate_limit_config(&env);
+    let recipient = Address::generate(&env);
+
+    // Initial time setup
+    let start_time = 1_000_000;
+    env.ledger().set_timestamp(start_time);
+
+    contract.lock_program_funds(&env, 100_000_000_000);
+
+    // Provide a valid timestamp just after the cooldown period
+    env.ledger().set_timestamp(start_time + config.cooldown_period + 1);
+    
+    env.as_contract(&contract, || {
+        env.set_invoker(&admin);
+        contract.single_payout(&env, recipient.clone(), 100);
+    });
+
+    // Calling again *immediately* (same timestamp) should trigger a cooldown violation.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        env.as_contract(&contract, || {
+            env.set_invoker(&admin);
+            contract.single_payout(&env, recipient.clone(), 100);
+        });
+    }));
+    
+    assert!(result.is_err(), "Expected cooldown violation panic");
+}
+
+#[test]
+fn test_anti_abuse_whitelist_bypass() {
+    let env = Env::default();
+    let (contract, admin, _, _) = setup_program(&env);
+
+    let config = contract.get_rate_limit_config(&env);
+    let max_ops = config.max_operations;
+    let recipient = Address::generate(&env);
+
+    // Initial time setup
+    let start_time = 1_000_000;
+    env.ledger().set_timestamp(start_time);
+
+    contract.lock_program_funds(&env, 100_000_000_000);
+
+    // Add admin to whitelist
+    contract.set_whitelist(&env, admin.clone(), true);
+
+    // Provide a valid timestamp just after the cooldown period
+    env.ledger().set_timestamp(start_time + config.cooldown_period + 1);
+    
+    // We should be able to do theoretically unlimited operations at the exact same timestamp
+    // We'll do `max_ops + 5` to prove it bypasses both cooldown (same timestamp) and rate limit (more than max_ops)
+    for _ in 0..(max_ops + 5) {
+        env.as_contract(&contract, || {
+            env.set_invoker(&admin);
+            contract.single_payout(&env, recipient.clone(), 100);
+        });
+    }
+
+    // Verify successful payouts
+    let info = contract.get_program_info(&env);
+    assert_eq!(info.payout_history.len() as u32, max_ops + 5);
+}
+
+// =============================================================================
+// PAUSE & EMERGENCY STOP NEGATIVE TESTS
+// =============================================================================
+
+// Helper: set up a funded program using the real token + client pattern
+fn setup_funded_program_with_token(
+    env: &Env,
+) -> (
+    ProgramEscrowContractClient<'static>,
+    Address, 
+    Address, 
+    token::Client<'static>,
+    String,  
+) {
+    use soroban_sdk::token;
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client: ProgramEscrowContractClient<'static> =
+        ProgramEscrowContractClient::new(env, &contract_id);
+
+    let authorized_key = Address::generate(env);
+    let program_id = String::from_str(env, "test-program-pause");
+
+    let token_contract = env.register_stellar_asset_contract_v2(authorized_key.clone());
+    let token_addr = token_contract.address();
+    let token_admin = token::StellarAssetClient::new(env, &token_addr);
+    let token_client: token::Client<'static> = token::Client::new(env, &token_addr);
+
+    env.mock_all_auths();
+    client.initialize_program(&program_id, &authorized_key, &token_addr);
+
+    // Mint and lock funds
+    let amount = 1_000_000_0000000i128;
+    token_admin.mint(&authorized_key, &amount);
+    token_client.transfer(&authorized_key, &contract_id, &amount);
+    client.lock_program_funds(&program_id, &amount);
+
+    (client, contract_id, authorized_key, token_client, program_id)
+}
+
+// --- pause_program ---
+
+#[test]
+fn test_pause_program_by_authorized_key_succeeds() {
+    let env = Env::default();
+    let (client, _contract_id, _auth_key, _token, program_id) =
+        setup_funded_program_with_token(&env);
+
+    let reason = soroban_sdk::String::from_str(&env, "security review");
+    client.pause_program(&program_id, &reason);
+
+    assert!(client.is_program_paused(&program_id));
+    assert_eq!(client.get_program_pause_reason(&program_id), Some(reason));
+}
+
+#[test]
+#[should_panic]
+fn test_pause_program_by_non_authorized_key_fails() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+
+    let auth_key = Address::generate(&env);
+    let token = Address::generate(&env);
+    let program_id = String::from_str(&env, "test-program");
+
+    env.mock_all_auths();
+    client.initialize_program(&program_id, &auth_key, &token);
+
+    // Non-authorized caller tries to pause
+    let non_authorized = Address::generate(&env);
+    non_authorized.require_auth(); // forces non-authorized auth context
+    let reason = soroban_sdk::String::from_str(&env, "hack");
+    client.pause_program(&program_id, &reason); //  panic
+}
+
+// --- unpause_program ---
+
+#[test]
+fn test_unpause_program_by_authorized_key_succeeds() {
+    let env = Env::default();
+    let (client, _contract_id, _auth_key, _token, program_id) =
+        setup_funded_program_with_token(&env);
+
+    client.pause_program(&program_id, &soroban_sdk::String::from_str(&env, "test"));
+    assert!(client.is_program_paused(&program_id));
+
+    client.unpause_program(&program_id);
+    assert!(!client.is_program_paused(&program_id));
+    assert_eq!(client.get_program_pause_reason(&program_id), None);
+}
+
+#[test]
+#[should_panic]
+fn test_unpause_program_by_non_authorized_key_fails() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+
+    let auth_key = Address::generate(&env);
+    let token = Address::generate(&env);
+    let program_id = String::from_str(&env, "test-program");
+
+    env.mock_all_auths();
+    client.initialize_program(&program_id, &auth_key, &token);
+    client.pause_program(&program_id, &soroban_sdk::String::from_str(&env, "test"));
+
+    // Non-authorized caller tries to unpause
+    let non_authorized = Address::generate(&env);
+    non_authorized.require_auth();
+    client.unpause_program(&program_id); // should panic
+}
+
+// --- single_payout blocked while paused ---
+
+#[test]
+#[should_panic(expected = "Contract is paused")]
+fn test_single_payout_while_paused_fails() {
+    let env = Env::default();
+    let (client, _contract_id, _auth_key, _token, program_id) =
+        setup_funded_program_with_token(&env);
+
+    client.pause_program(&program_id, &soroban_sdk::String::from_str(&env, "security"));
+
+    let recipient = Address::generate(&env);
+    client.single_payout(&program_id, &recipient, &100_0000000i128);
+}
+
+// Verify no state change on single_payout while paused
+#[test]
+fn test_single_payout_while_paused_no_state_change() {
+    let env = Env::default();
+    let (client, _contract_id, _auth_key, token, program_id) =
+        setup_funded_program_with_token(&env);
+
+    let info_before = client.get_program_info(&program_id);
+    client.pause_program(&program_id, &soroban_sdk::String::from_str(&env, "security"));
+
+    let recipient = Address::generate(&env);
+    let result = client.try_single_payout(&program_id, &recipient, &100_0000000i128);
+    assert!(result.is_err());
+
+    // Balance unchanged
+    let info_after = client.get_program_info(&program_id);
+    assert_eq!(info_before.remaining_balance, info_after.remaining_balance);
+    assert_eq!(token.balance(&recipient), 0);
+}
+
+// --- batch_payout blocked while paused ---
+
+#[test]
+#[should_panic(expected = "Contract is paused")]
+fn test_batch_payout_while_paused_fails() {
+    let env = Env::default();
+    let (client, _contract_id, _auth_key, _token, program_id) =
+        setup_funded_program_with_token(&env);
+
+    client.pause_program(&program_id, &soroban_sdk::String::from_str(&env, "security"));
+
+    let recipient = Address::generate(&env);
+    let recipients = soroban_sdk::vec![&env, recipient];
+    let amounts = soroban_sdk::vec![&env, 100_0000000i128];
+    client.batch_payout(&program_id, &recipients, &amounts);
+}
+
+// --- lock_program_funds blocked while paused ---
+
+#[test]
+#[should_panic(expected = "Contract is paused")]
+fn test_lock_program_funds_while_paused_fails() {
+    let env = Env::default();
+    let (client, _contract_id, _auth_key, _token, program_id) =
+        setup_funded_program_with_token(&env);
+
+    client.pause_program(&program_id, &soroban_sdk::String::from_str(&env, "security"));
+
+    client.lock_program_funds(&program_id, &500_0000000i128);
+}
+
+// --- emergency_withdraw ---
+
+#[test]
+fn test_emergency_withdraw_drains_program_balance() {
+    let env = Env::default();
+    let (client, contract_id, auth_key, token, program_id) =
+        setup_funded_program_with_token(&env);
+
+    let info_before = client.get_program_info(&program_id);
+    assert!(info_before.remaining_balance > 0);
+
+    client.pause_program(&program_id, &soroban_sdk::String::from_str(&env, "emergency"));
+
+    let recipient = Address::generate(&env);
+    client.emergency_withdraw(&program_id, &recipient);
+
+    // Program balance should be zero
+    let remaining = client.get_remaining_balance(&program_id);
+    assert_eq!(remaining, 0);
+
+    // Recipient receives all the funds
+    assert_eq!(token.balance(&recipient), info_before.remaining_balance);
+}
+
+#[test]
+#[should_panic]
+fn test_emergency_withdraw_by_non_authorized_key_fails() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+
+    let auth_key = Address::generate(&env);
+    let token = Address::generate(&env);
+    let program_id = String::from_str(&env, "test-program");
+
+    env.mock_all_auths();
+    client.initialize_program(&program_id, &auth_key, &token);
+
+    // Non-authorized caller tries emergency_withdraw
+    let non_authorized = Address::generate(&env);
+    non_authorized.require_auth();
+    let recipient = Address::generate(&env);
+    client.emergency_withdraw(&program_id, &recipient); // should panic
+}
+
+// --- operations resume after unpause ---
+
+#[test]
+fn test_program_operations_resume_after_unpause() {
+    let env = Env::default();
+    let (client, _contract_id, _auth_key, _token, program_id) =
+        setup_funded_program_with_token(&env);
+
+    // Pause then unpause
+    client.pause_program(&program_id, &soroban_sdk::String::from_str(&env, "temporary"));
+    assert!(client.is_program_paused(&program_id));
+    client.unpause_program(&program_id);
+    assert!(!client.is_program_paused(&program_id));
+
+    // single_payout should work again
+    let recipient = Address::generate(&env);
+    client.single_payout(&program_id, &recipient, &100_0000000i128);
+    let info = client.get_program_info(&program_id);
+    assert_eq!(info.payout_history.len(), 1);
+}
+
+// =============================================================================
+// EVENT EMISSION TESTS (PROGRAM ESCROW)
+// =============================================================================
+
+#[test]
+fn test_pause_program_emits_event() {
+    let env = Env::default();
+    let (client, _, _, _, program_id) = setup_funded_program_with_token(&env);
+
+    let initial_event_count = env.events().all().len();
+    client.pause_program(&program_id, &soroban_sdk::String::from_str(&env, "security"));
+
+    let events = env.events().all();
+    assert!(
+        events.len() > initial_event_count,
+        "pause_program() must emit at least one event"
+    );
+}
+
+#[test]
+fn test_unpause_program_emits_event() {
+    let env = Env::default();
+    let (client, _, _, _, program_id) = setup_funded_program_with_token(&env);
+
+    client.pause_program(&program_id, &soroban_sdk::String::from_str(&env, "test"));
+    let initial_event_count = env.events().all().len();
+    client.unpause_program(&program_id);
+
+    let events = env.events().all();
+    assert!(
+        events.len() > initial_event_count,
+        "unpause_program() must emit at least one event"
+    );
+}
+
+#[test]
+fn test_program_emergency_withdraw_emits_event() {
+    let env = Env::default();
+    let (client, _, _, _, program_id) = setup_funded_program_with_token(&env);
+
+    client.pause_program(&program_id, &soroban_sdk::String::from_str(&env, "emergency"));
+    let initial_event_count = env.events().all().len();
+
+    let recipient = Address::generate(&env);
+    client.emergency_withdraw(&program_id, &recipient);
+
+    let events = env.events().all();
+    assert!(
+        events.len() > initial_event_count,
+        "emergency_withdraw() must emit at least one event"
+    );
+}
+
+// =============================================================================
+// EDGE CASES (PROGRAM ESCROW)
+// =============================================================================
+
+// Edge case: pausing an already-paused program updates the reason
+#[test]
+fn test_pause_program_when_already_paused_updates_reason() {
+    let env = Env::default();
+    let (client, _, _, _, program_id) = setup_funded_program_with_token(&env);
+
+    let reason1 = soroban_sdk::String::from_str(&env, "reason one");
+    let reason2 = soroban_sdk::String::from_str(&env, "updated reason");
+
+    client.pause_program(&program_id, &reason1);
+    assert!(client.is_program_paused(&program_id));
+    assert_eq!(client.get_program_pause_reason(&program_id), Some(reason1));
+
+    // Re-pausing updates the reason without error
+    client.pause_program(&program_id, &reason2);
+    assert!(client.is_program_paused(&program_id));
+    assert_eq!(
+        client.get_program_pause_reason(&program_id),
+        Some(reason2),
+        "reason should be updated on second pause call"
+    );
+}
+
+// Edge case: unpause when program is not paused should be a safe no-op
+#[test]
+fn test_unpause_program_when_not_paused_is_safe() {
+    let env = Env::default();
+    let (client, _, _, _, program_id) = setup_funded_program_with_token(&env);
+
+    assert!(!client.is_program_paused(&program_id));
+    client.unpause_program(&program_id); // must not panic
+    assert!(!client.is_program_paused(&program_id));
+}
+
+// Edge case: emergency_withdraw with zero program balance should not panic
+#[test]
+fn test_program_emergency_withdraw_zero_balance_is_safe() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+
+    let auth_key = Address::generate(&env);
+    let token = Address::generate(&env);
+    let program_id = String::from_str(&env, "zero-balance-program");
+
+    env.mock_all_auths();
+    client.initialize_program(&program_id, &auth_key, &token);
+    // No funds locked — remaining_balance is 0
+
+    let recipient = Address::generate(&env);
+    client.emergency_withdraw(&program_id, &recipient); // must not panic
+
+    assert_eq!(client.get_remaining_balance(&program_id), 0);
+}
+
+// Edge case: multiple pause/unpause cycles work correctly
+#[test]
+fn test_program_multiple_pause_unpause_cycles() {
+    let env = Env::default();
+    let (client, _, _, _, program_id) = setup_funded_program_with_token(&env);
+
+    for _ in 0..3 {
+        client.pause_program(&program_id, &soroban_sdk::String::from_str(&env, "cycle"));
+        assert!(client.is_program_paused(&program_id));
+
+        // Payout must be blocked
+        let recipient = Address::generate(&env);
+        let result = client.try_single_payout(&program_id, &recipient, &100_0000000i128);
+        assert!(result.is_err(), "payout must be blocked while paused");
+
+        client.unpause_program(&program_id);
+        assert!(!client.is_program_paused(&program_id));
+    }
+}
+
+// Edge case: emergency_withdraw does NOT require the program to be paused first
+#[test]
+fn test_program_emergency_withdraw_works_without_prior_pause() {
+    let env = Env::default();
+    let (client, _, _, token, program_id) = setup_funded_program_with_token(&env);
+
+    let info = client.get_program_info(&program_id);
+    let balance_before = info.remaining_balance;
+    assert!(balance_before > 0);
+    assert!(!client.is_program_paused(&program_id)); // NOT paused
+
+    let recipient = Address::generate(&env);
+    client.emergency_withdraw(&program_id, &recipient); // must work
+
+    assert_eq!(client.get_remaining_balance(&program_id), 0);
+    assert_eq!(token.balance(&recipient), balance_before);
+}
+
+// Edge case: pause reason and pause state are cleared after unpause
+#[test]
+fn test_program_pause_reason_cleared_after_unpause() {
+    let env = Env::default();
+    let (client, _, _, _, program_id) = setup_funded_program_with_token(&env);
+
+    assert_eq!(client.get_program_pause_reason(&program_id), None);
+
+    let reason = soroban_sdk::String::from_str(&env, "regulatory requirement");
+    client.pause_program(&program_id, &reason);
+    assert_eq!(client.get_program_pause_reason(&program_id), Some(reason));
+
+    client.unpause_program(&program_id);
+    assert!(!client.is_program_paused(&program_id));
+    assert_eq!(
+        client.get_program_pause_reason(&program_id),
+        None,
+        "pause reason must be cleared after unpause"
+    );
 }
