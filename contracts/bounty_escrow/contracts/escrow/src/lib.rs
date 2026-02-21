@@ -3,6 +3,9 @@ mod events;
 
 mod test_bounty_escrow;
 
+#[cfg(test)]
+mod test_rbac;
+
 use events::{
     emit_batch_funds_locked, emit_batch_funds_released, emit_bounty_initialized, emit_funds_locked,
     emit_funds_refunded, emit_funds_released, BatchFundsLocked, BatchFundsReleased,
@@ -1299,7 +1302,7 @@ impl BountyEscrowContract {
             .persistent()
             .set(&DataKey::Escrow(bounty_id), &escrow);
 
-        emit_funds_released(
+        events::emit_funds_released(
             &env,
             FundsReleased {
                 version: EVENT_VERSION_V2,
@@ -1668,6 +1671,36 @@ impl BountyEscrowContract {
             }
         }
         results
+    }
+
+    pub fn set_anti_abuse_admin(env: Env, admin: Address) -> Result<(), Error> {
+        let current: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        current.require_auth();
+        anti_abuse::set_admin(&env, admin);
+        Ok(())
+    }
+
+    pub fn get_anti_abuse_admin(env: Env) -> Option<Address> {
+        anti_abuse::get_admin(&env)
+    }
+
+    pub fn set_whitelist(
+        env: Env,
+        whitelisted_address: Address,
+        whitelisted: bool,
+    ) -> Result<(), Error> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        admin.require_auth();
+        anti_abuse::set_whitelist(&env, whitelisted_address, whitelisted);
+        Ok(())
     }
 
     /// Retrieves the refund history for a specific bounty.

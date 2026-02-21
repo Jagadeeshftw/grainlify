@@ -285,7 +285,7 @@ fn test_release_schedule_exact_timestamp_boundary() {
     let recipient = Address::generate(&env);
 
     let now = env.ledger().timestamp();
-    let schedule = client.create_program_release_schedule(&recipient, &25_000, &(now + 100));
+    let schedule = client.create_program_release_schedule(&25_000, &(now + 100), &recipient);
 
     env.ledger().set_timestamp(now + 100);
     let released = client.trigger_program_releases();
@@ -305,7 +305,7 @@ fn test_release_schedule_just_before_timestamp_rejected() {
     let recipient = Address::generate(&env);
 
     let now = env.ledger().timestamp();
-    client.create_program_release_schedule(&recipient, &20_000, &(now + 80));
+    client.create_program_release_schedule(&20_000, &(now + 80), &recipient);
 
     env.ledger().set_timestamp(now + 79);
     let released = client.trigger_program_releases();
@@ -323,7 +323,7 @@ fn test_release_schedule_significantly_after_timestamp_releases() {
     let recipient = Address::generate(&env);
 
     let now = env.ledger().timestamp();
-    client.create_program_release_schedule(&recipient, &30_000, &(now + 60));
+    client.create_program_release_schedule(&30_000, &(now + 60), &recipient);
 
     env.ledger().set_timestamp(now + 10_000);
     let released = client.trigger_program_releases();
@@ -340,9 +340,9 @@ fn test_release_schedule_overlapping_schedules() {
     let recipient3 = Address::generate(&env);
 
     let now = env.ledger().timestamp();
-    client.create_program_release_schedule(&recipient1, &10_000, &(now + 50));
-    client.create_program_release_schedule(&recipient2, &15_000, &(now + 50)); // overlapping timestamp
-    client.create_program_release_schedule(&recipient3, &20_000, &(now + 120));
+    client.create_program_release_schedule(&10_000, &(now + 50), &recipient1);
+    client.create_program_release_schedule(&15_000, &(now + 50), &recipient2);
+    client.create_program_release_schedule(&20_000, &(now + 120), &recipient3);
 
     env.ledger().set_timestamp(now + 50);
     let released_at_overlap = client.trigger_program_releases();
