@@ -662,3 +662,234 @@ fn test_batch_payout_sequential_batches() {
     let record3 = data2.payout_history.get(2).unwrap();
     assert_eq!(record3.amount, 4_000_000);
 }
+
+// PROGRAM ESCROW HISTORY QUERY FILTER TESTS 
+// Tests for recipient, amount, timestamp filters + pagination on payout history
+
+#[test]
+fn test_query_payouts_by_recipient_returns_correct_records() {
+    let env = Env::default();
+    let (client, _admin, _token, _token_admin) = setup_program(&env, 500_000);
+
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+
+    // Multiple payouts: two to r1, one to r2
+    client.single_payout(&r1, &100_000);
+    client.single_payout(&r2, &150_000);
+    client.single_payout(&r1, &50_000);
+
+    let r1_records = client.query_payouts_by_recipient(&r1, &0, &10);
+    assert_eq!(r1_records.len(), 2);
+    for record in r1_records.iter() {
+        assert_eq!(record.recipient, r1);
+    }
+
+    let r2_records = client.query_payouts_by_recipient(&r2, &0, &10);
+    assert_eq!(r2_records.len(), 1);
+    assert_eq!(r2_records.get(0).unwrap().recipient, r2);
+}
+
+#[test]
+fn test_query_payouts_by_recipient_unknown_returns_empty() {
+    let env = Env::default();
+    let (client, _admin, _token, _token_admin) = setup_program(&env, 100_000);
+
+    let r1 = Address::generate(&env);
+    let unknown = Address::generate(&env);
+
+    client.single_payout(&r1, &50_000);
+
+    let results = client.query_payouts_by_recipient(&unknown, &0, &10);
+    assert_eq!(results.len(), 0);
+}
+
+#[test]
+fn test_query_payouts_by_amount_range_returns_matching() {
+    let env = Env::default();
+    let (client, _admin, _token, _token_admin) = setup_program(&env, 600_000);
+
+    client.single_payout(&Address::generate(&env), &10_000);
+    client.single_payout(&Address::generate(&env), &50_000);
+    client.single_payout(&Address::generate(&env), &100_000);
+    client.single_payout(&Address::generate(&env), &200_000);
+
+    // Filter: 40_000 to 110_000
+    let results = client.query_payouts_by_amount(&40_000, &110_000, &0, &10);
+    assert_eq!(results.len(), 2);
+    for record in results.iter() {
+        assert!(record.amount >= 40_000 && record.amount <= 110_000);
+    }
+}
+
+#[test]
+fn test_query_payouts_by_amount_exact_boundaries_included() {
+    let env = Env::default();
+    let (client, _admin, _token, _token_admin) = setup_program(&env, 600_000);
+
+    client.single_payout(&Address::generate(&env), &100_000);
+    client.single_payout(&Address::generate(&env), &200_000);
+    client.single_payout(&Address::generate(&env), &300_000);
+
+    // Exact boundaries should be included
+    let results = client.query_payouts_by_amount(&100_000, &300_000, &0, &10);
+    assert_eq!(results.len(), 3);
+}
+
+#[test]
+fn test_query_payouts_by_amount_no_results_outside_range() {
+    let env = Env::default();
+    let (client, _admin, _token, _token_admin) = setup_program(&env, 200_000);
+
+    client.single_payout(&Address::generate(&env), &50_000);
+    client.single_payout(&Address::generate(&env), &100_000);
+
+    let results = client.query_payouts_by_amount(&500_000, &999_000, &0, &10);
+    assert_eq!(results.len(), 0);
+}
+
+#[test]
+fn test_query_payouts_by_timestamp_range_filters_correctly() {
+    let env = Env::default();
+    let (client, _admin, _token, _token_admin) = setup_program(&env, 600_000);
+
+    let base = env.ledger().timestamp();
+
+    env.ledger().set_timestamp(base + 100);
+    client.single_payout(&Address::generate(&env), &100_000);
+
+    env.ledger().set_timestamp(base + 300);
+    client.single_payout(&Address::generate(&env), &100_000);
+
+    env.ledger().set_timestamp(base + 700);
+    client.single_payout(&Address::generate(&env), &100_000);
+
+    env.ledger().set_timestamp(base + 1200);
+    client.single_payout(&Address::generate(&env), &100_000);
+
+    // Filter for timestamps between base+200 and base+800
+    let results = client.query_payouts_by_timestamp(&(base + 200), &(base + 800), &0, &10);
+    assert_eq!(results.len(), 2);
+    for record in results.iter() {
+        assert!(record.timestamp >= base + 200 && record.timestamp <= base + 800);
+    }
+}
+
+#[test]
+fn test_query_payouts_by_timestamp_exact_boundary_included() {
+    let env = Env::default();
+    let (client, _admin, _token, _token_admin) = setup_program(&env, 300_000);
+
+    let base = env.ledger().timestamp();
+
+    env.ledger().set_timestamp(base + 100);
+    client.single_payout(&Address::generate(&env), &100_000);
+
+    env.ledger().set_timestamp(base + 200);
+    client.single_payout(&Address::generate(&env), &100_000);
+
+    env.ledger().set_timestamp(base + 300);
+    client.single_payout(&Address::generate(&env), &100_000);
+
+    // Exact boundary should include first and last
+    let results = client.query_payouts_by_timestamp(&(base + 100), &(base + 300), &0, &10);
+    assert_eq!(results.len(), 3);
+}
+
+#[test]
+fn test_query_payouts_pagination_offset_and_limit() {
+    let env = Env::default();
+    let (client, _admin, _token, _token_admin) = setup_program(&env, 500_000);
+
+    let r1 = Address::generate(&env);
+    for _ in 0..5 {
+        client.single_payout(&r1, &10_000);
+    }
+
+    // Page 1
+    let page1 = client.query_payouts_by_recipient(&r1, &0, &2);
+    assert_eq!(page1.len(), 2);
+
+    // Page 2
+    let page2 = client.query_payouts_by_recipient(&r1, &2, &2);
+    assert_eq!(page2.len(), 2);
+
+    // Page 3
+    let page3 = client.query_payouts_by_recipient(&r1, &4, &2);
+    assert_eq!(page3.len(), 1);
+}
+
+#[test]
+fn test_query_schedules_by_status_pending_vs_released() {
+    let env = Env::default();
+    let (client, _admin, _token, _token_admin) = setup_program(&env, 200_000);
+
+    let now = env.ledger().timestamp();
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+    let r3 = Address::generate(&env);
+
+    client.create_program_release_schedule(&r1, &50_000, &(now + 100));
+    client.create_program_release_schedule(&r2, &50_000, &(now + 200));
+    client.create_program_release_schedule(&r3, &50_000, &(now + 300));
+
+    // Trigger first two schedules
+    env.ledger().set_timestamp(now + 250);
+    client.trigger_program_releases();
+
+    // Pending (not yet released) = only the third
+    let pending = client.query_schedules_by_status(&false, &0, &10);
+    assert_eq!(pending.len(), 1);
+    assert!(!pending.get(0).unwrap().released);
+
+    // Released = first two
+    let released = client.query_schedules_by_status(&true, &0, &10);
+    assert_eq!(released.len(), 2);
+    for s in released.iter() {
+        assert!(s.released);
+    }
+}
+
+#[test]
+fn test_query_schedules_by_recipient_returns_correct_subset() {
+    let env = Env::default();
+    let (client, _admin, _token, _token_admin) = setup_program(&env, 300_000);
+
+    let now = env.ledger().timestamp();
+    let winner = Address::generate(&env);
+    let other = Address::generate(&env);
+
+    client.create_program_release_schedule(&winner, &100_000, &(now + 100));
+    client.create_program_release_schedule(&other, &50_000, &(now + 200));
+    client.create_program_release_schedule(&winner, &50_000, &(now + 300));
+
+    let winner_schedules = client.query_schedules_by_recipient(&winner, &0, &10);
+    assert_eq!(winner_schedules.len(), 2);
+    for s in winner_schedules.iter() {
+        assert_eq!(s.recipient, winner);
+    }
+
+    let other_schedules = client.query_schedules_by_recipient(&other, &0, &10);
+    assert_eq!(other_schedules.len(), 1);
+}
+
+#[test]
+fn test_combined_recipient_and_amount_filter_manual() {
+    // Query by recipient, then verify amount subset manually
+    let env = Env::default();
+    let (client, _admin, _token, _token_admin) = setup_program(&env, 500_000);
+
+    let r1 = Address::generate(&env);
+
+    client.single_payout(&r1, &10_000);
+    client.single_payout(&r1, &200_000);
+    client.single_payout(&r1, &50_000);
+
+    // Get r1's records, then filter by amount > 100_000 in test
+    let records = client.query_payouts_by_recipient(&r1, &0, &10);
+    assert_eq!(records.len(), 3);
+
+    let large: Vec<_> = records.iter().filter(|r| r.amount > 100_000).collect();
+    assert_eq!(large.len(), 1);
+    assert_eq!(large[0].amount, 200_000);
+}

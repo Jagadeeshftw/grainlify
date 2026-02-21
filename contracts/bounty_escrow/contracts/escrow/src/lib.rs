@@ -2020,3 +2020,5 @@ mod test_auto_refund_permissions;
 mod test_expiration_and_dispute;
 #[cfg(test)]
 mod test_pause;
+#[cfg(test)]
+mod test_query_filters;
