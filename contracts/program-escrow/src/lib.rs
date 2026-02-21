@@ -168,6 +168,11 @@ pub struct FeeConfig {
     pub fee_recipient: Address, // Address to receive fees
     pub fee_enabled: bool,      // Global fee enable/disable flag
 }
+
+// ==================== ERROR RECOVERY MODULE ====================
+mod error_recovery;
+mod retry_executor;
+
 // ==================== MONITORING MODULE ====================
 mod monitoring {
     use soroban_sdk::{contracttype, symbol_short, Address, Env, String, Symbol};
@@ -3351,4 +3356,7 @@ mod test {
 
 #[cfg(test)]
 mod test_query;
+
+#[cfg(test)]
+mod error_recovery_tests;
 
