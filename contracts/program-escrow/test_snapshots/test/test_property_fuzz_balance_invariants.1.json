@@ -12054,20 +12054,48 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
+                  "key": {
+                    "symbol": "authorized_payout_key"
+                  },
+                  "val": {
+                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                  }
                 },
                 {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
+                  }
                 },
                 {
-                  "address": "CCABDO7UZXYE4W6GVSEGSNNZTKSLFQGKXXQTH6OX7M7GKZ4Z6CUJNGZN"
+                  "key": {
+                    "symbol": "token_address"
+                  },
+                  "val": {
+                    "address": "CCABDO7UZXYE4W6GVSEGSNNZTKSLFQGKXXQTH6OX7M7GKZ4Z6CUJNGZN"
+                  }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 0
+                  "key": {
+                    "symbol": "total_funds"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 0
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -12286,20 +12314,43 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 1000000
+                  "key": {
+                    "symbol": "amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 1000000
+                    }
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 1000000
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 1000000
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -12637,23 +12688,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 3745
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 996255
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 996255
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 3745
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -13156,23 +13235,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 3055
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 993200
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 993200
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 3055
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -13737,23 +13844,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 941
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 992259
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 992259
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 941
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -14380,23 +14515,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 2459
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 989800
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 989800
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 2459
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -15085,23 +15248,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 889
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 988911
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 988911
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 889
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -15852,23 +16043,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 2215
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 986696
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 986696
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 2215
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -16681,23 +16900,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 69
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 986627
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 986627
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 69
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -17572,23 +17819,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 3347
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 983280
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 983280
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 3347
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -18525,23 +18800,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 1553
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 981727
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 981727
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 1553
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -19540,23 +19843,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 2015
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 979712
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 979712
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 2015
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -20617,23 +20948,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 669
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 979043
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 979043
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 669
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -21756,23 +22115,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 1451
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 977592
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 977592
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 1451
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -22957,23 +23344,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 3177
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 974415
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 974415
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 3177
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -24220,23 +24635,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 3191
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 971224
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 971224
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 3191
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -25545,23 +25988,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 3829
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 967395
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 967395
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 3829
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -26932,23 +27403,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 1699
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 965696
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 965696
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 1699
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -28381,23 +28880,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 2881
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 962815
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 962815
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 2881
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -29892,23 +30419,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 1455
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 961360
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 961360
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 1455
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -31465,23 +32020,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 333
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 961027
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 961027
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 333
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -33100,23 +33683,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 3835
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 957192
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 957192
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 3835
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -34797,23 +35408,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 153
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 957039
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 957039
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 153
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -36556,23 +37195,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 2023
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 955016
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 955016
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 2023
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -38377,23 +39044,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 805
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 954211
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 954211
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 805
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -40260,23 +40955,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 1587
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 952624
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 952624
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 1587
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -42205,23 +42928,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 593
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 952031
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 952031
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 593
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -44212,23 +44963,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 1791
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 950240
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 950240
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 1791
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -46281,23 +47060,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 3261
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 946979
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 946979
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 3261
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -48412,23 +49219,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 3243
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 943736
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 943736
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 3243
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -50605,23 +51440,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 1865
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 941871
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 941871
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 1865
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -52860,23 +53723,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 567
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 941304
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 941304
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 567
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -55177,23 +56068,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 3189
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 938115
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 938115
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 3189
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -57556,23 +58475,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 2627
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 935488
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 935488
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 2627
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -59997,23 +60944,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 961
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 934527
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 934527
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 961
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -62500,23 +63475,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 1263
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 933264
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 933264
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 1263
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -65065,23 +66068,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 3437
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 929827
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 929827
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 3437
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -67692,23 +68723,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 2747
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 927080
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 927080
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 2747
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -70381,23 +71440,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 1401
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 925679
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 925679
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 1401
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -73132,23 +74219,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 3335
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 922344
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 922344
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 3335
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -75945,23 +77060,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 1797
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 920547
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 920547
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 1797
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]
@@ -78820,23 +79963,51 @@
               }
             ],
             "data": {
-              "vec": [
+              "map": [
                 {
-                  "string": "hack-2026"
-                },
-                {
-                  "u32": 2
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 723
+                  "key": {
+                    "symbol": "program_id"
+                  },
+                  "val": {
+                    "string": "hack-2026"
                   }
                 },
                 {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 919824
+                  "key": {
+                    "symbol": "recipient_count"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "remaining_balance"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 919824
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 723
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]

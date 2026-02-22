@@ -7,7 +7,7 @@ use events::{
     emit_batch_funds_locked, emit_batch_funds_released, emit_bounty_initialized, emit_funds_locked,
     emit_funds_refunded, emit_funds_released, BatchFundsLocked, BatchFundsReleased,
     BountyEscrowInitialized, ClaimCancelled, ClaimCreated, ClaimExecuted, FundsLocked,
-    FundsRefunded, FundsReleased,
+    FundsRefunded, FundsReleased, EVENT_VERSION_V2,
 };
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, token, vec, Address, Env,
@@ -366,6 +366,10 @@ pub enum Error {
     /// Returned when refund is attempted without admin approval
     RefundNotApproved = 17,
     FundsPaused = 18,
+    /// Returned when lock amount is below the configured policy minimum (Issue #62)
+    AmountBelowMinimum = 19,
+    /// Returned when lock amount is above the configured policy maximum (Issue #62)
+    AmountAboveMaximum = 20,
 }
 
 #[contracttype]
@@ -381,11 +385,14 @@ pub enum EscrowStatus {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Escrow {
     pub depositor: Address,
+    /// Total amount originally locked into this escrow.
     pub amount: i128,
+    /// Amount still available for release; decremented on each partial_release.
+    /// Reaches 0 when fully paid out, at which point status becomes Released.
+    pub remaining_amount: i128,
     pub status: EscrowStatus,
     pub deadline: u64,
     pub refund_history: Vec<RefundRecord>,
-    pub remaining_amount: i128,
 }
 
 #[contracttype]
@@ -403,6 +410,7 @@ pub enum DataKey {
     PendingClaim(u64),    // bounty_id -> ClaimRecord
     ClaimWindow,          // u64 seconds (global config)
     PauseFlags,           // PauseFlags struct
+    AmountPolicy, // Option<(i128, i128)> — (min_amount, max_amount) set by set_amount_policy
 }
 
 #[contracttype]
@@ -533,6 +541,7 @@ impl BountyEscrowContract {
         emit_bounty_initialized(
             &env,
             BountyEscrowInitialized {
+                version: EVENT_VERSION_V2,
                 admin,
                 token,
                 timestamp: env.ledger().timestamp(),
@@ -843,6 +852,22 @@ impl BountyEscrowContract {
             return Err(Error::BountyExists);
         }
 
+        // Enforce min/max amount policy if one has been configured (Issue #62).
+        // When no policy is set this block is skipped entirely, preserving
+        // backward-compatible behaviour for callers that never call set_amount_policy.
+        if let Some((min_amount, max_amount)) = env
+            .storage()
+            .instance()
+            .get::<DataKey, (i128, i128)>(&DataKey::AmountPolicy)
+        {
+            if amount < min_amount {
+                return Err(Error::AmountBelowMinimum);
+            }
+            if amount > max_amount {
+                return Err(Error::AmountAboveMaximum);
+            }
+        }
+
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
         let client = token::Client::new(&env, &token_addr);
 
@@ -889,6 +914,7 @@ impl BountyEscrowContract {
         emit_funds_locked(
             &env,
             FundsLocked {
+                version: EVENT_VERSION_V2,
                 bounty_id,
                 amount,
                 depositor: depositor.clone(),
@@ -953,6 +979,7 @@ impl BountyEscrowContract {
         emit_funds_released(
             &env,
             FundsReleased {
+                version: EVENT_VERSION_V2,
                 bounty_id,
                 amount: escrow.amount,
                 recipient: contributor.clone(),
@@ -1197,12 +1224,97 @@ impl BountyEscrowContract {
 
         env.storage()
             .persistent()
+            .set(&DataKey::Escrow(bounty_id), &escrow);
+
+        env.storage()
+            .persistent()
             .set(&DataKey::RefundApproval(bounty_id), &approval);
 
         Ok(())
     }
 
+    /// Release a partial amount of the locked funds to the contributor.
+    /// Only the admin (backend) can authorize this.
+    ///
+    /// - `payout_amount` must be > 0 and <= `remaining_amount`.
+    /// - `remaining_amount` is decremented by `payout_amount` after each call.
+    /// - When `remaining_amount` reaches 0 the escrow status is set to Released.
+    /// - The bounty stays Locked while any funds remain unreleased.
+    pub fn partial_release(
+        env: Env,
+        bounty_id: u64,
+        contributor: Address,
+        payout_amount: i128,
+    ) -> Result<(), Error> {
+        if !env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::NotInitialized);
+        }
+
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        if !env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
+            return Err(Error::BountyNotFound);
+        }
+
+        let mut escrow: Escrow = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Escrow(bounty_id))
+            .unwrap();
+
+        if escrow.status != EscrowStatus::Locked {
+            return Err(Error::FundsNotLocked);
+        }
+
+        // Guard: zero or negative payout makes no sense and would corrupt state
+        if payout_amount <= 0 {
+            return Err(Error::InvalidAmount);
+        }
+
+        // Guard: prevent overpayment — payout cannot exceed what is still owed
+        if payout_amount > escrow.remaining_amount {
+            return Err(Error::InsufficientFunds);
+        }
+
+        let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
+        let client = token::Client::new(&env, &token_addr);
+
+        // Transfer only the requested partial amount to the contributor
+        client.transfer(
+            &env.current_contract_address(),
+            &contributor,
+            &payout_amount,
+        );
+
+        // Decrement remaining; this is always an exact integer subtraction — no rounding
+        escrow.remaining_amount -= payout_amount;
+
+        // Automatically transition to Released once fully paid out
+        if escrow.remaining_amount == 0 {
+            escrow.status = EscrowStatus::Released;
+        }
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Escrow(bounty_id), &escrow);
+
+        emit_funds_released(
+            &env,
+            FundsReleased {
+                version: EVENT_VERSION_V2,
+                bounty_id,
+                amount: payout_amount,
+                recipient: contributor.clone(),
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
     /// Refund funds to the original depositor if the deadline has passed.
+    /// Refunds the full remaining_amount (accounts for any prior partial releases).
     pub fn refund(env: Env, bounty_id: u64) -> Result<(), Error> {
         if Self::check_paused(&env, symbol_short!("refund")) {
             return Err(Error::FundsPaused);
@@ -1230,11 +1342,11 @@ impl BountyEscrowContract {
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
         let client = token::Client::new(&env, &token_addr);
 
-        // Transfer funds back to depositor
+        // Refund only what is still remaining (partial releases may have already gone out)
         client.transfer(
             &env.current_contract_address(),
             &escrow.depositor,
-            &escrow.amount,
+            &escrow.remaining_amount,
         );
 
         escrow.status = EscrowStatus::Refunded;
@@ -1245,8 +1357,9 @@ impl BountyEscrowContract {
         emit_funds_refunded(
             &env,
             FundsRefunded {
+                version: EVENT_VERSION_V2,
                 bounty_id,
-                amount: escrow.amount,
+                amount: escrow.remaining_amount,
                 refund_to: escrow.depositor,
                 timestamp: env.ledger().timestamp(),
             },
@@ -1481,6 +1594,43 @@ impl BountyEscrowContract {
         index.len()
     }
 
+    /// Set the minimum and maximum allowed lock amount (admin only).
+    ///
+    /// Once set, any call to lock_funds with an amount outside [min_amount, max_amount]
+    /// will be rejected with AmountBelowMinimum or AmountAboveMaximum respectively.
+    /// The policy can be updated at any time by the admin; new limits take effect
+    /// immediately for subsequent lock_funds calls.
+    ///
+    /// Passing min_amount == max_amount restricts locking to a single exact value.
+    /// min_amount must not exceed max_amount — the call panics if this invariant
+    /// is violated.
+    pub fn set_amount_policy(
+        env: Env,
+        caller: Address,
+        min_amount: i128,
+        max_amount: i128,
+    ) -> Result<(), Error> {
+        if !env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::NotInitialized);
+        }
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        if caller != admin {
+            return Err(Error::Unauthorized);
+        }
+        admin.require_auth();
+
+        if min_amount > max_amount {
+            panic!("invalid policy: min_amount cannot exceed max_amount");
+        }
+
+        // Persist the policy so lock_funds can enforce it on every subsequent call.
+        env.storage()
+            .instance()
+            .set(&DataKey::AmountPolicy, &(min_amount, max_amount));
+
+        Ok(())
+    }
+
     /// Get escrow IDs by status
     pub fn get_escrow_ids_by_status(
         env: Env,
@@ -1708,6 +1858,7 @@ impl BountyEscrowContract {
             emit_funds_locked(
                 &env,
                 FundsLocked {
+                    version: EVENT_VERSION_V2,
                     bounty_id: item.bounty_id,
                     amount: item.amount,
                     depositor: item.depositor.clone(),
@@ -1834,6 +1985,7 @@ impl BountyEscrowContract {
             emit_funds_released(
                 &env,
                 FundsReleased {
+                    version: EVENT_VERSION_V2,
                     bounty_id: item.bounty_id,
                     amount: escrow.amount,
                     recipient: item.contributor.clone(),
@@ -1860,5 +2012,11 @@ impl BountyEscrowContract {
 
 #[cfg(test)]
 mod test;
+#[cfg(test)]
+mod test_analytics_monitoring;
+#[cfg(test)]
+mod test_auto_refund_permissions;
+#[cfg(test)]
+mod test_expiration_and_dispute;
 #[cfg(test)]
 mod test_pause;

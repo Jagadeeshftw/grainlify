@@ -43,7 +43,12 @@ export class ValidationError extends SDKError {
 }
 
 /**
- * Specific contract error types based on the program-escrow contract
+ * Specific contract error types based on the program-escrow contract.
+ *
+ * AMOUNT_BELOW_MIN and AMOUNT_ABOVE_MAX map to the on-chain errors introduced
+ * by Issue #62 (configurable min/max amount policy):
+ *   Error::AmountBelowMinimum = 8
+ *   Error::AmountAboveMaximum = 9
  */
 export enum ContractErrorCode {
   NOT_INITIALIZED = 'NOT_INITIALIZED',
@@ -54,6 +59,9 @@ export enum ContractErrorCode {
   EMPTY_BATCH = 'EMPTY_BATCH',
   LENGTH_MISMATCH = 'LENGTH_MISMATCH',
   OVERFLOW = 'OVERFLOW',
+  // min/max amount policy enforcement
+  AMOUNT_BELOW_MIN = 'AMOUNT_BELOW_MIN',
+  AMOUNT_ABOVE_MAX = 'AMOUNT_ABOVE_MAX',
 }
 
 /**
@@ -69,6 +77,9 @@ export function createContractError(errorCode: ContractErrorCode, details?: stri
     [ContractErrorCode.EMPTY_BATCH]: 'Cannot process empty batch',
     [ContractErrorCode.LENGTH_MISMATCH]: 'Recipients and amounts vectors must have the same length',
     [ContractErrorCode.OVERFLOW]: 'Payout amount overflow',
+    // min/max policy
+    [ContractErrorCode.AMOUNT_BELOW_MIN]: 'Amount is below the minimum allowed by policy',
+    [ContractErrorCode.AMOUNT_ABOVE_MAX]: 'Amount exceeds the maximum allowed by policy',
   };
 
   const message = details ? `${messages[errorCode]}: ${details}` : messages[errorCode];
@@ -76,7 +87,11 @@ export function createContractError(errorCode: ContractErrorCode, details?: stri
 }
 
 /**
- * Parse contract error from Soroban response
+ * Parse contract error from Soroban response.
+ *
+ * Checks are ordered from most-specific to least-specific so that the more
+ * descriptive min/max messages are matched before the generic INVALID_AMOUNT
+ * fallback.
  */
 export function parseContractError(error: any): ContractError {
   // Check for panic messages from the contract
@@ -94,26 +109,36 @@ export function parseContractError(error: any): ContractError {
     return createContractError(ContractErrorCode.INSUFFICIENT_BALANCE);
   }
   
+  // Issue #62 – match min/max policy errors before the generic INVALID_AMOUNT
+  // check so the more precise code is returned to callers.
+  if (/below.*min(imum)?|AmountBelowMinimum/i.test(errorMessage)) {
+    return createContractError(ContractErrorCode.AMOUNT_BELOW_MIN);
+  }
+
+  if (/above.*max(imum)?|exceed.*max|AmountAboveMaximum/i.test(errorMessage)) {
+    return createContractError(ContractErrorCode.AMOUNT_ABOVE_MAX);
+  }
+
   if (errorMessage.includes('must be greater than zero')) {
     return createContractError(ContractErrorCode.INVALID_AMOUNT);
   }
-  
+
   if (errorMessage.includes('already initialized')) {
     return createContractError(ContractErrorCode.ALREADY_INITIALIZED);
   }
-  
+
   if (errorMessage.includes('empty batch')) {
     return createContractError(ContractErrorCode.EMPTY_BATCH);
   }
-  
+
   if (errorMessage.includes('same length')) {
     return createContractError(ContractErrorCode.LENGTH_MISMATCH);
   }
-  
+
   if (errorMessage.includes('overflow')) {
     return createContractError(ContractErrorCode.OVERFLOW);
   }
-  
-  // Generic contract error
-  return new ContractError(errorMessage, 'CONTRACT_ERROR');
+
+  // Generic contract error – preserves the original message for debugging.
+  return new ContractError(`Contract error (unknown): ${errorMessage}`, 'CONTRACT_ERROR');
 }

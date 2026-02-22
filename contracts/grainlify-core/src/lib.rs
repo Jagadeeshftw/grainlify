@@ -969,7 +969,7 @@ impl GrainlifyContract {
                 .instance()
                 .get(&DataKey::MigrationState)
                 .unwrap();
-            
+
             if migration_state.to_version >= target_version {
                 // Migration already completed, skip
                 return;
@@ -1422,21 +1422,21 @@ mod test {
 
         let admin = Address::generate(&env);
         client.init_admin(&admin);
-        
+
         // Verify initial version
         assert_eq!(client.get_version(), 2);
-        
+
         // Migrate to v3
         let hash = BytesN::from_array(&env, &[1u8; 32]);
         client.migrate(&3, &hash);
-        
+
         let state1 = client.get_migration_state().unwrap();
         let timestamp1 = state1.migrated_at;
 
         // Second call with same version - should be idempotent (not re-execute)
         client.migrate(&3, &hash);
         let state2 = client.get_migration_state().unwrap();
-        
+
         // Verify state unchanged (migration not re-executed)
         assert_eq!(state2.migrated_at, timestamp1);
         assert_eq!(state2.to_version, 3);
@@ -1452,10 +1452,10 @@ mod test {
 
         let admin = Address::generate(&env);
         client.init_admin(&admin);
-        
+
         let initial_version = client.get_version();
         assert_eq!(initial_version, 2);
-        
+
         let hash = BytesN::from_array(&env, &[2u8; 32]);
 
         // Execute migration to v3
@@ -1463,7 +1463,7 @@ mod test {
 
         // Verify transformations
         assert_eq!(client.get_version(), 3);
-        
+
         let state = client.get_migration_state().unwrap();
         assert_eq!(state.from_version, initial_version);
         assert_eq!(state.to_version, 3);
@@ -1485,10 +1485,10 @@ mod test {
         env.mock_all_auths_allowing_non_root_auth();
 
         let hash = BytesN::from_array(&env, &[3u8; 32]);
-        
+
         // This should require admin auth
         client.migrate(&3, &hash);
-        
+
         // Verify auth was required
         assert!(env.auths().len() > 0);
     }
@@ -1506,9 +1506,9 @@ mod test {
         client.init_admin(&admin);
 
         client.set_version(&4);
-        
+
         let hash = BytesN::from_array(&env, &[4u8; 32]);
-        
+
         // Try to migrate to lower version - should panic
         client.migrate(&3, &hash);
     }
@@ -1549,7 +1549,7 @@ mod test {
         client.init_admin(&admin);
 
         let initial_events = env.events().all().len();
-        
+
         let hash = BytesN::from_array(&env, &[6u8; 32]);
         client.migrate(&3, &hash);
 
@@ -1567,10 +1567,10 @@ mod test {
 
         let admin = Address::generate(&env);
         client.init_admin(&admin);
-        
+
         let v_before = client.get_version();
         assert_eq!(v_before, 2);
-        
+
         let hash = BytesN::from_array(&env, &[7u8; 32]);
         client.migrate(&3, &hash);
 
