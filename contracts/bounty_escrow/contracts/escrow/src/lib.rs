@@ -1,8 +1,6 @@
 #![no_std]
 mod events;
 
-mod test_bounty_escrow;
-
 use events::{
     emit_batch_funds_locked, emit_batch_funds_released, emit_bounty_initialized, emit_funds_locked,
     emit_funds_refunded, emit_funds_released, BatchFundsLocked, BatchFundsReleased,
@@ -1330,13 +1328,32 @@ impl BountyEscrowContract {
             .get(&DataKey::Escrow(bounty_id))
             .unwrap();
 
-        if escrow.status != EscrowStatus::Locked {
+        if escrow.status != EscrowStatus::Locked && escrow.status != EscrowStatus::PartiallyRefunded
+        {
             return Err(Error::FundsNotLocked);
         }
 
         let now = env.ledger().timestamp();
-        if now < escrow.deadline {
+        let approval_key = DataKey::RefundApproval(bounty_id);
+        let approval: Option<RefundApproval> = env.storage().persistent().get(&approval_key);
+
+        // Refund is allowed if:
+        // 1. Deadline has passed (returns full amount to depositor)
+        // 2. An administrative approval exists (can be early, partial, and to custom recipient)
+        if now < escrow.deadline && approval.is_none() {
             return Err(Error::DeadlineNotPassed);
+        }
+
+        let (refund_amount, refund_to, is_full) = if let Some(app) = approval.clone() {
+            let full = app.mode == RefundMode::Full || app.amount >= escrow.remaining_amount;
+            (app.amount, app.recipient, full)
+        } else {
+            // Standard refund after deadline
+            (escrow.remaining_amount, escrow.depositor.clone(), true)
+        };
+
+        if refund_amount <= 0 || refund_amount > escrow.remaining_amount {
+            return Err(Error::InvalidAmount);
         }
 
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
@@ -1349,16 +1366,42 @@ impl BountyEscrowContract {
             &escrow.remaining_amount,
         );
 
-        escrow.status = EscrowStatus::Refunded;
+        // Update escrow state
+        escrow.remaining_amount -= refund_amount;
+        if is_full || escrow.remaining_amount == 0 {
+            escrow.status = EscrowStatus::Refunded;
+        } else {
+            escrow.status = EscrowStatus::PartiallyRefunded;
+        }
+
+        // Add to refund history
+        escrow.refund_history.push_back(RefundRecord {
+            amount: refund_amount,
+            recipient: refund_to.clone(),
+            timestamp: now,
+            mode: if is_full {
+                RefundMode::Full
+            } else {
+                RefundMode::Partial
+            },
+        });
+
+        // Save updated escrow
         env.storage()
             .persistent()
             .set(&DataKey::Escrow(bounty_id), &escrow);
+
+        // Remove approval after successful execution
+        if approval.is_some() {
+            env.storage().persistent().remove(&approval_key);
+        }
 
         emit_funds_refunded(
             &env,
             FundsRefunded {
                 version: EVENT_VERSION_V2,
                 bounty_id,
+
                 amount: escrow.remaining_amount,
                 refund_to: escrow.depositor,
                 timestamp: env.ledger().timestamp(),
@@ -2020,3 +2063,7 @@ mod test_auto_refund_permissions;
 mod test_expiration_and_dispute;
 #[cfg(test)]
 mod test_pause;
+#[cfg(test)]
+mod test_lifecycle;
+#[cfg(test)]
+mod test_bounty_escrow;
