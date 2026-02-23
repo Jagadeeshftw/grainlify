@@ -29,6 +29,7 @@
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                 },
+                "void",
                 "void"
               ]
             }
@@ -109,6 +110,12 @@
                               "val": {
                                 "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                               }
+                            },
+                            {
+                              "key": {
+                                "symbol": "fee_token"
+                              },
+                              "val": "void"
                             },
                             {
                               "key": {
@@ -356,6 +363,7 @@
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                 },
+                "void",
                 "void"
               ]
             }
@@ -508,6 +516,12 @@
                   "val": {
                     "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                   }
+                },
+                {
+                  "key": {
+                    "symbol": "fee_token"
+                  },
+                  "val": "void"
                 },
                 {
                   "key": {

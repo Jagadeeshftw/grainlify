@@ -733,6 +733,14 @@
                     "storage": [
                       {
                         "key": {
+                          "symbol": "InvCalls"
+                        },
+                        "val": {
+                          "u32": 2
+                        }
+                      },
+                      {
+                        "key": {
                           "vec": [
                             {
                               "symbol": "Admin"

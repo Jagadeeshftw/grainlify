@@ -96,6 +96,7 @@
                   "bool": true
                 },
                 "void",
+                "void",
                 "void"
               ]
             }
@@ -184,6 +185,7 @@
                     {
                       "bool": true
                     },
+                    "void",
                     "void",
                     "void"
                   ]

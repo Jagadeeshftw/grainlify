@@ -29,6 +29,7 @@
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                 },
+                "void",
                 {
                   "bool": true
                 }
@@ -56,6 +57,7 @@
                 },
                 "void",
                 "void",
+                "void",
                 "void"
               ]
             }
@@ -79,6 +81,7 @@
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                 },
+                "void",
                 {
                   "bool": false
                 }
@@ -161,6 +164,12 @@
                               "val": {
                                 "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                               }
+                            },
+                            {
+                              "key": {
+                                "symbol": "fee_token"
+                              },
+                              "val": "void"
                             },
                             {
                               "key": {
@@ -474,6 +483,7 @@
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                 },
+                "void",
                 {
                   "bool": true
                 }
@@ -598,6 +608,7 @@
                     "lo": 300
                   }
                 },
+                "void",
                 "void",
                 "void",
                 "void"
@@ -755,6 +766,12 @@
                 },
                 {
                   "key": {
+                    "symbol": "fee_token"
+                  },
+                  "val": "void"
+                },
+                {
+                  "key": {
                     "symbol": "lock_fee_rate"
                   },
                   "val": {
@@ -807,6 +824,7 @@
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                 },
+                "void",
                 {
                   "bool": false
                 }
@@ -961,6 +979,12 @@
                   "val": {
                     "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                   }
+                },
+                {
+                  "key": {
+                    "symbol": "fee_token"
+                  },
+                  "val": "void"
                 },
                 {
                   "key": {

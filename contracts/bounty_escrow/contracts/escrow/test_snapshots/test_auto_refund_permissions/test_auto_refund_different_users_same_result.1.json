@@ -457,7 +457,51 @@
                         "symbol": "refund_history"
                       },
                       "val": {
-                        "vec": []
+                        "vec": [
+                          {
+                            "map": [
+                              {
+                                "key": {
+                                  "symbol": "amount"
+                                },
+                                "val": {
+                                  "i128": {
+                                    "hi": 0,
+                                    "lo": 1000
+                                  }
+                                }
+                              },
+                              {
+                                "key": {
+                                  "symbol": "mode"
+                                },
+                                "val": {
+                                  "vec": [
+                                    {
+                                      "symbol": "Full"
+                                    }
+                                  ]
+                                }
+                              },
+                              {
+                                "key": {
+                                  "symbol": "recipient"
+                                },
+                                "val": {
+                                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                                }
+                              },
+                              {
+                                "key": {
+                                  "symbol": "timestamp"
+                                },
+                                "val": {
+                                  "u64": 1001
+                                }
+                              }
+                            ]
+                          }
+                        ]
                       }
                     },
                     {
@@ -467,7 +511,7 @@
                       "val": {
                         "i128": {
                           "hi": 0,
-                          "lo": 1000
+                          "lo": 0
                         }
                       }
                     },
@@ -561,7 +605,51 @@
                         "symbol": "refund_history"
                       },
                       "val": {
-                        "vec": []
+                        "vec": [
+                          {
+                            "map": [
+                              {
+                                "key": {
+                                  "symbol": "amount"
+                                },
+                                "val": {
+                                  "i128": {
+                                    "hi": 0,
+                                    "lo": 1000
+                                  }
+                                }
+                              },
+                              {
+                                "key": {
+                                  "symbol": "mode"
+                                },
+                                "val": {
+                                  "vec": [
+                                    {
+                                      "symbol": "Full"
+                                    }
+                                  ]
+                                }
+                              },
+                              {
+                                "key": {
+                                  "symbol": "recipient"
+                                },
+                                "val": {
+                                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                                }
+                              },
+                              {
+                                "key": {
+                                  "symbol": "timestamp"
+                                },
+                                "val": {
+                                  "u64": 1001
+                                }
+                              }
+                            ]
+                          }
+                        ]
                       }
                     },
                     {
@@ -571,7 +659,7 @@
                       "val": {
                         "i128": {
                           "hi": 0,
-                          "lo": 1000
+                          "lo": 0
                         }
                       }
                     },
@@ -735,6 +823,14 @@
                       "wasm": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
                     },
                     "storage": [
+                      {
+                        "key": {
+                          "symbol": "InvCalls"
+                        },
+                        "val": {
+                          "u32": 4
+                        }
+                      },
                       {
                         "key": {
                           "vec": [
@@ -2350,7 +2446,51 @@
                     "symbol": "refund_history"
                   },
                   "val": {
-                    "vec": []
+                    "vec": [
+                      {
+                        "map": [
+                          {
+                            "key": {
+                              "symbol": "amount"
+                            },
+                            "val": {
+                              "i128": {
+                                "hi": 0,
+                                "lo": 1000
+                              }
+                            }
+                          },
+                          {
+                            "key": {
+                              "symbol": "mode"
+                            },
+                            "val": {
+                              "vec": [
+                                {
+                                  "symbol": "Full"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "key": {
+                              "symbol": "recipient"
+                            },
+                            "val": {
+                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                            }
+                          },
+                          {
+                            "key": {
+                              "symbol": "timestamp"
+                            },
+                            "val": {
+                              "u64": 1001
+                            }
+                          }
+                        ]
+                      }
+                    ]
                   }
                 },
                 {
@@ -2360,7 +2500,7 @@
                   "val": {
                     "i128": {
                       "hi": 0,
-                      "lo": 1000
+                      "lo": 0
                     }
                   }
                 },
@@ -2458,7 +2598,51 @@
                     "symbol": "refund_history"
                   },
                   "val": {
-                    "vec": []
+                    "vec": [
+                      {
+                        "map": [
+                          {
+                            "key": {
+                              "symbol": "amount"
+                            },
+                            "val": {
+                              "i128": {
+                                "hi": 0,
+                                "lo": 1000
+                              }
+                            }
+                          },
+                          {
+                            "key": {
+                              "symbol": "mode"
+                            },
+                            "val": {
+                              "vec": [
+                                {
+                                  "symbol": "Full"
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "key": {
+                              "symbol": "recipient"
+                            },
+                            "val": {
+                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                            }
+                          },
+                          {
+                            "key": {
+                              "symbol": "timestamp"
+                            },
+                            "val": {
+                              "u64": 1001
+                            }
+                          }
+                        ]
+                      }
+                    ]
                   }
                 },
                 {
@@ -2468,7 +2652,7 @@
                   "val": {
                     "i128": {
                       "hi": 0,
-                      "lo": 1000
+                      "lo": 0
                     }
                   }
                 },

@@ -118,6 +118,7 @@
                   "bool": true
                 },
                 "void",
+                "void",
                 "void"
               ]
             }
@@ -140,6 +141,7 @@
                 {
                   "bool": false
                 },
+                "void",
                 "void",
                 "void"
               ]
@@ -843,6 +845,14 @@
                     "storage": [
                       {
                         "key": {
+                          "symbol": "InvCalls"
+                        },
+                        "val": {
+                          "u32": 2
+                        }
+                      },
+                      {
+                        "key": {
                           "vec": [
                             {
                               "symbol": "Admin"
@@ -869,6 +879,20 @@
                               },
                               "val": {
                                 "bool": false
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "pause_reason"
+                              },
+                              "val": "void"
+                            },
+                            {
+                              "key": {
+                                "symbol": "paused_at"
+                              },
+                              "val": {
+                                "u64": 0
                               }
                             },
                             {
@@ -1472,6 +1496,20 @@
                 },
                 {
                   "key": {
+                    "symbol": "pause_reason"
+                  },
+                  "val": "void"
+                },
+                {
+                  "key": {
+                    "symbol": "paused_at"
+                  },
+                  "val": {
+                    "u64": 0
+                  }
+                },
+                {
+                  "key": {
                     "symbol": "refund_paused"
                   },
                   "val": {
@@ -1828,6 +1866,7 @@
                   "bool": true
                 },
                 "void",
+                "void",
                 "void"
               ]
             }
@@ -1875,6 +1914,20 @@
                   },
                   "val": {
                     "bool": true
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "reason"
+                  },
+                  "val": "void"
+                },
+                {
+                  "key": {
+                    "symbol": "timestamp"
+                  },
+                  "val": {
+                    "u64": 0
                   }
                 }
               ]
@@ -1952,6 +2005,20 @@
                   },
                   "val": {
                     "bool": true
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "pause_reason"
+                  },
+                  "val": "void"
+                },
+                {
+                  "key": {
+                    "symbol": "paused_at"
+                  },
+                  "val": {
+                    "u64": 0
                   }
                 },
                 {
@@ -2144,6 +2211,7 @@
                   "bool": false
                 },
                 "void",
+                "void",
                 "void"
               ]
             }
@@ -2191,6 +2259,20 @@
                   },
                   "val": {
                     "bool": false
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "reason"
+                  },
+                  "val": "void"
+                },
+                {
+                  "key": {
+                    "symbol": "timestamp"
+                  },
+                  "val": {
+                    "u64": 0
                   }
                 }
               ]
@@ -2268,6 +2350,20 @@
                   },
                   "val": {
                     "bool": false
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "pause_reason"
+                  },
+                  "val": "void"
+                },
+                {
+                  "key": {
+                    "symbol": "paused_at"
+                  },
+                  "val": {
+                    "u64": 0
                   }
                 },
                 {

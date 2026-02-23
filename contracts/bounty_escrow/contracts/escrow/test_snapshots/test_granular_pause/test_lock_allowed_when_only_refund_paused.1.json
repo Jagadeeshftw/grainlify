@@ -62,7 +62,8 @@
                 "void",
                 {
                   "bool": true
-                }
+                },
+                "void"
               ]
             }
           },
@@ -622,6 +623,20 @@
                               },
                               "val": {
                                 "bool": false
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "pause_reason"
+                              },
+                              "val": "void"
+                            },
+                            {
+                              "key": {
+                                "symbol": "paused_at"
+                              },
+                              "val": {
+                                "u64": 0
                               }
                             },
                             {
@@ -1287,7 +1302,8 @@
                 "void",
                 {
                   "bool": true
-                }
+                },
+                "void"
               ]
             }
           }
@@ -1334,6 +1350,20 @@
                   },
                   "val": {
                     "bool": true
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "reason"
+                  },
+                  "val": "void"
+                },
+                {
+                  "key": {
+                    "symbol": "timestamp"
+                  },
+                  "val": {
+                    "u64": 0
                   }
                 }
               ]

@@ -154,18 +154,15 @@ mod test_dispute_resolution;
 mod reentrancy_tests;
 
 #[cfg(test)]
-mod reentrancy_guard_standalone_test;
-
-#[cfg(test)]
-mod malicious_reentrant;
-
-#[cfg(test)]
 #[cfg(any())]
 mod test_granular_pause;
 
 #[cfg(test)]
 #[cfg(any())]
 mod test_lifecycle;
+
+#[cfg(test)]
+mod test_multi_token_fees;
 
 // ── Step 2: Add these public contract functions to the ProgramEscrowContract
 //    impl block (alongside the existing admin functions) ──────────────────
@@ -503,6 +500,7 @@ pub struct FeeConfig {
     pub lock_fee_rate: i128,
     pub payout_fee_rate: i128,
     pub fee_recipient: Address,
+    pub fee_token: Option<Address>,
     pub fee_enabled: bool,
 }
 #[contracttype]
@@ -556,8 +554,16 @@ impl ProgramEscrowContract {
         initial_liquidity: Option<i128>,
     ) -> ProgramData {
         // Check if program already exists
-        if env.storage().instance().has(&PROGRAM_DATA) {
+        let program_key = DataKey::Program(program_id.clone());
+        if env.storage().instance().has(&program_key) {
             panic!("Program already initialized");
+        }
+
+        if env.storage().instance().has(&PROGRAM_DATA) {
+            let legacy_data: ProgramData = env.storage().instance().get(&PROGRAM_DATA).unwrap();
+            if legacy_data.program_id == program_id {
+                panic!("Program already initialized");
+            }
         }
 
         let mut total_funds = 0i128;
@@ -588,7 +594,15 @@ impl ProgramEscrowContract {
         };
 
         // Store program data
-        env.storage().instance().set(&PROGRAM_DATA, &program_data);
+        let program_key = DataKey::Program(program_id.clone());
+        env.storage().instance().set(&program_key, &program_data);
+        
+        // Setup legacy key if not present for backward compatibility
+        if !env.storage().instance().has(&PROGRAM_DATA) {
+            env.storage().instance().set(&PROGRAM_DATA, &program_data);
+        }
+
+        // Initialize other related storage keys
         env.storage()
             .instance()
             .set(&SCHEDULES, &Vec::<ProgramReleaseSchedule>::new(&env));
@@ -663,6 +677,7 @@ impl ProgramEscrowContract {
                 authorized_payout_key: authorized_payout_key.clone(),
                 payout_history: vec![&env],
                 token_address: token_address.clone(),
+                initial_liquidity: 0,
             };
             let program_key = DataKey::Program(program_id.clone());
             env.storage().instance().set(&program_key, &program_data);
@@ -672,6 +687,7 @@ impl ProgramEscrowContract {
                     lock_fee_rate: 0,
                     payout_fee_rate: 0,
                     fee_recipient: authorized_payout_key.clone(),
+                    fee_token: None,
                     fee_enabled: false,
                 };
                 env.storage().instance().set(&FEE_CONFIG, &fee_config);
@@ -719,6 +735,7 @@ impl ProgramEscrowContract {
                 lock_fee_rate: 0,
                 payout_fee_rate: 0,
                 fee_recipient: env.current_contract_address(),
+                fee_token: None,
                 fee_enabled: false,
             })
     }
@@ -739,6 +756,39 @@ impl ProgramEscrowContract {
     pub fn program_exists_by_id(env: Env, program_id: String) -> bool {
         let program_key = DataKey::Program(program_id);
         env.storage().instance().has(&program_key)
+    }
+
+    /// Update fee configuration
+    pub fn update_fee_config(
+        env: Env,
+        lock_fee_rate: Option<i128>,
+        payout_fee_rate: Option<i128>,
+        fee_recipient: Option<Address>,
+        fee_token: Option<Address>,
+        fee_enabled: Option<bool>,
+    ) {
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap_or_else(|| panic!("Not initialized"));
+        admin.require_auth();
+
+        let mut fee_config = Self::get_fee_config_internal(&env);
+
+        if let Some(rate) = lock_fee_rate {
+            fee_config.lock_fee_rate = rate;
+        }
+        if let Some(rate) = payout_fee_rate {
+            fee_config.payout_fee_rate = rate;
+        }
+        if let Some(recipient) = fee_recipient {
+            fee_config.fee_recipient = recipient;
+        }
+        if let Some(token) = fee_token {
+            fee_config.fee_token = Some(token);
+        }
+        if let Some(enabled) = fee_enabled {
+            fee_config.fee_enabled = enabled;
+        }
+
+        env.storage().instance().set(&FEE_CONFIG, &fee_config);
     }
 
     // ========================================================================
@@ -1061,13 +1111,30 @@ impl ProgramEscrowContract {
         let timestamp = env.ledger().timestamp();
         let contract_address = env.current_contract_address();
         let token_client = token::Client::new(&env, &program_data.token_address);
+        let fee_config = Self::get_fee_config_internal(&env);
 
         for i in 0..recipients.len() {
             let recipient = recipients.get(i).unwrap();
             let amount = amounts.get(i).unwrap();
 
+            let mut final_amount = amount;
+            if fee_config.fee_enabled && fee_config.payout_fee_rate > 0 {
+                let fee = Self::calculate_fee(amount, fee_config.payout_fee_rate);
+                if fee > 0 {
+                    let fee_token_addr = fee_config.fee_token.clone().unwrap_or_else(|| program_data.token_address.clone());
+                    let fee_token_client = token::Client::new(&env, &fee_token_addr);
+                    
+                    fee_token_client.transfer(&contract_address, &fee_config.fee_recipient, &fee);
+                    
+                    // Only deduct from final_amount if it's the same token
+                    if fee_config.fee_token.is_none() || fee_config.fee_token == Some(program_data.token_address.clone()) {
+                        final_amount -= fee;
+                    }
+                }
+            }
+
             // Transfer funds from contract to recipient
-            token_client.transfer(&contract_address, &recipient, &amount);
+            token_client.transfer(&contract_address, &recipient, &final_amount);
 
             // Record payout
             let payout_record = PayoutRecord {
@@ -1149,7 +1216,26 @@ impl ProgramEscrowContract {
         // Transfer funds from contract to recipient
         let contract_address = env.current_contract_address();
         let token_client = token::Client::new(&env, &program_data.token_address);
-        token_client.transfer(&contract_address, &recipient, &amount);
+        
+        // Handle payout fee
+        let fee_config = Self::get_fee_config_internal(&env);
+        let mut final_amount = amount;
+        if fee_config.fee_enabled && fee_config.payout_fee_rate > 0 {
+            let fee = Self::calculate_fee(amount, fee_config.payout_fee_rate);
+            if fee > 0 {
+                let fee_token_addr = fee_config.fee_token.clone().unwrap_or_else(|| program_data.token_address.clone());
+                let fee_token_client = token::Client::new(&env, &fee_token_addr);
+                
+                fee_token_client.transfer(&contract_address, &fee_config.fee_recipient, &fee);
+                
+                // Only deduct from final_amount if it's the same token
+                if fee_config.fee_token.is_none() || fee_config.fee_token == Some(program_data.token_address.clone()) {
+                    final_amount -= fee;
+                }
+            }
+        }
+
+        token_client.transfer(&contract_address, &recipient, &final_amount);
 
         // Record payout
         let timestamp = env.ledger().timestamp();
@@ -1305,7 +1391,24 @@ impl ProgramEscrowContract {
                 panic!("Insufficient balance");
             }
 
-            token_client.transfer(&contract_address, &schedule.recipient, &schedule.amount);
+            let fee_config = Self::get_fee_config_internal(&env);
+            let mut final_amount = schedule.amount;
+            if fee_config.fee_enabled && fee_config.payout_fee_rate > 0 {
+                let fee = Self::calculate_fee(schedule.amount, fee_config.payout_fee_rate);
+                if fee > 0 {
+                    let fee_token_addr = fee_config.fee_token.clone().unwrap_or_else(|| program_data.token_address.clone());
+                    let fee_token_client = token::Client::new(&env, &fee_token_addr);
+                    
+                    fee_token_client.transfer(&contract_address, &fee_config.fee_recipient, &fee);
+                    
+                    // Only deduct from final_amount if it's the same token
+                    if fee_config.fee_token.is_none() || fee_config.fee_token == Some(program_data.token_address.clone()) {
+                        final_amount -= fee;
+                    }
+                }
+            }
+
+            token_client.transfer(&contract_address, &schedule.recipient, &final_amount);
             schedule.released = true;
             schedule.released_at = Some(now);
             schedule.released_by = Some(contract_address.clone());
@@ -1361,20 +1464,279 @@ impl ProgramEscrowContract {
     // Multi-tenant / Multi-program Migration Wrappers (ignore id for now)
     // ========================================================================
 
-    pub fn get_program_info_v2(env: Env, _program_id: String) -> ProgramData {
-        Self::get_program_info(env)
+    pub fn get_program_info_v2(env: Env, program_id: String) -> ProgramData {
+        let program_key = DataKey::Program(program_id);
+        env.storage()
+            .instance()
+            .get(&program_key)
+            .unwrap_or_else(|| {
+                // Fallback to legacy global program data if ID matches or if no ID provided (legacy)
+                env.storage()
+                    .instance()
+                    .get(&PROGRAM_DATA)
+                    .unwrap_or_else(|| panic!("Program not initialized"))
+            })
     }
 
-    pub fn lock_program_funds_v2(env: Env, _program_id: String, amount: i128) -> ProgramData {
-        Self::lock_program_funds(env, amount)
+    pub fn lock_program_funds_v2(env: Env, program_id: String, amount: i128) -> ProgramData {
+        if Self::check_paused(&env, symbol_short!("lock")) {
+            panic!("Funds Paused");
+        }
+
+        if amount <= 0 {
+            panic!("Amount must be greater than zero");
+        }
+
+        let program_key = DataKey::Program(program_id);
+        let mut program_data: ProgramData = env.storage()
+            .instance()
+            .get(&program_key)
+            .unwrap_or_else(|| {
+                env.storage()
+                    .instance()
+                    .get(&PROGRAM_DATA)
+                    .unwrap_or_else(|| panic!("Program not initialized"))
+            });
+
+        // Update balances
+        program_data.total_funds += amount;
+        program_data.remaining_balance += amount;
+
+        // Store updated data
+        if env.storage().instance().has(&program_key) {
+            env.storage().instance().set(&program_key, &program_data);
+        } else {
+            env.storage().instance().set(&PROGRAM_DATA, &program_data);
+        }
+
+        // Emit FundsLocked event
+        env.events().publish(
+            (FUNDS_LOCKED,),
+            FundsLockedEvent {
+                version: EVENT_VERSION_V2,
+                program_id: program_data.program_id.clone(),
+                amount,
+                remaining_balance: program_data.remaining_balance,
+            },
+        );
+
+        program_data
     }
 
-    pub fn single_payout_v2(env: Env, _program_id: String, recipient: Address, amount: i128) -> ProgramData {
-        Self::single_payout(env, recipient, amount)
+    pub fn single_payout_v2(env: Env, program_id: String, recipient: Address, amount: i128) -> ProgramData {
+        // Reentrancy guard: Check and set
+        reentrancy_guard::check_not_entered(&env);
+        reentrancy_guard::set_entered(&env);
+
+        if Self::check_paused(&env, symbol_short!("release")) {
+            reentrancy_guard::clear_entered(&env);
+            panic!("Funds Paused");
+        }
+
+        // Verify authorization
+        let program_key = DataKey::Program(program_id);
+        let mut program_data: ProgramData = env.storage()
+            .instance()
+            .get(&program_key)
+            .unwrap_or_else(|| {
+                env.storage()
+                    .instance()
+                    .get(&PROGRAM_DATA)
+                    .unwrap_or_else(|| {
+                        reentrancy_guard::clear_entered(&env);
+                        panic!("Program not initialized")
+                    })
+            });
+
+        program_data.authorized_payout_key.require_auth();
+
+        if amount <= 0 {
+            reentrancy_guard::clear_entered(&env);
+            panic!("Amount must be greater than zero");
+        }
+
+        // Validate sufficient balance
+        if amount > program_data.remaining_balance {
+            reentrancy_guard::clear_entered(&env);
+            panic!("Insufficient balance");
+        }
+
+        // Transfer funds from contract to recipient
+        let contract_address = env.current_contract_address();
+        let token_client = token::Client::new(&env, &program_data.token_address);
+        
+        // Handle payout fee
+        let fee_config = Self::get_fee_config_internal(&env);
+        let mut final_amount = amount;
+        if fee_config.fee_enabled && fee_config.payout_fee_rate > 0 {
+            let fee = Self::calculate_fee(amount, fee_config.payout_fee_rate);
+            if fee > 0 {
+                let fee_token_addr = fee_config.fee_token.clone().unwrap_or_else(|| program_data.token_address.clone());
+                let fee_token_client = token::Client::new(&env, &fee_token_addr);
+                
+                fee_token_client.transfer(&contract_address, &fee_config.fee_recipient, &fee);
+                
+                // Only deduct from final_amount if it's the same token
+                if fee_config.fee_token.is_none() || fee_config.fee_token == Some(program_data.token_address.clone()) {
+                    final_amount -= fee;
+                }
+            }
+        }
+
+        token_client.transfer(&contract_address, &recipient, &final_amount);
+
+        // Record payout
+        let timestamp = env.ledger().timestamp();
+        let payout_record = PayoutRecord {
+            recipient: recipient.clone(),
+            amount,
+            timestamp,
+        };
+        program_data.payout_history.push_back(payout_record);
+        program_data.remaining_balance -= amount;
+
+        // Store updated data
+        if env.storage().instance().has(&program_key) {
+            env.storage().instance().set(&program_key, &program_data);
+        } else {
+            env.storage().instance().set(&PROGRAM_DATA, &program_data);
+        }
+
+        // Emit Payout event
+        env.events().publish(
+            (PAYOUT,),
+            (program_data.program_id.clone(), recipient, amount, program_data.remaining_balance),
+        );
+
+        // Clear reentrancy guard before returning
+        reentrancy_guard::clear_entered(&env);
+
+        program_data
     }
 
-    pub fn batch_payout_v2(env: Env, _program_id: String, recipients: Vec<Address>, amounts: Vec<i128>) -> ProgramData {
-        Self::batch_payout(env, recipients, amounts)
+    pub fn batch_payout_v2(env: Env, program_id: String, recipients: Vec<Address>, amounts: Vec<i128>) -> ProgramData {
+        // Reentrancy guard: Check and set
+        reentrancy_guard::check_not_entered(&env);
+        reentrancy_guard::set_entered(&env);
+
+        if Self::check_paused(&env, symbol_short!("release")) {
+            reentrancy_guard::clear_entered(&env);
+            panic!("Funds Paused");
+        }
+
+        // Verify authorization
+        let program_key = DataKey::Program(program_id);
+        let mut program_data: ProgramData = env.storage()
+            .instance()
+            .get(&program_key)
+            .unwrap_or_else(|| {
+                env.storage()
+                    .instance()
+                    .get(&PROGRAM_DATA)
+                    .unwrap_or_else(|| {
+                        reentrancy_guard::clear_entered(&env);
+                        panic!("Program not initialized")
+                    })
+            });
+
+        program_data.authorized_payout_key.require_auth();
+
+        // Validate input lengths match
+        if recipients.len() != amounts.len() {
+            reentrancy_guard::clear_entered(&env);
+            panic!("Recipients and amounts vectors must have the same length");
+        }
+
+        if recipients.len() == 0 {
+            reentrancy_guard::clear_entered(&env);
+            panic!("Cannot process empty batch");
+        }
+
+        // Calculate total payout amount
+        let mut total_payout: i128 = 0;
+        for amount in amounts.iter() {
+            if amount <= 0 {
+                reentrancy_guard::clear_entered(&env);
+                panic!("All amounts must be greater than zero");
+            }
+            total_payout = total_payout.checked_add(amount).unwrap_or_else(|| {
+                reentrancy_guard::clear_entered(&env);
+                panic!("Payout amount overflow")
+            });
+        }
+
+        // Validate sufficient balance
+        if total_payout > program_data.remaining_balance {
+            reentrancy_guard::clear_entered(&env);
+            panic!("Insufficient balance");
+        }
+
+        // Execute transfers
+        let mut updated_history = program_data.payout_history.clone();
+        let timestamp = env.ledger().timestamp();
+        let contract_address = env.current_contract_address();
+        let token_client = token::Client::new(&env, &program_data.token_address);
+        let fee_config = Self::get_fee_config_internal(&env);
+
+        for i in 0..recipients.len() {
+            let recipient = recipients.get(i).unwrap();
+            let amount = amounts.get(i).unwrap();
+
+            let mut final_amount = amount;
+            if fee_config.fee_enabled && fee_config.payout_fee_rate > 0 {
+                let fee = Self::calculate_fee(amount, fee_config.payout_fee_rate);
+                if fee > 0 {
+                    let fee_token_addr = fee_config.fee_token.clone().unwrap_or_else(|| program_data.token_address.clone());
+                    let fee_token_client = token::Client::new(&env, &fee_token_addr);
+                    
+                    fee_token_client.transfer(&contract_address, &fee_config.fee_recipient, &fee);
+                    
+                    // Only deduct from final_amount if it's the same token
+                    if fee_config.fee_token.is_none() || fee_config.fee_token == Some(program_data.token_address.clone()) {
+                        final_amount -= fee;
+                    }
+                }
+            }
+
+            // Transfer funds from contract to recipient
+            token_client.transfer(&contract_address, &recipient, &final_amount);
+
+            // Record payout
+            let payout_record = PayoutRecord {
+                recipient,
+                amount,
+                timestamp,
+            };
+            updated_history.push_back(payout_record);
+        }
+
+        // Update program data
+        program_data.remaining_balance -= total_payout;
+        program_data.payout_history = updated_history;
+
+        // Store updated data
+        if env.storage().instance().has(&program_key) {
+            env.storage().instance().set(&program_key, &program_data);
+        } else {
+            env.storage().instance().set(&PROGRAM_DATA, &program_data);
+        }
+
+        // Emit BatchPayout event
+        env.events().publish(
+            (BATCH_PAYOUT,),
+            BatchPayoutEvent {
+                version: EVENT_VERSION_V2,
+                program_id: program_data.program_id.clone(),
+                recipient_count: recipients.len() as u32,
+                total_amount: total_payout,
+                remaining_balance: program_data.remaining_balance,
+            },
+        );
+
+        // Clear reentrancy guard before returning
+        reentrancy_guard::clear_entered(&env);
+
+        program_data
     }
 
     /// Query payout history by recipient with pagination
@@ -1598,10 +1960,9 @@ impl ProgramEscrowContract {
 
         for i in 0..schedules.len() {
             let schedule = schedules.get(i).unwrap();
+            scheduled_count += 1;
             if schedule.released {
                 released_count += 1;
-            } else {
-                scheduled_count += 1;
             }
         }
 

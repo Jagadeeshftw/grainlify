@@ -788,6 +788,20 @@
                 },
                 {
                   "key": {
+                    "symbol": "pause_reason"
+                  },
+                  "val": "void"
+                },
+                {
+                  "key": {
+                    "symbol": "paused_at"
+                  },
+                  "val": {
+                    "u64": 0
+                  }
+                },
+                {
+                  "key": {
                     "symbol": "refund_paused"
                   },
                   "val": {

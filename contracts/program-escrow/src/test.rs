@@ -27,7 +27,7 @@ fn setup_program(
     let token_admin_client = token::StellarAssetClient::new(env, &token_id);
 
     let program_id = String::from_str(env, "hack-2026");
-    client.init_program(&program_id, &admin, &token_id);
+    client.init_program(&program_id, &admin, &token_id, &admin, &None);
 
     if initial_amount > 0 {
         token_admin_client.mint(&client.address, &initial_amount);
@@ -64,7 +64,7 @@ fn test_init_program_and_event() {
     let token_id = env.register_stellar_asset_contract(token_admin);
     let program_id = String::from_str(&env, "hack-2026");
 
-    let data = client.init_program(&program_id, &admin, &token_id);
+    let data = client.init_program(&program_id, &admin, &token_id, &admin, &None);
     assert_eq!(data.total_funds, 0);
     assert_eq!(data.remaining_balance, 0);
 
@@ -384,6 +384,8 @@ fn test_full_lifecycle_multi_program_batch_payouts() {
         &String::from_str(&env, "hackathon-alpha"),
         &auth_key_a,
         &token_id,
+        &auth_key_a,
+        &None,
     );
     assert_eq!(prog_a.total_funds, 0);
     assert_eq!(prog_a.remaining_balance, 0);
@@ -397,6 +399,8 @@ fn test_full_lifecycle_multi_program_batch_payouts() {
         &String::from_str(&env, "hackathon-beta"),
         &auth_key_b,
         &token_id,
+        &auth_key_b,
+        &None,
     );
     assert_eq!(prog_b.total_funds, 0);
 
@@ -1092,7 +1096,11 @@ fn test_analytics_after_batch_payout() {
 #[test]
 fn test_analytics_multiple_operations() {
     let env = Env::default();
-    let (client, _admin, _token, _token_admin) = setup_program(&env, 0);
+    let initial_funds = 30_000_0000000i128;
+    let (client, _admin, _token, token_admin) = setup_program(&env, 0);
+    
+    // Mint tokens to contract so it can actually pay out
+    token_admin.mint(&client.address, &initial_funds);
 
     // Lock funds in multiple calls
     client.lock_program_funds(&10_000_0000000);
@@ -1149,7 +1157,7 @@ fn test_analytics_with_schedules() {
 fn test_analytics_after_releasing_schedules() {
     let env = Env::default();
     let initial_funds = 100_000_0000000i128;
-    let (client, _admin, _token, _token_admin) = setup_program(&env, initial_funds);
+    let (client, _admin, _token, token_admin) = setup_program(&env, initial_funds);
 
     let recipient = Address::generate(&env);
     let release_timestamp = env.ledger().timestamp() + 50;
@@ -1241,13 +1249,14 @@ fn test_total_scheduled_amount() {
 #[test]
 fn test_comprehensive_analytics_workflow() {
     let env = Env::default();
-    let (client, _admin, _token, _token_admin) = setup_program(&env, 0);
+    let (client, _admin, _token, token_admin) = setup_program(&env, 0);
 
+    token_admin.mint(&client.address, &100_000_0000000);
     client.lock_program_funds(&50_000_0000000);
     client.lock_program_funds(&50_000_0000000);
 
     let r1 = Address::generate(&env);
-    client.single_payout(&r1, &10_000_0000000);
+    client.single_payout(&r1, &20_000_0000000);
 
     let r2 = Address::generate(&env);
     let r3 = Address::generate(&env);
@@ -1267,7 +1276,7 @@ fn test_comprehensive_analytics_workflow() {
     assert_eq!(stats.total_funds, 100_000_0000000i128);
     assert_eq!(stats.remaining_balance, 20_000_0000000i128);
     assert_eq!(stats.total_paid_out, 80_000_0000000i128);
-    assert_eq!(stats.payout_count, 3);
+    assert_eq!(stats.payout_count, 4);
     assert_eq!(stats.scheduled_count, 1);
     assert_eq!(stats.released_count, 1);
 }
@@ -1277,7 +1286,7 @@ fn test_comprehensive_analytics_workflow() {
 fn test_analytics_partial_release_scenario() {
     let env = Env::default();
     let initial_funds = 50_000_0000000i128;
-    let (client, _admin, _token, _token_admin) = setup_program(&env, initial_funds);
+    let (client, _admin, _token, token_admin) = setup_program(&env, initial_funds);
 
     let future_timestamp = env.ledger().timestamp() + 50;
 
@@ -1316,7 +1325,7 @@ fn test_analytics_partial_release_scenario() {
 fn test_analytics_query_functions() {
     let env = Env::default();
     let initial_funds = 100_000_0000000i128;
-    let (client, _admin, _token, _token_admin) = setup_program(&env, initial_funds);
+    let (client, _admin, _token, token_admin) = setup_program(&env, initial_funds);
 
     // Create payouts to different recipients
     let r1 = Address::generate(&env);

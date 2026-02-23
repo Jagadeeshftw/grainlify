@@ -29,6 +29,7 @@
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                 },
+                "void",
                 "void"
               ]
             }
@@ -111,6 +112,12 @@
                               "val": {
                                 "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                               }
+                            },
+                            {
+                              "key": {
+                                "symbol": "fee_token"
+                              },
+                              "val": "void"
                             },
                             {
                               "key": {
@@ -358,6 +365,7 @@
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                 },
+                "void",
                 "void"
               ]
             }
@@ -513,6 +521,12 @@
                 },
                 {
                   "key": {
+                    "symbol": "fee_token"
+                  },
+                  "val": "void"
+                },
+                {
+                  "key": {
                     "symbol": "lock_fee_rate"
                   },
                   "val": {
@@ -572,6 +586,7 @@
                     "lo": 5001
                   }
                 },
+                "void",
                 "void",
                 "void"
               ]
@@ -671,6 +686,7 @@
                       }
                     },
                     "void",
+                    "void",
                     "void"
                   ]
                 }
@@ -737,6 +753,12 @@
                   "val": {
                     "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                   }
+                },
+                {
+                  "key": {
+                    "symbol": "fee_token"
+                  },
+                  "val": "void"
                 },
                 {
                   "key": {

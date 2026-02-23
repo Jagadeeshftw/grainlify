@@ -117,6 +117,7 @@
                   "bool": true
                 },
                 "void",
+                "void",
                 "void"
               ]
             }
@@ -417,7 +418,51 @@
                         "symbol": "refund_history"
                       },
                       "val": {
-                        "vec": []
+                        "vec": [
+                          {
+                            "map": [
+                              {
+                                "key": {
+                                  "symbol": "amount"
+                                },
+                                "val": {
+                                  "i128": {
+                                    "hi": 0,
+                                    "lo": 300
+                                  }
+                                }
+                              },
+                              {
+                                "key": {
+                                  "symbol": "mode"
+                                },
+                                "val": {
+                                  "vec": [
+                                    {
+                                      "symbol": "Full"
+                                    }
+                                  ]
+                                }
+                              },
+                              {
+                                "key": {
+                                  "symbol": "recipient"
+                                },
+                                "val": {
+                                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                                }
+                              },
+                              {
+                                "key": {
+                                  "symbol": "timestamp"
+                                },
+                                "val": {
+                                  "u64": 10001
+                                }
+                              }
+                            ]
+                          }
+                        ]
                       }
                     },
                     {
@@ -427,7 +472,7 @@
                       "val": {
                         "i128": {
                           "hi": 0,
-                          "lo": 300
+                          "lo": 0
                         }
                       }
                     },
@@ -624,6 +669,20 @@
                               },
                               "val": {
                                 "bool": true
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "pause_reason"
+                              },
+                              "val": "void"
+                            },
+                            {
+                              "key": {
+                                "symbol": "paused_at"
+                              },
+                              "val": {
+                                "u64": 0
                               }
                             },
                             {
@@ -1511,6 +1570,7 @@
                   "bool": true
                 },
                 "void",
+                "void",
                 "void"
               ]
             }
@@ -1558,6 +1618,20 @@
                   },
                   "val": {
                     "bool": true
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "reason"
+                  },
+                  "val": "void"
+                },
+                {
+                  "key": {
+                    "symbol": "timestamp"
+                  },
+                  "val": {
+                    "u64": 0
                   }
                 }
               ]
