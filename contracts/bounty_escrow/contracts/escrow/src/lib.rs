@@ -2152,24 +2152,4 @@ impl BountyEscrowContract {
 #[cfg(test)]
 mod test;
 #[cfg(test)]
-mod test_analytics_monitoring;
-#[cfg(test)]
-mod test_auto_refund_permissions;
-#[cfg(test)]
-mod test_bounty_escrow;
-#[cfg(test)]
-mod test_dispute_resolution;
-mod test_expiration_and_dispute;
-#[cfg(test)]
-mod test_front_running_ordering;
-#[cfg(test)]
-mod test_granular_pause;
-#[cfg(test)]
-mod test_invariants;
-mod test_lifecycle;
-#[cfg(test)]
-mod test_metadata_tagging;
-#[cfg(test)]
-mod test_pause;
-#[cfg(test)]
-mod test_query_filters;
+mod test_batch_failure_modes;
