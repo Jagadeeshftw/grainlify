@@ -474,7 +474,7 @@ mod test_batch_failure_modes {
 
     /// A mix of valid and already-refunded bounties: the refunded one triggers
     /// `FundsNotLocked` and the whole batch fails without releasing the valid one.
-    
+
     // -------------------------------------------------------------------------
     // Authorization tests
     // -------------------------------------------------------------------------
