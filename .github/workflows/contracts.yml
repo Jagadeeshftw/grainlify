@@ -50,3 +50,8 @@ jobs:
         cd contracts/bounty_escrow/contracts/escrow
         cargo test --verbose --lib
 
+    - name: Run invariant checker tests
+      run: |
+        source $HOME/.cargo/env
+        cd contracts/bounty_escrow/contracts/escrow
+        cargo test --verbose --lib invariant_checker_ci

@@ -2634,7 +2634,7 @@
             "data": {
               "vec": [
                 {
-                  "string": "caught panic 'Schedule not yet due for release' from contract function 'Symbol(obj#597)'"
+                  "string": "caught panic 'Schedule not yet due for release' from contract function 'Symbol(obj#601)'"
                 },
                 {
                   "string": "Hackathon2024"

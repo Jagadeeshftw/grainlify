@@ -996,12 +996,23 @@ export function AdminPage() {
                   <span>Upload image</span>
                   <input
                     type="file"
-                    accept="image/*"
+                    accept="image/svg+xml,image/png,image/jpeg,image/jpg,image/gif"
                     className="hidden"
                     onChange={(event) => {
                       const file = event.target.files?.[0];
                       if (!file) {
                         setFormData(prev => ({ ...prev, logoUrl: '' }));
+                        return;
+                      }
+                      const validTypes = ['image/svg+xml', 'image/png', 'image/jpeg', 'image/jpg', 'image/gif'];
+                      if (!validTypes.includes(file.type)) {
+                        toast.error('Please select a valid image file (SVG, PNG, JPG, or GIF)');
+                        event.target.value = '';
+                        return;
+                      }
+                      if (file.size > 5 * 1024 * 1024) {
+                        toast.error('File size must be less than 5MB');
+                        event.target.value = '';
                         return;
                       }
                       const reader = new FileReader();
@@ -1167,12 +1178,23 @@ export function AdminPage() {
                   <span>Upload new image</span>
                   <input
                     type="file"
-                    accept="image/*"
+                    accept="image/svg+xml,image/png,image/jpeg,image/jpg,image/gif"
                     className="hidden"
                     onChange={(event) => {
                       const file = event.target.files?.[0];
                       if (!file) {
                         setEditFormData(prev => ({ ...prev, logoUrl: editingEcosystem?.logo_url || '' }));
+                        return;
+                      }
+                      const validTypes = ['image/svg+xml', 'image/png', 'image/jpeg', 'image/jpg', 'image/gif'];
+                      if (!validTypes.includes(file.type)) {
+                        toast.error('Please select a valid image file (SVG, PNG, JPG, or GIF)');
+                        event.target.value = '';
+                        return;
+                      }
+                      if (file.size > 5 * 1024 * 1024) {
+                        toast.error('File size must be less than 5MB');
+                        event.target.value = '';
                         return;
                       }
                       const reader = new FileReader();

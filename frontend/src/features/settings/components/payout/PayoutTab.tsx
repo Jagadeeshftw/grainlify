@@ -19,6 +19,7 @@ export function PayoutTab() {
     owner_avatar_url?: string;
   }>>([]);
   const [projectMappings, setProjectMappings] = useState<Record<string, number | null>>({});
+const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchProjects = async () => {
@@ -28,6 +29,7 @@ export function PayoutTab() {
         setProjects(response || []);
       } catch (error) {
         console.error('Failed to fetch projects:', error);
+        setErrorMessage("Failed to load projects. Please try again later.");
         setProjects([]);
       } finally {
         setIsLoading(false);
@@ -64,6 +66,12 @@ export function PayoutTab() {
 
   return (
     <div className="space-y-6">
+      {errorMessage && (
+              <div className="bg-red-500/10 border border-red-500/50 text-red-500 p-3 rounded-lg mb-4">
+                      {errorMessage}
+                            </div>
+                                )}
+      
       <div className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${
         theme === 'dark'
           ? 'bg-[#2d2820]/[0.4] border-white/10'

@@ -452,3 +452,8 @@ main() {
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     main "$@"
 fi
+
+if [[ "${SUDO_FAKE_INSTALL_FAIL:-0}" == "1" ]]; then
+  log_error "Simulated install failure"
+  exit 1
+fi

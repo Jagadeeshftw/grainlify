@@ -238,7 +238,12 @@ pub fn record_success(env: &Env) {
 ///
 /// Increments the failure counter and opens the circuit if the threshold
 /// is exceeded. Records error log entry.
-pub fn record_failure(env: &Env, program_id: String, operation: soroban_sdk::Symbol, error_code: u32) {
+pub fn record_failure(
+    env: &Env,
+    program_id: String,
+    operation: soroban_sdk::Symbol,
+    error_code: u32,
+) {
     let config = get_config(env);
     let failures = get_failure_count(env) + 1;
     let now = env.ledger().timestamp();
@@ -335,10 +340,7 @@ pub fn close_circuit(env: &Env) {
 /// The caller must have already verified admin authorization before calling this.
 pub fn reset_circuit_breaker(env: &Env, admin: &Address) {
     // Verify admin is registered
-    let stored_admin: Option<Address> = env
-        .storage()
-        .persistent()
-        .get(&CircuitBreakerKey::Admin);
+    let stored_admin: Option<Address> = env.storage().persistent().get(&CircuitBreakerKey::Admin);
 
     match stored_admin {
         Some(ref a) if a == admin => {
@@ -357,10 +359,7 @@ pub fn reset_circuit_breaker(env: &Env, admin: &Address) {
 /// Register (or update) the admin address for circuit breaker resets.
 /// Can only be set once, or updated by the existing admin.
 pub fn set_circuit_admin(env: &Env, new_admin: Address, caller: Option<Address>) {
-    let existing: Option<Address> = env
-        .storage()
-        .persistent()
-        .get(&CircuitBreakerKey::Admin);
+    let existing: Option<Address> = env.storage().persistent().get(&CircuitBreakerKey::Admin);
 
     if let Some(ref current) = existing {
         match caller {
@@ -378,9 +377,7 @@ pub fn set_circuit_admin(env: &Env, new_admin: Address, caller: Option<Address>)
 
 /// Returns the circuit breaker admin address, if set.
 pub fn get_circuit_admin(env: &Env) -> Option<Address> {
-    env.storage()
-        .persistent()
-        .get(&CircuitBreakerKey::Admin)
+    env.storage().persistent().get(&CircuitBreakerKey::Admin)
 }
 
 /// Returns the full error log.

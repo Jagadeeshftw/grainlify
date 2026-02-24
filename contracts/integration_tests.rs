@@ -1,3 +1,41 @@
+#[test]
+fn test_program_init_with_initial_liquidity() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // Setup: Create token
+    let token_admin = Address::generate(&env);
+    let (token, token_client, token_admin_client) = create_token_contract(&env, &token_admin);
+
+    // Setup: Create addresses
+    let creator = Address::generate(&env);
+    let backend = Address::generate(&env);
+    let program_id = String::from_str(&env, "TestProgram");
+
+    // Mint tokens to creator
+    let initial_liquidity = 5_000_0000000i128; // 5,000 tokens
+    token_admin_client.mint(&creator, &initial_liquidity);
+
+    // Register and initialize program escrow contract
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let escrow_client = ProgramEscrowContractClient::new(&env, &contract_id);
+
+    // Call init_program with initial liquidity
+    let program_data = escrow_client.init_program(
+        &program_id,
+        &backend,
+        &token,
+        &creator,
+        &Some(initial_liquidity),
+    );
+
+    // Check that initial liquidity was transferred and recorded
+    let contract_balance = token_client.balance(&contract_id.address());
+    assert_eq!(contract_balance, initial_liquidity);
+    assert_eq!(program_data.initial_liquidity, initial_liquidity);
+    assert_eq!(program_data.total_funds, initial_liquidity);
+    assert_eq!(program_data.remaining_balance, initial_liquidity);
+}
 #![cfg(test)]
 
 //! Comprehensive Integration Tests for Grainlify Contracts

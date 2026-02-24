@@ -491,3 +491,8 @@ main() {
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     main "$@"
 fi
+
+if [[ "${SUDO_FAKE_UPGRADE_FAIL:-0}" == "1" ]]; then
+  log_error "Simulated upgrade invocation failure"
+  exit 1
+fi

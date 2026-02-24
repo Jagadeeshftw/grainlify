@@ -2,8 +2,8 @@
 
 #![cfg(test)]
 
-use soroban_sdk::{contract, contractimpl, symbol_short, testutils::Ledger, Address, Env, String};
 use soroban_sdk::testutils::Address as TestAddress;
+use soroban_sdk::{contract, contractimpl, symbol_short, testutils::Ledger, Address, Env, String};
 
 use crate::error_recovery::{
     check_and_allow, close_circuit, execute_with_retry, get_circuit_admin, get_config,
@@ -135,11 +135,19 @@ fn test_circuit_opens_exactly_at_threshold_not_before() {
     let (env, _admin, contract_id) = setup_with_admin(3);
     simulate_failures(&env, &contract_id, 2);
     env.as_contract(&contract_id, || {
-        assert_eq!(get_state(&env), CircuitState::Closed, "Should be Closed after 2 failures");
+        assert_eq!(
+            get_state(&env),
+            CircuitState::Closed,
+            "Should be Closed after 2 failures"
+        );
     });
     simulate_failures(&env, &contract_id, 1);
     env.as_contract(&contract_id, || {
-        assert_eq!(get_state(&env), CircuitState::Open, "Should be Open after 3rd failure");
+        assert_eq!(
+            get_state(&env),
+            CircuitState::Open,
+            "Should be Open after 3rd failure"
+        );
     });
 }
 
@@ -293,11 +301,23 @@ fn test_multi_success_threshold_half_open() {
     env.as_contract(&contract_id, || {
         reset_circuit_breaker(&env, &admin);
         record_success(&env);
-        assert_eq!(get_state(&env), CircuitState::HalfOpen, "Still HalfOpen after 1 success");
+        assert_eq!(
+            get_state(&env),
+            CircuitState::HalfOpen,
+            "Still HalfOpen after 1 success"
+        );
         record_success(&env);
-        assert_eq!(get_state(&env), CircuitState::HalfOpen, "Still HalfOpen after 2 successes");
+        assert_eq!(
+            get_state(&env),
+            CircuitState::HalfOpen,
+            "Still HalfOpen after 2 successes"
+        );
         record_success(&env);
-        assert_eq!(get_state(&env), CircuitState::Closed, "Closed after 3 successes");
+        assert_eq!(
+            get_state(&env),
+            CircuitState::Closed,
+            "Closed after 3 successes"
+        );
     });
 }
 
@@ -461,9 +481,7 @@ fn test_retry_exhaustion_opens_circuit() {
         let prog = String::from_str(&env, "TestProg");
         let op = symbol_short!("op");
         let retry_cfg = RetryConfig { max_attempts: 3 };
-        let result = execute_with_retry(&env, &retry_cfg, prog, op, || {
-            Err(ERR_TRANSFER_FAILED)
-        });
+        let result = execute_with_retry(&env, &retry_cfg, prog, op, || Err(ERR_TRANSFER_FAILED));
         assert!(!result.succeeded);
         assert_eq!(result.attempts, 3);
         assert_eq!(result.final_error, ERR_TRANSFER_FAILED);
@@ -558,7 +576,11 @@ fn test_config_change_threshold_takes_effect() {
     let (env, _admin, contract_id) = setup_with_admin(10);
     simulate_failures(&env, &contract_id, 5);
     env.as_contract(&contract_id, || {
-        assert_eq!(get_state(&env), CircuitState::Closed, "Should still be Closed with threshold=10");
+        assert_eq!(
+            get_state(&env),
+            CircuitState::Closed,
+            "Should still be Closed with threshold=10"
+        );
         set_config(
             &env,
             CircuitBreakerConfig {

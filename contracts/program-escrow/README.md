@@ -8,6 +8,7 @@ A Soroban smart contract for managing program-level escrow funds for hackathons 
 - **Fund Locking**: Lock funds into the escrow (tracks total and remaining balance)
 - **Single Payout**: Transfer funds to a single recipient
 - **Batch Payout**: Transfer funds to multiple recipients in a single transaction
+- **Release Schedules (Vesting)**: Queue timestamp-based releases and execute them when due
 - **Balance Tracking**: Accurate tracking of total funds and remaining balance
 - **Authorization**: Only authorized payout key can trigger payouts
 - **Event Emission**: All operations emit events for off-chain tracking
@@ -98,6 +99,20 @@ View function to retrieve all program information.
 View function to get the current remaining balance.
 
 **Returns:** i128
+
+#### `create_program_release_schedule(recipient, amount, release_timestamp)`
+
+Create a time-based release that can be executed once the ledger timestamp reaches the schedule timestamp.
+
+#### `trigger_program_releases()`
+
+Execute all due release schedules where `ledger_timestamp >= release_timestamp`.
+
+**Edge-case behavior validated in tests:**
+- Exact boundary is accepted: release executes when `now == release_timestamp`
+- Early execution is rejected: no release when `now < release_timestamp`
+- Late execution is accepted: pending releases execute when `now >> release_timestamp`
+- Overlapping schedules are supported: multiple due schedules execute in the same trigger call
 
 ## Events
 

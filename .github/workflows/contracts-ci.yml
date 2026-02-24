@@ -75,6 +75,12 @@ jobs:
           cd contracts/escrow
           cargo test --verbose --lib
 
+      - name: Run invariant checker tests
+        run: |
+          source $HOME/.cargo/env
+          cd contracts/escrow
+          cargo test --verbose --lib invariant_checker_ci
+
       - name: Build Soroban contract
         run: |
           source $HOME/.cargo/env
@@ -100,3 +106,11 @@ jobs:
           fi
           echo "Contract built successfully for Stellar/Soroban deployment"
 
+      - name: Run script tests
+        run: |
+          chmod +x ../scripts/test_deploy_failures.sh
+          chmod +x ../scripts/test_upgrade_failures.sh
+          ../scripts/test_deploy_failures.sh
+          ../scripts/test_upgrade_failures.sh
+
+   
