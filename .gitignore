@@ -22,3 +22,6 @@ contracts/deployments/*.json
 .soroban/
 soroban/.soroban/identity/
 soroban/.soroban/network/
+
+# Test snapshots (auto-generated, environment-dependent)
+**/test_snapshots/

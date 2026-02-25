@@ -79,8 +79,7 @@ impl ProgramEscrowContract {
         if !env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::NotInitialized);
         }
-        let contract_admin: Address =
-            env.storage().instance().get(&DataKey::Admin).unwrap();
+        let contract_admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         contract_admin.require_auth();
 
         if env
@@ -139,8 +138,7 @@ impl ProgramEscrowContract {
         if !env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::NotInitialized);
         }
-        let contract_admin: Address =
-            env.storage().instance().get(&DataKey::Admin).unwrap();
+        let contract_admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         contract_admin.require_auth();
 
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();

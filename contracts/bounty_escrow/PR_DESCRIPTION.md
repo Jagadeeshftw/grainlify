@@ -1,5 +1,50 @@
 Closes #399
 
+### Delegated Capability Tokens for Fine-Grained Authorization
+
+This PR introduces a capability-token authorization pattern for escrow operations, enabling short-lived delegated rights without granting full admin roles.
+
+#### Capability model
+
+- `Capability { owner, holder, action, bounty_id, amount_limit, remaining_amount, expiry, remaining_uses, revoked }`
+- `CapabilityAction`: `Claim`, `Release`, `Refund`
+- Capabilities are explicit, scoped to one bounty, amount-bounded, usage-bounded, expiring, and revocable.
+
+#### New contract APIs
+
+- `issue_capability(owner, holder, action, bounty_id, amount_limit, expiry, max_uses) -> capability_id`
+- `revoke_capability(owner, capability_id)`
+- `get_capability(capability_id) -> Capability`
+- Capability-enabled entrypoints:
+  - `claim_with_capability(bounty_id, holder, capability_id)`
+  - `release_with_capability(bounty_id, contributor, payout_amount, holder, capability_id)`
+  - `refund_with_capability(bounty_id, amount, holder, capability_id)`
+
+#### Security constraints
+
+- Capabilities cannot exceed issuer authority:
+  - `Release` and `Refund` capabilities must be issued by the current admin.
+  - `Claim` capabilities must be issued by the current claim recipient.
+  - `amount_limit` cannot exceed currently authorized escrow/claim amount.
+- At use-time, authority is re-validated again (not only at issue-time), so stale capabilities cannot outlive authority changes.
+- Expired or revoked capabilities are rejected.
+
+#### Capability lifecycle events
+
+- `cap_new`: capability issued
+- `cap_use`: capability consumed
+- `cap_rev`: capability revoked
+
+#### Example flows
+
+1. **Release up to X by delegate**
+   - Admin issues `Release` capability (`amount_limit=600`, `max_uses=2`) to an operator.
+   - Operator releases `400`, leaving `200` delegated budget.
+2. **Refund once by delegate**
+   - Admin issues `Refund` capability (`amount_limit=500`, `max_uses=1`) for one-time delegated refund.
+3. **Claim by delegated caller**
+   - Claim recipient issues `Claim` capability to a relayer who executes the claim on their behalf.
+
 ### Escrow Status Transitions Test Suite
 
 This PR adds a comprehensive, fully-exhaustive test suite for all status transitions in the `BountyEscrow` contract, ensuring the runtime behavior rigidly aligns with the intended state machine.

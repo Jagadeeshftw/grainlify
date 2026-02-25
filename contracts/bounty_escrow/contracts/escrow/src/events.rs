@@ -1,3 +1,4 @@
+use crate::CapabilityAction;
 use soroban_sdk::{contracttype, symbol_short, Address, Env};
 
 pub const EVENT_VERSION_V2: u32 = 2;
@@ -183,4 +184,54 @@ pub struct EmergencyWithdrawEvent {
 pub fn emit_emergency_withdraw(env: &Env, event: EmergencyWithdrawEvent) {
     let topics = (symbol_short!("em_wtd"),);
     env.events().publish(topics, event.clone());
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CapabilityIssued {
+    pub capability_id: u64,
+    pub owner: Address,
+    pub holder: Address,
+    pub action: CapabilityAction,
+    pub bounty_id: u64,
+    pub amount_limit: i128,
+    pub expires_at: u64,
+    pub max_uses: u32,
+    pub timestamp: u64,
+}
+
+pub fn emit_capability_issued(env: &Env, event: CapabilityIssued) {
+    let topics = (symbol_short!("cap_new"), event.capability_id);
+    env.events().publish(topics, event);
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CapabilityUsed {
+    pub capability_id: u64,
+    pub holder: Address,
+    pub action: CapabilityAction,
+    pub bounty_id: u64,
+    pub amount_used: i128,
+    pub remaining_amount: i128,
+    pub remaining_uses: u32,
+    pub used_at: u64,
+}
+
+pub fn emit_capability_used(env: &Env, event: CapabilityUsed) {
+    let topics = (symbol_short!("cap_use"), event.capability_id);
+    env.events().publish(topics, event);
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CapabilityRevoked {
+    pub capability_id: u64,
+    pub owner: Address,
+    pub revoked_at: u64,
+}
+
+pub fn emit_capability_revoked(env: &Env, event: CapabilityRevoked) {
+    let topics = (symbol_short!("cap_rev"), event.capability_id);
+    env.events().publish(topics, event);
 }

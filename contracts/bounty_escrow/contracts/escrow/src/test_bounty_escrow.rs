@@ -1364,7 +1364,7 @@ fn test_anti_abuse_whitelisted_address_bypasses_checks() {
     client.init(&admin, &token);
 
     client.update_anti_abuse_config(&3600, &2, &60);
-    client.set_whitelist(&depositor, &true);
+    client.set_whitelist_entry(&depositor, &true);
 
     token_admin_client.mint(&depositor, &50_000);
 
