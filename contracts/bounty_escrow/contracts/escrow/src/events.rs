@@ -235,3 +235,59 @@ pub fn emit_capability_revoked(env: &Env, event: CapabilityRevoked) {
     let topics = (symbol_short!("cap_rev"), event.capability_id);
     env.events().publish(topics, event);
 }
+
+// ── Freeze events ────────────────────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EscrowFrozen {
+    pub bounty_id: u64,
+    pub frozen_by: Address,
+    pub reason: soroban_sdk::String,
+    pub timestamp: u64,
+}
+
+pub fn emit_escrow_frozen(env: &Env, event: EscrowFrozen) {
+    let topics = (symbol_short!("frz"), event.bounty_id);
+    env.events().publish(topics, event);
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EscrowUnfrozen {
+    pub bounty_id: u64,
+    pub unfrozen_by: Address,
+    pub timestamp: u64,
+}
+
+pub fn emit_escrow_unfrozen(env: &Env, event: EscrowUnfrozen) {
+    let topics = (symbol_short!("unfrz"), event.bounty_id);
+    env.events().publish(topics, event);
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AddressFrozen {
+    pub target: Address,
+    pub frozen_by: Address,
+    pub reason: soroban_sdk::String,
+    pub timestamp: u64,
+}
+
+pub fn emit_address_frozen(env: &Env, event: AddressFrozen) {
+    let topics = (symbol_short!("adrfrz"), event.target.clone());
+    env.events().publish(topics, event);
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AddressUnfrozen {
+    pub target: Address,
+    pub unfrozen_by: Address,
+    pub timestamp: u64,
+}
+
+pub fn emit_address_unfrozen(env: &Env, event: AddressUnfrozen) {
+    let topics = (symbol_short!("adunfrz"), event.target.clone());
+    env.events().publish(topics, event);
+}
