@@ -235,3 +235,18 @@ pub fn emit_capability_revoked(env: &Env, event: CapabilityRevoked) {
     let topics = (symbol_short!("cap_rev"), event.capability_id);
     env.events().publish(topics, event);
 }
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct TokensRescued {
+    pub version: u32,
+    pub amount: i128,
+    pub treasury: Address,
+    pub admin: Address,
+    pub timestamp: u64,
+}
+
+pub fn emit_tokens_rescued(env: &Env, event: TokensRescued) {
+    let topics = (symbol_short!("rescue"),);
+    env.events().publish(topics, event.clone());
+}
