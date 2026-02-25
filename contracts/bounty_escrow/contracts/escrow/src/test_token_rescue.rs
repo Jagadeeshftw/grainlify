@@ -1,6 +1,8 @@
 #[cfg(test)]
 mod test_token_rescue {
-    use crate::{BountyEscrowContract, BountyEscrowContractClient, Error, EscrowStatus, RefundMode};
+    use crate::{
+        BountyEscrowContract, BountyEscrowContractClient, Error, EscrowStatus, RefundMode,
+    };
     use soroban_sdk::{
         testutils::{Address as _, Ledger},
         token, Address, Env,

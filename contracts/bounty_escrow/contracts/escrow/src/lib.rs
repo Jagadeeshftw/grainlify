@@ -449,7 +449,7 @@ pub enum DataKey {
     AmountPolicy, // Option<(i128, i128)> — (min_amount, max_amount) set by set_amount_policy
     CapabilityNonce, // monotonically increasing capability id
     Capability(u64), // capability_id -> Capability
-    Treasury,        // Address for rescued tokens
+    Treasury,     // Address for rescued tokens
 }
 
 #[contracttype]
