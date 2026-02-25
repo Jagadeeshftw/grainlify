@@ -1134,7 +1134,7 @@
             "data": {
               "vec": [
                 {
-                  "string": "caught panic 'All amounts must be greater than zero' from contract function 'Symbol(obj#297)'"
+                  "string": "caught panic 'All amounts must be greater than zero' from contract function 'Symbol(obj#299)'"
                 },
                 {
                   "vec": [

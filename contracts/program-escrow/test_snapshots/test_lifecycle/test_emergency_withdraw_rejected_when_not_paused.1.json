@@ -1176,7 +1176,7 @@
             "data": {
               "vec": [
                 {
-                  "string": "caught panic 'Not paused' from contract function 'Symbol(obj#331)'"
+                  "string": "caught panic 'Not paused' from contract function 'Symbol(obj#333)'"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"

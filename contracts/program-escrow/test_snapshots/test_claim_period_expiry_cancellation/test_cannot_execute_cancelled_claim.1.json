@@ -1628,7 +1628,7 @@
             "data": {
               "vec": [
                 {
-                  "string": "caught panic 'ClaimAlreadyProcessed' from contract function 'Symbol(obj#501)'"
+                  "string": "caught panic 'ClaimAlreadyProcessed' from contract function 'Symbol(obj#503)'"
                 },
                 {
                   "string": "TestProgram2024"

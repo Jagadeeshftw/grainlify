@@ -1123,7 +1123,7 @@
             "data": {
               "vec": [
                 {
-                  "string": "caught panic 'Cannot process empty batch' from contract function 'Symbol(obj#295)'"
+                  "string": "caught panic 'Cannot process empty batch' from contract function 'Symbol(obj#297)'"
                 },
                 {
                   "vec": []

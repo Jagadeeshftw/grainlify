@@ -7350,18 +7350,39 @@
                           "map": [
                             {
                               "key": {
-                                "symbol": "fee_enabled"
+                                "symbol": "destinations"
                               },
                               "val": {
-                                "bool": false
+                                "vec": [
+                                  {
+                                    "map": [
+                                      {
+                                        "key": {
+                                          "symbol": "destination"
+                                        },
+                                        "val": {
+                                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                                        }
+                                      },
+                                      {
+                                        "key": {
+                                          "symbol": "weight"
+                                        },
+                                        "val": {
+                                          "u32": 100
+                                        }
+                                      }
+                                    ]
+                                  }
+                                ]
                               }
                             },
                             {
                               "key": {
-                                "symbol": "fee_recipient"
+                                "symbol": "fee_enabled"
                               },
                               "val": {
-                                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                                "bool": false
                               }
                             },
                             {

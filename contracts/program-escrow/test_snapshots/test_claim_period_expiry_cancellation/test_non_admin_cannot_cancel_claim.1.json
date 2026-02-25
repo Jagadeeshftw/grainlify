@@ -1477,7 +1477,7 @@
             "data": {
               "vec": [
                 {
-                  "string": "caught panic 'Unauthorized: only admin can cancel claims' from contract function 'Symbol(obj#407)'"
+                  "string": "caught panic 'Unauthorized: only admin can cancel claims' from contract function 'Symbol(obj#409)'"
                 },
                 {
                   "string": "TestProgram2024"

@@ -1668,7 +1668,7 @@
             "data": {
               "vec": [
                 {
-                  "string": "caught panic 'Program already initialized' from contract function 'Symbol(obj#491)'"
+                  "string": "caught panic 'Program already initialized' from contract function 'Symbol(obj#495)'"
                 },
                 {
                   "string": "hack-2026-v2"

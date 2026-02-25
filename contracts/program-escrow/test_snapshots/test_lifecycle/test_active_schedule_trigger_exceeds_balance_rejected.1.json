@@ -1351,7 +1351,7 @@
               }
             ],
             "data": {
-              "string": "caught panic 'Insufficient balance' from contract function 'Symbol(obj#351)'"
+              "string": "caught panic 'Insufficient balance' from contract function 'Symbol(obj#353)'"
             }
           }
         }
