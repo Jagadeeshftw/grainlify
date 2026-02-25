@@ -52,13 +52,14 @@ Lock funds into the escrow. Updates both `total_funds` and `remaining_balance`.
 
 **Events:** `FundsLocked`
 
-#### `single_payout(recipient, amount)`
+#### `single_payout(recipient, amount, nonce)`
 
 Transfer funds to a single recipient. Requires authorization.
 
 **Parameters:**
 - `recipient`: Address of the recipient
 - `amount`: i128 amount to transfer (must be > 0)
+- `nonce`: u64 nonce for replay protection
 
 **Returns:** Updated `ProgramData`
 
@@ -76,6 +77,7 @@ Transfer funds to multiple recipients in a single transaction. Requires authoriz
 **Parameters:**
 - `recipients`: Vec<Address> of recipient addresses
 - `amounts`: Vec<i128> of amounts (must match recipients length)
+- `nonce`: u64 nonce for replay protection
 
 **Returns:** Updated `ProgramData`
 
@@ -87,6 +89,7 @@ Transfer funds to multiple recipients in a single transaction. Requires authoriz
 - All amounts must be > 0
 - Total payout must not exceed remaining balance
 - Cannot process empty batch
+- Nonce must match signer's current nonce
 
 #### `get_program_info()`
 
@@ -145,6 +148,7 @@ Emitted when a batch payout is executed.
 1. **Initialize Program**: Call `init_program()` with program ID, authorized key, and token address
 2. **Lock Funds**: Call `lock_program_funds()` to deposit funds (can be called multiple times)
 3. **Execute Payouts**: Call `single_payout()` or `batch_payout()` to distribute funds
+4. **Replay Safety**: Read `get_nonce(signer)` and pass that nonce to payout entrypoints
 4. **Monitor**: Use `get_program_info()` or `get_remaining_balance()` to check status
 
 ## Security Considerations
@@ -154,6 +158,8 @@ Emitted when a batch payout is executed.
 - All amounts must be positive
 - Payout history is immutable and auditable
 - Token transfers use the Soroban token contract standard
+- `token_address` must be a contract address (not an account address)
+- Shared asset id rules are documented in `contracts/ASSET_ID_STRATEGY.md`
 
 ## Testing
 
@@ -184,8 +190,9 @@ soroban contract deploy \
 The backend should:
 1. Initialize the contract with the backend's authorized key
 2. Monitor events for program state changes
-3. Call `batch_payout()` after computing final scores and verifying KYC
-4. Track payout history for audit purposes
+3. Query `get_nonce()` and include nonce when calling payout entrypoints
+4. Call `batch_payout()`/`single_payout()` after computing final scores and verifying KYC
+5. Track payout history for audit purposes
 
 ## Example
 
@@ -204,7 +211,8 @@ contract.lock_program_funds(&env, 50_000_000_000);
 // Batch payout to winners
 let recipients = vec![&env, winner1, winner2, winner3];
 let amounts = vec![&env, 20_000_000_000, 15_000_000_000, 10_000_000_000];
-contract.batch_payout(&env, recipients, amounts);
+let nonce = contract.get_nonce(&env, backend_address.clone());
+contract.batch_payout(&env, recipients, amounts, nonce);
 
 // Check remaining balance
 let balance = contract.get_remaining_balance(&env);

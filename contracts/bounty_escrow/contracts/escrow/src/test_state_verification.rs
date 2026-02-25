@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod test {
-    use crate::invariants;
     use crate::{BountyEscrowContract, BountyEscrowContractClient, DataKey, EscrowStatus};
     use soroban_sdk::testutils::Address as _;
     use soroban_sdk::{token, Address, Env};

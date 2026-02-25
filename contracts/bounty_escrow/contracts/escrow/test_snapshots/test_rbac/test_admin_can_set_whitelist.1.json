@@ -50,7 +50,7 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "set_whitelist",
+              "function_name": "set_whitelist_entry",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
@@ -700,7 +700,7 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
               },
               {
-                "symbol": "set_whitelist"
+                "symbol": "set_whitelist_entry"
               }
             ],
             "data": {
@@ -730,7 +730,7 @@
                 "symbol": "fn_return"
               },
               {
-                "symbol": "set_whitelist"
+                "symbol": "set_whitelist_entry"
               }
             ],
             "data": "void"

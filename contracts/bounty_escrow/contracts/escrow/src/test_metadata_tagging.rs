@@ -1,14 +1,15 @@
-use super::*;
-use soroban_sdk::{
-    testutils::Address as _, // Removed unused 'Events'
-    token,
-    Address,
-    Env, // Removed unused 'String' and 'Symbol'
-};
+// Tests for metadata tagging functionality.
+//
+// Most tests in this module are gated behind `cfg(feature = "metadata_tagging")`
+// because the contract does not yet expose the relevant types (`EscrowMetadata`,
+// `SdkVec`, `lock_funds_with_metadata`, etc.).  The feature gate compiles them
+// out until the feature is implemented (tracked in Issue #63).
 
+#[cfg(test)]
 #[cfg(feature = "metadata_tagging")]
 mod metadata_tagging_tests {
-    use super::*;
+    use super::super::*;
+    use soroban_sdk::{testutils::Address as _, token, Address, Env, String, Vec as SdkVec};
 
     fn create_token(
         env: &Env,
@@ -30,7 +31,7 @@ mod metadata_tagging_tests {
 
     struct Setup {
         env: Env,
-        _admin: Address, // Fixed: Added underscore to silence unused field warning
+        _admin: Address,
         depositor: Address,
         escrow: BountyEscrowContractClient<'static>,
         token: token::Client<'static>,
@@ -68,7 +69,6 @@ mod metadata_tagging_tests {
         let amount = 5000i128;
         let deadline = s.env.ledger().timestamp() + 3600;
 
-        // Create metadata
         let repo_id = String::from_str(&s.env, "stellar/soroban-examples");
         let issue_id = String::from_str(&s.env, "123");
         let bounty_type = String::from_str(&s.env, "bug_fix");
@@ -84,11 +84,9 @@ mod metadata_tagging_tests {
             custom_fields: SdkVec::new(&s.env),
         };
 
-        // Lock funds with metadata
         s.escrow
             .lock_funds_with_metadata(&s.depositor, &bounty_id, &amount, &deadline, &metadata);
 
-        // Retrieve and verify metadata
         let retrieved_metadata = s.escrow.get_escrow_metadata(&bounty_id);
         assert_eq!(retrieved_metadata.repo_id, Some(repo_id));
         assert_eq!(retrieved_metadata.issue_id, Some(issue_id));
@@ -104,7 +102,6 @@ mod metadata_tagging_tests {
         let amount = 3000i128;
         let deadline = s.env.ledger().timestamp() + 7200;
 
-        // Initial metadata
         let initial_metadata = EscrowMetadata {
             repo_id: Some(String::from_str(&s.env, "stellar/rs-soroban-sdk")),
             issue_id: Some(String::from_str(&s.env, "456")),
@@ -121,7 +118,6 @@ mod metadata_tagging_tests {
             &initial_metadata,
         );
 
-        // Update metadata
         let mut updated_tags = SdkVec::new(&s.env);
         updated_tags.push_back(String::from_str(&s.env, "documentation"));
 
@@ -136,7 +132,6 @@ mod metadata_tagging_tests {
         s.escrow
             .update_escrow_metadata(&bounty_id, &updated_metadata);
 
-        // Verify update
         let retrieved = s.escrow.get_escrow_metadata(&bounty_id);
         assert_eq!(
             retrieved.bounty_type,
@@ -155,17 +150,11 @@ mod metadata_tagging_tests {
         let amount = 5000i128;
         let dl = s.env.ledger().timestamp() + 3600;
 
-        // Lock funds
         s.escrow.lock_funds(&s.depositor, &bounty_id, &amount, &dl);
 
-        // Verify initial metadata (should be default/empty if not explicitly set)
         let info = s.escrow.get_escrow_info(&bounty_id);
         assert_eq!(info.amount, amount);
         assert_eq!(info.status, EscrowStatus::Locked);
-
-        // Note: The current contract doesn't have a 'tags' or 'metadata' field in Escrow struct.
-        // However, the issue #477 asks for tests for them.
-        // Looking at lib.rs, 'attributes' are stored in derived tables, but not in main Escrow.
     }
 
     // ============================================================================
@@ -178,7 +167,6 @@ mod metadata_tagging_tests {
         let s = Setup::new();
         let deadline = s.env.ledger().timestamp() + 3600;
 
-        // Create multiple bounties with different repo_ids
         for i in 1u64..=10 {
             let repo_id = if i <= 5 {
                 String::from_str(&s.env, "stellar/soroban-examples")
@@ -203,7 +191,6 @@ mod metadata_tagging_tests {
             );
         }
 
-        // Query by repo_id
         let results = s.escrow.query_escrows_by_repo_id(
             &String::from_str(&s.env, "stellar/soroban-examples"),
             &0,
@@ -219,7 +206,6 @@ mod metadata_tagging_tests {
         let s = Setup::new();
         let deadline = s.env.ledger().timestamp() + 3600;
 
-        // Create bounties with different types
         let types = vec![
             "bug_fix",
             "feature",
@@ -247,7 +233,6 @@ mod metadata_tagging_tests {
             );
         }
 
-        // Query bug_fix bounties
         let bug_fixes =
             s.escrow
                 .query_escrows_by_bounty_type(&String::from_str(&s.env, "bug_fix"), &0, &20);
@@ -260,7 +245,6 @@ mod metadata_tagging_tests {
         let s = Setup::new();
         let deadline = s.env.ledger().timestamp() + 3600;
 
-        // Create bounties with different tags
         for i in 1u64..=8 {
             let mut tags = SdkVec::new(&s.env);
 
@@ -283,7 +267,6 @@ mod metadata_tagging_tests {
                 .lock_funds_with_metadata(&s.depositor, &i, &1000, &deadline, &metadata);
         }
 
-        // Query by "rust" tag
         let rust_bounties =
             s.escrow
                 .query_escrows_by_tag(&String::from_str(&s.env, "rust"), &0, &20);
@@ -299,22 +282,19 @@ mod metadata_tagging_tests {
         let s = Setup::new();
         let dl_base = s.env.ledger().timestamp();
 
-        // Create 15 bounties with different amounts and deadlines
         for i in 1u64..=15 {
             let amount = (i as i128) * 1000;
             let deadline = dl_base + (i * 100);
             s.escrow.lock_funds(&s.depositor, &i, &amount, &deadline);
         }
 
-        // Filter by amount: [5000, 10000]
         let amount_results = s.escrow.query_escrows_by_amount(&5000, &10000, &0, &20);
-        assert_eq!(amount_results.len(), 6); // 5k, 6k, 7k, 8k, 9k, 10k
+        assert_eq!(amount_results.len(), 6);
 
-        // Filter by deadline: [dl_base + 300, dl_base + 700]
         let dl_results =
             s.escrow
                 .query_escrows_by_deadline(&(dl_base + 300), &(dl_base + 700), &0, &20);
-        assert_eq!(dl_results.len(), 5); // 300, 400, 500, 600, 700
+        assert_eq!(dl_results.len(), 5);
     }
 
     // ============================================================================
@@ -329,7 +309,6 @@ mod metadata_tagging_tests {
         let amount = 1500i128;
         let deadline = s.env.ledger().timestamp() + 3600;
 
-        // Create comprehensive metadata
         let mut tags = SdkVec::new(&s.env);
         tags.push_back(String::from_str(&s.env, "rust"));
         tags.push_back(String::from_str(&s.env, "smart-contract"));
@@ -351,10 +330,8 @@ mod metadata_tagging_tests {
         s.escrow
             .lock_funds_with_metadata(&s.depositor, &bounty_id, &amount, &deadline, &metadata);
 
-        // Retrieve metadata - verify all fields are accessible
         let retrieved = s.escrow.get_escrow_metadata(&bounty_id);
 
-        // Verify structure is complete and accessible
         assert!(retrieved.repo_id.is_some());
         assert!(retrieved.issue_id.is_some());
         assert!(retrieved.bounty_type.is_some());
@@ -374,7 +351,6 @@ mod metadata_tagging_tests {
         let amount = 1000i128;
         let deadline = s.env.ledger().timestamp() + 3600;
 
-        // Create with empty metadata
         let metadata = EscrowMetadata {
             repo_id: None,
             issue_id: None,
@@ -386,7 +362,6 @@ mod metadata_tagging_tests {
         s.escrow
             .lock_funds_with_metadata(&s.depositor, &bounty_id, &amount, &deadline, &metadata);
 
-        // Verify empty metadata is stored correctly
         let retrieved = s.escrow.get_escrow_metadata(&bounty_id);
         assert!(retrieved.repo_id.is_none());
         assert!(retrieved.issue_id.is_none());

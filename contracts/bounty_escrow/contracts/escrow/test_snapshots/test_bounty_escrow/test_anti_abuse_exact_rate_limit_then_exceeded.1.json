@@ -2053,7 +2053,7 @@
             "data": {
               "vec": [
                 {
-                  "string": "caught panic 'Rate limit exceeded' from contract function 'Symbol(obj#549)'"
+                  "string": "caught panic 'Rate limit exceeded' from contract function 'Symbol(obj#573)'"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
