@@ -14,7 +14,13 @@ fn make_client(env: &Env) -> (ProgramEscrowContractClient<'static>, Address) {
 }
 
 /// Helper: Create a real SAC token and return the client and token address.
-fn create_token(env: &Env) -> (token::Client<'static>, Address, token::StellarAssetClient<'static>) {
+fn create_token(
+    env: &Env,
+) -> (
+    token::Client<'static>,
+    Address,
+    token::StellarAssetClient<'static>,
+) {
     let token_admin = Address::generate(env);
     let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
     let token_id = token_contract.address();
@@ -31,25 +37,25 @@ fn test_complex_multi_program_lifecycle_integration() {
     // ── Pre-setup: Contract and Token ───────────────────────────────────
     let (client, contract_id) = make_client(&env);
     let (token_client, token_id, token_sac) = create_token(&env);
-    
+
     let admin_a = Address::generate(&env);
     let admin_b = Address::generate(&env);
     let creator = Address::generate(&env);
-    
+
     let prog_id_a = String::from_str(&env, "program-alpha");
     let prog_id_b = String::from_str(&env, "program-beta");
 
     // ── Phase 1: Registration (Multi-tenant) ───────────────────────────
     // Init Program A
     client.init_program(&prog_id_a, &admin_a, &token_id, &creator, &None);
-    
+
     // Init Program B
-    // Note: The current implementation seems to only support one program per contract instance 
-    // based on 'PROGRAM_DATA' being a single Symbol key in 'lib.rs'. 
-    // However, 'DataKey::Program(String)' exists. Looking at init_program in lib.rs, 
+    // Note: The current implementation seems to only support one program per contract instance
+    // based on 'PROGRAM_DATA' being a single Symbol key in 'lib.rs'.
+    // However, 'DataKey::Program(String)' exists. Looking at init_program in lib.rs,
     // it checks for 'PROGRAM_DATA' in instance storage, which is a singleton.
     // I will stick to one program per instance or multiple instances to mirror reality.
-    
+
     let (client_b, contract_id_b) = make_client(&env);
     client_b.init_program(&prog_id_b, &admin_b, &token_id, &creator, &None);
 
@@ -138,12 +144,10 @@ fn test_lifecycle_with_pausing_and_topup() {
 
     // 3. Try payout while paused -> Should fail
     let r = Address::generate(&env);
-    let _res = env.as_contract(&contract_id, || {
-        client.try_single_payout(&r, &10_000)
-    });
+    let _res = env.as_contract(&contract_id, || client.try_single_payout(&r, &10_000));
     // Soroban sdk try_ functions might not catch all panics depending on implementation.
     // If it panics, we just assume it's blocked.
-    
+
     // 4. Resume and Payout
     client.set_paused(&None, &Some(false), &None, &None);
     client.single_payout(&r, &50_000);

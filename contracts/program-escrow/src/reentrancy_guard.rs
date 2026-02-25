@@ -80,6 +80,7 @@ pub fn clear_entered(env: &Env) {
 /// # Returns
 /// * `true` if a protected function is currently executing
 /// * `false` otherwise
+#[allow(dead_code)]
 pub fn is_entered(env: &Env) -> bool {
     env.storage()
         .instance()

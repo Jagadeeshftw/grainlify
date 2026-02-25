@@ -34,7 +34,6 @@
 ///                                         ▼
 ///                                       Active
 /// ```
-
 use super::*;
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
@@ -339,10 +338,7 @@ fn test_active_batch_exceeds_balance_rejected() {
     let r1 = Address::generate(&env);
     let r2 = Address::generate(&env);
     // 30_000 + 30_000 = 60_000 > 50_000
-    client.batch_payout(
-        &vec![&env, r1, r2],
-        &vec![&env, 30_000i128, 30_000i128],
-    );
+    client.batch_payout(&vec![&env, r1, r2], &vec![&env, 30_000i128, 30_000i128]);
 }
 
 /// Zero-amount single payout must be rejected.
@@ -363,10 +359,7 @@ fn test_active_zero_amount_in_batch_rejected() {
     let (client, _admin, _cid, _token) = setup_active_program(&env, 50_000);
     let r1 = Address::generate(&env);
     let r2 = Address::generate(&env);
-    client.batch_payout(
-        &vec![&env, r1, r2],
-        &vec![&env, 100i128, 0i128],
-    );
+    client.batch_payout(&vec![&env, r1, r2], &vec![&env, 100i128, 0i128]);
 }
 
 /// Mismatched recipients/amounts vectors must be rejected.
@@ -399,7 +392,10 @@ fn test_active_payout_history_grows() {
     let r3 = Address::generate(&env);
 
     client.single_payout(&r1, &10_000);
-    client.batch_payout(&vec![&env, r2.clone(), r3.clone()], &vec![&env, 15_000i128, 5_000i128]);
+    client.batch_payout(
+        &vec![&env, r2.clone(), r3.clone()],
+        &vec![&env, 15_000i128, 5_000i128],
+    );
 
     let info = client.get_program_info();
     assert_eq!(info.payout_history.len(), 3);
@@ -561,7 +557,12 @@ fn test_fully_paused_query_still_works() {
     client.init_program(&program_id, &admin, &token_id, &admin, &None);
     client.lock_program_funds(&100_000);
     client.initialize_contract(&admin);
-    client.set_paused(&Some(true), &Some(true), &Some(true), &None::<soroban_sdk::String>);
+    client.set_paused(
+        &Some(true),
+        &Some(true),
+        &Some(true),
+        &None::<soroban_sdk::String>,
+    );
 
     let flags = client.get_pause_flags();
     assert!(flags.lock_paused);
@@ -633,7 +634,7 @@ fn test_drained_further_payout_rejected() {
     let (client, _admin, _cid, _token) = setup_active_program(&env, 50_000);
     let r = Address::generate(&env);
     client.single_payout(&r, &50_000); // drains to 0
-    client.single_payout(&r, &1);     // must panic
+    client.single_payout(&r, &1); // must panic
 }
 
 /// Re-locking funds after drain transitions back to Active (Drained → Active).
@@ -1299,6 +1300,86 @@ fn test_active_manual_schedule_release() {
     let history = client.get_program_release_history();
     assert_eq!(history.len(), 1);
     assert_eq!(history.get(0).unwrap().amount, 30_000);
+}
+
+// ---------------------------------------------------------------------------
+// Upgrade scenario tests for release schedules
+// ---------------------------------------------------------------------------
+
+/// Schedules created before an upgrade must survive the WASM swap and continue
+/// to function normally. This test simulates an upgrade by re-registering the
+/// contract under the same address and then exercising both automatic release
+/// logic and the schedule id counter.
+#[test]
+fn test_upgrade_preserves_schedule_and_allows_automatic_release() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // prepare program with funds and one schedule
+    let (mut client, _admin, contract_id, token_client) = setup_active_program(&env, 100_000);
+    let recipient = Address::generate(&env);
+    let now = env.ledger().timestamp();
+    let schedule1 = client.create_program_release_schedule(&recipient, &30_000, &(now + 500));
+
+    // sanity check before upgrade
+    let schedules = client.get_program_release_schedules();
+    assert_eq!(schedules.len(), 1);
+    assert_eq!(schedules.get(0).unwrap().release_timestamp, now + 500);
+
+    // simulate an upgrade by re‑registering the contract with the same ID
+    env.register_contract(&Some(contract_id.clone()), ProgramEscrowContract);
+    // rebuild client just to be explicit (same id)
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+
+    // state should still be available after upgrade
+    let schedules = client.get_program_release_schedules();
+    assert_eq!(schedules.len(), 1);
+    assert_eq!(schedules.get(0).unwrap().release_timestamp, now + 500);
+
+    // advance time and trigger automatic release
+    env.ledger().set_timestamp(now + 600);
+    let count = client.trigger_program_releases();
+    assert_eq!(count, 1);
+    assert_eq!(token_client.balance(&recipient), 30_000);
+
+    // history entry should exist
+    let history = client.get_program_release_history();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history.get(0).unwrap().amount, 30_000);
+
+    // next schedule id must continue from previous value
+    let schedule2 = client.create_program_release_schedule(&recipient, &10_000, &(now + 700));
+    assert_eq!(schedule2.schedule_id, schedule1.schedule_id + 1);
+}
+
+/// Manual schedule releases should also work after an upgrade and continue to
+/// accumulate correct history entries.
+#[test]
+fn test_upgrade_preserves_schedule_and_allows_manual_release() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (mut client, _admin, contract_id, token_client) = setup_active_program(&env, 100_000);
+    let recipient = Address::generate(&env);
+    let now = env.ledger().timestamp();
+    let schedule = client.create_program_release_schedule(&recipient, &20_000, &(now + 1000));
+
+    // simulate upgrade
+    env.register_contract(&Some(contract_id.clone()), ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+
+    // schedule should still be pending
+    let schedules = client.get_program_release_schedules();
+    assert_eq!(schedules.len(), 1);
+    assert!(!schedules.get(0).unwrap().released);
+
+    // manual release after upgrade
+    client.release_program_schedule_manual(&schedule.schedule_id);
+    assert_eq!(token_client.balance(&recipient), 20_000);
+
+    let history = client.get_program_release_history();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history.get(0).unwrap().release_type, ReleaseType::Manual);
 }
 
 // ---------------------------------------------------------------------------

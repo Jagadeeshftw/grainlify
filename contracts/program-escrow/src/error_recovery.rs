@@ -112,12 +112,16 @@ pub struct CircuitBreakerStatus {
 // ─────────────────────────────────────────────────────────
 
 /// Circuit is open; operation rejected without attempting.
+#[allow(dead_code)]
 pub const ERR_CIRCUIT_OPEN: u32 = 1001;
 /// Token transfer failed (transient).
+#[allow(dead_code)]
 pub const ERR_TRANSFER_FAILED: u32 = 1002;
 /// Insufficient contract balance.
+#[allow(dead_code)]
 pub const ERR_INSUFFICIENT_BALANCE: u32 = 1003;
 /// Operation succeeded — for logging.
+#[allow(dead_code)]
 pub const ERR_NONE: u32 = 0;
 
 // ─────────────────────────────────────────────────────────
@@ -189,6 +193,7 @@ pub fn get_status(env: &Env) -> CircuitBreakerStatus {
 ///
 /// Returns `Err(ERR_CIRCUIT_OPEN)` if the circuit is Open.
 /// Records that we are attempting an operation (no state change yet).
+#[allow(dead_code)]
 pub fn check_and_allow(env: &Env) -> Result<(), u32> {
     match get_state(env) {
         CircuitState::Open => {
@@ -204,6 +209,7 @@ pub fn check_and_allow(env: &Env) -> Result<(), u32> {
 /// In HalfOpen: increments success counter; closes the circuit when
 /// `success_threshold` is reached.
 /// In Closed: resets failure counter to 0.
+#[allow(dead_code)]
 pub fn record_success(env: &Env) {
     let state = get_state(env);
     match state {
@@ -238,6 +244,7 @@ pub fn record_success(env: &Env) {
 ///
 /// Increments the failure counter and opens the circuit if the threshold
 /// is exceeded. Records error log entry.
+#[allow(dead_code)]
 pub fn record_failure(
     env: &Env,
     program_id: String,
@@ -463,7 +470,7 @@ pub struct RetryResult {
     pub succeeded: bool,
     pub attempts: u32,
     pub final_error: u32, // ERR_NONE if succeeded
-    pub total_delay: u64,  // Total backoff delay accumulated
+    pub total_delay: u64, // Total backoff delay accumulated
 }
 
 /// Execute a fallible operation with retry, integrated with the circuit breaker.
@@ -480,6 +487,7 @@ pub struct RetryResult {
 /// `check_and_allow` / `record_success` / `record_failure` directly for
 /// real contract operations; this helper is useful for test scenarios and
 /// simulation.
+#[allow(dead_code)]
 pub fn execute_with_retry<F>(
     env: &Env,
     config: &RetryConfig,
@@ -556,6 +564,7 @@ fn emit_circuit_event(env: &Env, event_type: soroban_sdk::Symbol, value: u32) {
 // ─────────────────────────────────────────────────────────
 
 /// Verifies that the circuit breaker state is internally consistent.
+#[allow(dead_code)]
 pub fn verify_circuit_invariants(env: &Env) -> bool {
     let status = get_status(env);
     let config = get_config(env);

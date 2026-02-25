@@ -107,22 +107,6 @@
       ]
     ],
     [],
-    [
-      [
-        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
-        {
-          "function": {
-            "contract_fn": {
-              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "trigger_program_releases",
-              "args": []
-            }
-          },
-          "sub_invocations": []
-        }
-      ]
-    ],
-    [],
     [],
     [
       [
@@ -139,12 +123,33 @@
         }
       ]
     ],
+    [],
+    [
+      [
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+        {
+          "function": {
+            "contract_fn": {
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+              "function_name": "release_program_schedule_manual",
+              "args": [
+                {
+                  "u64": 2
+                }
+              ]
+            }
+          },
+          "sub_invocations": []
+        }
+      ]
+    ],
+    [],
     []
   ],
   "ledger": {
     "protocol_version": 21,
     "sequence_number": 0,
-    "timestamp": 250,
+    "timestamp": 150,
     "network_id": "0000000000000000000000000000000000000000000000000000000000000000",
     "base_reserve": 0,
     "min_persistent_entry_ttl": 4096,
@@ -304,37 +309,6 @@
                                         }
                                       }
                                     ]
-                                  },
-                                  {
-                                    "map": [
-                                      {
-                                        "key": {
-                                          "symbol": "amount"
-                                        },
-                                        "val": {
-                                          "i128": {
-                                            "hi": 0,
-                                            "lo": 50000
-                                          }
-                                        }
-                                      },
-                                      {
-                                        "key": {
-                                          "symbol": "recipient"
-                                        },
-                                        "val": {
-                                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
-                                        }
-                                      },
-                                      {
-                                        "key": {
-                                          "symbol": "timestamp"
-                                        },
-                                        "val": {
-                                          "u64": 250
-                                        }
-                                      }
-                                    ]
                                   }
                                 ]
                               }
@@ -473,7 +447,7 @@
                                   "val": {
                                     "vec": [
                                       {
-                                        "symbol": "Automatic"
+                                        "symbol": "Manual"
                                       }
                                     ]
                                   }
@@ -483,7 +457,7 @@
                                     "symbol": "released_at"
                                   },
                                   "val": {
-                                    "u64": 250
+                                    "u64": 150
                                   }
                                 },
                                 {
@@ -610,7 +584,7 @@
                                     "symbol": "released_at"
                                   },
                                   "val": {
-                                    "u64": 250
+                                    "u64": 150
                                   }
                                 },
                                 {
@@ -618,7 +592,7 @@
                                     "symbol": "released_by"
                                   },
                                   "val": {
-                                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                                   }
                                 },
                                 {
@@ -2160,6 +2134,172 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
               },
               {
+                "symbol": "get_all_prog_release_schedules"
+              }
+            ],
+            "data": "void"
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "fn_return"
+              },
+              {
+                "symbol": "get_all_prog_release_schedules"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "map": [
+                    {
+                      "key": {
+                        "symbol": "amount"
+                      },
+                      "val": {
+                        "i128": {
+                          "hi": 0,
+                          "lo": 50000
+                        }
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "recipient"
+                      },
+                      "val": {
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "release_timestamp"
+                      },
+                      "val": {
+                        "u64": 100
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "released"
+                      },
+                      "val": {
+                        "bool": false
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "released_at"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
+                        "symbol": "released_by"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
+                        "symbol": "schedule_id"
+                      },
+                      "val": {
+                        "u64": 1
+                      }
+                    }
+                  ]
+                },
+                {
+                  "map": [
+                    {
+                      "key": {
+                        "symbol": "amount"
+                      },
+                      "val": {
+                        "i128": {
+                          "hi": 0,
+                          "lo": 50000
+                        }
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "recipient"
+                      },
+                      "val": {
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "release_timestamp"
+                      },
+                      "val": {
+                        "u64": 200
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "released"
+                      },
+                      "val": {
+                        "bool": false
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "released_at"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
+                        "symbol": "released_by"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
+                        "symbol": "schedule_id"
+                      },
+                      "val": {
+                        "u64": 2
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": null,
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "fn_call"
+              },
+              {
+                "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
+              },
+              {
                 "symbol": "trigger_program_releases"
               }
             ],
@@ -2278,176 +2418,6 @@
             ],
             "data": {
               "u32": 1
-            }
-          }
-        }
-      },
-      "failed_call": false
-    },
-    {
-      "event": {
-        "ext": "v0",
-        "contract_id": null,
-        "type_": "diagnostic",
-        "body": {
-          "v0": {
-            "topics": [
-              {
-                "symbol": "fn_call"
-              },
-              {
-                "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
-              },
-              {
-                "symbol": "get_all_prog_release_schedules"
-              }
-            ],
-            "data": "void"
-          }
-        }
-      },
-      "failed_call": false
-    },
-    {
-      "event": {
-        "ext": "v0",
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
-        "type_": "diagnostic",
-        "body": {
-          "v0": {
-            "topics": [
-              {
-                "symbol": "fn_return"
-              },
-              {
-                "symbol": "get_all_prog_release_schedules"
-              }
-            ],
-            "data": {
-              "vec": [
-                {
-                  "map": [
-                    {
-                      "key": {
-                        "symbol": "amount"
-                      },
-                      "val": {
-                        "i128": {
-                          "hi": 0,
-                          "lo": 50000
-                        }
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "recipient"
-                      },
-                      "val": {
-                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "release_timestamp"
-                      },
-                      "val": {
-                        "u64": 100
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "released"
-                      },
-                      "val": {
-                        "bool": true
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "released_at"
-                      },
-                      "val": {
-                        "u64": 150
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "released_by"
-                      },
-                      "val": {
-                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "schedule_id"
-                      },
-                      "val": {
-                        "u64": 1
-                      }
-                    }
-                  ]
-                },
-                {
-                  "map": [
-                    {
-                      "key": {
-                        "symbol": "amount"
-                      },
-                      "val": {
-                        "i128": {
-                          "hi": 0,
-                          "lo": 50000
-                        }
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "recipient"
-                      },
-                      "val": {
-                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "release_timestamp"
-                      },
-                      "val": {
-                        "u64": 200
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "released"
-                      },
-                      "val": {
-                        "bool": false
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "released_at"
-                      },
-                      "val": "void"
-                    },
-                    {
-                      "key": {
-                        "symbol": "released_by"
-                      },
-                      "val": "void"
-                    },
-                    {
-                      "key": {
-                        "symbol": "schedule_id"
-                      },
-                      "val": {
-                        "u64": 2
-                      }
-                    }
-                  ]
-                }
-              ]
             }
           }
         }
@@ -2630,10 +2600,12 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
               },
               {
-                "symbol": "trigger_program_releases"
+                "symbol": "release_program_schedule_manual"
               }
             ],
-            "data": "void"
+            "data": {
+              "u64": 2
+            }
           }
         }
       },
@@ -2743,11 +2715,61 @@
                 "symbol": "fn_return"
               },
               {
-                "symbol": "trigger_program_releases"
+                "symbol": "release_program_schedule_manual"
+              }
+            ],
+            "data": "void"
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": null,
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "fn_call"
+              },
+              {
+                "bytes": "8011bbf4cdf04e5bc6ac886935b99aa4b2c0cabde133f9d7fb3e656799f0a896"
+              },
+              {
+                "symbol": "balance"
               }
             ],
             "data": {
-              "u32": 1
+              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "8011bbf4cdf04e5bc6ac886935b99aa4b2c0cabde133f9d7fb3e656799f0a896",
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "fn_return"
+              },
+              {
+                "symbol": "balance"
+              }
+            ],
+            "data": {
+              "i128": {
+                "hi": 0,
+                "lo": 50000
+              }
             }
           }
         }
@@ -2808,7 +2830,7 @@
                     "symbol": "payout_count"
                   },
                   "val": {
-                    "u32": 2
+                    "u32": 1
                   }
                 },
                 {
@@ -2844,37 +2866,6 @@
                             },
                             "val": {
                               "u64": 150
-                            }
-                          }
-                        ]
-                      },
-                      {
-                        "map": [
-                          {
-                            "key": {
-                              "symbol": "amount"
-                            },
-                            "val": {
-                              "i128": {
-                                "hi": 0,
-                                "lo": 50000
-                              }
-                            }
-                          },
-                          {
-                            "key": {
-                              "symbol": "recipient"
-                            },
-                            "val": {
-                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
-                            }
-                          },
-                          {
-                            "key": {
-                              "symbol": "timestamp"
-                            },
-                            "val": {
-                              "u64": 250
                             }
                           }
                         ]

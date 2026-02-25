@@ -9,6 +9,7 @@ A Soroban smart contract for managing program-level escrow funds for hackathons 
 - **Single Payout**: Transfer funds to a single recipient
 - **Batch Payout**: Transfer funds to multiple recipients in a single transaction
 - **Release Schedules (Vesting)**: Queue timestamp-based releases and execute them when due
+- **Upgrade Safety**: Scheduled releases and related state survive contract upgrades; both automatic and manual releases continue working post-upgrade
 - **Balance Tracking**: Accurate tracking of total funds and remaining balance
 - **Authorization**: Only authorized payout key can trigger payouts
 - **Event Emission**: All operations emit events for off-chain tracking
