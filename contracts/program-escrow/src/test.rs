@@ -2183,3 +2183,95 @@ fn test_release_schedules_persist_after_simulated_upgrade() {
     assert_eq!(stats_final.scheduled_count, 0);
     assert_eq!(stats_final.remaining_balance, 100_000);
 }
+
+#[test]
+fn test_multi_region_treasury_distribution() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin, token_client, token_admin) = setup_program(&env, 0);
+
+    client.initialize_contract(&admin);
+
+    // Initial mint to contract
+    token_admin.mint(&client.address, &100_000);
+    client.lock_program_funds(&100_000);
+
+    let region1 = Address::generate(&env);
+    let region2 = Address::generate(&env);
+
+    let destinations = vec![
+        &env,
+        TreasuryDestination {
+            destination: region1.clone(),
+            weight: 60,
+        },
+        TreasuryDestination {
+            destination: region2.clone(),
+            weight: 40,
+        },
+    ];
+
+    // Enable 10% fee (1000 basis points)
+    client.update_fee_config(&admin, &0, &1000, &destinations, &true);
+
+    let recipient = Address::generate(&env);
+    client.single_payout(&recipient, &10_000);
+
+    // 10% of 10,000 is 1,000.
+    // Region 1 (60%) should get 600.
+    // Region 2 (40%) should get 400.
+    assert_eq!(token_client.balance(&region1), 600);
+    assert_eq!(token_client.balance(&region2), 400);
+
+    // Remaining balance: 100,000 - 10,000 - 1,000 = 89,000
+    assert_eq!(client.get_remaining_balance(), 89_000);
+    assert_eq!(token_client.balance(&client.address), 89_000);
+}
+
+#[test]
+fn test_multi_region_treasury_distribution_rounding() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin, token_client, token_admin) = setup_program(&env, 10_000);
+
+    client.initialize_contract(&admin);
+
+    let region1 = Address::generate(&env);
+    let region2 = Address::generate(&env);
+    let region3 = Address::generate(&env);
+
+    let destinations = vec![
+        &env,
+        TreasuryDestination {
+            destination: region1.clone(),
+            weight: 1,
+        },
+        TreasuryDestination {
+            destination: region2.clone(),
+            weight: 1,
+        },
+        TreasuryDestination {
+            destination: region3.clone(),
+            weight: 1,
+        },
+    ];
+
+    // 10% fee
+    client.update_fee_config(&admin, &0, &1000, &destinations, &true);
+
+    // 10% of 1000 is 100.
+    // 100 / 3 = 33 with remainder 1.
+    // Destinations should get 33, 33, 34.
+    let recipient = Address::generate(&env);
+    client.single_payout(&recipient, &1000);
+
+    let total_fees = token_client.balance(&region1) + token_client.balance(&region2) + token_client.balance(&region3);
+    assert_eq!(total_fees, 100);
+    
+    // Check distribution
+    assert_eq!(token_client.balance(&region1), 33);
+    assert_eq!(token_client.balance(&region2), 33);
+    assert_eq!(token_client.balance(&region3), 34); // Remainder
+}
