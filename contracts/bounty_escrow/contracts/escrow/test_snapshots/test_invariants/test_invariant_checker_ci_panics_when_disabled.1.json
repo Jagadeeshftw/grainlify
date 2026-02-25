@@ -811,7 +811,7 @@
             "data": {
               "vec": [
                 {
-                  "string": "caught panic 'Invariant checks disabled' from contract function 'Symbol(obj#179)'"
+                  "string": "caught panic 'Invariant checks disabled' from contract function 'Symbol(obj#181)'"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"

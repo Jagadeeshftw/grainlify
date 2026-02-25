@@ -794,7 +794,7 @@
             "data": {
               "vec": [
                 {
-                  "string": "caught panic 'Invariant violated: escrow state inconsistent' from contract function 'Symbol(obj#169)'"
+                  "string": "caught panic 'Invariant violated: escrow state inconsistent' from contract function 'Symbol(obj#171)'"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"

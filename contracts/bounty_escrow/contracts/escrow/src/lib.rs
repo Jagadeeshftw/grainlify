@@ -11,6 +11,8 @@ pub mod token_math;
 mod reentrancy_guard;
 mod test_cross_contract_interface;
 #[cfg(test)]
+mod test_multi_token_fees;
+#[cfg(test)]
 mod test_rbac;
 mod traits;
 
@@ -398,11 +400,11 @@ pub enum Error {
     CapabilityAmountExceeded = 27,
     CapabilityUsesExhausted = 28,
     CapabilityExceedsAuthority = 29,
-    /// Returned when there are no untracked tokens to rescue
-    NoUntrackedBalance = 30,
-    /// Returned when treasury address is not set
-    TreasuryNotSet = 31,
     InvalidAssetId = 30,
+    /// Returned when there are no untracked tokens to rescue
+    NoUntrackedBalance = 32,
+    /// Returned when treasury address is not set
+    TreasuryNotSet = 33,
 }
 
 #[contracttype]
