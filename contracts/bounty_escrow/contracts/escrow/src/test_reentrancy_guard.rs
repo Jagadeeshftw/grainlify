@@ -167,8 +167,10 @@ fn test_sequential_claim_calls_succeed() {
     s.escrow.lock_funds(&s.depositor, &2_u64, &2_000, &deadline);
 
     s.escrow.set_claim_window(&500_u64);
-    s.escrow.authorize_claim(&1_u64, &s.contributor);
-    s.escrow.authorize_claim(&2_u64, &s.contributor);
+    s.escrow
+        .authorize_claim(&1_u64, &s.contributor, &DisputeReason::Other);
+    s.escrow
+        .authorize_claim(&2_u64, &s.contributor, &DisputeReason::Other);
 
     // Both claims within window must succeed
     s.escrow.claim(&1_u64);
@@ -225,7 +227,8 @@ fn test_claim_updates_state_before_transfer() {
     s.escrow
         .lock_funds(&s.depositor, &1_u64, &amount, &deadline);
     s.escrow.set_claim_window(&500_u64);
-    s.escrow.authorize_claim(&1_u64, &s.contributor);
+    s.escrow
+        .authorize_claim(&1_u64, &s.contributor, &DisputeReason::Other);
     s.escrow.claim(&1_u64);
 
     let info = s.escrow.get_escrow_info(&1_u64);

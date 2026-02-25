@@ -1,0 +1,152 @@
+# Makefile for End-to-End Upgrade and Migration Tests
+# Run from contracts/ directory
+
+.PHONY: all test-e2e-all test-core test-bounty test-program clean help
+
+# Colors for output
+GREEN := \033[0;32m
+YELLOW := \033[0;33m
+NC := \033[0m # No Color
+
+all: test-e2e-all
+
+help:
+	@echo "$(GREEN)Grainlify E2E Upgrade Test Suite$(NC)"
+	@echo ""
+	@echo "Available targets:"
+	@echo "  $(YELLOW)test-e2e-all$(NC)      - Run all E2E upgrade tests"
+	@echo "  $(YELLOW)test-core$(NC)         - Run Grainlify Core E2E tests"
+	@echo "  $(YELLOW)test-bounty$(NC)       - Run Bounty Escrow E2E tests"
+	@echo "  $(YELLOW)test-program$(NC)      - Run Program Escrow E2E tests"
+	@echo "  $(YELLOW)test-integration$(NC)  - Run integration tests"
+	@echo "  $(YELLOW)build-all$(NC)         - Build all contracts"
+	@echo "  $(YELLOW)clean$(NC)             - Clean all build artifacts"
+	@echo "  $(YELLOW)help$(NC)              - Show this help message"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make -f Makefile.e2e test-e2e-all"
+	@echo "  make -f Makefile.e2e test-core"
+
+# Build all contracts
+build-all:
+	@echo "$(GREEN)Building all contracts...$(NC)"
+	@cd grainlify-core && cargo build --target wasm32-unknown-unknown --release
+	@cd bounty_escrow/contracts/escrow && cargo build --target wasm32-unknown-unknown --release
+	@cd program-escrow && cargo build --target wasm32-unknown-unknown --release
+	@echo "$(GREEN)✅ All contracts built$(NC)"
+
+# Run all E2E tests
+test-e2e-all: test-core test-bounty test-program test-integration
+	@echo ""
+	@echo "$(GREEN)========================================$(NC)"
+	@echo "$(GREEN)✅ All E2E Upgrade Tests Completed$(NC)"
+	@echo "$(GREEN)========================================$(NC)"
+
+# Grainlify Core E2E Tests
+test-core:
+	@echo ""
+	@echo "$(GREEN)========================================$(NC)"
+	@echo "$(GREEN)Running Grainlify Core E2E Tests$(NC)"
+	@echo "$(GREEN)========================================$(NC)"
+	@cd grainlify-core && cargo build --target wasm32-unknown-unknown --release
+	@cd grainlify-core && cargo test --lib test::e2e_upgrade_migration_tests -- --nocapture --test-threads=1
+	@cd grainlify-core && cargo test --lib test::upgrade_rollback_tests -- --nocapture --test-threads=1
+	@cd grainlify-core && cargo test migration_hook_tests -- --nocapture
+	@echo "$(GREEN)✅ Grainlify Core tests passed$(NC)"
+
+# Bounty Escrow E2E Tests
+test-bounty:
+	@echo ""
+	@echo "$(GREEN)========================================$(NC)"
+	@echo "$(GREEN)Running Bounty Escrow E2E Tests$(NC)"
+	@echo "$(GREEN)========================================$(NC)"
+	@cd bounty_escrow/contracts/escrow && cargo build --target wasm32-unknown-unknown --release
+	@cd bounty_escrow/contracts/escrow && cargo test test_e2e_upgrade_with_pause -- --nocapture --test-threads=1
+	@cd bounty_escrow/contracts/escrow && cargo test test_pause -- --nocapture
+	@cd bounty_escrow/contracts/escrow && cargo test emergency_withdraw -- --nocapture
+	@echo "$(GREEN)✅ Bounty Escrow tests passed$(NC)"
+
+# Program Escrow E2E Tests
+test-program:
+	@echo ""
+	@echo "$(GREEN)========================================$(NC)"
+	@echo "$(GREEN)Running Program Escrow E2E Tests$(NC)"
+	@echo "$(GREEN)========================================$(NC)"
+	@cd program-escrow && cargo build --target wasm32-unknown-unknown --release
+	@cd program-escrow && cargo test test_circuit_breaker_audit -- --nocapture
+	@cd program-escrow && cargo test error_recovery_tests -- --nocapture
+	@cd program-escrow && cargo test test_full_lifecycle -- --nocapture
+	@echo "$(GREEN)✅ Program Escrow tests passed$(NC)"
+
+# Integration Tests
+test-integration:
+	@echo ""
+	@echo "$(GREEN)========================================$(NC)"
+	@echo "$(GREEN)Running Integration Tests$(NC)"
+	@echo "$(GREEN)========================================$(NC)"
+	@if [ -f "integration_tests.rs" ]; then \
+		cargo test --test integration_tests -- --nocapture; \
+		echo "$(GREEN)✅ Integration tests passed$(NC)"; \
+	else \
+		echo "$(YELLOW)⚠️  No integration tests found, skipping$(NC)"; \
+	fi
+
+# Quick test (no build)
+test-quick:
+	@echo "$(YELLOW)Running quick tests (no rebuild)...$(NC)"
+	@cd grainlify-core && cargo test --lib test::e2e_upgrade_migration_tests -- --test-threads=1
+	@cd bounty_escrow/contracts/escrow && cargo test test_e2e_upgrade_with_pause -- --test-threads=1
+	@cd program-escrow && cargo test test_circuit_breaker_audit
+
+# Verbose test output
+test-verbose:
+	@echo "$(GREEN)Running tests with verbose output...$(NC)"
+	@cd grainlify-core && cargo test --lib test::e2e_upgrade_migration_tests -- --nocapture --test-threads=1 --show-output
+	@cd bounty_escrow/contracts/escrow && cargo test test_e2e_upgrade_with_pause -- --nocapture --test-threads=1 --show-output
+
+# Test specific scenario
+test-scenario-%:
+	@echo "$(GREEN)Running scenario: $*$(NC)"
+	@cd grainlify-core && cargo test $* -- --nocapture
+	@cd bounty_escrow/contracts/escrow && cargo test $* -- --nocapture
+	@cd program-escrow && cargo test $* -- --nocapture
+
+# Clean all build artifacts
+clean:
+	@echo "$(YELLOW)Cleaning build artifacts...$(NC)"
+	@cd grainlify-core && cargo clean
+	@cd bounty_escrow/contracts/escrow && cargo clean
+	@cd program-escrow && cargo clean
+	@echo "$(GREEN)✅ Clean complete$(NC)"
+
+# Check test coverage
+coverage:
+	@echo "$(GREEN)Generating test coverage report...$(NC)"
+	@cd grainlify-core && cargo tarpaulin --out Html --output-dir coverage
+	@cd bounty_escrow/contracts/escrow && cargo tarpaulin --out Html --output-dir coverage
+	@cd program-escrow && cargo tarpaulin --out Html --output-dir coverage
+	@echo "$(GREEN)✅ Coverage reports generated$(NC)"
+
+# Format all code
+fmt:
+	@echo "$(GREEN)Formatting code...$(NC)"
+	@cd grainlify-core && cargo fmt --all
+	@cd bounty_escrow/contracts/escrow && cargo fmt --all
+	@cd program-escrow && cargo fmt --all
+	@echo "$(GREEN)✅ Formatting complete$(NC)"
+
+# Lint all code
+lint:
+	@echo "$(GREEN)Running linter...$(NC)"
+	@cd grainlify-core && cargo clippy -- -D warnings
+	@cd bounty_escrow/contracts/escrow && cargo clippy -- -D warnings
+	@cd program-escrow && cargo clippy -- -D warnings
+	@echo "$(GREEN)✅ Linting complete$(NC)"
+
+# Pre-commit checks
+pre-commit: fmt lint test-e2e-all
+	@echo "$(GREEN)✅ Pre-commit checks passed$(NC)"
+
+# CI simulation
+ci: build-all test-e2e-all
+	@echo "$(GREEN)✅ CI simulation complete$(NC)"

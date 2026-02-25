@@ -1580,8 +1580,15 @@ impl ProgramEscrowContract {
             .unwrap_or_else(|| panic!("Program not initialized"));
 
         // Update balances
-        program_data.total_funds += amount;
-        program_data.remaining_balance += amount;
+        program_data.total_funds = program_data
+            .total_funds
+            .checked_add(amount)
+            .unwrap_or_else(|| panic!("Amount overflow on total_funds"));
+
+        program_data.remaining_balance = program_data
+            .remaining_balance
+            .checked_add(amount)
+            .unwrap_or_else(|| panic!("Amount overflow on remaining_balance"));
 
         // Store updated data
         env.storage().instance().set(&PROGRAM_DATA, &program_data);
@@ -1996,7 +2003,10 @@ impl ProgramEscrowContract {
 
         // Update program data
         let mut updated_data = program_data.clone();
-        updated_data.remaining_balance -= total_payout; // Total includes fees
+        updated_data.remaining_balance = updated_data
+            .remaining_balance
+            .checked_sub(total_payout)
+            .unwrap_or_else(|| panic!("Insufficient remaining balance"));
         updated_data.payout_history = updated_history;
 
         // Store updated data
@@ -2174,7 +2184,10 @@ impl ProgramEscrowContract {
 
         // Update program data
         let mut updated_data = program_data.clone();
-        updated_data.remaining_balance -= amount; // Total amount (includes fee)
+        updated_data.remaining_balance = updated_data
+            .remaining_balance
+            .checked_sub(amount)
+            .unwrap_or_else(|| panic!("Insufficient remaining balance"));
         updated_data.payout_history = updated_history;
 
         // Store updated data
@@ -2270,10 +2283,12 @@ impl ProgramEscrowContract {
             panic!("Amount must be greater than zero");
         }
 
-        // Validate timestamp
-        if release_timestamp <= env.ledger().timestamp() {
-            panic!("Release timestamp must be in the future");
-        }
+    env.storage().instance().set(&SCHEDULES, &schedules);
+    env.storage()
+        .instance()
+        let next_id = schedule_id
+            .checked_add(1)
+            .unwrap_or_else(|| panic!("Schedule ID overflow"));
 
         // Check sufficient remaining balance
         let scheduled_total = get_program_total_scheduled_amount(&env, &program_id);
@@ -2353,173 +2368,18 @@ impl ProgramEscrowContract {
             &schedule,
         );
 
-        // Update next schedule ID
-        env.storage().persistent().set(
-            &DataKey::NextScheduleId(program_id.clone()),
-            &(schedule_id + 1),
-        );
-
-        // Emit program schedule created event
-        env.events().publish(
-            (PROG_SCHEDULE_CREATED,),
-            ProgramScheduleCreated {
-                program_id: program_id.clone(),
-                schedule_id,
-                amount,
-                release_timestamp,
-                recipient: recipient.clone(),
-                created_by: program_data.authorized_payout_key.clone(),
-            },
-        );
-
-        // Track successful operation
-        monitoring::track_operation(
-            &env,
-            symbol_short!("create_p"),
-            program_data.authorized_payout_key,
-            true,
-        );
-
-        // Track performance
-        let duration = env.ledger().timestamp().saturating_sub(start);
-        monitoring::emit_performance(&env, symbol_short!("create_p"), duration);
-
-        // Return updated program data
-        let updated_data: ProgramData = env.storage().instance().get(&program_key).unwrap();
-        updated_data
-    }
-
-    /// Automatically releases funds for program schedules that are due.
-    /// Can be called by anyone after the release timestamp has passed.
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `program_id` - The program to check for due schedules
-    /// * `schedule_id` - The specific schedule to release
-    ///
-    /// # Panics
-    /// * If program doesn't exist
-    /// * If schedule doesn't exist
-    /// * If schedule is already released
-    /// * If schedule is not yet due
-    ///
-    /// # State Changes
-    /// - Transfers tokens to recipient
-    /// - Updates schedule status to released
-    /// - Adds to release history
-    /// - Updates program remaining balance
-    /// - Emits ScheduleReleased event
-    ///
-    /// # Example
-    /// ```rust
-    /// // Anyone can call this after the timestamp
-    /// escrow_client.release_program_schedule_automatic(&"Hackathon2024", &1);
-    /// ```
-    pub fn release_prog_schedule_automatic(env: Env, program_id: String, schedule_id: u64) {
-        let start = env.ledger().timestamp();
-        let caller = env.current_contract_address();
-
-        // Check if contract is paused
-        if Self::is_paused_internal(&env) {
-            panic!("Contract is paused");
-        }
-
-        // Get program data
-        let program_key = DataKey::Program(program_id.clone());
-        let program_data: ProgramData = env
-            .storage()
-            .instance()
-            .get(&program_key)
-            .unwrap_or_else(|| panic!("Program not found"));
-
-        // Get schedule
-        if !env
-            .storage()
-            .instance()
-            .get(&program_key)
-            .unwrap_or_else(|| panic!("Program not found"));
-
-        Self::assert_dependencies_satisfied(&env, &program_id);
-
-        // Get schedule
-        if !env
-            .storage()
-            .persistent()
-            .has(&DataKey::ReleaseSchedule(program_id.clone(), schedule_id))
-        {
-            panic!("Schedule not found");
-        }
-
-        let mut schedule: ProgramReleaseSchedule = env
-            .get(&SCHEDULES)
-            .unwrap_or_else(|| Vec::new(&env));
-        let mut release_history: Vec<ProgramReleaseHistory> = env
-            .storage()
-            .persistent()
-            .get(&DataKey::ReleaseSchedule(program_id.clone(), schedule_id))
-            .unwrap();
-
-        // Check if already released
-        if schedule.released {
-            panic!("Schedule already released");
-        }
-
-        // Check if due for release
-        let now = env.ledger().timestamp();
-        if now < schedule.release_timestamp {
-            panic!("Schedule not yet due for release");
-        }
-
-        // Get token client
-        let contract_address = env.current_contract_address();
-        let token_client = token::Client::new(&env, &program_data.token_address);
-
-        // Transfer funds
-        token_client.transfer(&contract_address, &schedule.recipient, &schedule.amount);
-
-        // Update schedule
-        schedule.released = true;
-        schedule.released_at = Some(now);
-        schedule.released_by = Some(env.current_contract_address());
-
-        // Update program data
-        let mut updated_data = program_data.clone();
-        updated_data.remaining_balance -= schedule.amount;
-
-        // Add to release history
-        let history_entry = ProgramReleaseHistory {
-            schedule_id,
-            program_id: program_id.clone(),
-            amount: schedule.amount,
-            recipient: schedule.recipient.clone(),
-            released_at: now,
-            released_by: env.current_contract_address(),
-            release_type: ReleaseType::Automatic,
-        };
-
-        let mut history: Vec<ProgramReleaseHistory> = env
-            .storage()
-            .persistent()
-            .get(&DataKey::ReleaseHistory(program_id.clone()))
-            .unwrap_or(vec![&env]);
-        history.push_back(history_entry);
-
-        // Store updates
-        env.storage().persistent().set(
-            &DataKey::ReleaseSchedule(program_id.clone(), schedule_id),
-            &schedule,
-        );
-        env.storage().instance().set(&program_key, &updated_data);
-        env.storage()
-            .persistent()
-            .set(&DataKey::ReleaseHistory(program_id.clone()), &history);
-
-        // Emit program schedule released event
-        env.events().publish(
-            (PROG_SCHEDULE_RELEASED,),
-            ProgramScheduleReleased {
-                program_id: program_id.clone(),
-                schedule_id,
+            program_data.remaining_balance = program_data
+                .remaining_balance
+                .checked_sub(schedule.amount)
+                .unwrap_or_else(|| panic!("Insufficient remaining balance"));
+            program_data.payout_history.push_back(PayoutRecord {
+                recipient: schedule.recipient.clone(),
+                amount: schedule.amount,
+                timestamp: now,
+            });
+            release_history.push_back(ProgramReleaseHistory {
+                schedule_id: schedule.schedule_id,
+                recipient: schedule.recipient,
                 amount: schedule.amount,
                 recipient: schedule.recipient.clone(),
                 released_at: now,
@@ -3077,12 +2937,19 @@ impl ProgramEscrowContract {
             None => anti_abuse::clear_admin(&env),
         }
 
-        env.storage().instance().set(&DataKey::IsPaused, &snapshot.is_paused);
-
-        env.events().publish(
-            (symbol_short!("cfg_snap"), symbol_short!("restore")),
-            (snapshot_id, env.ledger().timestamp()),
-        );
+    ProgramAggregateStats {
+        total_funds: program_data.total_funds,
+        remaining_balance: program_data.remaining_balance,
+        total_paid_out: program_data
+                            .total_funds
+                            .checked_sub(program_data.remaining_balance)
+                            .unwrap_or_else(|| panic!("Arithmetic error in total_paid_out"))
+        authorized_payout_key: program_data.authorized_payout_key.clone(),
+        payout_history: program_data.payout_history.clone(),
+        token_address: program_data.token_address.clone(),
+        payout_count: program_data.payout_history.len(),
+        scheduled_count,
+        released_count,
     }
 
     // ========================================================================
@@ -3268,7 +3135,7 @@ fn get_program_total_scheduled_amount(env: &Env, program_id: &String) -> i128 {
                 .get(&DataKey::ReleaseSchedule(program_id.clone(), schedule_id))
                 .unwrap();
             if !schedule.released {
-                total += schedule.amount;
+                total = total.checked_add(schedule.amount).unwrap_or_else(|| panic!("Scheduled amount overflow"));
             }
         }
     }
@@ -3717,19 +3584,16 @@ mod test {
 
         env.storage().instance().set(&SCHEDULES, &schedules);
 
-        client.create_program_release_schedule(
-            &program_id,
-            &amount2,
-            &base_timestamp,
-            &winner2.clone(),
-        );
-
-        client.create_program_release_schedule(
-            &program_id,
-            &amount3,
-            &base_timestamp,
-            &winner3.clone(),
-        );
+        // Write to release history
+        if let Some(s) = released_schedule {
+            let mut updated_program_data = program_data.clone();
+            updated_program_data.remaining_balance = updated_program_data
+                .remaining_balance
+                .checked_sub(s.amount)
+                .unwrap_or_else(|| panic!("Insufficient remaining balance"));
+            env.storage()
+                .instance()
+                .set(&PROGRAM_DATA, &updated_program_data);
 
         // Advance time to after release timestamp
         env.ledger().set_timestamp(base_timestamp + 1);

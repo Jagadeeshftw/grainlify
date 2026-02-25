@@ -24,7 +24,7 @@ fn create_token_contract<'a>(
 fn test_error_codes_are_stable() {
     // This test documents the expected error code numbers.
     // If this test fails, you've changed error codes which is BREAKING.
-    
+
     assert_eq!(Error::AlreadyInitialized as u32, 1);
     assert_eq!(Error::NotInitialized as u32, 2);
     assert_eq!(Error::BountyExists as u32, 3);
@@ -53,25 +53,25 @@ fn test_core_function_signatures_stable() {
     let env = Env::default();
     let contract_id = env.register_contract(None, BountyEscrowContract);
     let client = BountyEscrowContractClient::new(&env, &contract_id);
-    
+
     let admin = Address::generate(&env);
     let depositor = Address::generate(&env);
     let contributor = Address::generate(&env);
-    
+
     env.mock_all_auths();
-    
+
     let token_admin = Address::generate(&env);
     let (token, _token_client, token_admin_client) = create_token_contract(&env, &token_admin);
-    
+
     // These function calls should compile without errors.
     // If signatures change, this test will fail to compile.
-    
+
     // Core functions
     client.init(&admin, &token);
     token_admin_client.mint(&depositor, &1000);
     client.lock_funds(&depositor, &1, &1000, &100);
     client.release_funds(&1, &contributor);
-    
+
     // Query functions
     let _ = client.get_escrow_info(&1);
     let _ = client.get_balance();
@@ -84,24 +84,24 @@ fn test_storage_keys_accessible() {
     let env = Env::default();
     let contract_id = env.register_contract(None, BountyEscrowContract);
     let client = BountyEscrowContractClient::new(&env, &contract_id);
-    
+
     let admin = Address::generate(&env);
     let depositor = Address::generate(&env);
-    
+
     env.mock_all_auths();
-    
+
     let token_admin = Address::generate(&env);
     let (token, _token_client, token_admin_client) = create_token_contract(&env, &token_admin);
-    
+
     // Initialize and create escrow
     client.init(&admin, &token);
     token_admin_client.mint(&depositor, &1000);
     client.lock_funds(&depositor, &1, &1000, &100);
-    
+
     // Verify we can still access stored data
     let escrow = client.get_escrow_info(&1);
     assert_eq!(escrow.amount, 1000);
-    
+
     let balance = client.get_balance();
     assert_eq!(balance, 1000);
 }
@@ -112,22 +112,22 @@ fn test_old_client_compatibility() {
     let env = Env::default();
     let contract_id = env.register_contract(None, BountyEscrowContract);
     let client = BountyEscrowContractClient::new(&env, &contract_id);
-    
+
     let admin = Address::generate(&env);
     let depositor = Address::generate(&env);
     let contributor = Address::generate(&env);
-    
+
     env.mock_all_auths();
-    
+
     let token_admin = Address::generate(&env);
     let (token, _token_client, token_admin_client) = create_token_contract(&env, &token_admin);
-    
+
     // Simulate old client code that doesn't use new features
     client.init(&admin, &token);
     token_admin_client.mint(&depositor, &1000);
     client.lock_funds(&depositor, &1, &1000, &100);
     client.release_funds(&1, &contributor);
-    
+
     // Old client code should work without errors
     let escrow = client.get_escrow_info(&1);
     assert_eq!(escrow.status, crate::EscrowStatus::Released);
@@ -139,19 +139,19 @@ fn test_optional_parameters_backward_compatible() {
     let env = Env::default();
     let contract_id = env.register_contract(None, BountyEscrowContract);
     let client = BountyEscrowContractClient::new(&env, &contract_id);
-    
+
     let admin = Address::generate(&env);
-    
+
     env.mock_all_auths();
-    
+
     let token_admin = Address::generate(&env);
     let (token, _token_client, _token_admin_client) = create_token_contract(&env, &token_admin);
-    
+
     client.init(&admin, &token);
-    
+
     // Test that update_fee_config works with None values (optional params)
     client.update_fee_config(&None, &None, &None, &None);
-    
+
     // Config should remain unchanged
     let config = client.get_fee_config();
     assert_eq!(config.lock_fee_rate, 0);
@@ -164,27 +164,27 @@ fn test_new_features_dont_break_existing_workflows() {
     let env = Env::default();
     let contract_id = env.register_contract(None, BountyEscrowContract);
     let client = BountyEscrowContractClient::new(&env, &contract_id);
-    
+
     let admin = Address::generate(&env);
     let depositor = Address::generate(&env);
     let contributor = Address::generate(&env);
-    
+
     env.mock_all_auths();
-    
+
     let token_admin = Address::generate(&env);
     let (token, _token_client, token_admin_client) = create_token_contract(&env, &token_admin);
-    
+
     // Standard workflow without using new features
     client.init(&admin, &token);
     token_admin_client.mint(&depositor, &1000);
     client.lock_funds(&depositor, &1, &1000, &100);
-    
+
     // New feature: amount policy (should not affect existing escrows)
     client.set_amount_policy(&admin, &100, &10000);
-    
+
     // Old escrow should still be releasable
     client.release_funds(&1, &contributor);
-    
+
     let escrow = client.get_escrow_info(&1);
     assert_eq!(escrow.status, crate::EscrowStatus::Released);
 }
@@ -194,23 +194,23 @@ fn test_new_features_dont_break_existing_workflows() {
 fn test_deprecated_features_still_functional() {
     // This test ensures that deprecated features continue to work
     // until they are removed in a MAJOR version bump.
-    
+
     let env = Env::default();
     let contract_id = env.register_contract(None, BountyEscrowContract);
     let client = BountyEscrowContractClient::new(&env, &contract_id);
-    
+
     let admin = Address::generate(&env);
-    
+
     env.mock_all_auths();
-    
+
     let token_admin = Address::generate(&env);
     let (token, _token_client, _token_admin_client) = create_token_contract(&env, &token_admin);
-    
+
     client.init(&admin, &token);
-    
+
     // If any functions are deprecated, test them here
     // Example: client.old_function_name(...)
-    
+
     // Currently no deprecated functions, but this test
     // serves as a template for future deprecations
 }

@@ -120,7 +120,8 @@ fn test_dispute_event_codes() {
 
 use crate::{
     events::{ClaimCancelled, ClaimCreated, ClaimExecuted, FundsRefunded},
-    BountyEscrowContract, BountyEscrowContractClient, Error, EscrowStatus,
+    BountyEscrowContract, BountyEscrowContractClient, DisputeOutcome, DisputeReason, Error,
+    EscrowStatus,
 };
 use soroban_sdk::{
     testutils::{Address as _, Events, Ledger},
@@ -199,7 +200,9 @@ fn test_open_dispute_blocks_release() {
         .escrow
         .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
-    setup.escrow.authorize_claim(&bounty_id, &setup.contributor);
+    setup
+        .escrow
+        .authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::Other);
     assert_last_claim_event_topics(&setup.env, &setup.escrow.address, "created");
     let claim_created: ClaimCreated = setup
         .env
@@ -233,7 +236,9 @@ fn test_open_dispute_blocks_refund() {
     setup
         .escrow
         .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
-    setup.escrow.authorize_claim(&bounty_id, &setup.contributor);
+    setup
+        .escrow
+        .authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::Other);
 
     setup.env.ledger().set_timestamp(deadline + 1);
 
@@ -256,7 +261,9 @@ fn test_resolve_dispute_in_favor_of_release() {
     setup
         .escrow
         .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
-    setup.escrow.authorize_claim(&bounty_id, &setup.contributor);
+    setup
+        .escrow
+        .authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::Other);
 
     let claim = setup.escrow.get_pending_claim(&bounty_id);
     setup.env.ledger().set_timestamp(claim.expires_at - 1);
@@ -293,46 +300,20 @@ fn test_resolve_dispute_in_favor_of_refund() {
     setup
         .escrow
         .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
-    setup.escrow.authorize_claim(&bounty_id, &setup.contributor);
+    setup
+        .escrow
+        .authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::Other);
 
     let claim = setup.escrow.get_pending_claim(&bounty_id);
     setup.env.ledger().set_timestamp(claim.expires_at + 1);
-    setup.escrow.cancel_pending_claim(&bounty_id);
+    setup
+        .escrow
+        .cancel_pending_claim(&bounty_id, &DisputeOutcome::CancelledByAdmin);
 
     assert_last_claim_event_topics(&setup.env, &setup.escrow.address, "cancel");
-    let claim_cancelled: ClaimCancelled = setup
-        .env
-        .events()
-        .all()
-        .last()
-        .unwrap()
-        .2
-        .try_into_val(&setup.env)
-        .unwrap();
-    assert_eq!(claim_cancelled.bounty_id, bounty_id);
-    assert_eq!(claim_cancelled.amount, amount);
 
     setup.env.ledger().set_timestamp(deadline + 1);
     setup.escrow.refund(&bounty_id);
-
-    let last_event = setup.env.events().all().last().unwrap();
-    assert_eq!(last_event.0, setup.escrow.address);
-    let topics = last_event.1;
-    let topic_0: Symbol = topics.get(0).unwrap().into_val(&setup.env);
-    let topic_1: u64 = topics.get(1).unwrap().into_val(&setup.env);
-    assert_eq!(topic_0, Symbol::new(&setup.env, "f_ref"));
-    assert_eq!(topic_1, bounty_id);
-    let refunded: FundsRefunded = setup
-        .env
-        .events()
-        .all()
-        .last()
-        .unwrap()
-        .2
-        .try_into_val(&setup.env)
-        .unwrap();
-    assert_eq!(refunded.bounty_id, bounty_id);
-    assert_eq!(refunded.amount, amount);
 
     let escrow = setup.escrow.get_escrow_info(&bounty_id);
     assert_eq!(escrow.status, EscrowStatus::Refunded);

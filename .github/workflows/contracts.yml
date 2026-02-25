@@ -25,6 +25,7 @@ jobs:
       run: |
         source $HOME/.cargo/env
         rustup target add wasm32v1-none
+        rustup target add wasm32-unknown-unknown
 
     - name: Install Stellar CLI with Homebrew
       run: |

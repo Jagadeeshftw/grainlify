@@ -748,13 +748,7 @@ mod test_claim_tickets {
         create_locked_bounty(&env, bounty_id, admin, amount, deadline);
 
         let ticket_id = contract
-            .issue_claim_ticket(
-                env.clone(),
-                bounty_id,
-                beneficiary,
-                amount,
-                ticket_expiry,
-            )
+            .issue_claim_ticket(env.clone(), bounty_id, beneficiary, amount, ticket_expiry)
             .unwrap();
 
         // Try to claim as different address (in test env with mock_all_auths,

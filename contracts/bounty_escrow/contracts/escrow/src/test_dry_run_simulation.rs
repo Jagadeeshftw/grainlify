@@ -367,7 +367,8 @@ fn test_simulate_refund_with_pending_claim_fails() {
 
     s.escrow.lock_funds(&s.depositor, &1_u64, &1_000, &deadline);
     s.escrow.set_claim_window(&500_u64);
-    s.escrow.authorize_claim(&1_u64, &s.contributor);
+    s.escrow
+        .authorize_claim(&1_u64, &s.contributor, &DisputeReason::Other);
 
     s.env.ledger().set_timestamp(deadline + 1);
 

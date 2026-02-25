@@ -42,12 +42,7 @@ fn test_network_initialization() {
     let chain_id = soroban_sdk::String::from_str(&env, "stellar");
     let network_id = soroban_sdk::String::from_str(&env, "testnet");
 
-    client.init_with_network(
-        &admin,
-        &asset::AssetId::Stellar(token),
-        &chain_id,
-        &network_id,
-    );
+    client.init_with_network(&admin, &token, &chain_id, &network_id);
 
     // Verify network configuration
     let retrieved_chain = client.get_chain_id();
@@ -70,12 +65,7 @@ fn test_network_info_getter() {
     let chain_id = soroban_sdk::String::from_str(&env, "ethereum");
     let network_id = soroban_sdk::String::from_str(&env, "mainnet");
 
-    client.init_with_network(
-        &admin,
-        &asset::AssetId::Stellar(token),
-        &chain_id,
-        &network_id,
-    );
+    client.init_with_network(&admin, &token, &chain_id, &network_id);
 
     // Test tuple getter
     let (chain, network) = client.get_network_info();
@@ -84,7 +74,7 @@ fn test_network_info_getter() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #2)")] // AlreadyInitialized error
+#[should_panic(expected = "Error(Contract, #1)")] // AlreadyInitialized error
 fn test_cannot_reinitialize_network_config() {
     let env = Env::default();
     env.mock_all_auths();
@@ -99,20 +89,10 @@ fn test_cannot_reinitialize_network_config() {
     let network_id = soroban_sdk::String::from_str(&env, "testnet");
 
     // First initialization should succeed
-    client.init_with_network(
-        &admin1,
-        &asset::AssetId::Stellar(token.clone()),
-        &chain_id,
-        &network_id,
-    );
+    client.init_with_network(&admin1, &token.clone(), &chain_id, &network_id);
 
     // Second initialization should panic
-    client.init_with_network(
-        &admin2,
-        &asset::AssetId::Stellar(token),
-        &chain_id,
-        &network_id,
-    );
+    client.init_with_network(&admin2, &token, &chain_id, &network_id);
 }
 
 #[test]
@@ -127,7 +107,7 @@ fn test_legacy_init_still_works() {
     let token = Address::generate(&env);
 
     // Legacy init should still work (without network config)
-    client.init(&admin, &asset::AssetId::Stellar(token));
+    client.init(&admin, &token);
 
     // Network info should be None for legacy initialization
     assert_eq!(client.get_chain_id(), None);
