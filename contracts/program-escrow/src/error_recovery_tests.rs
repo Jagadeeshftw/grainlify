@@ -706,7 +706,10 @@ fn test_full_circuit_breaker_lifecycle() {
 
         // Phase 8: Error log has entries
         let log = get_error_log(&env);
-        assert!(log.len() > 0, "Error log should contain entries from failures");
+        assert!(
+            log.len() > 0,
+            "Error log should contain entries from failures"
+        );
     });
 }
 
@@ -974,10 +977,10 @@ fn test_compute_backoff_constant_delay() {
 fn test_compute_backoff_exponential_growth() {
     let config = RetryConfig::conservative();
     // Exponential backoff: initial=10, multiplier=2
-    assert_eq!(config.compute_backoff(0), 10);  // 10 * 2^0 = 10
-    assert_eq!(config.compute_backoff(1), 20);  // 10 * 2^1 = 20
-    assert_eq!(config.compute_backoff(2), 40);  // 10 * 2^2 = 40
-    assert_eq!(config.compute_backoff(3), 80);  // 10 * 2^3 = 80
+    assert_eq!(config.compute_backoff(0), 10); // 10 * 2^0 = 10
+    assert_eq!(config.compute_backoff(1), 20); // 10 * 2^1 = 20
+    assert_eq!(config.compute_backoff(2), 40); // 10 * 2^2 = 40
+    assert_eq!(config.compute_backoff(3), 80); // 10 * 2^3 = 80
 }
 
 #[test]
@@ -992,9 +995,9 @@ fn test_compute_backoff_capped_at_max() {
 fn test_compute_backoff_exponential_preset() {
     let config = RetryConfig::exponential();
     // Exponential backoff: initial=5, multiplier=3
-    assert_eq!(config.compute_backoff(0), 5);   // 5 * 3^0 = 5
-    assert_eq!(config.compute_backoff(1), 15);  // 5 * 3^1 = 15
-    assert_eq!(config.compute_backoff(2), 45);  // 5 * 3^2 = 45
+    assert_eq!(config.compute_backoff(0), 5); // 5 * 3^0 = 5
+    assert_eq!(config.compute_backoff(1), 15); // 5 * 3^1 = 15
+    assert_eq!(config.compute_backoff(2), 45); // 5 * 3^2 = 45
     assert_eq!(config.compute_backoff(3), 135); // 5 * 3^3 = 135
     assert_eq!(config.compute_backoff(4), 200); // 5 * 3^4 = 405, capped to 200
 }
@@ -1022,7 +1025,10 @@ fn test_aggressive_policy_max_attempts() {
         let retry_cfg = RetryConfig::aggressive();
         let result = execute_with_retry(&env, &retry_cfg, prog, op, || Err(ERR_TRANSFER_FAILED));
         assert!(!result.succeeded);
-        assert_eq!(result.attempts, 5, "Aggressive policy should attempt 5 times");
+        assert_eq!(
+            result.attempts, 5,
+            "Aggressive policy should attempt 5 times"
+        );
         assert_eq!(result.final_error, ERR_TRANSFER_FAILED);
     });
 }
@@ -1047,7 +1053,10 @@ fn test_aggressive_policy_minimal_backoff() {
         let result = execute_with_retry(&env, &retry_cfg, prog, op, || Err(ERR_TRANSFER_FAILED));
         // Aggressive: constant backoff of 1, 4 retries (attempts 2-5)
         // Total delay = 1 + 1 + 1 + 1 = 4
-        assert_eq!(result.total_delay, 4, "Aggressive policy should have minimal total delay");
+        assert_eq!(
+            result.total_delay, 4,
+            "Aggressive policy should have minimal total delay"
+        );
     });
 }
 
@@ -1106,7 +1115,10 @@ fn test_conservative_policy_max_attempts() {
         let retry_cfg = RetryConfig::conservative();
         let result = execute_with_retry(&env, &retry_cfg, prog, op, || Err(ERR_TRANSFER_FAILED));
         assert!(!result.succeeded);
-        assert_eq!(result.attempts, 3, "Conservative policy should attempt 3 times");
+        assert_eq!(
+            result.attempts, 3,
+            "Conservative policy should attempt 3 times"
+        );
         assert_eq!(result.final_error, ERR_TRANSFER_FAILED);
     });
 }
@@ -1131,7 +1143,10 @@ fn test_conservative_policy_exponential_backoff() {
         let result = execute_with_retry(&env, &retry_cfg, prog, op, || Err(ERR_TRANSFER_FAILED));
         // Conservative: exponential backoff 10, 20 (2 retries for attempts 2-3)
         // Total delay = 10 + 20 = 30
-        assert_eq!(result.total_delay, 30, "Conservative policy should have exponential backoff");
+        assert_eq!(
+            result.total_delay, 30,
+            "Conservative policy should have exponential backoff"
+        );
     });
 }
 
@@ -1191,7 +1206,10 @@ fn test_exponential_policy_max_attempts() {
         let retry_cfg = RetryConfig::exponential();
         let result = execute_with_retry(&env, &retry_cfg, prog, op, || Err(ERR_TRANSFER_FAILED));
         assert!(!result.succeeded);
-        assert_eq!(result.attempts, 4, "Exponential policy should attempt 4 times");
+        assert_eq!(
+            result.attempts, 4,
+            "Exponential policy should attempt 4 times"
+        );
     });
 }
 
@@ -1215,7 +1233,10 @@ fn test_exponential_policy_strong_backoff() {
         let result = execute_with_retry(&env, &retry_cfg, prog, op, || Err(ERR_TRANSFER_FAILED));
         // Exponential: 5, 15, 45 (3 retries for attempts 2-4)
         // Total delay = 5 + 15 + 45 = 65
-        assert_eq!(result.total_delay, 65, "Exponential policy should have strong backoff growth");
+        assert_eq!(
+            result.total_delay, 65,
+            "Exponential policy should have strong backoff growth"
+        );
     });
 }
 
@@ -1228,11 +1249,11 @@ fn test_policy_comparison_attempt_counts() {
     let aggressive = RetryConfig::aggressive();
     let conservative = RetryConfig::conservative();
     let exponential = RetryConfig::exponential();
-    
+
     assert_eq!(aggressive.max_attempts, 5, "Aggressive: 5 attempts");
     assert_eq!(conservative.max_attempts, 3, "Conservative: 3 attempts");
     assert_eq!(exponential.max_attempts, 4, "Exponential: 4 attempts");
-    
+
     assert!(aggressive.max_attempts > conservative.max_attempts);
     assert!(aggressive.max_attempts > exponential.max_attempts);
 }
@@ -1242,23 +1263,23 @@ fn test_policy_comparison_backoff_sequences() {
     let aggressive = RetryConfig::aggressive();
     let conservative = RetryConfig::conservative();
     let exponential = RetryConfig::exponential();
-    
+
     // Compare backoff sequences for first 3 retries
     // Aggressive: constant 1
     assert_eq!(aggressive.compute_backoff(0), 1);
     assert_eq!(aggressive.compute_backoff(1), 1);
     assert_eq!(aggressive.compute_backoff(2), 1);
-    
+
     // Conservative: exponential 10, 20, 40
     assert_eq!(conservative.compute_backoff(0), 10);
     assert_eq!(conservative.compute_backoff(1), 20);
     assert_eq!(conservative.compute_backoff(2), 40);
-    
+
     // Exponential: strong growth 5, 15, 45
     assert_eq!(exponential.compute_backoff(0), 5);
     assert_eq!(exponential.compute_backoff(1), 15);
     assert_eq!(exponential.compute_backoff(2), 45);
-    
+
     // Verify aggressive has minimal delays
     assert!(aggressive.compute_backoff(0) < conservative.compute_backoff(0));
     assert!(aggressive.compute_backoff(1) < conservative.compute_backoff(1));
@@ -1269,7 +1290,7 @@ fn test_policy_comparison_backoff_sequences() {
 fn test_policy_comparison_total_delays() {
     let (env, contract_id) = setup_env();
     let admin = Address::generate(&env);
-    
+
     env.as_contract(&contract_id, || {
         set_circuit_admin(&env, admin.clone(), None);
         set_config(
@@ -1281,7 +1302,7 @@ fn test_policy_comparison_total_delays() {
             },
         );
     });
-    
+
     // Test aggressive policy
     let aggressive_delay = env.as_contract(&contract_id, || {
         let prog = String::from_str(&env, "TestProg");
@@ -1290,12 +1311,12 @@ fn test_policy_comparison_total_delays() {
         let result = execute_with_retry(&env, &retry_cfg, prog, op, || Err(ERR_TRANSFER_FAILED));
         result.total_delay
     });
-    
+
     // Reset circuit for next test
     env.as_contract(&contract_id, || {
         close_circuit(&env);
     });
-    
+
     // Test conservative policy
     let conservative_delay = env.as_contract(&contract_id, || {
         let prog = String::from_str(&env, "TestProg");
@@ -1304,11 +1325,14 @@ fn test_policy_comparison_total_delays() {
         let result = execute_with_retry(&env, &retry_cfg, prog, op, || Err(ERR_TRANSFER_FAILED));
         result.total_delay
     });
-    
+
     // Aggressive should have much lower total delay
-    assert!(aggressive_delay < conservative_delay, 
-        "Aggressive delay ({}) should be less than conservative delay ({})", 
-        aggressive_delay, conservative_delay);
+    assert!(
+        aggressive_delay < conservative_delay,
+        "Aggressive delay ({}) should be less than conservative delay ({})",
+        aggressive_delay,
+        conservative_delay
+    );
 }
 
 // ─────────────────────────────────────────────────────────
@@ -1339,7 +1363,10 @@ fn test_aggressive_policy_max_retries_reached() {
         });
         assert!(!result.succeeded);
         assert_eq!(result.attempts, 5);
-        assert_eq!(call_count, 5, "Should have called operation exactly max_attempts times");
+        assert_eq!(
+            call_count, 5,
+            "Should have called operation exactly max_attempts times"
+        );
         assert_eq!(result.final_error, ERR_TRANSFER_FAILED);
     });
 }
@@ -1368,7 +1395,10 @@ fn test_conservative_policy_max_retries_reached() {
         });
         assert!(!result.succeeded);
         assert_eq!(result.attempts, 3);
-        assert_eq!(call_count, 3, "Should have called operation exactly max_attempts times");
+        assert_eq!(
+            call_count, 3,
+            "Should have called operation exactly max_attempts times"
+        );
     });
 }
 
@@ -1413,10 +1443,10 @@ fn test_custom_retry_policy_high_multiplier() {
         max_backoff: 1000,
     };
     // Verify exponential growth with high multiplier
-    assert_eq!(config.compute_backoff(0), 2);    // 2 * 5^0 = 2
-    assert_eq!(config.compute_backoff(1), 10);   // 2 * 5^1 = 10
-    assert_eq!(config.compute_backoff(2), 50);   // 2 * 5^2 = 50
-    assert_eq!(config.compute_backoff(3), 250);  // 2 * 5^3 = 250
+    assert_eq!(config.compute_backoff(0), 2); // 2 * 5^0 = 2
+    assert_eq!(config.compute_backoff(1), 10); // 2 * 5^1 = 10
+    assert_eq!(config.compute_backoff(2), 50); // 2 * 5^2 = 50
+    assert_eq!(config.compute_backoff(3), 250); // 2 * 5^3 = 250
     assert_eq!(config.compute_backoff(4), 1000); // 2 * 5^4 = 1250, capped to 1000
 }
 

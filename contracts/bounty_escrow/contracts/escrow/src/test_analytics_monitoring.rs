@@ -20,6 +20,7 @@
 /// * Error flows             – failed attempts do not corrupt metrics
 use crate::{BountyEscrowContract, BountyEscrowContractClient, EscrowStatus, RefundMode};
 use soroban_sdk::{
+    symbol_short,
     testutils::{Address as _, Events, Ledger},
     token, Address, Env,
 };
@@ -1148,4 +1149,180 @@ fn test_get_balance_zero_after_all_escrows_settled() {
         0,
         "contract balance must be zero when all escrows are settled"
     );
+}
+
+// ===========================================================================
+// 16. Monitoring Analytics (Operation counts and error tracking)
+// ===========================================================================
+
+#[test]
+fn test_monitoring_analytics_initial_state() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let (token, _token_admin) = create_token_contract(&env, &admin);
+    let escrow = create_escrow_contract(&env);
+    escrow.init(&admin, &token.address);
+
+    let analytics = escrow.get_analytics();
+    assert_eq!(analytics.operation_count, 0);
+    assert_eq!(analytics.error_count, 0);
+    assert_eq!(analytics.error_rate, 0);
+}
+
+#[test]
+fn test_monitoring_analytics_tracks_successful_operations() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let contributor = Address::generate(&env);
+    let (token, token_admin) = create_token_contract(&env, &admin);
+    let escrow = create_escrow_contract(&env);
+    escrow.init(&admin, &token.address);
+    token_admin.mint(&depositor, &1_000_000);
+
+    let now = env.ledger().timestamp();
+
+    // 1. Lock (Success)
+    escrow.lock_funds(&depositor, &500, &1000, &(now + 1000));
+    let analytics = escrow.get_analytics();
+    assert_eq!(analytics.operation_count, 1);
+    assert_eq!(analytics.error_count, 0);
+
+    // 2. Release (Success)
+    escrow.release_funds(&500, &contributor);
+    let analytics = escrow.get_analytics();
+    assert_eq!(analytics.operation_count, 2);
+    assert_eq!(analytics.error_count, 0);
+}
+
+#[test]
+fn test_monitoring_analytics_tracks_failed_operations() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let (token, token_admin) = create_token_contract(&env, &admin);
+    let escrow = create_escrow_contract(&env);
+    escrow.init(&admin, &token.address);
+    token_admin.mint(&depositor, &1_000_000);
+
+    let now = env.ledger().timestamp();
+
+    // 1. Successful Lock (tracked via wrapper)
+    escrow.lock_funds(&depositor, &600, &1000, &(now + 1000));
+    let analytics_mid = escrow.get_analytics();
+    assert_eq!(
+        analytics_mid.operation_count, 1,
+        "Should have 1 operation after lock"
+    );
+
+    // 2. Failed Operation (manually tracked to verify monitoring logic works)
+    env.as_contract(&escrow.address, || {
+        crate::monitoring::track_operation(&env, symbol_short!("lock"), depositor.clone(), false);
+    });
+
+    let analytics = escrow.get_analytics();
+    assert_eq!(
+        analytics.operation_count, 2,
+        "Should have 2 operations after manual track"
+    );
+    assert_eq!(analytics.error_count, 1);
+    // error_rate = (1 * 10000) / 2 = 5000 (basis points result of 50.00%)
+    assert_eq!(analytics.error_rate, 5000);
+}
+
+#[test]
+fn test_monitoring_health_check_returns_valid_data() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let (token, _token_admin) = create_token_contract(&env, &admin);
+    let escrow = create_escrow_contract(&env);
+    escrow.init(&admin, &token.address);
+
+    let health = escrow.health_check();
+    assert!(health.is_healthy);
+    assert_eq!(health.total_operations, 0);
+}
+
+#[test]
+fn test_monitoring_state_snapshot_captures_current_metrics() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let (token, token_admin) = create_token_contract(&env, &admin);
+    let escrow = create_escrow_contract(&env);
+    escrow.init(&admin, &token.address);
+    token_admin.mint(&depositor, &1_000_000);
+
+    let now = env.ledger().timestamp();
+    escrow.lock_funds(&depositor, &700, &1000, &(now + 1000));
+
+    let snapshot = escrow.get_state_snapshot();
+    assert_eq!(snapshot.total_operations, 1);
+    assert_eq!(snapshot.timestamp, now);
+}
+
+#[test]
+fn test_comprehensive_analytics_flow() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let contributor = Address::generate(&env);
+    let (token, token_admin) = create_token_contract(&env, &admin);
+    let escrow = create_escrow_contract(&env);
+    escrow.init(&admin, &token.address);
+    token_admin.mint(&depositor, &1_000_000);
+
+    let now = env.ledger().timestamp();
+
+    // 1. Lock 3 different bounties
+    escrow.lock_funds(&depositor, &100, &1000, &(now + 1000));
+    escrow.lock_funds(&depositor, &200, &2000, &(now + 2000));
+    escrow.lock_funds(&depositor, &300, &3000, &(now + 3000));
+
+    // 2. Release one
+    escrow.release_funds(&100, &contributor);
+
+    // 3. Refund one
+    env.ledger().set_timestamp(now + 2500);
+    escrow.refund(&200);
+
+    let stats = escrow.get_aggregate_stats();
+    let analytics = escrow.get_analytics();
+
+    // Aggregate Stats (on-the-fly calculation from storage)
+    assert_eq!(stats.count_locked, 1); // Bounty 300
+    assert_eq!(stats.count_released, 1); // Bounty 100
+    assert_eq!(stats.count_refunded, 1); // Bounty 200
+    assert_eq!(stats.total_locked, 3000);
+    assert_eq!(stats.total_released, 1000);
+    assert_eq!(stats.total_refunded, 2000);
+
+    // Monitoring Analytics (Persistent counters)
+    // ops: lock x3, release x1, refund x1 = 5 (init doesn't track)
+    assert_eq!(analytics.operation_count, 5);
+    assert_eq!(analytics.error_count, 0);
+}
+
+#[test]
+fn test_error_rate_calculation_various_inputs() {
+    let env = Env::default();
+    let escrow = create_escrow_contract(&env);
+    let caller = Address::generate(&env);
+
+    env.as_contract(&escrow.address, || {
+        // 10 ops, 2 errors = 20%
+        for i in 0..10 {
+            crate::monitoring::track_operation(&env, symbol_short!("test"), caller.clone(), i >= 2);
+        }
+    });
+
+    let analytics = escrow.get_analytics();
+    assert_eq!(analytics.operation_count, 10);
+    assert_eq!(analytics.error_count, 2);
+    // 2/10 * 10000 = 2000 basis points
+    assert_eq!(analytics.error_rate, 2000);
 }

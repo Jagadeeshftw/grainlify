@@ -21,7 +21,9 @@ use soroban_sdk::{
     token, Address, Env, String,
 };
 
-use crate::{ClaimRecord, ClaimStatus, DataKey, ProgramEscrowContract, ProgramEscrowContractClient};
+use crate::{
+    ClaimRecord, ClaimStatus, DataKey, ProgramEscrowContract, ProgramEscrowContractClient,
+};
 
 fn create_token_contract<'a>(
     env: &Env,
@@ -58,7 +60,6 @@ fn setup<'a>() -> TestSetup<'a> {
 
     let (token, token_admin) = create_token_contract(&env, &admin);
 
-  
     token_admin.mint(&contract_id, &1_000_000_i128);
 
     let program_id = String::from_str(&env, "TestProgram2024");
@@ -83,7 +84,16 @@ fn setup<'a>() -> TestSetup<'a> {
         max_entry_ttl: 3110400,
     });
 
-    TestSetup { env, client, token, token_admin, admin, payout_key, contributor, program_id }
+    TestSetup {
+        env,
+        client,
+        token,
+        token_admin,
+        admin,
+        payout_key,
+        contributor,
+        program_id,
+    }
 }
 
 #[test]
@@ -95,7 +105,6 @@ fn test_claim_within_window_succeeds() {
     let claim_amount: i128 = 10_000;
     let claim_deadline: u64 = now + 86_400; // 24 hours
 
-    
     let claim_id = t.client.create_pending_claim(
         &t.program_id,
         &t.contributor,
@@ -105,7 +114,11 @@ fn test_claim_within_window_succeeds() {
 
     // verify if  claim is in it pending state
     let claim = t.client.get_claim(&t.program_id, &claim_id);
-    assert_eq!(claim.status, ClaimStatus::Pending, "Claim should be Pending");
+    assert_eq!(
+        claim.status,
+        ClaimStatus::Pending,
+        "Claim should be Pending"
+    );
     assert_eq!(claim.amount, claim_amount);
     assert_eq!(claim.recipient, t.contributor);
 
@@ -117,8 +130,8 @@ fn test_claim_within_window_succeeds() {
         ..env.ledger().get()
     });
 
-    t.client.execute_claim(&t.program_id, &claim_id, &t.contributor);
-
+    t.client
+        .execute_claim(&t.program_id, &claim_id, &t.contributor);
 
     let balance_after = t.token.balance(&t.contributor);
     assert_eq!(
@@ -129,13 +142,16 @@ fn test_claim_within_window_succeeds() {
 
     // assert claim Completed
     let claim = t.client.get_claim(&t.program_id, &claim_id);
-    assert_eq!(claim.status, ClaimStatus::Completed, "Claim should be Completed");
+    assert_eq!(
+        claim.status,
+        ClaimStatus::Completed,
+        "Claim should be Completed"
+    );
 
     // assert escrow balance decreased
     let program = t.client.get_program_info();
     assert_eq!(program.remaining_balance, 500_000 - claim_amount);
 }
-
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TEST 2: Claim attempt after expiry should fail
@@ -160,7 +176,7 @@ fn test_claim_after_expiry_fails() {
 
     // advance time PAST the deadline (2 hours later)
     env.ledger().set(LedgerInfo {
-        timestamp: now + 7_200, 
+        timestamp: now + 7_200,
         ..env.ledger().get()
     });
 
@@ -169,7 +185,8 @@ fn test_claim_after_expiry_fails() {
     assert_eq!(claim.status, ClaimStatus::Pending);
 
     // panics with "ClaimExpired"
-    t.client.execute_claim(&t.program_id, &claim_id, &t.contributor);
+    t.client
+        .execute_claim(&t.program_id, &claim_id, &t.contributor);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -213,7 +230,11 @@ fn test_admin_cancel_pending_claim_restores_escrow() {
 
     // Assert claim status is Cancelled
     let claim = t.client.get_claim(&t.program_id, &claim_id);
-    assert_eq!(claim.status, ClaimStatus::Cancelled, "Claim should be Cancelled");
+    assert_eq!(
+        claim.status,
+        ClaimStatus::Cancelled,
+        "Claim should be Cancelled"
+    );
 
     // Assert contributor received nothing
     assert_eq!(
@@ -263,7 +284,11 @@ fn test_admin_cancel_expired_claim_succeeds() {
     );
 
     let claim = t.client.get_claim(&t.program_id, &claim_id);
-    assert_eq!(claim.status, ClaimStatus::Cancelled, "Expired claim should be Cancelled");
+    assert_eq!(
+        claim.status,
+        ClaimStatus::Cancelled,
+        "Expired claim should be Cancelled"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -277,17 +302,15 @@ fn test_non_admin_cannot_cancel_claim() {
     let env = &t.env;
 
     let now: u64 = env.ledger().timestamp();
-    let claim_id = t.client.create_pending_claim(
-        &t.program_id,
-        &t.contributor,
-        &5_000_i128,
-        &(now + 86_400),
-    );
+    let claim_id =
+        t.client
+            .create_pending_claim(&t.program_id, &t.contributor, &5_000_i128, &(now + 86_400));
 
     let random_user = Address::generate(env);
 
     // A non-admin user attempts to cancel the claim — should panic
-    t.client.cancel_claim(&t.program_id, &claim_id, &random_user);
+    t.client
+        .cancel_claim(&t.program_id, &claim_id, &random_user);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -301,18 +324,17 @@ fn test_cannot_double_claim() {
     let env = &t.env;
 
     let now: u64 = env.ledger().timestamp();
-    let claim_id = t.client.create_pending_claim(
-        &t.program_id,
-        &t.contributor,
-        &10_000_i128,
-        &(now + 86_400),
-    );
+    let claim_id =
+        t.client
+            .create_pending_claim(&t.program_id, &t.contributor, &10_000_i128, &(now + 86_400));
 
     // First execution succeeds
-    t.client.execute_claim(&t.program_id, &claim_id, &t.contributor);
+    t.client
+        .execute_claim(&t.program_id, &claim_id, &t.contributor);
 
     // Second execution on the same claim_id must fail
-    t.client.execute_claim(&t.program_id, &claim_id, &t.contributor);
+    t.client
+        .execute_claim(&t.program_id, &claim_id, &t.contributor);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -326,18 +348,16 @@ fn test_cannot_execute_cancelled_claim() {
     let env = &t.env;
 
     let now: u64 = env.ledger().timestamp();
-    let claim_id = t.client.create_pending_claim(
-        &t.program_id,
-        &t.contributor,
-        &5_000_i128,
-        &(now + 86_400),
-    );
+    let claim_id =
+        t.client
+            .create_pending_claim(&t.program_id, &t.contributor, &5_000_i128, &(now + 86_400));
 
     // Admin cancels the claim first
     t.client.cancel_claim(&t.program_id, &claim_id, &t.admin);
 
     // Contributor then attempts to execute the cancelled claim — should fail
-    t.client.execute_claim(&t.program_id, &claim_id, &t.contributor);
+    t.client
+        .execute_claim(&t.program_id, &claim_id, &t.contributor);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -351,12 +371,9 @@ fn test_wrong_recipient_cannot_execute_claim() {
     let env = &t.env;
 
     let now: u64 = env.ledger().timestamp();
-    let claim_id = t.client.create_pending_claim(
-        &t.program_id,
-        &t.contributor,
-        &5_000_i128,
-        &(now + 86_400),
-    );
+    let claim_id =
+        t.client
+            .create_pending_claim(&t.program_id, &t.contributor, &5_000_i128, &(now + 86_400));
 
     let impostor = Address::generate(env);
 

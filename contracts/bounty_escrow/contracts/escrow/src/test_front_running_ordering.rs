@@ -119,8 +119,12 @@ fn test_authorize_claim_race_last_authorization_wins() {
         .escrow
         .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
-    setup.escrow.authorize_claim(&bounty_id, &claimant_a);
-    setup.escrow.authorize_claim(&bounty_id, &claimant_b);
+    setup
+        .escrow
+        .authorize_claim(&bounty_id, &claimant_a, &DisputeReason::Other);
+    setup
+        .escrow
+        .authorize_claim(&bounty_id, &claimant_b, &DisputeReason::Other);
 
     let pending = setup.escrow.get_pending_claim(&bounty_id);
     assert_eq!(pending.recipient, claimant_b);
@@ -293,7 +297,9 @@ fn test_claim_race_unauthorized_fails() {
         .escrow
         .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
-    setup.escrow.authorize_claim(&bounty_id, &authorized);
+    setup
+        .escrow
+        .authorize_claim(&bounty_id, &authorized, &DisputeReason::Other);
 
     setup.escrow.claim(&bounty_id);
 

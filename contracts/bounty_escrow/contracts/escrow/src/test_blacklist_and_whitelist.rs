@@ -11,7 +11,7 @@
 use super::*;
 use soroban_sdk::{
     testutils::{Address as _, Ledger, LedgerInfo},
-    Address, Env,
+    token, Address, Env, IntoVal
 };
 
 fn create_env() -> Env {

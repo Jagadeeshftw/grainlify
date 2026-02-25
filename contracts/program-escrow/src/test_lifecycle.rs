@@ -34,7 +34,6 @@
 ///                                         ▼
 ///                                       Active
 /// ```
-
 use super::*;
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
@@ -339,10 +338,7 @@ fn test_active_batch_exceeds_balance_rejected() {
     let r1 = Address::generate(&env);
     let r2 = Address::generate(&env);
     // 30_000 + 30_000 = 60_000 > 50_000
-    client.batch_payout(
-        &vec![&env, r1, r2],
-        &vec![&env, 30_000i128, 30_000i128],
-    );
+    client.batch_payout(&vec![&env, r1, r2], &vec![&env, 30_000i128, 30_000i128]);
 }
 
 /// Zero-amount single payout must be rejected.
@@ -363,10 +359,7 @@ fn test_active_zero_amount_in_batch_rejected() {
     let (client, _admin, _cid, _token) = setup_active_program(&env, 50_000);
     let r1 = Address::generate(&env);
     let r2 = Address::generate(&env);
-    client.batch_payout(
-        &vec![&env, r1, r2],
-        &vec![&env, 100i128, 0i128],
-    );
+    client.batch_payout(&vec![&env, r1, r2], &vec![&env, 100i128, 0i128]);
 }
 
 /// Mismatched recipients/amounts vectors must be rejected.
@@ -399,7 +392,10 @@ fn test_active_payout_history_grows() {
     let r3 = Address::generate(&env);
 
     client.single_payout(&r1, &10_000);
-    client.batch_payout(&vec![&env, r2.clone(), r3.clone()], &vec![&env, 15_000i128, 5_000i128]);
+    client.batch_payout(
+        &vec![&env, r2.clone(), r3.clone()],
+        &vec![&env, 15_000i128, 5_000i128],
+    );
 
     let info = client.get_program_info();
     assert_eq!(info.payout_history.len(), 3);
@@ -561,7 +557,12 @@ fn test_fully_paused_query_still_works() {
     client.init_program(&program_id, &admin, &token_id, &admin, &None);
     client.lock_program_funds(&100_000);
     client.initialize_contract(&admin);
-    client.set_paused(&Some(true), &Some(true), &Some(true), &None::<soroban_sdk::String>);
+    client.set_paused(
+        &Some(true),
+        &Some(true),
+        &Some(true),
+        &None::<soroban_sdk::String>,
+    );
 
     let flags = client.get_pause_flags();
     assert!(flags.lock_paused);
@@ -633,7 +634,7 @@ fn test_drained_further_payout_rejected() {
     let (client, _admin, _cid, _token) = setup_active_program(&env, 50_000);
     let r = Address::generate(&env);
     client.single_payout(&r, &50_000); // drains to 0
-    client.single_payout(&r, &1);     // must panic
+    client.single_payout(&r, &1); // must panic
 }
 
 /// Re-locking funds after drain transitions back to Active (Drained → Active).

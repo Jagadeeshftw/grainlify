@@ -1,7 +1,8 @@
 #![cfg(test)]
 
 use crate::{
-    BountyEscrowContract, BountyEscrowContractClient, CapabilityAction, Error, EscrowStatus,
+    BountyEscrowContract, BountyEscrowContractClient, CapabilityAction, DisputeReason, Error,
+    EscrowStatus,
 };
 use soroban_sdk::{
     testutils::{Address as _, Events, Ledger},
@@ -139,7 +140,9 @@ fn test_claim_with_capability() {
     setup.lock(2, 2_000);
 
     setup.client.set_claim_window(&600);
-    setup.client.authorize_claim(&2, &setup.recipient);
+    setup
+        .client
+        .authorize_claim(&2, &setup.recipient, &DisputeReason::Other);
 
     let expiry = setup.env.ledger().timestamp() + 120;
     let capability_id = setup.client.issue_capability(
@@ -238,7 +241,9 @@ fn test_capability_cannot_exceed_owner_authority() {
     );
 
     setup.client.set_claim_window(&300);
-    setup.client.authorize_claim(&4, &setup.recipient);
+    setup
+        .client
+        .authorize_claim(&4, &setup.recipient, &DisputeReason::Other);
     let wrong_claim_owner = setup.client.try_issue_capability(
         &setup.admin,
         &setup.delegate,

@@ -8,12 +8,15 @@ mod test_metadata;
 mod test_token_math;
 pub mod token_math;
 
+#[cfg(test)]
+mod test_claim_tickets;
+#[cfg(test)]
 mod reentrancy_guard;
 mod test_cross_contract_interface;
 #[cfg(test)]
-mod test_rbac;
-#[cfg(test)]
 mod test_multi_token_fees;
+#[cfg(test)]
+mod test_rbac;
 mod traits;
 
 use events::{
@@ -22,13 +25,18 @@ use events::{
     emit_funds_refunded, emit_funds_released, AddressFrozen, AddressUnfrozen, BatchFundsLocked,
     BatchFundsReleased, BountyEscrowInitialized, ClaimCancelled, ClaimCreated, ClaimExecuted,
     EscrowFrozen, EscrowUnfrozen, FundsLocked, FundsRefunded, FundsReleased, EVENT_VERSION_V2,
+    emit_batch_funds_locked, emit_batch_funds_released, emit_bounty_initialized, emit_funds_locked,
+    emit_funds_refunded, emit_funds_released, emit_ticket_claimed, emit_ticket_issued,
+    BatchFundsLocked, BatchFundsReleased, BountyEscrowInitialized, ClaimCancelled, ClaimCreated,
+    ClaimExecuted, FundsLocked, FundsRefunded, FundsReleased, TicketClaimed, TicketIssued,
+    EVENT_VERSION_V2,
 };
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, token, vec, Address, Env,
-    Symbol, Vec,
+    String, Symbol, Vec,
 };
 
-mod monitoring {
+pub(crate) mod monitoring {
     use soroban_sdk::{contracttype, symbol_short, Address, Env, String, Symbol};
 
     // Storage keys
@@ -43,6 +51,7 @@ mod monitoring {
     #[contracttype]
     #[derive(Clone, Debug)]
     pub struct OperationMetric {
+        pub version: u32,
         pub operation: Symbol,
         pub caller: Address,
         pub timestamp: u64,
@@ -53,6 +62,7 @@ mod monitoring {
     #[contracttype]
     #[derive(Clone, Debug)]
     pub struct PerformanceMetric {
+        pub version: u32,
         pub function: Symbol,
         pub duration: u64,
         pub timestamp: u64,
@@ -115,6 +125,7 @@ mod monitoring {
         env.events().publish(
             (symbol_short!("metric"), symbol_short!("op")),
             OperationMetric {
+                version: super::EVENT_VERSION_V2,
                 operation,
                 caller,
                 timestamp: env.ledger().timestamp(),
@@ -140,6 +151,7 @@ mod monitoring {
         env.events().publish(
             (symbol_short!("metric"), symbol_short!("perf")),
             PerformanceMetric {
+                version: super::EVENT_VERSION_V2,
                 function,
                 duration,
                 timestamp: env.ledger().timestamp(),
@@ -394,6 +406,12 @@ pub enum Error {
     /// Returned when refund is blocked by a pending claim/dispute
     NotPaused = 21,
     ClaimPending = 22,
+    /// Returned when claim ticket is not found
+    TicketNotFound = 23,
+    /// Returned when claim ticket has already been used (replay prevention)
+    TicketAlreadyUsed = 24,
+    /// Returned when claim ticket has expired
+    TicketExpired = 25,
     CapabilityNotFound = 23,
     CapabilityExpired = 24,
     CapabilityRevoked = 25,
@@ -453,11 +471,26 @@ pub enum DataKey {
     PendingClaim(u64),      // bounty_id -> ClaimRecord
     ClaimWindow,            // u64 seconds (global config)
     PauseFlags,             // PauseFlags struct
+    AmountPolicy,           // Option<(i128, i128)> — (min_amount, max_amount) set by set_amount_policy
+    ClaimTicket(u64),       // ticket_id -> ClaimTicket
+    ClaimTicketIndex,       // Vec<u64> of all ticket_ids
+    TicketCounter,          // u64 counter for generating unique ticket_ids
+    BeneficiaryTickets(Address), // Address -> Vec<u64> of ticket_ids for beneficiary
+    ReleaseApproval(u64),   // bounty_id -> ReleaseApproval
+    PendingClaim(u64),      // bounty_id -> ClaimRecord
+    ClaimWindow,            // u64 seconds (global config)
+    PauseFlags,             // PauseFlags struct
     AmountPolicy, // Option<(i128, i128)> — (min_amount, max_amount) set by set_amount_policy
     CapabilityNonce, // monotonically increasing capability id
     Capability(u64), // capability_id -> Capability
     FrozenEscrow(u64), // bounty_id -> FreezeRecord (per-escrow freeze)
     FrozenAddress(Address), // address -> FreezeRecord (per-address freeze)
+
+    /// Chain identifier (e.g., "stellar", "ethereum") for cross-network protection
+    ChainId,
+
+    /// Network identifier (e.g., "mainnet", "testnet", "futurenet") for environment-specific behavior
+    NetworkId,
 }
 
 #[contracttype]
@@ -533,6 +566,27 @@ pub struct ReleaseApproval {
 }
 
 #[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum DisputeReason {
+    QualityIssue = 1,
+    IncompleteWork = 2,
+    DeadlineMissed = 3,
+    ParticipantFraud = 4,
+    Other = 5,
+}
+
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum DisputeOutcome {
+    ResolvedByPayout = 1,
+    ResolvedByRefund = 2,
+    CancelledByAdmin = 3,
+    NoActionTaken = 4,
+}
+
+#[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClaimRecord {
     pub bounty_id: u64,
@@ -540,6 +594,7 @@ pub struct ClaimRecord {
     pub amount: i128,
     pub expires_at: u64,
     pub claimed: bool,
+    pub reason: DisputeReason,
 }
 
 #[contracttype]
@@ -623,6 +678,20 @@ pub struct FreezeRecord {
     pub frozen_at: u64,
 }
 
+/// Single-use claim ticket for bounty winners
+/// Simplifies reward distribution and prevents misdirected payouts
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClaimTicket {
+    pub ticket_id: u64,
+    pub bounty_id: u64,
+    pub beneficiary: Address,
+    pub amount: i128,
+    pub expires_at: u64,
+    pub used: bool,
+    pub issued_at: u64,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LockFundsItem {
@@ -655,6 +724,108 @@ impl BountyEscrowContract {
         env.storage()
             .instance()
             .set(&DataKey::Token, &normalized_token);
+
+        emit_bounty_initialized(
+            &env,
+            BountyEscrowInitialized {
+                version: EVENT_VERSION_V2,
+                admin,
+                token: normalized_token,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Initialize the contract with admin, token, and network configuration.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `admin` - Address authorized to perform administrative functions
+    /// * `token` - Token address for escrow operations
+    /// * `chain_id` - Chain identifier (e.g., "stellar", "ethereum")
+    /// * `network_id` - Network identifier (e.g., "mainnet", "testnet", "futurenet")
+    ///
+    /// # Security Considerations
+    /// - Chain and network IDs are immutable after initialization
+    /// - These values prevent cross-network replay attacks
+    /// - Should match the actual deployment environment
+    pub fn init_with_network(
+        env: Env,
+        admin: Address,
+        token: asset::AssetId,
+        chain_id: String,
+        network_id: String,
+    ) -> Result<(), Error> {
+        if env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::AlreadyInitialized);
+        }
+
+        let normalized_token =
+            asset::normalize_asset_id(&env, &token).map_err(|_| Error::InvalidAssetId)?;
+        env.storage().instance().set(&DataKey::Admin, &admin);
+        env.storage()
+            .instance()
+            .set(&DataKey::Token, &normalized_token);
+
+        // Store chain and network identifiers
+        env.storage().instance().set(&DataKey::ChainId, &chain_id);
+        env.storage()
+            .instance()
+            .set(&DataKey::NetworkId, &network_id);
+
+        emit_bounty_initialized(
+            &env,
+            BountyEscrowInitialized {
+                version: EVENT_VERSION_V2,
+                admin,
+                token: normalized_token,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Initialize the contract with admin, token, and network configuration.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `admin` - Address authorized to perform administrative functions
+    /// * `token` - Token address for escrow operations
+    /// * `chain_id` - Chain identifier (e.g., "stellar", "ethereum")
+    /// * `network_id` - Network identifier (e.g., "mainnet", "testnet", "futurenet")
+    ///
+    /// # Security Considerations
+    /// - Chain and network IDs are immutable after initialization
+    /// - These values prevent cross-network replay attacks
+    /// - Should match the actual deployment environment
+    pub fn init_with_network(
+        env: Env,
+        admin: Address,
+        token: asset::AssetId,
+        chain_id: String,
+        network_id: String,
+    ) -> Result<(), Error> {
+        if env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::AlreadyInitialized);
+        }
+
+        let normalized_token =
+            asset::normalize_asset_id(&env, &token).map_err(|_| Error::InvalidAssetId)?;
+
+        // Store admin and token
+        env.storage().instance().set(&DataKey::Admin, &admin);
+        env.storage()
+            .instance()
+            .set(&DataKey::Token, &normalized_token);
+
+        // Store chain and network identifiers
+        env.storage().instance().set(&DataKey::ChainId, &chain_id);
+        env.storage()
+            .instance()
+            .set(&DataKey::NetworkId, &network_id);
 
         emit_bounty_initialized(
             &env,
@@ -759,6 +930,10 @@ impl BountyEscrowContract {
 
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         admin.require_auth();
+        
+        // Validate and increment nonce to prevent replay
+        nonce::validate_and_increment_nonce(&env, &admin, nonce)
+            .map_err(|_| Error::InvalidNonce)?;
 
         let mut flags = Self::get_pause_flags(&env);
         let timestamp = env.ledger().timestamp();
@@ -1403,6 +1578,57 @@ impl BountyEscrowContract {
         Self::get_fee_config_internal(&env)
     }
 
+    /// Retrieves the chain identifier.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    ///
+    /// # Returns
+    /// * `Option<String>` - Chain identifier if set, None if not initialized with network config
+    ///
+    /// # Usage
+    /// Use this to verify the chain environment for:
+    /// - Cross-network protection
+    /// - Replay attack prevention
+    /// - Environment-specific behavior
+    pub fn get_chain_id(env: Env) -> Option<String> {
+        env.storage().instance().get(&DataKey::ChainId)
+    }
+
+    /// Retrieves the network identifier.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    ///
+    /// # Returns
+    /// * `Option<String>` - Network identifier if set, None if not initialized with network config
+    ///
+    /// # Usage
+    /// Use this to verify the network environment for:
+    /// - Environment-specific behavior
+    /// - Testnet vs mainnet differentiation
+    /// - Safe replay protection
+    pub fn get_network_id(env: Env) -> Option<String> {
+        env.storage().instance().get(&DataKey::NetworkId)
+    }
+
+    /// Gets both chain and network identifiers as a tuple.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    ///
+    /// # Returns
+    /// * `(Option<String>, Option<String>)` - Tuple of (chain_id, network_id)
+    ///
+    /// # Usage
+    /// Convenience function to get both identifiers in one call.
+    pub fn get_network_info(env: Env) -> (Option<String>, Option<String>) {
+        (
+            env.storage().instance().get(&DataKey::ChainId),
+            env.storage().instance().get(&DataKey::NetworkId),
+        )
+    }
+
     /// Update multisig configuration (admin only)
     pub fn update_multisig_config(
         env: Env,
@@ -1519,6 +1745,19 @@ impl BountyEscrowContract {
         amount: i128,
         deadline: u64,
     ) -> Result<(), Error> {
+        let res =
+            Self::lock_funds_logic(env.clone(), depositor.clone(), bounty_id, amount, deadline);
+        monitoring::track_operation(&env, symbol_short!("lock"), depositor, res.is_ok());
+        res
+    }
+
+    fn lock_funds_logic(
+        env: Env,
+        depositor: Address,
+        bounty_id: u64,
+        amount: i128,
+        deadline: u64,
+    ) -> Result<(), Error> {
         // GUARD: acquire reentrancy lock
         reentrancy_guard::acquire(&env);
 
@@ -1625,6 +1864,12 @@ impl BountyEscrowContract {
     /// Protected by the shared reentrancy guard. Escrow state is updated
     /// to `Released` *before* the outbound token transfer (CEI pattern).
     pub fn release_funds(env: Env, bounty_id: u64, contributor: Address) -> Result<(), Error> {
+        let res = Self::release_funds_logic(env.clone(), bounty_id, contributor.clone());
+        monitoring::track_operation(&env, symbol_short!("release"), contributor, res.is_ok());
+        res
+    }
+
+    fn release_funds_logic(env: Env, bounty_id: u64, contributor: Address) -> Result<(), Error> {
         if Self::check_paused(&env, symbol_short!("release")) {
             return Err(Error::FundsPaused);
         }
@@ -1806,7 +2051,12 @@ impl BountyEscrowContract {
     /// Authorize a release as a pending claim instead of immediate transfer.
     /// Admin calls this instead of release_funds when claim period is active.
     /// Beneficiary must call claim() within the window to receive funds.
-    pub fn authorize_claim(env: Env, bounty_id: u64, recipient: Address) -> Result<(), Error> {
+    pub fn authorize_claim(
+        env: Env,
+        bounty_id: u64,
+        recipient: Address,
+        reason: DisputeReason,
+    ) -> Result<(), Error> {
         if Self::check_paused(&env, symbol_short!("release")) {
             return Err(Error::FundsPaused);
         }
@@ -1842,6 +2092,7 @@ impl BountyEscrowContract {
             amount: escrow.amount,
             expires_at: now.saturating_add(claim_window),
             claimed: false,
+            reason: reason.clone(),
         };
 
         env.storage()
@@ -1855,6 +2106,7 @@ impl BountyEscrowContract {
                 recipient,
                 amount: escrow.amount,
                 expires_at: claim.expires_at,
+                reason,
             },
         );
         Ok(())
@@ -1932,6 +2184,7 @@ impl BountyEscrowContract {
                 recipient: claim_recipient,
                 amount: claim_amount,
                 claimed_at: now,
+                outcome: DisputeOutcome::ResolvedByPayout,
             },
         );
 
@@ -2012,13 +2265,18 @@ impl BountyEscrowContract {
                 recipient: claim.recipient,
                 amount: claim.amount,
                 claimed_at: now,
+                outcome: DisputeOutcome::ResolvedByPayout,
             },
         );
         Ok(())
     }
 
     /// Admin can cancel an expired or unwanted pending claim, returning escrow to Locked.
-    pub fn cancel_pending_claim(env: Env, bounty_id: u64) -> Result<(), Error> {
+    pub fn cancel_pending_claim(
+        env: Env,
+        bounty_id: u64,
+        outcome: DisputeOutcome,
+    ) -> Result<(), Error> {
         if !env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::NotInitialized);
         }
@@ -2054,6 +2312,7 @@ impl BountyEscrowContract {
                 amount: claim.amount,
                 cancelled_at: env.ledger().timestamp(),
                 cancelled_by: admin,
+                outcome,
             },
         );
         Ok(())
@@ -2219,6 +2478,17 @@ impl BountyEscrowContract {
     /// history, and approval cleanup are performed *before* the outbound
     /// token transfer (CEI pattern).
     pub fn refund(env: Env, bounty_id: u64) -> Result<(), Error> {
+        let res = Self::refund_logic(env.clone(), bounty_id);
+        monitoring::track_operation(
+            &env,
+            symbol_short!("refund"),
+            env.current_contract_address(),
+            res.is_ok(),
+        );
+        res
+    }
+
+    fn refund_logic(env: Env, bounty_id: u64) -> Result<(), Error> {
         if Self::check_paused(&env, symbol_short!("refund")) {
             return Err(Error::FundsPaused);
         }
@@ -3512,11 +3782,355 @@ impl BountyEscrowContract {
         Ok(())
     }
 
+    pub fn get_analytics(env: Env) -> monitoring::Analytics {
+        monitoring::get_analytics(&env)
+    }
+
+    pub fn health_check(env: Env) -> monitoring::HealthStatus {
+        monitoring::health_check(&env)
+    }
+
+    pub fn get_state_snapshot(env: Env) -> monitoring::StateSnapshot {
+        monitoring::get_state_snapshot(&env)
+    }
+
+    pub fn get_performance_stats(env: Env, function_name: Symbol) -> monitoring::PerformanceStats {
+        monitoring::get_performance_stats(&env, function_name)
+    }
+
     pub fn get_metadata(env: Env, bounty_id: u64) -> Result<EscrowMetadata, Error> {
         env.storage()
             .persistent()
             .get(&DataKey::Metadata(bounty_id))
             .ok_or(Error::BountyNotFound)
+    }
+
+    /// Issue a single-use claim ticket to a bounty winner (admin only)
+    ///
+    /// This creates a ticket that the beneficiary can use to claim their reward exactly once.
+    /// Tickets are bound to a specific address, amount, and expiry time.
+    ///
+    /// # Arguments
+    /// * `env` - Contract environment
+    /// * `bounty_id` - ID of the bounty being claimed
+    /// * `beneficiary` - Address of the winner who will claim the reward
+    /// * `amount` - Amount to be claimed (in token units)
+    /// * `expires_at` - Unix timestamp when the ticket expires
+    ///
+    /// # Returns
+    /// * `Ok(ticket_id)` - The unique ticket ID for this claim
+    /// * `Err(Error::NotInitialized)` - Contract not initialized
+    /// * `Err(Error::Unauthorized)` - Caller is not admin
+    /// * `Err(Error::BountyNotFound)` - Bounty doesn't exist
+    /// * `Err(Error::InvalidDeadline)` - Expiry time is in the past
+    /// * `Err(Error::InvalidAmount)` - Amount is invalid or exceeds escrow amount
+    pub fn issue_claim_ticket(
+        env: Env,
+        bounty_id: u64,
+        beneficiary: Address,
+        amount: i128,
+        expires_at: u64,
+    ) -> Result<u64, Error> {
+        // Verify admin authorization
+        if !env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::NotInitialized);
+        }
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        // Verify bounty exists and funds are locked
+        if !env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
+            return Err(Error::BountyNotFound);
+        }
+        let escrow: Escrow = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Escrow(bounty_id))
+            .unwrap();
+
+        // Verify escrow is in locked state
+        if escrow.status != EscrowStatus::Locked {
+            return Err(Error::FundsNotLocked);
+        }
+
+        // Validate amount
+        if amount <= 0 || amount > escrow.amount {
+            return Err(Error::InvalidAmount);
+        }
+
+        // Validate expiry
+        let now = env.ledger().timestamp();
+        if expires_at <= now {
+            return Err(Error::InvalidDeadline);
+        }
+
+        // Generate unique ticket ID
+        let ticket_counter_key = DataKey::TicketCounter;
+        let mut ticket_id: u64 = env
+            .storage()
+            .persistent()
+            .get(&ticket_counter_key)
+            .unwrap_or(0);
+        ticket_id += 1;
+        env.storage()
+            .persistent()
+            .set(&ticket_counter_key, &ticket_id);
+
+        // Create and store the ticket
+        let ticket = ClaimTicket {
+            ticket_id,
+            bounty_id,
+            beneficiary: beneficiary.clone(),
+            amount,
+            expires_at,
+            used: false,
+            issued_at: now,
+        };
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::ClaimTicket(ticket_id), &ticket);
+
+        // Add to global ticket index
+        let mut ticket_index: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::ClaimTicketIndex)
+            .unwrap_or(Vec::new(&env));
+        ticket_index.push_back(ticket_id);
+        env.storage()
+            .persistent()
+            .set(&DataKey::ClaimTicketIndex, &ticket_index);
+
+        // Add to beneficiary's ticket list
+        let mut beneficiary_tickets: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::BeneficiaryTickets(beneficiary.clone()))
+            .unwrap_or(Vec::new(&env));
+        beneficiary_tickets.push_back(ticket_id);
+        env.storage().persistent().set(
+            &DataKey::BeneficiaryTickets(beneficiary.clone()),
+            &beneficiary_tickets,
+        );
+
+        // Emit event
+        emit_ticket_issued(
+            &env,
+            TicketIssued {
+                ticket_id,
+                bounty_id,
+                beneficiary,
+                amount,
+                expires_at,
+                issued_at: now,
+            },
+        );
+
+        Ok(ticket_id)
+    }
+
+    /// Claim reward using a single-use ticket
+    ///
+    /// The beneficiary calls this function with their ticket ID to claim their reward.
+    /// The ticket must not have been used before, must not be expired, and the caller
+    /// must be the ticket's beneficiary.
+    ///
+    /// # Arguments
+    /// * `env` - Contract environment
+    /// * `ticket_id` - ID of the claim ticket
+    ///
+    /// # Returns
+    /// * `Ok(())` - Funds successfully transferred
+    /// * `Err(Error::TicketNotFound)` - Ticket doesn't exist
+    /// * `Err(Error::TicketAlreadyUsed)` - Ticket has already been used (replay prevention)
+    /// * `Err(Error::TicketExpired)` - Ticket has expired
+    /// * `Err(Error::Unauthorized)` - Caller is not the ticket beneficiary
+    /// * `Err(Error::FundsPaused)` - Release operations are paused
+    /// * `Err(Error::BountyNotFound)` - Associated bounty doesn't exist
+    pub fn claim_with_ticket(env: Env, ticket_id: u64) -> Result<(), Error> {
+        // Check if release is paused
+        if Self::check_paused(&env, symbol_short!("release")) {
+            return Err(Error::FundsPaused);
+        }
+
+        // Retrieve ticket
+        if !env
+            .storage()
+            .persistent()
+            .has(&DataKey::ClaimTicket(ticket_id))
+        {
+            return Err(Error::TicketNotFound);
+        }
+
+        let mut ticket: ClaimTicket = env
+            .storage()
+            .persistent()
+            .get(&DataKey::ClaimTicket(ticket_id))
+            .unwrap();
+
+        // Verify ticket hasn't been used (single-use enforcement)
+        if ticket.used {
+            return Err(Error::TicketAlreadyUsed);
+        }
+
+        // Verify ticket hasn't expired
+        let now = env.ledger().timestamp();
+        if now > ticket.expires_at {
+            return Err(Error::TicketExpired);
+        }
+
+        // Verify caller is the beneficiary
+        ticket.beneficiary.require_auth();
+
+        // Verify bounty still exists
+        if !env
+            .storage()
+            .persistent()
+            .has(&DataKey::Escrow(ticket.bounty_id))
+        {
+            return Err(Error::BountyNotFound);
+        }
+
+        // Get escrow and verify it's locked
+        let mut escrow: Escrow = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Escrow(ticket.bounty_id))
+            .unwrap();
+
+        if escrow.status != EscrowStatus::Locked {
+            return Err(Error::FundsNotLocked);
+        }
+
+        // Transfer funds to beneficiary
+        let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
+        let client = token::Client::new(&env, &token_addr);
+        client.transfer(
+            &env.current_contract_address(),
+            &ticket.beneficiary,
+            &ticket.amount,
+        );
+
+        // Mark ticket as used (prevent replay)
+        ticket.used = true;
+        env.storage()
+            .persistent()
+            .set(&DataKey::ClaimTicket(ticket_id), &ticket);
+
+        // Update escrow status to Released
+        escrow.status = EscrowStatus::Released;
+        escrow.remaining_amount = 0;
+        invariants::assert_escrow(&env, &escrow);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Escrow(ticket.bounty_id), &escrow);
+
+        // Emit event
+        emit_ticket_claimed(
+            &env,
+            TicketClaimed {
+                ticket_id,
+                bounty_id: ticket.bounty_id,
+                beneficiary: ticket.beneficiary.clone(),
+                amount: ticket.amount,
+                claimed_at: now,
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Retrieve claim ticket details for verification and query
+    ///
+    /// # Arguments
+    /// * `env` - Contract environment
+    /// * `ticket_id` - ID of the claim ticket to retrieve
+    ///
+    /// # Returns
+    /// * `Ok(ClaimTicket)` - The ticket details
+    /// * `Err(Error::TicketNotFound)` - Ticket doesn't exist
+    pub fn get_claim_ticket(env: Env, ticket_id: u64) -> Result<ClaimTicket, Error> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::ClaimTicket(ticket_id))
+            .ok_or(Error::TicketNotFound)
+    }
+
+    /// Get all claim tickets for a beneficiary
+    ///
+    /// Returns a paginated list of ticket IDs for a specific beneficiary address.
+    /// Useful for querying which tickets a user has available.
+    ///
+    /// # Arguments
+    /// * `env` - Contract environment
+    /// * `beneficiary` - Address to query tickets for
+    /// * `offset` - Starting position in the list
+    /// * `limit` - Maximum number of results
+    ///
+    /// # Returns
+    /// * `Vec<u64>` - List of ticket IDs (paginated)
+    pub fn get_beneficiary_tickets(
+        env: Env,
+        beneficiary: Address,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<u64> {
+        let tickets: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::BeneficiaryTickets(beneficiary))
+            .unwrap_or(Vec::new(&env));
+
+        let mut results = Vec::new(&env);
+        let mut count = 0u32;
+        let mut skipped = 0u32;
+
+        for i in 0..tickets.len() {
+            if count >= limit {
+                break;
+            }
+            if skipped < offset {
+                skipped += 1;
+                continue;
+            }
+            results.push_back(tickets.get(i).unwrap());
+            count += 1;
+        }
+
+        results
+    }
+
+    /// Check if a ticket is valid and can be claimed
+    ///
+    /// Returns detailed status information about a ticket without modifying state.
+    /// Useful for frontends to validate tickets before attempting to claim.
+    ///
+    /// # Arguments
+    /// * `env` - Contract environment
+    /// * `ticket_id` - ID of the claim ticket to check
+    ///
+    /// # Returns
+    /// A tuple of (is_valid, is_expired, already_used) where:
+    /// * `is_valid` - Ticket exists and is not expired/used
+    /// * `is_expired` - Ticket exists but is past expiry
+    /// * `already_used` - Ticket exists but has been used
+    ///
+    /// Returns (false, false, false) if ticket doesn't exist
+    pub fn verify_claim_ticket(env: Env, ticket_id: u64) -> (bool, bool, bool) {
+        if let Some(ticket) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, ClaimTicket>(&DataKey::ClaimTicket(ticket_id))
+        {
+            let now = env.ledger().timestamp();
+            let is_expired = now > ticket.expires_at;
+            let already_used = ticket.used;
+            let is_valid = !is_expired && !already_used;
+            (is_valid, is_expired, already_used)
+        } else {
+            (false, false, false)
+        }
     }
 }
 
@@ -3576,6 +4190,7 @@ mod test;
 mod test_analytics_monitoring;
 #[cfg(test)]
 mod test_auto_refund_permissions;
+// #[cfg(test)]
 #[cfg(test)]
 // Temporarily disabled: this suite targets a different blacklist API surface
 // (`initialize`, `set_blacklist`, `set_whitelist_mode`) than this contract exposes.
@@ -3584,7 +4199,7 @@ mod test_auto_refund_permissions;
 #[cfg(test)]
 mod test_bounty_escrow;
 #[cfg(test)]
-mod test_capability_tokens;
+mod test_compatibility;
 #[cfg(test)]
 mod test_dispute_resolution;
 #[cfg(test)]
