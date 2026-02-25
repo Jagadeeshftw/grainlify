@@ -668,6 +668,63 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "DependencyStatus"
+                            },
+                            {
+                              "string": "BuildathonQ1"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "symbol": "Pending"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "DependencyStatus"
+                            },
+                            {
+                              "string": "ETHGlobal2024"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "symbol": "Pending"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "DependencyStatus"
+                            },
+                            {
+                              "string": "Stellar2024"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "symbol": "Pending"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "Program"
                             },
                             {
@@ -872,6 +929,51 @@
                               }
                             }
                           ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "ProgramDependencies"
+                            },
+                            {
+                              "string": "BuildathonQ1"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "vec": []
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "ProgramDependencies"
+                            },
+                            {
+                              "string": "ETHGlobal2024"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "vec": []
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "ProgramDependencies"
+                            },
+                            {
+                              "string": "Stellar2024"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "vec": []
                         }
                       }
                     ]

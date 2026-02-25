@@ -1375,6 +1375,25 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "DependencyStatus"
+                            },
+                            {
+                              "string": "Hackathon2024"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "symbol": "Pending"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "Program"
                             },
                             {
@@ -1439,6 +1458,21 @@
                               }
                             }
                           ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "ProgramDependencies"
+                            },
+                            {
+                              "string": "Hackathon2024"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "vec": []
                         }
                       }
                     ]

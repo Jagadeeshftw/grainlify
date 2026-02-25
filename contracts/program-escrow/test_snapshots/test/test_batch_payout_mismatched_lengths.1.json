@@ -518,6 +518,25 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "DependencyStatus"
+                            },
+                            {
+                              "string": "Test"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "symbol": "Pending"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "Program"
                             },
                             {
@@ -582,6 +601,21 @@
                               }
                             }
                           ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "ProgramDependencies"
+                            },
+                            {
+                              "string": "Test"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "vec": []
                         }
                       }
                     ]
