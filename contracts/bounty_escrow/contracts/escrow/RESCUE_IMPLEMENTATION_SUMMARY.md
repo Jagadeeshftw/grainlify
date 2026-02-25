@@ -108,7 +108,7 @@ test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured
 #### Compilation
 - ✅ No compilation errors
 - ✅ No clippy warnings (related to new code)
-- ✅ Follows existing code patterns and conventions
+- ✅ Follows existing code patterns and convention
 
 #### Integration
 - Seamlessly integrates with existing escrow contract
