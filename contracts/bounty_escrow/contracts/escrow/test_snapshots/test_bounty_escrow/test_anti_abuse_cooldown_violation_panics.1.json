@@ -1633,7 +1633,7 @@
             "data": {
               "vec": [
                 {
-                  "string": "caught panic 'Operation in cooldown period' from contract function 'Symbol(obj#377)'"
+                  "string": "caught panic 'Operation in cooldown period' from contract function 'Symbol(obj#379)'"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"

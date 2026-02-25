@@ -401,8 +401,6 @@ pub enum Error {
     CapabilityAmountExceeded = 27,
     CapabilityUsesExhausted = 28,
     CapabilityExceedsAuthority = 29,
-    InvalidAssetId = 30,
-    /// Returned when an operation is blocked because the escrow is frozen
     EscrowFrozen = 30,
     /// Returned when an operation is blocked because the depositor address is frozen
     AddressFrozen = 31,
@@ -652,7 +650,7 @@ impl BountyEscrowContract {
             return Err(Error::AlreadyInitialized);
         }
         let normalized_token =
-            asset::normalize_asset_id(&env, &token).map_err(|_| Error::InvalidAssetId)?;
+            asset::normalize_asset_id(&env, &token).map_err(|_| Error::InvalidAmount)?;
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage()
             .instance()

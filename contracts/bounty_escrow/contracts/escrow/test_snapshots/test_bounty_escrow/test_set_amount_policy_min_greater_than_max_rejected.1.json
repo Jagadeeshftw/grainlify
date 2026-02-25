@@ -574,7 +574,7 @@
             "data": {
               "vec": [
                 {
-                  "string": "caught panic 'invalid policy: min_amount cannot exceed max_amount' from contract function 'Symbol(obj#113)'"
+                  "string": "caught panic 'invalid policy: min_amount cannot exceed max_amount' from contract function 'Symbol(obj#115)'"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
