@@ -1,5 +1,4 @@
 #![cfg(test)]
-<<<<<<< feat/dispute-reason-and-outcome-codes
 
 use crate::{
     BountyEscrowContract, BountyEscrowContractClient, DisputeOutcome, DisputeReason, EscrowStatus,
@@ -118,7 +117,6 @@ fn test_dispute_event_codes() {
 
     // We can't easily check event data in this environment without more boilerplate,
     // but the fact it runs means the data was correctly constructed and published.
-=======
 
 use crate::{
     events::{ClaimCancelled, ClaimCreated, ClaimExecuted, FundsRefunded},
@@ -340,5 +338,4 @@ fn test_resolve_dispute_in_favor_of_refund() {
     assert_eq!(escrow.status, EscrowStatus::Refunded);
     assert_eq!(setup.token.balance(&setup.depositor), 10_000_000);
     assert_eq!(setup.token.balance(&setup.escrow.address), 0);
->>>>>>> master
 }
