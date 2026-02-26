@@ -14,8 +14,8 @@
 extern crate std;
 
 use crate::{
-    BountyEscrowContract, BountyEscrowContractClient, DataKey, Error, EscrowMetadata,
-    EscrowStatus, PauseFlags,
+    BountyEscrowContract, BountyEscrowContractClient, DataKey, Error, EscrowMetadata, EscrowStatus,
+    PauseFlags,
 };
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
@@ -76,13 +76,7 @@ impl TestContext {
         let deadline = self.env.ledger().timestamp() + 86400; // 1 day
 
         self.client
-            .lock_funds(
-                &bounty_id,
-                &self.depositor,
-                &amount,
-                &deadline,
-                &metadata,
-            )
+            .lock_funds(&bounty_id, &self.depositor, &amount, &deadline, &metadata)
             .unwrap();
     }
 
@@ -96,12 +90,7 @@ impl TestContext {
         StateSnapshot {
             pause_flags: self.client.get_pause_flags(),
             contract_balance: self.get_contract_balance(),
-            admin: self
-                .env
-                .storage()
-                .instance()
-                .get(&DataKey::Admin)
-                .unwrap(),
+            admin: self.env.storage().instance().get(&DataKey::Admin).unwrap(),
         }
     }
 }
@@ -217,11 +206,7 @@ fn test_e2e_upgrade_with_multiple_bounties() {
     let ctx = TestContext::new();
 
     // Lock multiple bounties
-    let bounties = vec![
-        (1u64, 10_000i128),
-        (2u64, 20_000i128),
-        (3u64, 15_000i128),
-    ];
+    let bounties = vec![(1u64, 10_000i128), (2u64, 20_000i128), (3u64, 15_000i128)];
 
     let mut total_locked = 0i128;
     for (bounty_id, amount) in &bounties {
