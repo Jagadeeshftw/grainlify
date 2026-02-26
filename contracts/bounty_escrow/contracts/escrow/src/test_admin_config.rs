@@ -1,4 +1,4 @@
-#![cfg(test)]
+use grainlify_time::{self, Timestamp, Duration, TimestampExt};
 
 use soroban_sdk::{
     testutils::{Address as _, Ledger},

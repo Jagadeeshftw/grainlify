@@ -5,6 +5,7 @@
 //! bounty lifecycle states.
 
 use soroban_sdk::{contracttype, symbol_short, Address, Env};
+use grainlify_time::{self, Timestamp, Duration, TimestampExt};
 
 // ============================================================================
 // Contract Initialization Event
@@ -15,7 +16,7 @@ use soroban_sdk::{contracttype, symbol_short, Address, Env};
 pub struct BountyEscrowInitialized {
     pub admin: Address,
     pub token: Address,
-    pub timestamp: u64,
+    pub timestamp: Timestamp,
 }
 
 pub fn emit_bounty_initialized(env: &Env, event: BountyEscrowInitialized) {
@@ -33,7 +34,7 @@ pub struct FundsLocked {
     pub bounty_id: u64,
     pub amount: i128,
     pub depositor: Address,
-    pub deadline: u64,
+    pub deadline: Timestamp,
 }
 
 pub fn emit_funds_locked(env: &Env, event: FundsLocked) {
@@ -51,7 +52,7 @@ pub struct FundsReleased {
     pub bounty_id: u64,
     pub amount: i128,
     pub recipient: Address,
-    pub timestamp: u64,
+    pub timestamp: Timestamp,
     pub remaining_amount: i128,
 }
 
@@ -70,7 +71,7 @@ pub struct FundsRefunded {
     pub bounty_id: u64,
     pub amount: i128,
     pub refund_to: Address,
-    pub timestamp: u64,
+    pub timestamp: Timestamp,
     pub refund_mode: crate::RefundMode,
     pub remaining_amount: i128,
 }
@@ -94,7 +95,7 @@ pub struct FeeCollected {
     pub amount: i128,
     pub fee_rate: i128,
     pub recipient: Address,
-    pub timestamp: u64,
+    pub timestamp: Timestamp,
 }
 
 pub fn emit_fee_collected(env: &Env, event: FeeCollected) {
@@ -107,7 +108,7 @@ pub fn emit_fee_collected(env: &Env, event: FeeCollected) {
 pub struct BatchFundsLocked {
     pub count: u32,
     pub total_amount: i128,
-    pub timestamp: u64,
+    pub timestamp: Timestamp,
 }
 
 pub fn emit_batch_funds_locked(env: &Env, event: BatchFundsLocked) {
@@ -122,7 +123,7 @@ pub struct FeeConfigUpdated {
     pub release_fee_rate: i128,
     pub fee_recipient: Address,
     pub fee_enabled: bool,
-    pub timestamp: u64,
+    pub timestamp: Timestamp,
 }
 
 pub fn emit_fee_config_updated(env: &Env, event: FeeConfigUpdated) {
@@ -135,7 +136,7 @@ pub fn emit_fee_config_updated(env: &Env, event: FeeConfigUpdated) {
 pub struct BatchFundsReleased {
     pub count: u32,
     pub total_amount: i128,
-    pub timestamp: u64,
+    pub timestamp: Timestamp,
 }
 
 pub fn emit_batch_funds_released(env: &Env, event: BatchFundsReleased) {
@@ -151,7 +152,7 @@ pub fn emit_batch_funds_released(env: &Env, event: BatchFundsReleased) {
 #[derive(Clone, Debug)]
 pub struct ContractPaused {
     pub paused_by: Address,
-    pub timestamp: u64,
+    pub timestamp: Timestamp,
 }
 
 pub fn emit_contract_paused(env: &Env, event: ContractPaused) {
@@ -163,7 +164,7 @@ pub fn emit_contract_paused(env: &Env, event: ContractPaused) {
 #[derive(Clone, Debug)]
 pub struct ContractUnpaused {
     pub unpaused_by: Address,
-    pub timestamp: u64,
+    pub timestamp: Timestamp,
 }
 
 pub fn emit_contract_unpaused(env: &Env, event: ContractUnpaused) {
@@ -177,7 +178,7 @@ pub struct EmergencyWithdrawal {
     pub withdrawn_by: Address,
     pub amount: i128,
     pub recipient: Address,
-    pub timestamp: u64,
+    pub timestamp: Timestamp,
 }
 
 pub fn emit_emergency_withdrawal(env: &Env, event: EmergencyWithdrawal) {
@@ -196,7 +197,7 @@ pub struct AdminUpdated {
     pub old_admin: Address,
     pub new_admin: Address,
     pub updated_by: Address,
-    pub timestamp: u64,
+    pub timestamp: Timestamp,
 }
 
 pub fn emit_admin_updated(env: &Env, event: AdminUpdated) {
@@ -211,7 +212,7 @@ pub struct PayoutKeyUpdated {
     pub old_key: Option<Address>,
     pub new_key: Address,
     pub updated_by: Address,
-    pub timestamp: u64,
+    pub timestamp: Timestamp,
 }
 
 pub fn emit_payout_key_updated(env: &Env, event: PayoutKeyUpdated) {
@@ -225,10 +226,10 @@ pub fn emit_payout_key_updated(env: &Env, event: PayoutKeyUpdated) {
 pub struct ConfigLimitsUpdated {
     pub max_bounty_amount: Option<i128>,
     pub min_bounty_amount: Option<i128>,
-    pub max_deadline_duration: Option<u64>,
-    pub min_deadline_duration: Option<u64>,
+    pub max_deadline_duration: Option<Timestamp>,
+    pub min_deadline_duration: Option<Timestamp>,
     pub updated_by: Address,
-    pub timestamp: u64,
+    pub timestamp: Timestamp,
 }
 
 pub fn emit_config_limits_updated(env: &Env, event: ConfigLimitsUpdated) {
@@ -243,8 +244,8 @@ pub struct AdminActionProposed {
     pub action_id: u64,
     pub action_type: crate::AdminActionType,
     pub proposed_by: Address,
-    pub execution_time: u64,
-    pub timestamp: u64,
+    pub execution_time: Timestamp,
+    pub timestamp: Timestamp,
 }
 
 pub fn emit_admin_action_proposed(env: &Env, event: AdminActionProposed) {
@@ -259,7 +260,7 @@ pub struct AdminActionExecuted {
     pub action_id: u64,
     pub action_type: crate::AdminActionType,
     pub executed_by: Address,
-    pub timestamp: u64,
+    pub timestamp: Timestamp,
 }
 
 pub fn emit_admin_action_executed(env: &Env, event: AdminActionExecuted) {
@@ -274,7 +275,7 @@ pub struct AdminActionCancelled {
     pub action_id: u64,
     pub action_type: crate::AdminActionType,
     pub cancelled_by: Address,
-    pub timestamp: u64,
+    pub timestamp: Timestamp,
 }
 
 pub fn emit_admin_action_cancelled(env: &Env, event: AdminActionCancelled) {

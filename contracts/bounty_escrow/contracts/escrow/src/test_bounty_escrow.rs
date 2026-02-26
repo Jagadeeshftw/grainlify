@@ -1,4 +1,4 @@
-#![cfg(test)]
+use grainlify_time::{self, Timestamp, Duration, TimestampExt};
 
 use soroban_sdk::{
     testutils::{Address as _, Events, Ledger},
@@ -587,7 +587,7 @@ fn test_complete_bounty_workflow_lock_release() {
 
     // 3. Lock funds
     let bounty_id = 1u64;
-    let deadline = 1000u64;
+    let deadline = 1000;
     client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
 
     // 4. Verify funds locked

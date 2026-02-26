@@ -1,4 +1,4 @@
-#![cfg(test)]
+use grainlify_time::{self, Timestamp, Duration, TimestampExt};
 
 use soroban_sdk::{testutils::Address as _, token, Address, Env, String};
 
@@ -37,7 +37,7 @@ fn test_pause_functionality() {
     assert!(!client.is_paused());
 
     // Pause the contract
-    client.pause(&Some(String::from_str(&env, "Security issue")));
+    client.pause();
 
     // Should be paused now
     assert!(client.is_paused());
@@ -53,7 +53,7 @@ fn test_pause_functionality() {
     assert!(result.is_err());
 
     // Unpause the contract
-    client.unpause(&Some(String::from_str(&env, "Issue resolved")));
+    client.unpause();
 
     // Should not be paused anymore
     assert!(!client.is_paused());
@@ -78,15 +78,11 @@ fn test_emergency_withdraw() {
     client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
 
     // Pause and emergency withdraw
-    client.pause(&Some(String::from_str(&env, "Emergency")));
+    client.pause();
     assert!(client.is_paused());
 
     // Emergency withdraw to admin
-    client.emergency_withdraw(
-        &admin,
-        &amount,
-        &String::from_str(&env, "Emergency withdrawal"),
-    );
+    client.emergency_withdraw(&admin);
 
     // Contract should still be paused
     assert!(client.is_paused());

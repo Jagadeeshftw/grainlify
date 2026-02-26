@@ -88,9 +88,14 @@
 
 #![no_std]
 mod events;
+#[cfg(test)]
 mod test_bounty_escrow;
-//#[cfg(test)]
-//mod test_query;
+#[cfg(test)]
+mod test_admin_config;
+#[cfg(test)]
+mod test_pause;
+#[cfg(test)]
+mod test_query;
 
 use events::{
     emit_admin_action_cancelled, emit_admin_action_executed, emit_admin_action_proposed,
@@ -106,11 +111,13 @@ use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, token, vec, Address, Env,
     Vec,
 };
+use grainlify_time::{self, Timestamp, Duration, TimestampExt};
 
 // ==================== MONITORING MODULE ====================
 #[allow(dead_code)]
 mod monitoring {
     use soroban_sdk::{contracttype, symbol_short, Address, Env, String, Symbol};
+    use grainlify_time::{self, Timestamp, Duration, TimestampExt};
 
     // Storage keys
     const OPERATION_COUNT: &str = "op_count";
@@ -124,7 +131,7 @@ mod monitoring {
     pub struct OperationMetric {
         pub operation: Symbol,
         pub caller: Address,
-        pub timestamp: u64,
+        pub timestamp: Timestamp,
         pub success: bool,
     }
 
@@ -133,8 +140,8 @@ mod monitoring {
     #[derive(Clone, Debug)]
     pub struct PerformanceMetric {
         pub function: Symbol,
-        pub duration: u64,
-        pub timestamp: u64,
+        pub duration: Duration,
+        pub timestamp: Timestamp,
     }
 
     // Data: Health status
@@ -142,7 +149,7 @@ mod monitoring {
     #[derive(Clone, Debug)]
     pub struct HealthStatus {
         pub is_healthy: bool,
-        pub last_operation: u64,
+        pub last_operation: Timestamp,
         pub total_operations: u64,
         pub contract_version: String,
     }
@@ -160,7 +167,7 @@ mod monitoring {
     #[contracttype]
     #[derive(Clone, Debug)]
     pub struct StateSnapshot {
-        pub timestamp: u64,
+        pub timestamp: Timestamp,
         pub total_operations: u64,
         pub total_users: u64,
         pub total_errors: u64,
@@ -171,12 +178,12 @@ mod monitoring {
     pub struct PerformanceStats {
         pub function_name: Symbol,
         pub call_count: u64,
-        pub total_time: u64,
-        pub avg_time: u64,
-        pub last_called: u64,
+        pub total_time: Duration,
+        pub avg_time: Duration,
+        pub last_called: Timestamp,
     }
 
-    pub fn track_operation(env: &Env, operation: Symbol, caller: Address, success: bool) {
+    pub fn track_operation(env: &Env, operation: Symbol, caller: Address, success: bool, timestamp: Timestamp) {
         let key = Symbol::new(env, OPERATION_COUNT);
         let count: u64 = env.storage().persistent().get(&key).unwrap_or(0);
         env.storage().persistent().set(&key, &(count + 1));
@@ -192,13 +199,13 @@ mod monitoring {
             OperationMetric {
                 operation,
                 caller,
-                timestamp: env.ledger().timestamp(),
+                timestamp,
                 success,
             },
         );
     }
 
-    pub fn emit_performance(env: &Env, function: Symbol, duration: u64) {
+    pub fn emit_performance(env: &Env, function: Symbol, duration: Duration) {
         let count_key = (Symbol::new(env, "perf_cnt"), function.clone());
         let time_key = (Symbol::new(env, "perf_time"), function.clone());
 
@@ -215,7 +222,7 @@ mod monitoring {
             PerformanceMetric {
                 function,
                 duration,
-                timestamp: env.ledger().timestamp(),
+                timestamp: grainlify_time::now(env),
             },
         );
     }
@@ -227,7 +234,7 @@ mod monitoring {
 
         HealthStatus {
             is_healthy: true,
-            last_operation: env.ledger().timestamp(),
+            last_operation: grainlify_time::now(env),
             total_operations: ops,
             contract_version: String::from_str(env, "1.0.0"),
         }
@@ -266,7 +273,7 @@ mod monitoring {
         let err_key = Symbol::new(env, ERROR_COUNT);
 
         StateSnapshot {
-            timestamp: env.ledger().timestamp(),
+            timestamp: grainlify_time::now(env),
             total_operations: env.storage().persistent().get(&op_key).unwrap_or(0),
             total_users: env.storage().persistent().get(&usr_key).unwrap_or(0),
             total_errors: env.storage().persistent().get(&err_key).unwrap_or(0),
@@ -301,20 +308,21 @@ mod monitoring {
 #[allow(dead_code)]
 mod anti_abuse {
     use soroban_sdk::{contracttype, symbol_short, Address, Env};
+    use grainlify_time::{self, Timestamp, Duration, TimestampExt};
 
     #[contracttype]
     #[derive(Clone, Debug, Eq, PartialEq)]
     pub struct AntiAbuseConfig {
-        pub window_size: u64,
+        pub window_size: Duration,
         pub max_operations: u32,
-        pub cooldown_period: u64,
+        pub cooldown_period: Duration,
     }
 
     #[contracttype]
     #[derive(Clone, Debug, Eq, PartialEq)]
     pub struct AddressState {
-        pub last_operation_timestamp: u64,
-        pub window_start_timestamp: u64,
+        pub last_operation_timestamp: Timestamp,
+        pub window_start_timestamp: Timestamp,
         pub operation_count: u32,
     }
 
@@ -332,9 +340,9 @@ mod anti_abuse {
             .instance()
             .get(&AntiAbuseKey::Config)
             .unwrap_or(AntiAbuseConfig {
-                window_size: 3600,
+                window_size: grainlify_time::from_hours(1),
                 max_operations: 10,
-                cooldown_period: 60,
+                cooldown_period: grainlify_time::from_minutes(1),
             })
     }
 
@@ -387,42 +395,42 @@ mod anti_abuse {
                 .get(&key)
                 .unwrap_or(AddressState {
                     last_operation_timestamp: 0,
-                    window_start_timestamp: now,
+                    window_start_timestamp: grainlify_time::now(env),
                     operation_count: 0,
                 });
 
         if state.last_operation_timestamp > 0
-            && now
+            && grainlify_time::now(env)
                 < state
                     .last_operation_timestamp
-                    .saturating_add(config.cooldown_period)
+                    .add_duration(config.cooldown_period)
         {
             env.events().publish(
                 (symbol_short!("abuse"), symbol_short!("cooldown")),
-                (address.clone(), now),
+                (address.clone(), grainlify_time::now(env)),
             );
             panic!("Operation in cooldown period");
         }
 
-        if now
+        if grainlify_time::now(env)
             >= state
                 .window_start_timestamp
-                .saturating_add(config.window_size)
+                .add_duration(config.window_size)
         {
-            state.window_start_timestamp = now;
+            state.window_start_timestamp = grainlify_time::now(env);
             state.operation_count = 1;
         } else {
             if state.operation_count >= config.max_operations {
                 env.events().publish(
                     (symbol_short!("abuse"), symbol_short!("limit")),
-                    (address.clone(), now),
+                    (address.clone(), grainlify_time::now(env)),
                 );
                 panic!("Rate limit exceeded");
             }
             state.operation_count += 1;
         }
 
-        state.last_operation_timestamp = now;
+        state.last_operation_timestamp = grainlify_time::now(env);
         env.storage().persistent().set(&key, &state);
         env.storage().persistent().extend_ttl(&key, 17280, 17280);
     }
@@ -482,7 +490,7 @@ pub enum RefundMode {
 pub struct PayoutRecord {
     pub amount: i128,
     pub recipient: Address,
-    pub timestamp: u64,
+    pub timestamp: Timestamp,
 }
 
 #[contracttype]
@@ -491,7 +499,7 @@ pub struct RefundRecord {
     pub amount: i128,
     pub recipient: Address,
     pub mode: RefundMode,
-    pub timestamp: u64,
+    pub timestamp: Timestamp,
 }
 
 #[contracttype]
@@ -502,7 +510,7 @@ pub struct RefundApproval {
     pub recipient: Address,
     pub mode: RefundMode,
     pub approved_by: Address,
-    pub approved_at: u64,
+    pub approved_at: Timestamp,
 }
 
 #[contracttype]
@@ -511,7 +519,7 @@ pub struct Escrow {
     pub depositor: Address,
     pub amount: i128,
     pub status: EscrowStatus,
-    pub deadline: u64,
+    pub deadline: Timestamp,
     pub refund_history: Vec<RefundRecord>,
     pub payout_history: Vec<PayoutRecord>,
     pub remaining_amount: i128,
@@ -523,7 +531,7 @@ pub struct LockFundsItem {
     pub bounty_id: u64,
     pub depositor: Address,
     pub amount: i128,
-    pub deadline: u64,
+    pub deadline: Timestamp,
 }
 
 #[contracttype]
@@ -556,8 +564,8 @@ const MAX_FEE_RATE: i128 = 1_000;
 pub struct ConfigLimits {
     pub max_bounty_amount: Option<i128>,
     pub min_bounty_amount: Option<i128>,
-    pub max_deadline_duration: Option<u64>,
-    pub min_deadline_duration: Option<u64>,
+    pub max_deadline_duration: Option<Timestamp>,
+    pub min_deadline_duration: Option<Timestamp>,
 }
 
 // FIXED: Refactored AdminActionType to carry the data, removing problematic Options from AdminAction
@@ -577,7 +585,7 @@ pub struct AdminAction {
     pub action_id: u64,
     pub action_type: AdminActionType,
     pub proposed_by: Address,
-    pub execution_time: u64,
+    pub execution_time: Timestamp,
     pub executed: bool,
 }
 
@@ -590,7 +598,7 @@ pub struct ContractState {
     pub fee_config: FeeConfig,
     pub config_limits: ConfigLimits,
     pub is_paused: bool,
-    pub time_lock_duration: u64,
+    pub time_lock_duration: Duration,
     pub total_bounties: u64,
     pub total_locked_amount: i128,
     pub contract_version: u64,
@@ -620,8 +628,8 @@ pub struct EscrowFilter {
     pub depositor: Option<Address>,
     pub min_amount: Option<i128>,
     pub max_amount: Option<i128>,
-    pub start_time: Option<u64>, // Filter by deadline (>= start_time)
-    pub end_time: Option<u64>,   // Filter by deadline (<= end_time)
+    pub start_time: Option<Timestamp>, // Filter by deadline (>= start_time)
+    pub end_time: Option<Timestamp>,   // Filter by deadline (<= end_time)
 }
 
 #[contracttype]
@@ -656,11 +664,11 @@ impl BountyEscrowContract {
     pub fn init(env: Env, admin: Address, token: Address) -> Result<(), Error> {
         anti_abuse::check_rate_limit(&env, admin.clone());
 
-        let start = env.ledger().timestamp();
+        let start = grainlify_time::now(&env);
         let caller = admin.clone();
 
         if env.storage().instance().has(&DataKey::Admin) {
-            monitoring::track_operation(&env, symbol_short!("init"), caller, false);
+            monitoring::track_operation(&env, symbol_short!("init"), caller, false, grainlify_time::now(&env));
             return Err(Error::AlreadyInitialized);
         }
 
@@ -697,13 +705,13 @@ impl BountyEscrowContract {
             BountyEscrowInitialized {
                 admin: admin.clone(),
                 token,
-                timestamp: env.ledger().timestamp(),
+                timestamp: grainlify_time::now(&env),
             },
         );
 
-        monitoring::track_operation(&env, symbol_short!("init"), caller, true);
+        monitoring::track_operation(&env, symbol_short!("init"), caller, true, grainlify_time::now(&env));
 
-        let duration = env.ledger().timestamp().saturating_sub(start);
+        let duration = grainlify_time::now(&env).duration_since(start).unwrap_or(0);
         monitoring::emit_performance(&env, symbol_short!("init"), duration);
 
         Ok(())
@@ -780,7 +788,7 @@ impl BountyEscrowContract {
                 release_fee_rate: fee_config.release_fee_rate,
                 fee_recipient: fee_config.fee_recipient.clone(),
                 fee_enabled: fee_config.fee_enabled,
-                timestamp: env.ledger().timestamp(),
+                timestamp: grainlify_time::now(&env),
             },
         );
 
@@ -804,7 +812,7 @@ impl BountyEscrowContract {
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         admin.require_auth();
 
-        let time_lock_duration: u64 = env
+        let time_lock_duration: Duration = env
             .storage()
             .instance()
             .get(&DataKey::TimeLockDuration)
@@ -816,7 +824,7 @@ impl BountyEscrowContract {
                 .instance()
                 .get(&DataKey::NextActionId)
                 .unwrap();
-            let execution_time = env.ledger().timestamp() + time_lock_duration;
+            let execution_time = grainlify_time::now(&env).add_duration(time_lock_duration);
 
             let action = AdminAction {
                 action_id,
@@ -841,7 +849,7 @@ impl BountyEscrowContract {
                     action_type: AdminActionType::UpdateAdmin(new_admin), // Pass data for event
                     proposed_by: admin,
                     execution_time,
-                    timestamp: env.ledger().timestamp(),
+                    timestamp: grainlify_time::now(&env),
                 },
             );
         } else {
@@ -854,7 +862,7 @@ impl BountyEscrowContract {
                     old_admin,
                     new_admin,
                     updated_by: admin,
-                    timestamp: env.ledger().timestamp(),
+                    timestamp: grainlify_time::now(&env),
                 },
             );
         }
@@ -883,7 +891,7 @@ impl BountyEscrowContract {
                 old_key,
                 new_key: new_payout_key,
                 updated_by: admin,
-                timestamp: env.ledger().timestamp(),
+                timestamp: grainlify_time::now(&env),
             },
         );
 
@@ -895,8 +903,8 @@ impl BountyEscrowContract {
         env: Env,
         max_bounty_amount: Option<i128>,
         min_bounty_amount: Option<i128>,
-        max_deadline_duration: Option<u64>,
-        min_deadline_duration: Option<u64>,
+        max_deadline_duration: Option<Timestamp>,
+        min_deadline_duration: Option<Timestamp>,
     ) -> Result<(), Error> {
         if !env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::NotInitialized);
@@ -924,7 +932,7 @@ impl BountyEscrowContract {
                 max_deadline_duration: limits.max_deadline_duration,
                 min_deadline_duration: limits.min_deadline_duration,
                 updated_by: admin,
-                timestamp: env.ledger().timestamp(),
+                timestamp: grainlify_time::now(&env),
             },
         );
 
@@ -932,7 +940,7 @@ impl BountyEscrowContract {
     }
 
     /// Set time-lock duration for admin actions
-    pub fn set_time_lock_duration(env: Env, duration: u64) -> Result<(), Error> {
+    pub fn set_time_lock_duration(env: Env, duration: Duration) -> Result<(), Error> {
         if !env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::NotInitialized);
         }
@@ -974,7 +982,7 @@ impl BountyEscrowContract {
             return Err(Error::ActionNotFound);
         }
 
-        if env.ledger().timestamp() < action.execution_time {
+        if grainlify_time::now(&env) < action.execution_time {
             return Err(Error::ActionNotReady);
         }
 
@@ -990,7 +998,7 @@ impl BountyEscrowContract {
                         old_admin,
                         new_admin,
                         updated_by: admin.clone(),
-                        timestamp: env.ledger().timestamp(),
+                        timestamp: grainlify_time::now(&env),
                     },
                 );
             }
@@ -1004,7 +1012,7 @@ impl BountyEscrowContract {
                         old_key,
                         new_key,
                         updated_by: admin.clone(),
-                        timestamp: env.ledger().timestamp(),
+                        timestamp: grainlify_time::now(&env),
                     },
                 );
             }
@@ -1021,7 +1029,7 @@ impl BountyEscrowContract {
                         max_deadline_duration: limits.max_deadline_duration,
                         min_deadline_duration: limits.min_deadline_duration,
                         updated_by: admin.clone(),
-                        timestamp: env.ledger().timestamp(),
+                        timestamp: grainlify_time::now(&env),
                     },
                 );
             }
@@ -1037,7 +1045,7 @@ impl BountyEscrowContract {
                         release_fee_rate: fee_config.release_fee_rate,
                         fee_recipient: fee_config.fee_recipient.clone(),
                         fee_enabled: fee_config.fee_enabled,
-                        timestamp: env.ledger().timestamp(),
+                        timestamp: grainlify_time::now(&env),
                     },
                 );
             }
@@ -1054,7 +1062,7 @@ impl BountyEscrowContract {
                 action_id,
                 action_type: action.action_type,
                 executed_by: admin,
-                timestamp: env.ledger().timestamp(),
+                timestamp: grainlify_time::now(&env),
             },
         );
 
@@ -1098,7 +1106,7 @@ impl BountyEscrowContract {
                 action_id,
                 action_type: action.action_type,
                 cancelled_by: admin,
-                timestamp: env.ledger().timestamp(),
+                timestamp: grainlify_time::now(&env),
             },
         );
 
@@ -1126,7 +1134,7 @@ impl BountyEscrowContract {
                 min_deadline_duration: None,
             });
         let is_paused = Self::is_paused_internal(&env);
-        let time_lock_duration: u64 = env
+        let time_lock_duration: Duration = env
             .storage()
             .instance()
             .get(&DataKey::TimeLockDuration)
@@ -1196,7 +1204,7 @@ impl BountyEscrowContract {
             &env,
             ContractPaused {
                 paused_by: admin.clone(),
-                timestamp: env.ledger().timestamp(),
+                timestamp: grainlify_time::now(&env),
             },
         );
 
@@ -1221,7 +1229,7 @@ impl BountyEscrowContract {
             &env,
             ContractUnpaused {
                 unpaused_by: admin.clone(),
-                timestamp: env.ledger().timestamp(),
+                timestamp: grainlify_time::now(&env),
             },
         );
 
@@ -1257,7 +1265,7 @@ impl BountyEscrowContract {
                 withdrawn_by: admin.clone(),
                 amount: balance,
                 recipient: recipient.clone(),
-                timestamp: env.ledger().timestamp(),
+                timestamp: grainlify_time::now(&env),
             },
         );
 
@@ -1273,15 +1281,15 @@ impl BountyEscrowContract {
         depositor: Address,
         bounty_id: u64,
         amount: i128,
-        deadline: u64,
+        deadline: Timestamp,
     ) -> Result<(), Error> {
         anti_abuse::check_rate_limit(&env, depositor.clone());
 
-        let start = env.ledger().timestamp();
+        let start = grainlify_time::now(&env);
         let caller = depositor.clone();
 
         if Self::is_paused_internal(&env) {
-            monitoring::track_operation(&env, symbol_short!("lock"), caller, false);
+            monitoring::track_operation(&env, symbol_short!("lock"), caller, false, grainlify_time::now(&env));
             return Err(Error::ContractPaused);
         }
 
@@ -1295,24 +1303,24 @@ impl BountyEscrowContract {
             .set(&DataKey::ReentrancyGuard, &true);
 
         if amount <= 0 {
-            monitoring::track_operation(&env, symbol_short!("lock"), caller, false);
+            monitoring::track_operation(&env, symbol_short!("lock"), caller, false, grainlify_time::now(&env));
             env.storage().instance().remove(&DataKey::ReentrancyGuard);
             return Err(Error::InvalidAmount);
         }
 
-        if deadline <= env.ledger().timestamp() {
-            monitoring::track_operation(&env, symbol_short!("lock"), caller, false);
+        if deadline <= grainlify_time::now(&env) {
+            monitoring::track_operation(&env, symbol_short!("lock"), caller, false, grainlify_time::now(&env));
             env.storage().instance().remove(&DataKey::ReentrancyGuard);
             return Err(Error::InvalidDeadline);
         }
         if !env.storage().instance().has(&DataKey::Admin) {
-            monitoring::track_operation(&env, symbol_short!("lock"), caller, false);
+            monitoring::track_operation(&env, symbol_short!("lock"), caller, false, grainlify_time::now(&env));
             env.storage().instance().remove(&DataKey::ReentrancyGuard);
             return Err(Error::NotInitialized);
         }
 
         if env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
-            monitoring::track_operation(&env, symbol_short!("lock"), caller, false);
+            monitoring::track_operation(&env, symbol_short!("lock"), caller, false, grainlify_time::now(&env));
             env.storage().instance().remove(&DataKey::ReentrancyGuard);
             return Err(Error::BountyExists);
         }
@@ -1339,7 +1347,7 @@ impl BountyEscrowContract {
                     amount: fee_amount,
                     fee_rate: fee_config.lock_fee_rate,
                     recipient: fee_config.fee_recipient.clone(),
-                    timestamp: env.ledger().timestamp(),
+                    timestamp: grainlify_time::now(&env),
                 },
             );
         }
@@ -1382,9 +1390,9 @@ impl BountyEscrowContract {
 
         env.storage().instance().remove(&DataKey::ReentrancyGuard);
 
-        monitoring::track_operation(&env, symbol_short!("lock"), caller, true);
+        monitoring::track_operation(&env, symbol_short!("lock"), caller, true, grainlify_time::now(&env));
 
-        let duration = env.ledger().timestamp().saturating_sub(start);
+        let duration = grainlify_time::now(&env).duration_since(start).unwrap_or(0);
         monitoring::emit_performance(&env, symbol_short!("lock"), duration);
 
         Ok(())
@@ -1448,7 +1456,7 @@ impl BountyEscrowContract {
         contributor: Address,
         amount: Option<i128>, // Optional partial amount
     ) -> Result<(), Error> {
-        let start = env.ledger().timestamp();
+        let start = grainlify_time::now(&env);
 
         if env.storage().instance().has(&DataKey::ReentrancyGuard) {
             panic!("Reentrancy detected");
@@ -1464,7 +1472,7 @@ impl BountyEscrowContract {
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
 
         if Self::is_paused_internal(&env) {
-            monitoring::track_operation(&env, symbol_short!("release"), admin.clone(), false);
+            monitoring::track_operation(&env, symbol_short!("release"), admin.clone(), false, grainlify_time::now(&env));
             env.storage().instance().remove(&DataKey::ReentrancyGuard);
             return Err(Error::ContractPaused);
         }
@@ -1474,7 +1482,7 @@ impl BountyEscrowContract {
         admin.require_auth();
 
         if !env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
-            monitoring::track_operation(&env, symbol_short!("release"), admin.clone(), false);
+            monitoring::track_operation(&env, symbol_short!("release"), admin.clone(), false, grainlify_time::now(&env));
             env.storage().instance().remove(&DataKey::ReentrancyGuard);
             return Err(Error::BountyNotFound);
         }
@@ -1488,7 +1496,7 @@ impl BountyEscrowContract {
         // Allow release from Locked or PartiallyReleased states
         if escrow.status != EscrowStatus::Locked && escrow.status != EscrowStatus::PartiallyReleased
         {
-            monitoring::track_operation(&env, symbol_short!("release"), admin.clone(), false);
+            monitoring::track_operation(&env, symbol_short!("release"), admin.clone(), false, grainlify_time::now(&env));
             env.storage().instance().remove(&DataKey::ReentrancyGuard);
             return Err(Error::FundsNotLocked);
         }
@@ -1502,6 +1510,7 @@ impl BountyEscrowContract {
                         symbol_short!("release"),
                         admin.clone(),
                         false,
+                        grainlify_time::now(&env),
                     );
                     env.storage().instance().remove(&DataKey::ReentrancyGuard);
                     return Err(Error::InvalidAmount);
@@ -1512,6 +1521,7 @@ impl BountyEscrowContract {
                         symbol_short!("release"),
                         admin.clone(),
                         false,
+                        grainlify_time::now(&env),
                     );
                     env.storage().instance().remove(&DataKey::ReentrancyGuard);
                     return Err(Error::InvalidAmount); // Attempt to over-pay
@@ -1553,7 +1563,7 @@ impl BountyEscrowContract {
                     amount: fee_amount,
                     fee_rate: fee_config.release_fee_rate,
                     recipient: fee_config.fee_recipient.clone(),
-                    timestamp: env.ledger().timestamp(),
+                    timestamp: grainlify_time::now(&env),
                 },
             );
         }
@@ -1565,7 +1575,7 @@ impl BountyEscrowContract {
         let payout_record = PayoutRecord {
             amount: payout_amount,
             recipient: contributor.clone(),
-            timestamp: env.ledger().timestamp(),
+            timestamp: grainlify_time::now(&env),
         };
         escrow.payout_history.push_back(payout_record);
 
@@ -1586,16 +1596,16 @@ impl BountyEscrowContract {
                 bounty_id,
                 amount: net_amount,
                 recipient: contributor.clone(),
-                timestamp: env.ledger().timestamp(),
+                timestamp: grainlify_time::now(&env),
                 remaining_amount: escrow.remaining_amount,
             },
         );
 
         env.storage().instance().remove(&DataKey::ReentrancyGuard);
 
-        monitoring::track_operation(&env, symbol_short!("release"), admin, true);
+        monitoring::track_operation(&env, symbol_short!("release"), admin, true, grainlify_time::now(&env));
 
-        let duration = env.ledger().timestamp().saturating_sub(start);
+        let duration = grainlify_time::now(&env).duration_since(start).unwrap_or(0);
         monitoring::emit_performance(&env, symbol_short!("release"), duration);
         Ok(())
     }
@@ -1639,7 +1649,7 @@ impl BountyEscrowContract {
             recipient: recipient.clone(),
             mode,
             approved_by: admin.clone(),
-            approved_at: env.ledger().timestamp(),
+            approved_at: grainlify_time::now(&env),
         };
 
         env.storage()
@@ -1656,17 +1666,17 @@ impl BountyEscrowContract {
         recipient: Option<Address>,
         mode: RefundMode,
     ) -> Result<(), Error> {
-        let start = env.ledger().timestamp();
+        let start = grainlify_time::now(&env);
 
         if Self::is_paused_internal(&env) {
             let caller = env.current_contract_address();
-            monitoring::track_operation(&env, symbol_short!("refund"), caller, false);
+            monitoring::track_operation(&env, symbol_short!("refund"), caller, false, grainlify_time::now(&env));
             return Err(Error::ContractPaused);
         }
 
         if !env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
             let caller = env.current_contract_address();
-            monitoring::track_operation(&env, symbol_short!("refund"), caller, false);
+            monitoring::track_operation(&env, symbol_short!("refund"), caller, false, grainlify_time::now(&env));
             env.storage().instance().remove(&DataKey::ReentrancyGuard);
             return Err(Error::BountyNotFound);
         }
@@ -1683,7 +1693,7 @@ impl BountyEscrowContract {
             return Err(Error::FundsNotLocked);
         }
 
-        let now = env.ledger().timestamp();
+        let now = grainlify_time::now(&env);
         let is_before_deadline = now < escrow.deadline;
 
         let refund_amount: i128;
@@ -1760,7 +1770,7 @@ impl BountyEscrowContract {
             amount: refund_amount,
             recipient: refund_recipient.clone(),
             mode,
-            timestamp: env.ledger().timestamp(),
+            timestamp: grainlify_time::now(&env),
         };
         escrow.refund_history.push_back(refund_record);
 
@@ -1780,7 +1790,7 @@ impl BountyEscrowContract {
                 bounty_id,
                 amount: refund_amount,
                 refund_to: refund_recipient,
-                timestamp: env.ledger().timestamp(),
+                timestamp: grainlify_time::now(&env),
                 refund_mode: mode,
                 remaining_amount: escrow.remaining_amount,
             },
@@ -1788,9 +1798,9 @@ impl BountyEscrowContract {
 
         env.storage().instance().remove(&DataKey::ReentrancyGuard);
 
-        monitoring::track_operation(&env, symbol_short!("refund"), caller, true);
+        monitoring::track_operation(&env, symbol_short!("refund"), caller, true, grainlify_time::now(&env));
 
-        let duration = env.ledger().timestamp().saturating_sub(start);
+        let duration = grainlify_time::now(&env).duration_since(start).unwrap_or(0);
         monitoring::emit_performance(&env, symbol_short!("refund"), duration);
 
         Ok(())
@@ -1866,7 +1876,7 @@ impl BountyEscrowContract {
             .get(&DataKey::Escrow(bounty_id))
             .unwrap();
 
-        let now = env.ledger().timestamp();
+        let now = grainlify_time::now(&env);
         let deadline_passed = now >= escrow.deadline;
 
         let approval = if env
@@ -2093,7 +2103,7 @@ impl BountyEscrowContract {
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
         let client = token::Client::new(&env, &token_addr);
         let contract_address = env.current_contract_address();
-        let timestamp = env.ledger().timestamp();
+        let timestamp = grainlify_time::now(&env);
 
         for item in items.iter() {
             if env
@@ -2201,7 +2211,7 @@ impl BountyEscrowContract {
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
         let client = token::Client::new(&env, &token_addr);
         let contract_address = env.current_contract_address();
-        let timestamp = env.ledger().timestamp();
+        let timestamp = grainlify_time::now(&env);
 
         let mut total_amount: i128 = 0;
         for item in items.iter() {
