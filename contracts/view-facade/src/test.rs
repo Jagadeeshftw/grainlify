@@ -1,83 +1,67 @@
 #![cfg(test)]
 
-use crate::{ViewFacade, ViewFacadeClient};
-use soroban_sdk::{testutils::Address as _, Address, Env, String, Vec};
+use crate::{ContractKind, ViewFacade, ViewFacadeClient};
+use soroban_sdk::{testutils::Address as _, Address, Env};
 
 #[test]
-fn test_bounty_batch_query_correctness() {
+fn test_register_and_lookup_contract() {
     let env = Env::default();
+    env.mock_all_auths();
+
     let facade_id = env.register_contract(None, ViewFacade);
     let facade = ViewFacadeClient::new(&env, &facade_id);
-    
+
+    let admin = Address::generate(&env);
     let bounty_contract = Address::generate(&env);
-    let mut bounty_ids = Vec::new(&env);
-    bounty_ids.push_back(1u64);
-    bounty_ids.push_back(2u64);
-    
-    let results = facade.get_bounty_batch(&bounty_contract, &bounty_ids);
-    
-    assert!(results.len() <= bounty_ids.len());
+
+    facade.init(&admin);
+    facade.register(&bounty_contract, &ContractKind::BountyEscrow, &1u32);
+
+    let entry = facade.get_contract(&bounty_contract).unwrap();
+    assert_eq!(entry.address, bounty_contract);
+    assert_eq!(entry.kind, ContractKind::BountyEscrow);
+    assert_eq!(entry.version, 1);
 }
 
 #[test]
-fn test_depositor_summary_aggregation() {
+fn test_list_and_count_contracts() {
     let env = Env::default();
+    env.mock_all_auths();
+
     let facade_id = env.register_contract(None, ViewFacade);
     let facade = ViewFacadeClient::new(&env, &facade_id);
-    
-    let bounty_contract = Address::generate(&env);
-    let depositor = Address::generate(&env);
-    
-    let summary = facade.get_depositor_summary(&bounty_contract, &depositor);
-    
-    assert_eq!(summary.depositor, depositor);
-    assert!(summary.total_deposited >= 0);
-    assert!(summary.active_bounties >= 0);
-    assert!(summary.completed_bounties >= 0);
+
+    let admin = Address::generate(&env);
+    facade.init(&admin);
+
+    let c1 = Address::generate(&env);
+    let c2 = Address::generate(&env);
+
+    facade.register(&c1, &ContractKind::BountyEscrow, &1u32);
+    facade.register(&c2, &ContractKind::ProgramEscrow, &2u32);
+
+    assert_eq!(facade.contract_count(), 2);
+    let all = facade.list_contracts();
+    assert_eq!(all.len(), 2);
 }
 
 #[test]
-fn test_program_batch_query() {
+fn test_deregister_contract() {
     let env = Env::default();
-    let facade_id = env.register_contract(None, ViewFacade);
-    let facade = ViewFacadeClient::new(&env, &facade_id);
-    
-    let program_contract = Address::generate(&env);
-    let mut program_ids = Vec::new(&env);
-    program_ids.push_back(String::from_str(&env, "program1"));
-    program_ids.push_back(String::from_str(&env, "program2"));
-    
-    let results = facade.get_program_batch(&program_contract, &program_ids);
-    
-    assert!(results.len() <= program_ids.len());
-}
+    env.mock_all_auths();
 
-#[test]
-fn test_aggregated_stats_non_negative() {
-    let env = Env::default();
     let facade_id = env.register_contract(None, ViewFacade);
     let facade = ViewFacadeClient::new(&env, &facade_id);
-    
-    let bounty_contract = Address::generate(&env);
-    
-    let stats = facade.get_aggregated_bounty_stats(&bounty_contract);
-    
-    assert!(stats.total_locked >= 0);
-    assert!(stats.total_released >= 0);
-    assert!(stats.total_refunded >= 0);
-    assert!(stats.active_bounties <= stats.total_bounties);
-}
 
-#[test]
-fn test_empty_batch_returns_empty() {
-    let env = Env::default();
-    let facade_id = env.register_contract(None, ViewFacade);
-    let facade = ViewFacadeClient::new(&env, &facade_id);
-    
-    let bounty_contract = Address::generate(&env);
-    let empty_ids: Vec<u64> = Vec::new(&env);
-    
-    let results = facade.get_bounty_batch(&bounty_contract, &empty_ids);
-    
-    assert_eq!(results.len(), 0);
+    let admin = Address::generate(&env);
+    let contract = Address::generate(&env);
+
+    facade.init(&admin);
+    facade.register(&contract, &ContractKind::GrainlifyCore, &3u32);
+    assert_eq!(facade.contract_count(), 1);
+
+    facade.deregister(&contract);
+
+    assert_eq!(facade.contract_count(), 0);
+    assert_eq!(facade.get_contract(&contract), None);
 }

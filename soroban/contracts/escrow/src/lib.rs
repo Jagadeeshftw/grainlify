@@ -473,5 +473,73 @@ impl EscrowContract {
     }
 }
 
+// ── NEW public methods ──────────────────────────────────────────────────────
+
+impl EscrowContract {
+    /// Return the contract's current token balance.
+    /// Added to satisfy the standard EscrowInterface (Issue #574).
+    pub fn get_balance(env: Env) -> Result<i128, Error> {
+        if !env.storage().instance().has(&DataKey::Token) {
+            return Err(Error::NotInitialized);
+        }
+        let token: Address = env.storage().instance().get(&DataKey::Token).unwrap();
+        let client = token::Client::new(&env, &token);
+        Ok(client.balance(&env.current_contract_address()))
+    }
+
+    /// Alias of `get_escrow` using the standard name from EscrowInterface.
+    pub fn get_escrow_info(env: Env, bounty_id: u64) -> Result<Escrow, Error> {
+        Self::get_escrow(env, bounty_id)
+    }
+}
+
+// ── Standard interface traits (local definitions, Issue #574) ───────────────
+//
+// Mirrors the canonical trait definitions from
+// contracts/bounty_escrow/contracts/escrow/src/traits.rs.
+// Kept local to avoid a cross-crate dependency on bounty_escrow types.
+
+pub mod traits {
+    use soroban_sdk::{Address, Env};
+    use super::{Error, Escrow, EscrowContract};
+
+    /// Core lifecycle interface — see bounty_escrow traits.rs for full spec.
+    pub trait EscrowInterface {
+        fn lock_funds(env: &Env, depositor: Address, bounty_id: u64, amount: i128, deadline: u64) -> Result<(), Error>;
+        fn release_funds(env: &Env, bounty_id: u64, contributor: Address) -> Result<(), Error>;
+        fn refund(env: &Env, bounty_id: u64) -> Result<(), Error>;
+        fn get_escrow_info(env: &Env, bounty_id: u64) -> Result<Escrow, Error>;
+        fn get_balance(env: &Env) -> Result<i128, Error>;
+    }
+
+    /// Version interface — see bounty_escrow traits.rs for full spec.
+    pub trait UpgradeInterface {
+        fn get_version(env: &Env) -> u32;
+    }
+
+    impl EscrowInterface for EscrowContract {
+        fn lock_funds(env: &Env, depositor: Address, bounty_id: u64, amount: i128, deadline: u64) -> Result<(), Error> {
+            EscrowContract::lock_funds(env.clone(), depositor, bounty_id, amount, deadline)
+        }
+        fn release_funds(env: &Env, bounty_id: u64, contributor: Address) -> Result<(), Error> {
+            EscrowContract::release_funds(env.clone(), bounty_id, contributor)
+        }
+        fn refund(env: &Env, bounty_id: u64) -> Result<(), Error> {
+            EscrowContract::refund(env.clone(), bounty_id)
+        }
+        fn get_escrow_info(env: &Env, bounty_id: u64) -> Result<Escrow, Error> {
+            EscrowContract::get_escrow(env.clone(), bounty_id)
+        }
+        fn get_balance(env: &Env) -> Result<i128, Error> {
+            EscrowContract::get_balance(env.clone())
+        }
+    }
+
+    impl UpgradeInterface for EscrowContract {
+        /// Soroban escrow is pinned at v1 (no WASM upgrade path yet).
+        fn get_version(_env: &Env) -> u32 { 1 }
+    }
+}
+
 mod test;
 mod identity_test;
