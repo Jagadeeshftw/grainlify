@@ -1328,7 +1328,8 @@ mod test {
     pub mod upgrade_rollback_tests;
 
     // WASM for testing
-    pub const WASM: &[u8] = include_bytes!("../target/wasm32-unknown-unknown/release/grainlify_core.wasm");
+    pub const WASM: &[u8] =
+        include_bytes!("../target/wasm32-unknown-unknown/release/grainlify_core.wasm");
 
     #[test]
     fn multisig_init_works() {

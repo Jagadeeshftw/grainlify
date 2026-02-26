@@ -74,7 +74,11 @@ fn test_e2e_complete_migration_lifecycle() {
     client.migrate(&3, &migration_hash_v3);
 
     // Step 4: Verify final state
-    assert_eq!(client.get_version(), 3, "Version should be 3 after migration");
+    assert_eq!(
+        client.get_version(),
+        3,
+        "Version should be 3 after migration"
+    );
 
     let migration_state = client.get_migration_state().unwrap();
     assert_eq!(migration_state.from_version, 2);
@@ -113,18 +117,9 @@ fn test_e2e_migration_with_state_preservation() {
 
     // Verify migration state persists
     let state_after = client.get_migration_state().unwrap();
-    assert_eq!(
-        state_before.from_version,
-        state_after.from_version
-    );
-    assert_eq!(
-        state_before.to_version,
-        state_after.to_version
-    );
-    assert_eq!(
-        state_before.migration_hash,
-        state_after.migration_hash
-    );
+    assert_eq!(state_before.from_version, state_after.from_version);
+    assert_eq!(state_before.to_version, state_after.to_version);
+    assert_eq!(state_before.migration_hash, state_after.migration_hash);
 }
 
 // ============================================================================
@@ -252,11 +247,11 @@ fn test_e2e_migration_version_control() {
     assert_eq!(state.from_version, 2);
     assert_eq!(state.to_version, 3);
     assert_eq!(state.migration_hash, migration_hash_v3);
-    
+
     // Verify idempotency - calling migrate again with same version is a no-op
     client.migrate(&3, &migration_hash_v3);
     assert_eq!(client.get_version(), 3);
-    
+
     // Verify state unchanged
     let state_after = client.get_migration_state().unwrap();
     assert_eq!(state.migrated_at, state_after.migrated_at);
