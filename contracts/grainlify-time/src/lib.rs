@@ -1,93 +1,56 @@
 #![no_std]
-use soroban_sdk::{contracttype, Env};
+use soroban_sdk::Env;
 
-/// A strict wrapper for Unix timestamps in seconds.
-#[contracttype]
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub struct Timestamp(pub u64);
+/// Timestamp represented as seconds since Unix epoch.
+pub type Timestamp = u64;
 
-/// A strict wrapper for time durations in seconds.
-#[contracttype]
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub struct Duration(pub u64);
+/// Duration represented in seconds.
+pub type Duration = u64;
 
-impl Timestamp {
-    /// Returns the current ledger timestamp wrapped in a `Timestamp`.
-    pub fn now(env: &Env) -> Self {
-        Self(env.ledger().timestamp())
-    }
+/// Block height represented as a sequence number.
+pub type BlockHeight = u32;
 
-    /// Adds a `Duration` to this `Timestamp`, returning a new `Timestamp`.
-    /// Panics on overflow.
-    pub fn add_duration(&self, duration: Duration) -> Self {
-        Self(self.0.checked_add(duration.0).expect("Timestamp overflow"))
-    }
-
-    /// Subtracts a `Duration` from this `Timestamp`, returning a new `Timestamp`.
-    /// Panics on underflow.
-    pub fn sub_duration(&self, duration: Duration) -> Self {
-        Self(self.0.checked_sub(duration.0).expect("Timestamp underflow"))
-    }
-
-    /// Calculates the duration between two timestamps.
-    /// Returns `Some(Duration)` if `other` is before or equal to `self`.
-    pub fn duration_since(&self, other: Timestamp) -> Option<Duration> {
-        self.0.checked_sub(other.0).map(Duration)
-    }
-
-    /// Returns the inner u64 value.
-    pub fn as_u64(&self) -> u64 {
-        self.0
-    }
+/// Get the current ledger timestamp.
+pub fn now(env: &Env) -> Timestamp {
+    env.ledger().timestamp()
 }
 
-impl Duration {
-    /// Returns the inner u64 value.
-    pub fn as_u64(&self) -> u64 {
-        self.0
-    }
-
-    /// Creates a duration from seconds.
-    pub fn from_seconds(seconds: u64) -> Self {
-        Self(seconds)
-    }
-
-    /// Creates a duration from minutes.
-    pub fn from_minutes(minutes: u64) -> Self {
-        Self(minutes.checked_mul(60).expect("Duration overflow"))
-    }
-
-    /// Creates a duration from hours.
-    pub fn from_hours(hours: u64) -> Self {
-        Self(hours.checked_mul(3600).expect("Duration overflow"))
-    }
-
-    /// Creates a duration from days.
-    pub fn from_days(days: u64) -> Self {
-        Self(days.checked_mul(86400).expect("Duration overflow"))
-    }
+/// Create a duration from hours.
+pub fn from_hours(hours: u64) -> Duration {
+    hours.saturating_mul(3600)
 }
 
-impl From<u64> for Timestamp {
-    fn from(secs: u64) -> Self {
-        Self(secs)
-    }
+/// Create a duration from minutes.
+pub fn from_minutes(minutes: u64) -> Duration {
+    minutes.saturating_mul(60)
 }
 
-impl From<Timestamp> for u64 {
-    fn from(ts: Timestamp) -> Self {
-        ts.0
-    }
+/// Create a duration from days.
+pub fn from_days(days: u64) -> Duration {
+    days.saturating_mul(86400)
 }
 
-impl From<u64> for Duration {
-    fn from(secs: u64) -> Self {
-        Self(secs)
-    }
+/// Get the current ledger sequence number.
+pub fn current_block_height(env: &Env) -> BlockHeight {
+    env.ledger().sequence()
 }
 
-impl From<Duration> for u64 {
-    fn from(d: Duration) -> Self {
-        d.0
+/// Extension trait for Timestamp logic.
+pub trait TimestampExt {
+    fn add_duration(&self, duration: Duration) -> Self;
+    fn duration_since(&self, earlier: Self) -> Option<Duration>;
+}
+
+impl TimestampExt for Timestamp {
+    fn add_duration(&self, duration: Duration) -> Self {
+        self.saturating_add(duration)
+    }
+
+    fn duration_since(&self, earlier: Self) -> Option<Duration> {
+        if *self >= earlier {
+            Some(self - earlier)
+        } else {
+            None
+        }
     }
 }
