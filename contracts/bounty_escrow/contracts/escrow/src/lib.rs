@@ -349,7 +349,7 @@ mod anti_abuse {
         {
             // New window: start at 1 (safe)
             state.window_start_timestamp = now;
-            state.operation_count = 0.checked_add(1).unwrap();
+            state.operation_count = 0_u32.checked_add(1).unwrap();
         } else {
             // Same window
             if state.operation_count >= config.max_operations {
