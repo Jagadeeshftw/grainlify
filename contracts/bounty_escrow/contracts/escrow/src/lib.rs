@@ -24,8 +24,8 @@ use events::{
     emit_batch_funds_locked, emit_batch_funds_released, emit_bounty_initialized, emit_funds_locked,
     emit_funds_refunded, emit_funds_released, emit_ticket_claimed, emit_ticket_issued,
     BatchFundsLocked, BatchFundsReleased, BountyEscrowInitialized, ClaimCancelled, ClaimCreated,
-    ClaimExecuted, FundsLocked, FundsRefunded, FundsReleased, TicketClaimed, TicketIssued,
-    EVENT_VERSION_V2,
+    ClaimExecuted, FeeOperationType, FundsLocked, FundsRefunded, FundsReleased, TicketClaimed,
+    TicketIssued, EVENT_VERSION_V2,
 };
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, token, vec, Address, Env,
@@ -422,6 +422,7 @@ pub enum Error {
     CapabilityUsesExhausted = 31,
     CapabilityExceedsAuthority = 32,
     InvalidAssetId = 33,
+    InvalidFeeRouting = 34,
 }
 
 #[contracttype]
@@ -464,6 +465,7 @@ pub enum DataKey {
     EscrowIndex,             // Vec<u64> of all bounty_ids
     DepositorIndex(Address), // Vec<u64> of bounty_ids by depositor
     FeeConfig,               // Fee configuration
+    FeeRouting(u64),         // bounty_id -> FeeRoutingConfig
     RefundApproval(u64),     // bounty_id -> RefundApproval
     ReentrancyGuard,
     MultisigConfig,
@@ -540,6 +542,15 @@ pub struct FeeConfig {
     pub release_fee_rate: i128,
     pub fee_recipient: Address,
     pub fee_enabled: bool,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeeRoutingConfig {
+    pub treasury_recipient: Address,
+    pub treasury_bps: i128,
+    pub partner_recipient: Option<Address>,
+    pub partner_bps: i128,
 }
 
 #[contracttype]
@@ -793,6 +804,104 @@ impl BountyEscrowContract {
             })
     }
 
+    fn validate_fee_routing_config(config: &FeeRoutingConfig) -> Result<(), Error> {
+        if config.treasury_bps < 0 || config.partner_bps < 0 {
+            return Err(Error::InvalidFeeRouting);
+        }
+        if config
+            .treasury_bps
+            .checked_add(config.partner_bps)
+            .ok_or(Error::InvalidFeeRouting)?
+            != 10_000
+        {
+            return Err(Error::InvalidFeeRouting);
+        }
+        if config.partner_bps > 0 && config.partner_recipient.is_none() {
+            return Err(Error::InvalidFeeRouting);
+        }
+        if config.partner_bps == 0 && config.partner_recipient.is_some() {
+            return Err(Error::InvalidFeeRouting);
+        }
+        Ok(())
+    }
+
+    fn get_fee_routing_config_internal(env: &Env, bounty_id: u64) -> FeeRoutingConfig {
+        if let Some(config) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, FeeRoutingConfig>(&DataKey::FeeRouting(bounty_id))
+        {
+            config
+        } else {
+            let fee_config = Self::get_fee_config_internal(env);
+            FeeRoutingConfig {
+                treasury_recipient: fee_config.fee_recipient,
+                treasury_bps: 10_000,
+                partner_recipient: None,
+                partner_bps: 0,
+            }
+        }
+    }
+
+    fn route_fee_transfer(
+        env: &Env,
+        client: &token::Client,
+        bounty_id: u64,
+        operation_type: FeeOperationType,
+        gross_amount: i128,
+        fee_rate: i128,
+        total_fee: i128,
+    ) -> Result<(), Error> {
+        if total_fee <= 0 {
+            return Ok(());
+        }
+
+        let routing = Self::get_fee_routing_config_internal(env, bounty_id);
+        Self::validate_fee_routing_config(&routing)?;
+
+        let treasury_fee = total_fee
+            .checked_mul(routing.treasury_bps)
+            .ok_or(Error::InvalidAmount)?
+            / 10_000;
+        let partner_fee = total_fee
+            .checked_sub(treasury_fee)
+            .ok_or(Error::InvalidAmount)?;
+        let contract_address = env.current_contract_address();
+
+        if treasury_fee > 0 {
+            client.transfer(
+                &contract_address,
+                &routing.treasury_recipient,
+                &treasury_fee,
+            );
+        }
+        if partner_fee > 0 {
+            if let Some(partner) = routing.partner_recipient.clone() {
+                client.transfer(&contract_address, &partner, &partner_fee);
+            } else {
+                return Err(Error::InvalidFeeRouting);
+            }
+        }
+
+        events::emit_fee_routed(
+            env,
+            events::FeeRouted {
+                bounty_id,
+                operation_type,
+                gross_amount,
+                total_fee,
+                fee_rate,
+                treasury_recipient: routing.treasury_recipient.clone(),
+                treasury_fee,
+                partner_recipient: routing.partner_recipient.clone(),
+                partner_fee,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
     /// Update fee configuration (admin only)
     pub fn update_fee_config(
         env: Env,
@@ -848,6 +957,67 @@ impl BountyEscrowContract {
         );
 
         Ok(())
+    }
+
+    /// Configure deterministic fee routing for a specific bounty.
+    /// `treasury_bps + partner_bps` must equal 10_000.
+    pub fn set_fee_routing(
+        env: Env,
+        bounty_id: u64,
+        treasury_recipient: Address,
+        treasury_bps: i128,
+        partner_recipient: Option<Address>,
+        partner_bps: i128,
+    ) -> Result<(), Error> {
+        if !env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::NotInitialized);
+        }
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        let config = FeeRoutingConfig {
+            treasury_recipient,
+            treasury_bps,
+            partner_recipient,
+            partner_bps,
+        };
+        Self::validate_fee_routing_config(&config)?;
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::FeeRouting(bounty_id), &config);
+
+        events::emit_fee_routing_updated(
+            &env,
+            events::FeeRoutingUpdated {
+                bounty_id,
+                treasury_recipient: config.treasury_recipient.clone(),
+                treasury_bps: config.treasury_bps,
+                partner_recipient: config.partner_recipient.clone(),
+                partner_bps: config.partner_bps,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Remove bounty-specific routing and fall back to default fee recipient.
+    pub fn clear_fee_routing(env: Env, bounty_id: u64) -> Result<(), Error> {
+        if !env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::NotInitialized);
+        }
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+        env.storage()
+            .persistent()
+            .remove(&DataKey::FeeRouting(bounty_id));
+        Ok(())
+    }
+
+    /// Read resolved fee routing for a bounty.
+    pub fn get_fee_routing(env: Env, bounty_id: u64) -> FeeRoutingConfig {
+        Self::get_fee_routing_config_internal(&env, bounty_id)
     }
 
     /// Update pause flags (admin only)
@@ -1580,14 +1750,22 @@ impl BountyEscrowContract {
             }
         }
 
+        let fee_config = Self::get_fee_config_internal(&env);
+        let lock_fee = if fee_config.fee_enabled && fee_config.lock_fee_rate > 0 {
+            Self::calculate_fee(amount, fee_config.lock_fee_rate)
+        } else {
+            0
+        };
+        let net_amount = amount.checked_sub(lock_fee).ok_or(Error::InvalidAmount)?;
+
         // EFFECTS: write escrow state and indexes before the external call
         let escrow = Escrow {
             depositor: depositor.clone(),
-            amount,
+            amount: net_amount,
             status: EscrowStatus::Locked,
             deadline,
             refund_history: vec![&env],
-            remaining_amount: amount,
+            remaining_amount: net_amount,
         };
         invariants::assert_escrow(&env, &escrow);
 
@@ -1621,6 +1799,15 @@ impl BountyEscrowContract {
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
         let client = token::Client::new(&env, &token_addr);
         client.transfer(&depositor, &env.current_contract_address(), &amount);
+        Self::route_fee_transfer(
+            &env,
+            &client,
+            bounty_id,
+            FeeOperationType::Lock,
+            amount,
+            fee_config.lock_fee_rate,
+            lock_fee,
+        )?;
 
         // Emit value allows for off-chain indexing
         emit_funds_locked(
@@ -1628,7 +1815,7 @@ impl BountyEscrowContract {
             FundsLocked {
                 version: EVENT_VERSION_V2,
                 bounty_id,
-                amount,
+                amount: net_amount,
                 depositor: depositor.clone(),
                 deadline,
             },
@@ -1701,8 +1888,18 @@ impl BountyEscrowContract {
             return Err(Error::FundsNotLocked);
         }
 
+        let fee_config = Self::get_fee_config_internal(&env);
+        let release_fee = if fee_config.fee_enabled && fee_config.release_fee_rate > 0 {
+            Self::calculate_fee(escrow.amount, fee_config.release_fee_rate)
+        } else {
+            0
+        };
+        let release_amount = escrow
+            .amount
+            .checked_sub(release_fee)
+            .ok_or(Error::InvalidAmount)?;
+
         // EFFECTS: update state before external call (CEI)
-        let release_amount = escrow.amount;
         escrow.status = EscrowStatus::Released;
         escrow.remaining_amount = 0;
         invariants::assert_escrow(&env, &escrow);
@@ -1718,6 +1915,15 @@ impl BountyEscrowContract {
             &contributor,
             &release_amount,
         );
+        Self::route_fee_transfer(
+            &env,
+            &client,
+            bounty_id,
+            FeeOperationType::Release,
+            escrow.amount,
+            fee_config.release_fee_rate,
+            release_fee,
+        )?;
 
         emit_funds_released(
             &env,
@@ -1779,13 +1985,32 @@ impl BountyEscrowContract {
             payout_amount,
         )?;
 
+        let fee_config = Self::get_fee_config_internal(&env);
+        let release_fee = if fee_config.fee_enabled && fee_config.release_fee_rate > 0 {
+            Self::calculate_fee(payout_amount, fee_config.release_fee_rate)
+        } else {
+            0
+        };
+        let payout_after_fee = payout_amount
+            .checked_sub(release_fee)
+            .ok_or(Error::InvalidAmount)?;
+
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
         let client = token::Client::new(&env, &token_addr);
         client.transfer(
             &env.current_contract_address(),
             &contributor,
-            &payout_amount,
+            &payout_after_fee,
         );
+        Self::route_fee_transfer(
+            &env,
+            &client,
+            bounty_id,
+            FeeOperationType::Release,
+            payout_amount,
+            fee_config.release_fee_rate,
+            release_fee,
+        )?;
 
         escrow.remaining_amount -= payout_amount;
         if escrow.remaining_amount == 0 {
@@ -1800,7 +2025,7 @@ impl BountyEscrowContract {
             FundsReleased {
                 version: EVENT_VERSION_V2,
                 bounty_id,
-                amount: payout_amount,
+                amount: payout_after_fee,
                 recipient: contributor,
                 timestamp: env.ledger().timestamp(),
             },
@@ -1924,7 +2149,16 @@ impl BountyEscrowContract {
         }
 
         // EFFECTS: update escrow and claim state before external call (CEI)
-        let claim_amount = claim.amount;
+        let fee_config = Self::get_fee_config_internal(&env);
+        let release_fee = if fee_config.fee_enabled && fee_config.release_fee_rate > 0 {
+            Self::calculate_fee(claim.amount, fee_config.release_fee_rate)
+        } else {
+            0
+        };
+        let claim_amount = claim
+            .amount
+            .checked_sub(release_fee)
+            .ok_or(Error::InvalidAmount)?;
         let claim_recipient = claim.recipient.clone();
 
         let mut escrow: Escrow = env
@@ -1951,6 +2185,15 @@ impl BountyEscrowContract {
             &claim_recipient,
             &claim_amount,
         );
+        Self::route_fee_transfer(
+            &env,
+            &client,
+            bounty_id,
+            FeeOperationType::Release,
+            claim.amount,
+            fee_config.release_fee_rate,
+            release_fee,
+        )?;
 
         env.events().publish(
             (symbol_short!("claim"), symbol_short!("done")),
@@ -2010,13 +2253,33 @@ impl BountyEscrowContract {
             claim.amount,
         )?;
 
+        let fee_config = Self::get_fee_config_internal(&env);
+        let release_fee = if fee_config.fee_enabled && fee_config.release_fee_rate > 0 {
+            Self::calculate_fee(claim.amount, fee_config.release_fee_rate)
+        } else {
+            0
+        };
+        let payout_after_fee = claim
+            .amount
+            .checked_sub(release_fee)
+            .ok_or(Error::InvalidAmount)?;
+
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
         let client = token::Client::new(&env, &token_addr);
         client.transfer(
             &env.current_contract_address(),
             &claim.recipient,
-            &claim.amount,
+            &payout_after_fee,
         );
+        Self::route_fee_transfer(
+            &env,
+            &client,
+            bounty_id,
+            FeeOperationType::Release,
+            claim.amount,
+            fee_config.release_fee_rate,
+            release_fee,
+        )?;
 
         let mut escrow: Escrow = env
             .storage()
@@ -2038,7 +2301,7 @@ impl BountyEscrowContract {
             ClaimExecuted {
                 bounty_id,
                 recipient: claim.recipient,
-                amount: claim.amount,
+                amount: payout_after_fee,
                 claimed_at: now,
                 outcome: DisputeOutcome::ResolvedByPayout,
             },
@@ -2214,21 +2477,40 @@ impl BountyEscrowContract {
             .persistent()
             .set(&DataKey::Escrow(bounty_id), &escrow);
 
+        let fee_config = Self::get_fee_config_internal(&env);
+        let release_fee = if fee_config.fee_enabled && fee_config.release_fee_rate > 0 {
+            Self::calculate_fee(payout_amount, fee_config.release_fee_rate)
+        } else {
+            0
+        };
+        let payout_after_fee = payout_amount
+            .checked_sub(release_fee)
+            .ok_or(Error::InvalidAmount)?;
+
         // INTERACTION: external token transfer is last
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
         let client = token::Client::new(&env, &token_addr);
         client.transfer(
             &env.current_contract_address(),
             &contributor,
-            &payout_amount,
+            &payout_after_fee,
         );
+        Self::route_fee_transfer(
+            &env,
+            &client,
+            bounty_id,
+            FeeOperationType::Release,
+            payout_amount,
+            fee_config.release_fee_rate,
+            release_fee,
+        )?;
 
         events::emit_funds_released(
             &env,
             FundsReleased {
                 version: EVENT_VERSION_V2,
                 bounty_id,
-                amount: payout_amount,
+                amount: payout_after_fee,
                 recipient: contributor.clone(),
                 timestamp: env.ledger().timestamp(),
             },
@@ -3296,6 +3578,7 @@ impl BountyEscrowContract {
         let client = token::Client::new(&env, &token_addr);
         let contract_address = env.current_contract_address();
         let timestamp = env.ledger().timestamp();
+        let fee_config = Self::get_fee_config_internal(&env);
 
         // Validate all items before processing (all-or-nothing approach)
         for item in items.iter() {
@@ -3345,13 +3628,23 @@ impl BountyEscrowContract {
         // EFFECTS: write all escrow records before any external calls (CEI)
         let mut locked_count = 0u32;
         for item in items.iter() {
+            let lock_fee = if fee_config.fee_enabled && fee_config.lock_fee_rate > 0 {
+                Self::calculate_fee(item.amount, fee_config.lock_fee_rate)
+            } else {
+                0
+            };
+            let net_amount = item
+                .amount
+                .checked_sub(lock_fee)
+                .ok_or(Error::InvalidAmount)?;
+
             let escrow = Escrow {
                 depositor: item.depositor.clone(),
-                amount: item.amount,
+                amount: net_amount,
                 status: EscrowStatus::Locked,
                 deadline: item.deadline,
                 refund_history: vec![&env],
-                remaining_amount: item.amount,
+                remaining_amount: net_amount,
             };
 
             env.storage()
@@ -3386,14 +3679,32 @@ impl BountyEscrowContract {
 
         // INTERACTION: all external token transfers happen after state is finalized
         for item in items.iter() {
+            let lock_fee = if fee_config.fee_enabled && fee_config.lock_fee_rate > 0 {
+                Self::calculate_fee(item.amount, fee_config.lock_fee_rate)
+            } else {
+                0
+            };
+            let net_amount = item
+                .amount
+                .checked_sub(lock_fee)
+                .ok_or(Error::InvalidAmount)?;
             client.transfer(&item.depositor, &contract_address, &item.amount);
+            Self::route_fee_transfer(
+                &env,
+                &client,
+                item.bounty_id,
+                FeeOperationType::Lock,
+                item.amount,
+                fee_config.lock_fee_rate,
+                lock_fee,
+            )?;
 
             emit_funds_locked(
                 &env,
                 FundsLocked {
                     version: EVENT_VERSION_V2,
                     bounty_id: item.bounty_id,
-                    amount: item.amount,
+                    amount: net_amount,
                     depositor: item.depositor.clone(),
                     deadline: item.deadline,
                 },
@@ -3467,6 +3778,7 @@ impl BountyEscrowContract {
         let client = token::Client::new(&env, &token_addr);
         let contract_address = env.current_contract_address();
         let timestamp = env.ledger().timestamp();
+        let fee_config = Self::get_fee_config_internal(&env);
 
         // Validate all items before processing (all-or-nothing approach)
         let mut total_amount: i128 = 0;
@@ -3505,8 +3817,8 @@ impl BountyEscrowContract {
         }
 
         // EFFECTS: update all escrow records before any external calls (CEI)
-        // We collect (contributor, amount) pairs for the transfer pass.
-        let mut release_pairs: Vec<(Address, i128)> = Vec::new(&env);
+        // We collect (contributor, gross_amount, payout_after_fee, fee_amount) for transfer pass.
+        let mut release_pairs: Vec<(Address, i128, i128, i128)> = Vec::new(&env);
         let mut released_count = 0u32;
         for item in items.iter() {
             let mut escrow: Escrow = env
@@ -3515,28 +3827,51 @@ impl BountyEscrowContract {
                 .get(&DataKey::Escrow(item.bounty_id))
                 .unwrap();
 
-            let amount = escrow.amount;
+            let gross_amount = escrow.amount;
+            let release_fee = if fee_config.fee_enabled && fee_config.release_fee_rate > 0 {
+                Self::calculate_fee(gross_amount, fee_config.release_fee_rate)
+            } else {
+                0
+            };
+            let payout_after_fee = gross_amount
+                .checked_sub(release_fee)
+                .ok_or(Error::InvalidAmount)?;
             escrow.status = EscrowStatus::Released;
             escrow.remaining_amount = 0;
             env.storage()
                 .persistent()
                 .set(&DataKey::Escrow(item.bounty_id), &escrow);
 
-            release_pairs.push_back((item.contributor.clone(), amount));
+            release_pairs.push_back((
+                item.contributor.clone(),
+                gross_amount,
+                payout_after_fee,
+                release_fee,
+            ));
             released_count += 1;
         }
 
         // INTERACTION: all external token transfers happen after state is finalized
         for (idx, item) in items.iter().enumerate() {
-            let (ref contributor, amount) = release_pairs.get(idx as u32).unwrap();
-            client.transfer(&contract_address, contributor, &amount);
+            let (ref contributor, gross_amount, payout_after_fee, release_fee) =
+                release_pairs.get(idx as u32).unwrap();
+            client.transfer(&contract_address, contributor, &payout_after_fee);
+            Self::route_fee_transfer(
+                &env,
+                &client,
+                item.bounty_id,
+                FeeOperationType::Release,
+                gross_amount,
+                fee_config.release_fee_rate,
+                release_fee,
+            )?;
 
             emit_funds_released(
                 &env,
                 FundsReleased {
                     version: EVENT_VERSION_V2,
                     bounty_id: item.bounty_id,
-                    amount,
+                    amount: payout_after_fee,
                     recipient: contributor.clone(),
                     timestamp,
                 },
@@ -3804,14 +4139,34 @@ impl BountyEscrowContract {
             return Err(Error::FundsNotLocked);
         }
 
+        let fee_config = Self::get_fee_config_internal(&env);
+        let release_fee = if fee_config.fee_enabled && fee_config.release_fee_rate > 0 {
+            Self::calculate_fee(ticket.amount, fee_config.release_fee_rate)
+        } else {
+            0
+        };
+        let payout_after_fee = ticket
+            .amount
+            .checked_sub(release_fee)
+            .ok_or(Error::InvalidAmount)?;
+
         // Transfer funds to beneficiary
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
         let client = token::Client::new(&env, &token_addr);
         client.transfer(
             &env.current_contract_address(),
             &ticket.beneficiary,
-            &ticket.amount,
+            &payout_after_fee,
         );
+        Self::route_fee_transfer(
+            &env,
+            &client,
+            ticket.bounty_id,
+            FeeOperationType::Release,
+            ticket.amount,
+            fee_config.release_fee_rate,
+            release_fee,
+        )?;
 
         // Mark ticket as used (prevent replay)
         ticket.used = true;
@@ -3834,7 +4189,7 @@ impl BountyEscrowContract {
                 ticket_id,
                 bounty_id: ticket.bounty_id,
                 beneficiary: ticket.beneficiary.clone(),
-                amount: ticket.amount,
+                amount: payout_after_fee,
                 claimed_at: now,
             },
         );
@@ -4049,6 +4404,8 @@ mod test_dispute_resolution;
 mod test_dry_run_simulation;
 #[cfg(test)]
 mod test_expiration_and_dispute;
+#[cfg(test)]
+mod test_fee_routing;
 #[cfg(test)]
 mod test_front_running_ordering;
 #[cfg(test)]

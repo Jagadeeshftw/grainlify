@@ -114,6 +114,42 @@ pub fn emit_fee_config_updated(env: &Env, event: FeeConfigUpdated) {
 
 #[contracttype]
 #[derive(Clone, Debug)]
+pub struct FeeRoutingUpdated {
+    pub bounty_id: u64,
+    pub treasury_recipient: Address,
+    pub treasury_bps: i128,
+    pub partner_recipient: Option<Address>,
+    pub partner_bps: i128,
+    pub timestamp: u64,
+}
+
+pub fn emit_fee_routing_updated(env: &Env, event: FeeRoutingUpdated) {
+    let topics = (symbol_short!("fee_rte"), event.bounty_id);
+    env.events().publish(topics, event.clone());
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct FeeRouted {
+    pub bounty_id: u64,
+    pub operation_type: FeeOperationType,
+    pub gross_amount: i128,
+    pub total_fee: i128,
+    pub fee_rate: i128,
+    pub treasury_recipient: Address,
+    pub treasury_fee: i128,
+    pub partner_recipient: Option<Address>,
+    pub partner_fee: i128,
+    pub timestamp: u64,
+}
+
+pub fn emit_fee_routed(env: &Env, event: FeeRouted) {
+    let topics = (symbol_short!("fee_rt"), event.bounty_id);
+    env.events().publish(topics, event.clone());
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
 pub struct BatchFundsReleased {
     pub count: u32,
     pub total_amount: i128,
