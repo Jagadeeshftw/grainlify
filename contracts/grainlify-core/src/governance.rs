@@ -1,5 +1,6 @@
 use soroban_sdk::{
     // contract, contractimpl, // Currently unused - uncomment when needed
+    contracterror,
     contracttype,
     symbol_short,
     Address,
@@ -81,7 +82,7 @@ pub const PROPOSAL_COUNT: Symbol = symbol_short!("PROP_CNT");
 pub const VOTES: Symbol = symbol_short!("VOTES");
 pub const GOVERNANCE_CONFIG: Symbol = symbol_short!("GOV_CFG");
 
-#[soroban_sdk::contracterror]
+#[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum Error {
