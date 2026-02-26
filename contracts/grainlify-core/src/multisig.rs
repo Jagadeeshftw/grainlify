@@ -1,7 +1,4 @@
-
-use soroban_sdk::{
-    contracttype, symbol_short, Address, Env, Vec,
-};
+use soroban_sdk::{contracttype, symbol_short, Address, Env, Vec};
 
 /// =======================
 /// Storage Keys
@@ -54,7 +51,7 @@ pub struct MultiSig;
 impl MultiSig {
     /// Initialize multisig configuration
     pub fn init(env: &Env, signers: Vec<Address>, threshold: u32) {
-        if threshold == 0 || threshold > signers.len() as u32 {
+        if threshold == 0 || threshold > signers.len() {
             panic!("{:?}", MultiSigError::InvalidThreshold);
         }
 
@@ -92,10 +89,7 @@ impl MultiSig {
             .instance()
             .set(&DataKey::ProposalCounter, &counter);
 
-        env.events().publish(
-            (symbol_short!("proposal"),),
-            counter,
-        );
+        env.events().publish((symbol_short!("proposal"),), counter);
 
         counter
     }
@@ -123,10 +117,8 @@ impl MultiSig {
             .instance()
             .set(&DataKey::Proposal(proposal_id), &proposal);
 
-        env.events().publish(
-            (symbol_short!("approved"),),
-            (proposal_id, signer),
-        );
+        env.events()
+            .publish((symbol_short!("approved"),), (proposal_id, signer));
     }
 
     /// Check if proposal is executable
@@ -155,10 +147,8 @@ impl MultiSig {
             .instance()
             .set(&DataKey::Proposal(proposal_id), &proposal);
 
-        env.events().publish(
-            (symbol_short!("executed"),),
-            proposal_id,
-        );
+        env.events()
+            .publish((symbol_short!("executed"),), proposal_id);
     }
 
     /// =======================
@@ -185,5 +175,3 @@ impl MultiSig {
         }
     }
 }
-
-

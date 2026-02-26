@@ -1,7 +1,15 @@
 #![cfg(test)]
 
-use crate::{GrainlifyContract, GrainlifyContractClient, GovernanceConfig, VotingScheme, VoteType, ProposalStatus};
-use soroban_sdk::{testutils::{Address as _, Ledger}, Address, Env, BytesN, symbol_short};
+use crate::{
+    GovernanceConfig, GrainlifyContract, GrainlifyContractClient, ProposalStatus, VoteType,
+    VotingScheme,
+};
+use grainlify_time::{self};
+use soroban_sdk::{
+    symbol_short,
+    testutils::{Address as _, Ledger},
+    Address, BytesN, Env,
+};
 
 #[test]
 fn test_governance_full_flow() {
@@ -17,9 +25,9 @@ fn test_governance_full_flow() {
     let voter2 = Address::generate(&env);
 
     let config = GovernanceConfig {
-        voting_period: 3600, // 1 hour
-        execution_delay: 1800, // 30 mins
-        quorum_percentage: 5000, // 50%
+        voting_period: 3600,      // 1 hour
+        execution_delay: 1800,    // 30 mins
+        quorum_percentage: 5000,  // 50%
         approval_threshold: 6000, // 60%
         min_proposal_stake: 10,
         voting_scheme: VotingScheme::OnePersonOneVote,
