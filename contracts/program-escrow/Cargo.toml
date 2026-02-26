@@ -8,6 +8,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 soroban-sdk = "21.7.7"
+grainlify-time = { path = "../grainlify-time" }
 base64ct = "=1.6.0"
 time-core = "=0.1.2"
 

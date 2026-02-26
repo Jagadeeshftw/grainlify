@@ -4,7 +4,7 @@ use crate::{
     GovernanceConfig, GrainlifyContract, GrainlifyContractClient, ProposalStatus, VoteType,
     VotingScheme,
 };
-use grainlify_time::{self};
+// No unnecessary time imports
 use soroban_sdk::{
     symbol_short,
     testutils::{Address as _, Ledger},

@@ -1,0 +1,215 @@
+   Compiling bounty-escrow v0.0.0 (/home/preciousakpan/development/web3/stellarWaveDrips/grainlify/contracts/bounty_escrow/contracts/escrow)
+error: an inner attribute is not permitted in this context
+ --> contracts/escrow/src/test_bounty_escrow.rs:2:1
+  |
+2 |   #![cfg(test)]
+  |   ^^^^^^^^^^^^^
+3 |
+4 | / use soroban_sdk::{
+5 | |     testutils::{Address as _, Events, Ledger},
+6 | |     token, vec, Address, Env,
+7 | | };
+  | |__- the inner attribute doesn't annotate this `use` import
+  |
+  = note: inner attributes, like `#![no_std]`, annotate the item enclosing them, and are usually found at the beginning of source files
+help: to annotate the `use` import, change the attribute from inner to outer style
+  |
+2 - #![cfg(test)]
+2 + #[cfg(test)]
+  |
+
+warning: unused import: `Duration`
+ --> contracts/escrow/src/test_bounty_escrow.rs:1:33
+  |
+1 | use grainlify_time::{Timestamp, Duration};
+  |                                 ^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `Duration`
+ --> contracts/escrow/src/test.rs:1:33
+  |
+1 | use grainlify_time::{Timestamp, Duration};
+  |                                 ^^^^^^^^
+
+error[E0277]: the trait bound `soroban_sdk::xdr::ScVal: TryFrom<&core::option::Option<Timestamp>>` is not satisfied
+   --> contracts/escrow/src/events.rs:224:1
+    |
+224 | #[contracttype]
+    | ^^^^^^^^^^^^^^^ the trait `From<Timestamp>` is not implemented for `soroban_sdk::xdr::ScVal`
+    |
+    = help: the following other types implement trait `From<T>`:
+              `&soroban_sdk::xdr::ScVal` implements `From<soroban_env_common::object::ScValObjRef<'_>>`
+              `soroban_sdk::xdr::ScVal` implements `From<&()>`
+              `soroban_sdk::xdr::ScVal` implements `From<&bool>`
+              `soroban_sdk::xdr::ScVal` implements `From<&core::option::Option<T>>`
+              `soroban_sdk::xdr::ScVal` implements `From<&i128>`
+              `soroban_sdk::xdr::ScVal` implements `From<&i32>`
+              `soroban_sdk::xdr::ScVal` implements `From<&i64>`
+              `soroban_sdk::xdr::ScVal` implements `From<&soroban_sdk::Address>`
+            and 36 others
+    = note: required for `Timestamp` to implement `Into<soroban_sdk::xdr::ScVal>`
+    = note: required for `soroban_sdk::xdr::ScVal` to implement `From<&core::option::Option<Timestamp>>`
+    = note: 1 redundant requirement hidden
+    = note: required for `&core::option::Option<Timestamp>` to implement `Into<soroban_sdk::xdr::ScVal>`
+    = note: required for `soroban_sdk::xdr::ScVal` to implement `TryFrom<&core::option::Option<Timestamp>>`
+    = note: required for `&core::option::Option<Timestamp>` to implement `TryInto<soroban_sdk::xdr::ScVal>`
+    = note: this error originates in the attribute macro `contracttype` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `soroban_sdk::xdr::ScVal: TryFrom<&core::option::Option<Timestamp>>` is not satisfied
+   --> contracts/escrow/src/lib.rs:557:1
+    |
+557 | #[contracttype]
+    | ^^^^^^^^^^^^^^^ the trait `From<Timestamp>` is not implemented for `soroban_sdk::xdr::ScVal`
+    |
+    = help: the following other types implement trait `From<T>`:
+              `&soroban_sdk::xdr::ScVal` implements `From<soroban_env_common::object::ScValObjRef<'_>>`
+              `soroban_sdk::xdr::ScVal` implements `From<&()>`
+              `soroban_sdk::xdr::ScVal` implements `From<&bool>`
+              `soroban_sdk::xdr::ScVal` implements `From<&core::option::Option<T>>`
+              `soroban_sdk::xdr::ScVal` implements `From<&i128>`
+              `soroban_sdk::xdr::ScVal` implements `From<&i32>`
+              `soroban_sdk::xdr::ScVal` implements `From<&i64>`
+              `soroban_sdk::xdr::ScVal` implements `From<&soroban_sdk::Address>`
+            and 36 others
+    = note: required for `Timestamp` to implement `Into<soroban_sdk::xdr::ScVal>`
+    = note: required for `soroban_sdk::xdr::ScVal` to implement `From<&core::option::Option<Timestamp>>`
+    = note: 1 redundant requirement hidden
+    = note: required for `&core::option::Option<Timestamp>` to implement `Into<soroban_sdk::xdr::ScVal>`
+    = note: required for `soroban_sdk::xdr::ScVal` to implement `TryFrom<&core::option::Option<Timestamp>>`
+    = note: required for `&core::option::Option<Timestamp>` to implement `TryInto<soroban_sdk::xdr::ScVal>`
+    = note: this error originates in the attribute macro `contracttype` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `soroban_sdk::xdr::ScVal: TryFrom<&core::option::Option<Timestamp>>` is not satisfied
+   --> contracts/escrow/src/lib.rs:619:1
+    |
+619 | #[contracttype]
+    | ^^^^^^^^^^^^^^^ the trait `From<Timestamp>` is not implemented for `soroban_sdk::xdr::ScVal`
+    |
+    = help: the following other types implement trait `From<T>`:
+              `&soroban_sdk::xdr::ScVal` implements `From<soroban_env_common::object::ScValObjRef<'_>>`
+              `soroban_sdk::xdr::ScVal` implements `From<&()>`
+              `soroban_sdk::xdr::ScVal` implements `From<&bool>`
+              `soroban_sdk::xdr::ScVal` implements `From<&core::option::Option<T>>`
+              `soroban_sdk::xdr::ScVal` implements `From<&i128>`
+              `soroban_sdk::xdr::ScVal` implements `From<&i32>`
+              `soroban_sdk::xdr::ScVal` implements `From<&i64>`
+              `soroban_sdk::xdr::ScVal` implements `From<&soroban_sdk::Address>`
+            and 36 others
+    = note: required for `Timestamp` to implement `Into<soroban_sdk::xdr::ScVal>`
+    = note: required for `soroban_sdk::xdr::ScVal` to implement `From<&core::option::Option<Timestamp>>`
+    = note: 1 redundant requirement hidden
+    = note: required for `&core::option::Option<Timestamp>` to implement `Into<soroban_sdk::xdr::ScVal>`
+    = note: required for `soroban_sdk::xdr::ScVal` to implement `TryFrom<&core::option::Option<Timestamp>>`
+    = note: required for `&core::option::Option<Timestamp>` to implement `TryInto<soroban_sdk::xdr::ScVal>`
+    = note: this error originates in the attribute macro `contracttype` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0061]: this function takes 5 arguments but 4 arguments were supplied
+   --> contracts/escrow/src/lib.rs:666:13
+    |
+666 |             monitoring::track_operation(&env, symbol_short!("init"), caller, false);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^-------------------------------------------- argument #5 of type `Timestamp` is missing
+    |
+note: function defined here
+   --> contracts/escrow/src/lib.rs:181:12
+    |
+181 |     pub fn track_operation(env: &Env, operation: Symbol, caller: Address, success: bool, timestamp: Timestamp) {
+    |            ^^^^^^^^^^^^^^^                                                               --------------------
+help: provide the argument
+    |
+666 |             monitoring::track_operation(&env, symbol_short!("init"), caller, false, /* Timestamp */);
+    |                                                                                   +++++++++++++++++
+
+error[E0061]: this function takes 5 arguments but 4 arguments were supplied
+    --> contracts/escrow/src/lib.rs:1287:13
+     |
+1287 |             monitoring::track_operation(&env, symbol_short!("lock"), caller, false);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^-------------------------------------------- argument #5 of type `Timestamp` is missing
+     |
+note: function defined here
+    --> contracts/escrow/src/lib.rs:181:12
+     |
+ 181 |     pub fn track_operation(env: &Env, operation: Symbol, caller: Address, success: bool, timestamp: Timestamp) {
+     |            ^^^^^^^^^^^^^^^                                                               --------------------
+help: provide the argument
+     |
+1287 |             monitoring::track_operation(&env, symbol_short!("lock"), caller, false, /* Timestamp */);
+     |                                                                                   +++++++++++++++++
+
+error[E0061]: this function takes 5 arguments but 4 arguments were supplied
+    --> contracts/escrow/src/lib.rs:1301:13
+     |
+1301 |             monitoring::track_operation(&env, symbol_short!("lock"), caller, false);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^-------------------------------------------- argument #5 of type `Timestamp` is missing
+     |
+note: function defined here
+    --> contracts/escrow/src/lib.rs:181:12
+     |
+ 181 |     pub fn track_operation(env: &Env, operation: Symbol, caller: Address, success: bool, timestamp: Timestamp) {
+     |            ^^^^^^^^^^^^^^^                                                               --------------------
+help: provide the argument
+     |
+1301 |             monitoring::track_operation(&env, symbol_short!("lock"), caller, false, /* Timestamp */);
+     |                                                                                   +++++++++++++++++
+
+error[E0308]: mismatched types
+    --> contracts/escrow/src/lib.rs:1345:32
+     |
+1345 |                     timestamp: env.ledger().timestamp(),
+     |                                ^^^^^^^^^^^^^^^^^^^^^^^^ expected `Timestamp`, found `u64`
+     |
+help: try wrapping the expression in `grainlify_time::Timestamp`
+     |
+1345 |                     timestamp: grainlify_time::Timestamp(env.ledger().timestamp()),
+     |                                ++++++++++++++++++++++++++                        +
+
+error[E0061]: this function takes 5 arguments but 4 arguments were supplied
+    --> contracts/escrow/src/lib.rs:1470:13
+     |
+1470 |             monitoring::track_operation(&env, symbol_short!("release"), admin.clone(), false);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^------------------------------------------------------ argument #5 of type `Timestamp` is missing
+     |
+note: function defined here
+    --> contracts/escrow/src/lib.rs:181:12
+     |
+ 181 |     pub fn track_operation(env: &Env, operation: Symbol, caller: Address, success: bool, timestamp: Timestamp) {
+     |            ^^^^^^^^^^^^^^^                                                               --------------------
+help: provide the argument
+     |
+1470 |             monitoring::track_operation(&env, symbol_short!("release"), admin.clone(), false, /* Timestamp */);
+     |                                                                                             +++++++++++++++++
+
+error[E0308]: mismatched types
+    --> contracts/escrow/src/lib.rs:1561:32
+     |
+1561 |                     timestamp: env.ledger().timestamp(),
+     |                                ^^^^^^^^^^^^^^^^^^^^^^^^ expected `Timestamp`, found `u64`
+     |
+help: try wrapping the expression in `grainlify_time::Timestamp`
+     |
+1561 |                     timestamp: grainlify_time::Timestamp(env.ledger().timestamp()),
+     |                                ++++++++++++++++++++++++++                        +
+
+warning: unused variable: `now`
+   --> contracts/escrow/src/lib.rs:384:13
+    |
+384 |         let now = env.ledger().timestamp();
+    |             ^^^ help: if this is intentional, prefix it with an underscore: `_now`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unreachable pattern
+    --> contracts/escrow/src/lib.rs:2047:21
+     |
+2030 |                     EscrowStatus::PartiallyReleased => {
+     |                     ------------------------------- matches all the relevant values
+...
+2047 |                     EscrowStatus::PartiallyReleased => {
+     |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no value can reach this
+     |
+     = note: `#[warn(unreachable_patterns)]` (part of `#[warn(unused)]`) on by default
+
+Some errors have detailed explanations: E0061, E0277, E0308.
+For more information about an error, try `rustc --explain E0061`.
+warning: `bounty-escrow` (lib test) generated 4 warnings
+error: could not compile `bounty-escrow` (lib test) due to 10 previous errors; 4 warnings emitted

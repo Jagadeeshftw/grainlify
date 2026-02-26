@@ -9,7 +9,7 @@ path = "src/lib.rs"
 
 [dependencies]
 # Bench harness (std) uses Soroban test env + contract crates.
-soroban-sdk = { version = "21.0.0", features = ["testutils"] }
+soroban-sdk = { version = "21.7.7", features = ["testutils"] }
 
 # Benchmark target contracts
 bounty-escrow = { path = "../bounty_escrow/contracts/escrow" }
