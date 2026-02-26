@@ -283,6 +283,9 @@ pub struct PromotionalPeriodExpired {
 pub fn emit_promotional_period_expired(env: &Env, event: PromotionalPeriodExpired) {
     let topics = (symbol_short!("promo_e"), event.id);
     env.events().publish(topics, event.clone());
+}
+
+#[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CapabilityIssued {
     pub capability_id: u64,
