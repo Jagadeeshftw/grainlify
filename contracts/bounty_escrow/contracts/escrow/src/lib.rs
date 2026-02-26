@@ -4576,6 +4576,8 @@ mod test_dry_run_simulation;
 #[cfg(test)]
 mod test_expiration_and_dispute;
 #[cfg(test)]
+mod test_fee_overrides;
+#[cfg(test)]
 mod test_front_running_ordering;
 #[cfg(test)]
 mod test_granular_pause;
