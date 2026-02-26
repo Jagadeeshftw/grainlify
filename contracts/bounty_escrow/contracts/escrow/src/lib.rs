@@ -436,11 +436,24 @@ pub enum Error {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct EscrowMetadata {
-    pub repo_id: u64,
-    pub issue_id: u64,
-    pub bounty_type: soroban_sdk::String,
+pub struct Escrow {
+    pub depositor: Address,
+    /// Total amount originally locked into this escrow.
+    pub amount: i128,
+    /// Amount still available for release; decremented on each partial_release.
+    /// Reaches 0 when fully paid out, at which point status becomes Released.
+    pub remaining_amount: i128,
+    pub status: EscrowStatus,
+    pub deadline: u64,
+    pub refund_history: Vec<RefundRecord>,
+    /// Optional per-escrow fee rate override for lock operations (basis points)
+    /// If None, uses program-level or global fee rate
+    pub lock_fee_override: Option<i128>,
+    /// Optional per-escrow fee rate override for release operations (basis points)
+    /// If None, uses program-level or global fee rate
+    pub release_fee_override: Option<i128>,
 }
+
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -465,6 +478,12 @@ pub struct Escrow {
     pub status: EscrowStatus,
     pub deadline: u64,
     pub refund_history: Vec<RefundRecord>,
+    /// Optional per-escrow fee rate override for lock operations (basis points)
+    /// If None, uses program-level or global fee rate
+    pub lock_fee_override: Option<i128>,
+    /// Optional per-escrow fee rate override for release operations (basis points)
+    /// If None, uses program-level or global fee rate
+    pub release_fee_override: Option<i128>,
 }
 
 #[contracttype]
@@ -849,6 +868,40 @@ impl BountyEscrowContract {
             })
     }
 
+    /// Resolve effective lock fee rate with precedence: escrow override > global
+    /// Returns the effective fee rate and whether it was overridden
+    fn get_effective_lock_fee_rate(env: &Env, bounty_id: u64) -> (i128, bool) {
+        let escrow: Escrow = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Escrow(bounty_id))
+            .unwrap();
+        
+        if let Some(override_rate) = escrow.lock_fee_override {
+            return (override_rate, true);
+        }
+        
+        let global_config = Self::get_fee_config_internal(env);
+        (global_config.lock_fee_rate, false)
+    }
+
+    /// Resolve effective release fee rate with precedence: escrow override > global
+    /// Returns the effective fee rate and whether it was overridden
+    fn get_effective_release_fee_rate(env: &Env, bounty_id: u64) -> (i128, bool) {
+        let escrow: Escrow = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Escrow(bounty_id))
+            .unwrap();
+        
+        if let Some(override_rate) = escrow.release_fee_override {
+            return (override_rate, true);
+        }
+        
+        let global_config = Self::get_fee_config_internal(env);
+        (global_config.release_fee_rate, false)
+    }
+
     /// Update fee configuration (admin only)
     pub fn update_fee_config(
         env: Env,
@@ -901,6 +954,66 @@ impl BountyEscrowContract {
                 fee_enabled: fee_config.fee_enabled,
                 timestamp: env.ledger().timestamp(),
             },
+        );
+
+        Ok(())
+    }
+
+    /// Set per-escrow fee overrides (admin only)
+    /// Allows setting custom fee rates for specific escrows (e.g., partner programs, promotions)
+    /// Set to None to remove override and use global rate
+    pub fn set_escrow_fee_override(
+        env: Env,
+        bounty_id: u64,
+        lock_fee_override: Option<i128>,
+        release_fee_override: Option<i128>,
+    ) -> Result<(), Error> {
+        if !env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::NotInitialized);
+        }
+
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        if !env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
+            return Err(Error::BountyNotFound);
+        }
+
+        // Validate override rates if provided
+        if let Some(rate) = lock_fee_override {
+            if !(0..=MAX_FEE_RATE).contains(&rate) {
+                return Err(Error::InvalidFeeRate);
+            }
+        }
+
+        if let Some(rate) = release_fee_override {
+            if !(0..=MAX_FEE_RATE).contains(&rate) {
+                return Err(Error::InvalidFeeRate);
+            }
+        }
+
+        let mut escrow: Escrow = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Escrow(bounty_id))
+            .unwrap();
+
+        escrow.lock_fee_override = lock_fee_override;
+        escrow.release_fee_override = release_fee_override;
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Escrow(bounty_id), &escrow);
+
+        // Emit event for audit trail
+        env.events().publish(
+            (symbol_short!("fee_ovr"),),
+            (
+                bounty_id,
+                lock_fee_override.unwrap_or(-1), // -1 indicates None
+                release_fee_override.unwrap_or(-1),
+                env.ledger().timestamp(),
+            ),
         );
 
         Ok(())
@@ -1271,6 +1384,8 @@ impl BountyEscrowContract {
             status: EscrowStatus::Template,
             deadline: source.deadline,
             refund_history: vec![&env],
+            lock_fee_override: None,
+            release_fee_override: None,
         };
         invariants::assert_escrow(&env, &template);
         env.storage()
@@ -1906,6 +2021,8 @@ impl BountyEscrowContract {
                     deadline: existing.deadline,
                     refund_history: vec![&env],
                     remaining_amount: amount,
+                    lock_fee_override: None,
+                    release_fee_override: None,
                 };
                 invariants::assert_escrow(&env, &escrow);
                 env.storage()
@@ -1955,6 +2072,8 @@ impl BountyEscrowContract {
             deadline,
             refund_history: vec![&env],
             remaining_amount: amount,
+            lock_fee_override: None,
+            release_fee_override: None,
         };
         invariants::assert_escrow(&env, &escrow);
 
@@ -3756,6 +3875,8 @@ impl BountyEscrowContract {
                 deadline: item.deadline,
                 refund_history: vec![&env],
                 remaining_amount: item.amount,
+                lock_fee_override: None,
+                release_fee_override: None,
             };
 
             env.storage()
@@ -4508,6 +4629,8 @@ mod escrow_status_transition_tests {
             status,
             deadline,
             refund_history: vec![env],
+            lock_fee_override: None,
+            release_fee_override: None,
         }
     }
 

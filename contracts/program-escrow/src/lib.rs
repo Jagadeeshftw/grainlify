@@ -445,6 +445,12 @@ pub struct ProgramData {
     pub token_address: Address,  // Token contract address for transfers
     pub initial_liquidity: i128, // Initial liquidity provided by creator
     pub reference_hash: Option<soroban_sdk::Bytes>,
+    /// Optional per-program fee rate override for lock operations (basis points)
+    /// If None, uses global fee rate
+    pub lock_fee_override: Option<i128>,
+    /// Optional per-program fee rate override for payout operations (basis points)
+    /// If None, uses global fee rate
+    pub payout_fee_override: Option<i128>,
 }
 
 /// Storage key type for individual programs
@@ -1027,6 +1033,8 @@ impl ProgramEscrowContract {
                 token_address: token_address.clone(),
                 initial_liquidity: 0,
                 reference_hash: item.reference_hash.clone(),
+                lock_fee_override: None,
+                payout_fee_override: None,
             };
             let program_key = DataKey::Program(program_id.clone());
             env.storage().instance().set(&program_key, &program_data);
@@ -1091,6 +1099,42 @@ impl ProgramEscrowContract {
                 fee_recipient: env.current_contract_address(),
                 fee_enabled: false,
             })
+    }
+
+    /// Resolve effective lock fee rate with precedence: program override > global
+    /// Returns the effective fee rate and whether it was overridden
+    fn get_effective_lock_fee_rate(env: &Env, program_id: &String) -> (i128, bool) {
+        let program_key = DataKey::Program(program_id.clone());
+        let program_data: ProgramData = env
+            .storage()
+            .instance()
+            .get(&program_key)
+            .unwrap_or_else(|| panic!("Program not found"));
+        
+        if let Some(override_rate) = program_data.lock_fee_override {
+            return (override_rate, true);
+        }
+        
+        let global_config = Self::get_fee_config_internal(env);
+        (global_config.lock_fee_rate, false)
+    }
+
+    /// Resolve effective payout fee rate with precedence: program override > global
+    /// Returns the effective fee rate and whether it was overridden
+    fn get_effective_payout_fee_rate(env: &Env, program_id: &String) -> (i128, bool) {
+        let program_key = DataKey::Program(program_id.clone());
+        let program_data: ProgramData = env
+            .storage()
+            .instance()
+            .get(&program_key)
+            .unwrap_or_else(|| panic!("Program not found"));
+        
+        if let Some(override_rate) = program_data.payout_fee_override {
+            return (override_rate, true);
+        }
+        
+        let global_config = Self::get_fee_config_internal(env);
+        (global_config.payout_fee_rate, false)
     }
 
     /// Lock initial funds into the program escrow
@@ -2463,6 +2507,60 @@ impl ProgramEscrowContract {
                 fee_config.payout_fee_rate,
                 fee_config.fee_recipient,
                 fee_config.fee_enabled,
+            ),
+        );
+    }
+
+    /// Set per-program fee overrides (admin only)
+    /// Allows setting custom fee rates for specific programs (e.g., partner programs, promotions)
+    /// Set to None to remove override and use global rate
+    pub fn set_program_fee_override(
+        env: Env,
+        program_id: String,
+        lock_fee_override: Option<i128>,
+        payout_fee_override: Option<i128>,
+    ) {
+        let admin = anti_abuse::get_admin(&env).expect("Admin not set");
+        admin.require_auth();
+
+        let program_key = DataKey::Program(program_id.clone());
+        if !env.storage().instance().has(&program_key) {
+            panic!("Program not found");
+        }
+
+        // Validate override rates if provided
+        if let Some(rate) = lock_fee_override {
+            if rate < 0 || rate > MAX_FEE_RATE {
+                panic!(
+                    "Invalid lock fee override: must be between 0 and {}",
+                    MAX_FEE_RATE
+                );
+            }
+        }
+
+        if let Some(rate) = payout_fee_override {
+            if rate < 0 || rate > MAX_FEE_RATE {
+                panic!(
+                    "Invalid payout fee override: must be between 0 and {}",
+                    MAX_FEE_RATE
+                );
+            }
+        }
+
+        let mut program_data: ProgramData = env.storage().instance().get(&program_key).unwrap();
+        program_data.lock_fee_override = lock_fee_override;
+        program_data.payout_fee_override = payout_fee_override;
+
+        env.storage().instance().set(&program_key, &program_data);
+
+        // Emit event for audit trail
+        env.events().publish(
+            (symbol_short!("prg_fovr"),),
+            (
+                program_id,
+                lock_fee_override.unwrap_or(-1), // -1 indicates None
+                payout_fee_override.unwrap_or(-1),
+                env.ledger().timestamp(),
             ),
         );
     }

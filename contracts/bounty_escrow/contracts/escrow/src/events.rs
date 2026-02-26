@@ -76,6 +76,7 @@ pub struct FeeCollected {
     pub operation_type: FeeOperationType,
     pub amount: i128,
     pub fee_rate: i128,
+    pub effective_fee_rate: i128,  // Actual rate used (after overrides)
     pub recipient: Address,
     pub timestamp: u64,
 }
