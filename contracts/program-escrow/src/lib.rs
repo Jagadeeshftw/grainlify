@@ -143,6 +143,7 @@ use soroban_sdk::{
     contract, contractimpl, contracttype, symbol_short, token, vec, Address, Env, String, Symbol,
     Vec,
 };
+use grainlify_time::{self, Timestamp, Duration, TimestampExt};
 
 // Event types
 #[allow(dead_code)]
@@ -171,6 +172,7 @@ pub struct FeeConfig {
 // ==================== MONITORING MODULE ====================
 mod monitoring {
     use soroban_sdk::{contracttype, symbol_short, Address, Env, String, Symbol};
+    use grainlify_time::{self, Timestamp, Duration, TimestampExt};
 
     // Storage keys
     const OPERATION_COUNT: &str = "op_count";
@@ -183,7 +185,7 @@ mod monitoring {
     pub struct OperationMetric {
         pub operation: Symbol,
         pub caller: Address,
-        pub timestamp: u64,
+        pub timestamp: Timestamp,
         pub success: bool,
     }
 
@@ -192,8 +194,8 @@ mod monitoring {
     #[derive(Clone, Debug)]
     pub struct PerformanceMetric {
         pub function: Symbol,
-        pub duration: u64,
-        pub timestamp: u64,
+        pub duration: Duration,
+        pub timestamp: Timestamp,
     }
 
     // Data: Health status
@@ -201,7 +203,7 @@ mod monitoring {
     #[derive(Clone, Debug)]
     pub struct HealthStatus {
         pub is_healthy: bool,
-        pub last_operation: u64,
+        pub last_operation: Timestamp,
         pub total_operations: u64,
         pub contract_version: String,
     }
@@ -220,7 +222,7 @@ mod monitoring {
     #[contracttype]
     #[derive(Clone, Debug)]
     pub struct StateSnapshot {
-        pub timestamp: u64,
+        pub timestamp: Timestamp,
         pub total_operations: u64,
         pub total_users: u64,
         pub total_errors: u64,
@@ -232,9 +234,9 @@ mod monitoring {
     pub struct PerformanceStats {
         pub function_name: Symbol,
         pub call_count: u64,
-        pub total_time: u64,
-        pub avg_time: u64,
-        pub last_called: u64,
+        pub total_time: Duration,
+        pub avg_time: Duration,
+        pub last_called: Timestamp,
     }
 
     // Track operation
@@ -254,14 +256,14 @@ mod monitoring {
             OperationMetric {
                 operation,
                 caller,
-                timestamp: env.ledger().timestamp(),
+                timestamp: grainlify_time::now(env),
                 success,
             },
         );
     }
 
     // Track performance
-    pub fn emit_performance(env: &Env, function: Symbol, duration: u64) {
+    pub fn emit_performance(env: &Env, function: Symbol, duration: Duration) {
         let count_key = (Symbol::new(env, "perf_cnt"), function.clone());
         let time_key = (Symbol::new(env, "perf_time"), function.clone());
 
@@ -278,7 +280,7 @@ mod monitoring {
             PerformanceMetric {
                 function,
                 duration,
-                timestamp: env.ledger().timestamp(),
+                timestamp: grainlify_time::now(env),
             },
         );
     }
@@ -290,7 +292,7 @@ mod monitoring {
 
         HealthStatus {
             is_healthy: true,
-            last_operation: env.ledger().timestamp(),
+            last_operation: grainlify_time::now(env),
             total_operations: ops,
             contract_version: String::from_str(env, "1.0.0"),
         }
@@ -327,7 +329,7 @@ mod monitoring {
         let err_key = Symbol::new(env, ERROR_COUNT);
 
         StateSnapshot {
-            timestamp: env.ledger().timestamp(),
+            timestamp: grainlify_time::now(env),
             total_operations: env.storage().persistent().get(&op_key).unwrap_or(0),
             total_users: env.storage().persistent().get(&usr_key).unwrap_or(0),
             total_errors: env.storage().persistent().get(&err_key).unwrap_or(0),
@@ -360,20 +362,21 @@ mod monitoring {
 // ==================== ANTI-ABUSE MODULE ====================
 mod anti_abuse {
     use soroban_sdk::{contracttype, symbol_short, Address, Env};
+    use grainlify_time::{self, Timestamp, Duration, TimestampExt};
 
     #[contracttype]
     #[derive(Clone, Debug, Eq, PartialEq)]
     pub struct AntiAbuseConfig {
-        pub window_size: u64,     // Window size in seconds
-        pub max_operations: u32,  // Max operations allowed in window
-        pub cooldown_period: u64, // Minimum seconds between operations
+        pub window_size: Duration,     // Window size in seconds
+        pub max_operations: u32,       // Max operations allowed in window
+        pub cooldown_period: Duration, // Minimum seconds between operations
     }
 
     #[contracttype]
     #[derive(Clone, Debug, Eq, PartialEq)]
     pub struct AddressState {
-        pub last_operation_timestamp: u64,
-        pub window_start_timestamp: u64,
+        pub last_operation_timestamp: Timestamp,
+        pub window_start_timestamp: Timestamp,
         pub operation_count: u32,
     }
 
@@ -433,7 +436,7 @@ mod anti_abuse {
         }
 
         let config = get_config(env);
-        let now = env.ledger().timestamp();
+        let now = grainlify_time::now(env);
         let key = AntiAbuseKey::State(address.clone());
 
         let mut state: AddressState =
@@ -451,6 +454,7 @@ mod anti_abuse {
             && now
                 < state
                     .last_operation_timestamp
+                    
                     .saturating_add(config.cooldown_period)
         {
             env.events().publish(
@@ -464,6 +468,7 @@ mod anti_abuse {
         if now
             >= state
                 .window_start_timestamp
+                
                 .saturating_add(config.window_size)
         {
             // New window
@@ -527,7 +532,7 @@ const PROGRAM_REGISTRY: Symbol = symbol_short!("ProgReg");
 /// let record = PayoutRecord {
 ///     recipient: winner_address,
 ///     amount: 1000_0000000, // 1000 USDC
-///     timestamp: env.ledger().timestamp(),
+///     timestamp: grainlify_time::now(&env),
 /// };
 /// ```
 #[contracttype]
@@ -535,7 +540,7 @@ const PROGRAM_REGISTRY: Symbol = symbol_short!("ProgReg");
 pub struct PayoutRecord {
     pub recipient: Address,
     pub amount: i128,
-    pub timestamp: u64,
+    pub timestamp: Timestamp,
 }
 
 /// Time-based release schedule for program funds.
@@ -570,10 +575,10 @@ pub struct PayoutRecord {
 pub struct ProgramReleaseSchedule {
     pub schedule_id: u64,
     pub amount: i128,
-    pub release_timestamp: u64,
+    pub release_timestamp: Timestamp,
     pub recipient: Address,
     pub released: bool,
-    pub released_at: Option<u64>,
+    pub released_at: Option<Timestamp>,
     pub released_by: Option<Address>,
 }
 
@@ -585,7 +590,7 @@ pub struct ProgramReleaseHistory {
     pub program_id: String,
     pub amount: i128,
     pub recipient: Address,
-    pub released_at: u64,
+    pub released_at: Timestamp,
     pub released_by: Address,
     pub release_type: ReleaseType,
 }
@@ -605,7 +610,7 @@ pub struct ProgramScheduleCreated {
     pub program_id: String,
     pub schedule_id: u64,
     pub amount: i128,
-    pub release_timestamp: u64,
+    pub release_timestamp: Timestamp,
     pub recipient: Address,
     pub created_by: Address,
 }
@@ -618,7 +623,7 @@ pub struct ProgramScheduleReleased {
     pub schedule_id: u64,
     pub amount: i128,
     pub recipient: Address,
-    pub released_at: u64,
+    pub released_at: Timestamp,
     pub released_by: Address,
     pub release_type: ReleaseType,
 }
@@ -698,8 +703,8 @@ pub struct PayoutFilter {
     pub recipient: Option<Address>,
     pub min_amount: Option<i128>,
     pub max_amount: Option<i128>,
-    pub start_time: Option<u64>,
-    pub end_time: Option<u64>,
+    pub start_time: Option<Timestamp>,
+    pub end_time: Option<Timestamp>,
 }
 
 #[contracttype]
@@ -834,7 +839,7 @@ impl ProgramEscrowContract {
         env.storage().instance().set(&DataKey::IsPaused, &true);
 
         env.events()
-            .publish((symbol_short!("pause"),), (env.ledger().timestamp(),));
+            .publish((symbol_short!("pause"),), (grainlify_time::now(&env),));
     }
 
     /// Unpause the contract (authorized payout key only)
@@ -847,7 +852,7 @@ impl ProgramEscrowContract {
         env.storage().instance().set(&DataKey::IsPaused, &false);
 
         env.events()
-            .publish((symbol_short!("unpause"),), (env.ledger().timestamp(),));
+            .publish((symbol_short!("unpause"),), (grainlify_time::now(&env),));
     }
 
     /// Emergency withdrawal for all contract funds (authorized payout key only, only when paused)
@@ -879,7 +884,7 @@ impl ProgramEscrowContract {
 
         env.events().publish(
             (symbol_short!("ewith"),),
-            (balance, env.ledger().timestamp()),
+            (balance, grainlify_time::now(&env)),
         );
 
         balance
@@ -894,7 +899,7 @@ impl ProgramEscrowContract {
         // Apply rate limiting
         anti_abuse::check_rate_limit(&env, authorized_payout_key.clone());
 
-        let start = env.ledger().timestamp();
+        let start = grainlify_time::now(&env);
         let caller = authorized_payout_key.clone();
 
         // Validate program_id
@@ -951,7 +956,7 @@ impl ProgramEscrowContract {
         monitoring::track_operation(&env, symbol_short!("init_prg"), caller, true);
 
         // Track performance
-        let duration = env.ledger().timestamp().saturating_sub(start);
+        let duration = grainlify_time::now(&env).duration_since(start).unwrap_or(0);
         monitoring::emit_performance(&env, symbol_short!("init_prg"), duration);
 
         program_data
@@ -1101,7 +1106,7 @@ impl ProgramEscrowContract {
         // Apply rate limiting
         anti_abuse::check_rate_limit(&env, env.current_contract_address());
 
-        let _start = env.ledger().timestamp();
+        let _start = grainlify_time::now(&env);
         let caller = env.current_contract_address();
 
         // Check if contract is paused
@@ -1331,7 +1336,7 @@ impl ProgramEscrowContract {
 
         // Execute transfers
         let mut updated_history = program_data.payout_history.clone();
-        let timestamp = env.ledger().timestamp();
+        let timestamp = grainlify_time::now(&env);
         let contract_address = env.current_contract_address();
         let token_client = token::Client::new(&env, &program_data.token_address);
 
@@ -1525,7 +1530,7 @@ impl ProgramEscrowContract {
         }
 
         // Record payout (with net amount after fee)
-        let timestamp = env.ledger().timestamp();
+        let timestamp = grainlify_time::now(&env);
         let payout_record = PayoutRecord {
             recipient: recipient.clone(),
             amount: net_amount,
@@ -1591,7 +1596,7 @@ impl ProgramEscrowContract {
     ///
     /// # Example
     /// ```rust
-    /// let now = env.ledger().timestamp();
+    /// let now = grainlify_time::now(&env);
     /// let release_time = now + (30 * 24 * 60 * 60); // 30 days from now
     /// escrow_client.create_program_release_schedule(
     ///     &"Hackathon2024",
@@ -1604,10 +1609,10 @@ impl ProgramEscrowContract {
         env: Env,
         program_id: String,
         amount: i128,
-        release_timestamp: u64,
+        release_timestamp: Timestamp,
         recipient: Address,
     ) -> ProgramData {
-        let start = env.ledger().timestamp();
+        let start = grainlify_time::now(&env);
 
         // Check if contract is paused
         if Self::is_paused_internal(&env) {
@@ -1634,7 +1639,7 @@ impl ProgramEscrowContract {
         }
 
         // Validate timestamp
-        if release_timestamp <= env.ledger().timestamp() {
+        if release_timestamp <= grainlify_time::now(&env) {
             panic!("Release timestamp must be in the future");
         }
 
@@ -1696,7 +1701,7 @@ impl ProgramEscrowContract {
         );
 
         // Track performance
-        let duration = env.ledger().timestamp().saturating_sub(start);
+        let duration = grainlify_time::now(&env).duration_since(start).unwrap_or(0);
         monitoring::emit_performance(&env, symbol_short!("create_p"), duration);
 
         // Return updated program data
@@ -1731,7 +1736,7 @@ impl ProgramEscrowContract {
     /// escrow_client.release_program_schedule_automatic(&"Hackathon2024", &1);
     /// ```
     pub fn release_prog_schedule_automatic(env: Env, program_id: String, schedule_id: u64) {
-        let start = env.ledger().timestamp();
+        let start = grainlify_time::now(&env);
         let caller = env.current_contract_address();
 
         // Check if contract is paused
@@ -1768,17 +1773,18 @@ impl ProgramEscrowContract {
         }
 
         // Check if due for release
-        let now = env.ledger().timestamp();
+        let now = grainlify_time::now(&env);
         if now < schedule.release_timestamp {
             panic!("Schedule not yet due for release");
         }
 
-        let contract_address = env.current_contract_address();
-        let token_client = token::Client::new(&env, &program_data.token_address);
-
         // Transfer funds
         #[cfg(not(test))]
-        token_client.transfer(&contract_address, &schedule.recipient, &schedule.amount);
+        {
+            let contract_address = env.current_contract_address();
+            let token_client = token::Client::new(&env, &program_data.token_address);
+            token_client.transfer(&contract_address, &schedule.recipient, &schedule.amount);
+        }
 
         // Update schedule
         schedule.released = true;
@@ -1836,7 +1842,7 @@ impl ProgramEscrowContract {
         monitoring::track_operation(&env, symbol_short!("rel_auto"), caller, true);
 
         // Track performance
-        let duration = env.ledger().timestamp().saturating_sub(start);
+        let duration = grainlify_time::now(&env).duration_since(start).unwrap_or(0);
         monitoring::emit_performance(&env, symbol_short!("rel_auto"), duration);
     }
 
@@ -1870,7 +1876,7 @@ impl ProgramEscrowContract {
     /// escrow_client.release_program_schedule_manual(&"Hackathon2024", &1);
     /// ```
     pub fn release_program_schedule_manual(env: Env, program_id: String, schedule_id: u64) {
-        let start = env.ledger().timestamp();
+        let start = grainlify_time::now(&env);
 
         // Get program data
         let program_key = DataKey::Program(program_id.clone());
@@ -1907,14 +1913,16 @@ impl ProgramEscrowContract {
         }
 
         // Get token client
-        let contract_address = env.current_contract_address();
-        let token_client = token::Client::new(&env, &program_data.token_address);
         // Transfer funds
         #[cfg(not(test))]
-        token_client.transfer(&contract_address, &schedule.recipient, &schedule.amount);
+        {
+            let contract_address = env.current_contract_address();
+            let token_client = token::Client::new(&env, &program_data.token_address);
+            token_client.transfer(&contract_address, &schedule.recipient, &schedule.amount);
+        }
 
         // Update schedule
-        let now = env.ledger().timestamp();
+        let now = grainlify_time::now(&env);
         schedule.released = true;
         schedule.released_at = Some(now);
         schedule.released_by = Some(program_data.authorized_payout_key.clone());
@@ -1974,7 +1982,7 @@ impl ProgramEscrowContract {
         );
 
         // Track performance
-        let duration = env.ledger().timestamp().saturating_sub(start);
+        let duration = grainlify_time::now(&env).duration_since(start).unwrap_or(0);
         monitoring::emit_performance(&env, symbol_short!("rel_man"), duration);
     }
 
@@ -2352,9 +2360,9 @@ impl ProgramEscrowContract {
         anti_abuse::set_config(
             &env,
             anti_abuse::AntiAbuseConfig {
-                window_size,
+                window_size: window_size,
                 max_operations,
-                cooldown_period,
+                cooldown_period: cooldown_period,
             },
         );
     }
@@ -2477,7 +2485,7 @@ impl ProgramEscrowContract {
     pub fn get_due_program_schedules(env: Env, program_id: String) -> Vec<ProgramReleaseSchedule> {
         let pending = Self::get_pending_program_schedules(env.clone(), program_id.clone());
         let mut due = Vec::new(&env);
-        let now = env.ledger().timestamp();
+        let now = grainlify_time::now(&env);
 
         for schedule in pending.iter() {
             if schedule.release_timestamp <= now {
@@ -2564,7 +2572,7 @@ mod test {
         program_id: &String,
         total_amount: i128,
         winner: &Address,
-        release_timestamp: u64,
+        release_timestamp: Timestamp,
     ) {
         // Register program
         client.initialize_program(program_id, authorized_key, token);
@@ -3351,4 +3359,3 @@ mod test {
 
 #[cfg(test)]
 mod test_query;
-

@@ -184,7 +184,7 @@ fn test_get_payouts_filtering() {
     let recipient1 = Address::generate(&env);
     let recipient2 = Address::generate(&env);
     
-    let now = env.ledger().timestamp();
+    let now: u64 = env.ledger().timestamp();
     
     client.single_payout(&p1, &recipient1, &100);
     // Advance time
