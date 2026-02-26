@@ -1,4 +1,3 @@
-
 //! # Malicious Reentrant Contract
 //!
 //! This is a test-only contract that attempts to perform reentrancy attacks

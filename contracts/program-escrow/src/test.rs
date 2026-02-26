@@ -2281,9 +2281,11 @@ fn test_multi_region_treasury_distribution_rounding() {
     let recipient = Address::generate(&env);
     client.single_payout(&recipient, &1000);
 
-    let total_fees = token_client.balance(&region1) + token_client.balance(&region2) + token_client.balance(&region3);
+    let total_fees = token_client.balance(&region1)
+        + token_client.balance(&region2)
+        + token_client.balance(&region3);
     assert_eq!(total_fees, 100);
-    
+
     // Check distribution
     assert_eq!(token_client.balance(&region1), 33);
     assert_eq!(token_client.balance(&region2), 33);
