@@ -2,6 +2,7 @@ use soroban_sdk::{Address, Env, String};
 
 /// Shared interface for escrow functionality
 /// Both bounty_escrow and program-escrow should implement this
+#[allow(dead_code)]
 pub trait EscrowInterface {
     /// Lock funds for a bounty
     fn lock_funds(
@@ -26,6 +27,7 @@ pub trait EscrowInterface {
 }
 
 /// Shared interface for contract upgrades
+#[allow(dead_code)]
 pub trait UpgradeInterface {
     /// Get contract version
     fn get_version(env: &Env) -> u32;

@@ -14,7 +14,7 @@ enum DataKey {
 /// Multisig Configuration
 /// =======================
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MultiSigConfig {
     pub signers: Vec<Address>,
     pub threshold: u32,
@@ -149,6 +149,24 @@ impl MultiSig {
 
         env.events()
             .publish((symbol_short!("executed"),), proposal_id);
+    }
+
+    /// Gets current multisig config if initialized.
+    pub fn get_config_opt(env: &Env) -> Option<MultiSigConfig> {
+        env.storage().instance().get(&DataKey::Config)
+    }
+
+    /// Sets multisig config directly (used by controlled restore operations).
+    pub fn set_config(env: &Env, config: MultiSigConfig) {
+        if config.threshold == 0 || config.threshold > config.signers.len() as u32 {
+            panic!("{:?}", MultiSigError::InvalidThreshold);
+        }
+        env.storage().instance().set(&DataKey::Config, &config);
+    }
+
+    /// Clears multisig config (used by controlled restore operations).
+    pub fn clear_config(env: &Env) {
+        env.storage().instance().remove(&DataKey::Config);
     }
 
     /// =======================

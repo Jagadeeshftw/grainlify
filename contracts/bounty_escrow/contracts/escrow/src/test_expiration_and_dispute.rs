@@ -1,6 +1,9 @@
 #![cfg(test)]
 
-use crate::{BountyEscrowContract, BountyEscrowContractClient, Error, EscrowStatus};
+use crate::{
+    BountyEscrowContract, BountyEscrowContractClient, DisputeOutcome, DisputeReason, Error,
+    EscrowStatus,
+};
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
     token, Address, Env,
@@ -80,7 +83,9 @@ fn test_pending_claim_blocks_refund() {
         .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     // Admin opens dispute by authorizing claim (before deadline)
-    setup.escrow.authorize_claim(&bounty_id, &setup.contributor);
+    setup
+        .escrow
+        .authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::QualityIssue);
 
     // Verify claim is pending
     let claim = setup.escrow.get_pending_claim(&bounty_id);
@@ -119,7 +124,9 @@ fn test_beneficiary_claims_within_window_succeeds() {
         .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     // Admin authorizes claim at now, expires at now+500
-    setup.escrow.authorize_claim(&bounty_id, &setup.contributor);
+    setup
+        .escrow
+        .authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::QualityIssue);
 
     let claim = setup.escrow.get_pending_claim(&bounty_id);
 
@@ -151,7 +158,9 @@ fn test_missed_claim_window_requires_admin_cancel_then_refund() {
         .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     // Admin authorizes claim (opens dispute window)
-    setup.escrow.authorize_claim(&bounty_id, &setup.contributor);
+    setup
+        .escrow
+        .authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::QualityIssue);
 
     let claim = setup.escrow.get_pending_claim(&bounty_id);
     let claim_expires_at = claim.expires_at;
@@ -165,7 +174,9 @@ fn test_missed_claim_window_requires_admin_cancel_then_refund() {
     assert_eq!(setup.token.balance(&setup.escrow.address), amount);
 
     // Admin cancels the expired pending claim
-    setup.escrow.cancel_pending_claim(&bounty_id);
+    setup
+        .escrow
+        .cancel_pending_claim(&bounty_id, &DisputeOutcome::CancelledByAdmin);
 
     let escrow_after = setup.escrow.get_escrow_info(&bounty_id);
     assert_eq!(escrow_after.status, EscrowStatus::Locked);
@@ -197,13 +208,17 @@ fn test_resolution_order_requires_explicit_cancel_step() {
         .escrow
         .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
-    setup.escrow.authorize_claim(&bounty_id, &setup.contributor);
+    setup
+        .escrow
+        .authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::QualityIssue);
 
     // Advance past both windows
     setup.env.ledger().set_timestamp(deadline + 500);
 
     // Admin must cancel the pending claim first
-    setup.escrow.cancel_pending_claim(&bounty_id);
+    setup
+        .escrow
+        .cancel_pending_claim(&bounty_id, &DisputeOutcome::CancelledByAdmin);
 
     setup.escrow.refund(&bounty_id);
 
@@ -234,13 +249,17 @@ fn test_correct_resolution_order_cancel_then_refund() {
         .escrow
         .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
-    setup.escrow.authorize_claim(&bounty_id, &setup.contributor);
+    setup
+        .escrow
+        .authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::QualityIssue);
 
     // Advance past both windows
     setup.env.ledger().set_timestamp(deadline + 500);
 
     // Admin must cancel the pending claim first
-    setup.escrow.cancel_pending_claim(&bounty_id);
+    setup
+        .escrow
+        .cancel_pending_claim(&bounty_id, &DisputeOutcome::CancelledByAdmin);
 
     // NOW refund works (demonstrates the order)
     setup.escrow.refund(&bounty_id);
@@ -265,14 +284,18 @@ fn test_admin_can_cancel_expired_claim() {
         .escrow
         .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
-    setup.escrow.authorize_claim(&bounty_id, &setup.contributor);
+    setup
+        .escrow
+        .authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::QualityIssue);
 
     let claim = setup.escrow.get_pending_claim(&bounty_id);
 
     // Advance WAY past claim window
     setup.env.ledger().set_timestamp(claim.expires_at + 1000);
 
-    setup.escrow.cancel_pending_claim(&bounty_id);
+    setup
+        .escrow
+        .cancel_pending_claim(&bounty_id, &DisputeOutcome::CancelledByAdmin);
 
     let escrow = setup.escrow.get_escrow_info(&bounty_id);
     assert_eq!(escrow.status, EscrowStatus::Locked);
@@ -295,7 +318,9 @@ fn test_claim_window_zero_prevents_all_claims() {
         .escrow
         .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
-    setup.escrow.authorize_claim(&bounty_id, &setup.contributor);
+    setup
+        .escrow
+        .authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::QualityIssue);
 
     let _claim = setup.escrow.get_pending_claim(&bounty_id);
 
@@ -303,7 +328,9 @@ fn test_claim_window_zero_prevents_all_claims() {
     setup.env.ledger().set_timestamp(deadline + 1);
 
     // Admin cancels the zero-window claim
-    setup.escrow.cancel_pending_claim(&bounty_id);
+    setup
+        .escrow
+        .cancel_pending_claim(&bounty_id, &DisputeOutcome::CancelledByAdmin);
 
     setup.escrow.refund(&bounty_id);
 
@@ -325,7 +352,9 @@ fn test_multiple_bounties_independent_resolution() {
     setup
         .escrow
         .lock_funds(&setup.depositor, &1, &1000, &(now + 500));
-    setup.escrow.authorize_claim(&1, &setup.contributor);
+    setup
+        .escrow
+        .authorize_claim(&1, &setup.contributor, &DisputeReason::Other);
 
     // Bounty 2: Will be refunded directly (no claim)
     setup
@@ -336,11 +365,15 @@ fn test_multiple_bounties_independent_resolution() {
     setup
         .escrow
         .lock_funds(&setup.depositor, &3, &1500, &(now + 1000));
-    setup.escrow.authorize_claim(&3, &setup.contributor);
+    setup
+        .escrow
+        .authorize_claim(&3, &setup.contributor, &DisputeReason::Other);
 
     setup.env.ledger().set_timestamp(now + 550);
 
-    setup.escrow.cancel_pending_claim(&1);
+    setup
+        .escrow
+        .cancel_pending_claim(&1, &DisputeOutcome::CancelledByAdmin);
     setup.escrow.refund(&1);
     assert_eq!(
         setup.escrow.get_escrow_info(&1).status,
@@ -393,10 +426,14 @@ fn test_claim_cancellation_restores_refund_eligibility() {
     assert_eq!(escrow_before.status, EscrowStatus::Locked);
 
     // Authorize claim
-    setup.escrow.authorize_claim(&bounty_id, &setup.contributor);
+    setup
+        .escrow
+        .authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::QualityIssue);
 
     // Cancel it
-    setup.escrow.cancel_pending_claim(&bounty_id);
+    setup
+        .escrow
+        .cancel_pending_claim(&bounty_id, &DisputeOutcome::CancelledByAdmin);
 
     let escrow_after = setup.escrow.get_escrow_info(&bounty_id);
     assert_eq!(escrow_after.status, EscrowStatus::Locked);
@@ -419,7 +456,8 @@ fn test_expiry_does_not_bypass_active_dispute() {
     s.escrow.set_claim_window(&300);
     s.escrow
         .lock_funds(&s.depositor, &bounty_id, &amount, &deadline);
-    s.escrow.authorize_claim(&bounty_id, &s.contributor);
+    s.escrow
+        .authorize_claim(&bounty_id, &s.contributor, &DisputeReason::Other);
 
     s.env.ledger().set_timestamp(deadline + 1);
 
@@ -442,13 +480,15 @@ fn test_dispute_before_expiry_cancel_then_refund_after_deadline() {
         .lock_funds(&s.depositor, &bounty_id, &amount, &deadline);
 
     // Dispute raised before deadline
-    s.escrow.authorize_claim(&bounty_id, &s.contributor);
+    s.escrow
+        .authorize_claim(&bounty_id, &s.contributor, &DisputeReason::Other);
     let claim = s.escrow.get_pending_claim(&bounty_id);
     assert!(!claim.claimed);
 
     // Admin resolves dispute in favour of depositor: cancel claim
     s.env.ledger().set_timestamp(claim.expires_at + 1);
-    s.escrow.cancel_pending_claim(&bounty_id);
+    s.escrow
+        .cancel_pending_claim(&bounty_id, &DisputeOutcome::CancelledByAdmin);
 
     // Advance to after deadline
     s.env.ledger().set_timestamp(deadline + 1);
@@ -475,7 +515,8 @@ fn test_dispute_before_expiry_contributor_claims_wins() {
     s.escrow.set_claim_window(&400);
     s.escrow
         .lock_funds(&s.depositor, &bounty_id, &amount, &deadline);
-    s.escrow.authorize_claim(&bounty_id, &s.contributor);
+    s.escrow
+        .authorize_claim(&bounty_id, &s.contributor, &DisputeReason::Other);
 
     let claim = s.escrow.get_pending_claim(&bounty_id);
 
@@ -508,7 +549,8 @@ fn test_dispute_opened_after_deadline_contributor_can_still_claim() {
     s.env.ledger().set_timestamp(deadline + 1);
 
     // Admin opens dispute after deadline (late intervention)
-    s.escrow.authorize_claim(&bounty_id, &s.contributor);
+    s.escrow
+        .authorize_claim(&bounty_id, &s.contributor, &DisputeReason::Other);
     let claim = s.escrow.get_pending_claim(&bounty_id);
 
     // Contributor claims within window
@@ -533,13 +575,15 @@ fn test_both_windows_expired_admin_cancels_stale_claim_then_refund() {
     s.escrow.set_claim_window(&100);
     s.escrow
         .lock_funds(&s.depositor, &bounty_id, &amount, &deadline);
-    s.escrow.authorize_claim(&bounty_id, &s.contributor);
+    s.escrow
+        .authorize_claim(&bounty_id, &s.contributor, &DisputeReason::Other);
 
     // Jump far into the future — both windows long expired
     s.env.ledger().set_timestamp(deadline + 1_000);
 
     // Stale pending claim must be cancelled explicitly
-    s.escrow.cancel_pending_claim(&bounty_id);
+    s.escrow
+        .cancel_pending_claim(&bounty_id, &DisputeOutcome::CancelledByAdmin);
 
     s.escrow.refund(&bounty_id);
 
@@ -564,13 +608,16 @@ fn test_reauthorize_after_cancel_second_claim_succeeds() {
         .lock_funds(&s.depositor, &bounty_id, &amount, &deadline);
 
     // First dispute — cancelled
-    s.escrow.authorize_claim(&bounty_id, &s.contributor);
+    s.escrow
+        .authorize_claim(&bounty_id, &s.contributor, &DisputeReason::Other);
     let first_claim = s.escrow.get_pending_claim(&bounty_id);
     s.env.ledger().set_timestamp(first_claim.expires_at + 1);
-    s.escrow.cancel_pending_claim(&bounty_id);
+    s.escrow
+        .cancel_pending_claim(&bounty_id, &DisputeOutcome::CancelledByAdmin);
 
     // Second dispute — contributor claims this time
-    s.escrow.authorize_claim(&bounty_id, &s.contributor);
+    s.escrow
+        .authorize_claim(&bounty_id, &s.contributor, &DisputeReason::Other);
     let second_claim = s.escrow.get_pending_claim(&bounty_id);
     assert!(!second_claim.claimed);
 

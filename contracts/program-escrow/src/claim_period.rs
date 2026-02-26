@@ -17,8 +17,8 @@
 //
 // ============================================================
 
-use soroban_sdk::{contracttype, symbol_short, Address, Env, String, Symbol};
 use crate::{DataKey, ProgramData, PROGRAM_DATA};
+use soroban_sdk::{contracttype, symbol_short, Address, Env, String, Symbol};
 
 /// The status of a pending claim record.
 #[contracttype]
@@ -39,7 +39,7 @@ pub struct ClaimRecord {
     pub program_id: String,
     pub recipient: Address,
     pub amount: i128,
-    pub claim_deadline: u64,   // UNIX timestamp  shows after which claim expires
+    pub claim_deadline: u64, // UNIX timestamp  shows after which claim expires
     pub created_at: u64,
     pub status: ClaimStatus,
 }
@@ -132,7 +132,13 @@ pub fn create_pending_claim(
 
     env.events().publish(
         (CLAIM_CREATED,),
-        (program_id.clone(), claim_id, recipient.clone(), amount, claim_deadline),
+        (
+            program_id.clone(),
+            claim_id,
+            recipient.clone(),
+            amount,
+            claim_deadline,
+        ),
     );
 
     claim_id
@@ -156,8 +162,8 @@ pub fn execute_claim(env: &Env, program_id: &String, claim_id: u64, caller: &Add
         panic!("Unauthorized: only the claim recipient can execute this claim");
     }
 
-   // checks if is still pending.
-   match record.status {
+    // checks if is still pending.
+    match record.status {
         ClaimStatus::Pending => {}
         _ => panic!("ClaimAlreadyProcessed"),
     }
@@ -182,7 +188,12 @@ pub fn execute_claim(env: &Env, program_id: &String, claim_id: u64, caller: &Add
 
     env.events().publish(
         (CLAIM_EXECUTED,),
-        (program_id.clone(), claim_id, record.recipient.clone(), record.amount),
+        (
+            program_id.clone(),
+            claim_id,
+            record.recipient.clone(),
+            record.amount,
+        ),
     );
 }
 /// Admin cancels a claim pending or expired and returns reserved funds to escrow.
@@ -222,10 +233,14 @@ pub fn cancel_claim(env: &Env, program_id: &String, claim_id: u64, admin: &Addre
 
     env.events().publish(
         (CLAIM_CANCELLED,),
-        (program_id.clone(), claim_id, record.recipient.clone(), record.amount),
+        (
+            program_id.clone(),
+            claim_id,
+            record.recipient.clone(),
+            record.amount,
+        ),
     );
 }
-
 
 /// Returns a claim record by its ID.
 ///

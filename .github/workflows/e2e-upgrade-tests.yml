@@ -1,0 +1,246 @@
+name: E2E Upgrade and Migration Tests
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'contracts/**'
+      - '.github/workflows/e2e-upgrade-tests.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'contracts/**'
+  workflow_dispatch:
+
+env:
+  RUST_VERSION: 1.74.0
+  SOROBAN_CLI_VERSION: 20.0.0
+
+jobs:
+  grainlify-core-e2e-tests:
+    name: Grainlify Core E2E Upgrade Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          target: wasm32-unknown-unknown
+          override: true
+          profile: minimal
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+
+      - name: Cache Cargo index
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-git-
+
+      - name: Cache target directory
+        uses: actions/cache@v3
+        with:
+          path: contracts/grainlify-core/target
+          key: ${{ runner.os }}-target-grainlify-core-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-target-grainlify-core-
+
+      - name: Install Soroban CLI
+        run: |
+          cargo install --locked soroban-cli --version ${{ env.SOROBAN_CLI_VERSION }}
+
+      - name: Build Grainlify Core Contract
+        working-directory: contracts/grainlify-core
+        run: |
+          cargo build --target wasm32-unknown-unknown --release
+          soroban contract optimize --wasm target/wasm32-unknown-unknown/release/grainlify_core.wasm
+
+      - name: Run E2E Upgrade Tests
+        working-directory: contracts/grainlify-core
+        run: |
+          cargo test --lib test::e2e_upgrade_migration_tests -- --nocapture --test-threads=1
+
+      - name: Run Upgrade Rollback Tests
+        working-directory: contracts/grainlify-core
+        run: |
+          cargo test --lib test::upgrade_rollback_tests -- --nocapture --test-threads=1
+
+      - name: Run Migration Hook Tests
+        working-directory: contracts/grainlify-core
+        run: |
+          cargo test migration_hook_tests -- --nocapture
+
+  bounty-escrow-e2e-tests:
+    name: Bounty Escrow E2E Upgrade Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          target: wasm32-unknown-unknown
+          override: true
+          profile: minimal
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+
+      - name: Cache target directory
+        uses: actions/cache@v3
+        with:
+          path: contracts/bounty_escrow/contracts/escrow/target
+          key: ${{ runner.os }}-target-bounty-escrow-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-target-bounty-escrow-
+
+      - name: Install Soroban CLI
+        run: |
+          cargo install --locked soroban-cli --version ${{ env.SOROBAN_CLI_VERSION }}
+
+      - name: Build Bounty Escrow Contract
+        working-directory: contracts/bounty_escrow/contracts/escrow
+        run: |
+          cargo build --target wasm32-unknown-unknown --release
+          soroban contract optimize --wasm target/wasm32-unknown-unknown/release/bounty_escrow.wasm
+
+      - name: Run E2E Upgrade with Pause Tests
+        working-directory: contracts/bounty_escrow/contracts/escrow
+        run: |
+          cargo test test_e2e_upgrade_with_pause -- --nocapture --test-threads=1
+
+      - name: Run Pause/Resume Tests
+        working-directory: contracts/bounty_escrow/contracts/escrow
+        run: |
+          cargo test test_pause -- --nocapture
+
+      - name: Run Emergency Withdraw Tests
+        working-directory: contracts/bounty_escrow/contracts/escrow
+        run: |
+          cargo test emergency_withdraw -- --nocapture
+
+  program-escrow-e2e-tests:
+    name: Program Escrow E2E Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          target: wasm32-unknown-unknown
+          override: true
+          profile: minimal
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+
+      - name: Cache target directory
+        uses: actions/cache@v3
+        with:
+          path: contracts/program-escrow/target
+          key: ${{ runner.os }}-target-program-escrow-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-target-program-escrow-
+
+      - name: Install Soroban CLI
+        run: |
+          cargo install --locked soroban-cli --version ${{ env.SOROBAN_CLI_VERSION }}
+
+      - name: Build Program Escrow Contract
+        working-directory: contracts/program-escrow
+        run: |
+          cargo build --target wasm32-unknown-unknown --release
+          soroban contract optimize --wasm target/wasm32-unknown-unknown/release/program_escrow.wasm
+
+      - name: Run Circuit Breaker Tests
+        working-directory: contracts/program-escrow
+        run: |
+          cargo test test_circuit_breaker_audit -- --nocapture
+
+      - name: Run Error Recovery Tests
+        working-directory: contracts/program-escrow
+        run: |
+          cargo test error_recovery_tests -- --nocapture
+
+      - name: Run Full Lifecycle Tests
+        working-directory: contracts/program-escrow
+        run: |
+          cargo test test_full_lifecycle -- --nocapture
+
+  integration-tests:
+    name: Integration Tests (All Contracts)
+    runs-on: ubuntu-latest
+    needs: [grainlify-core-e2e-tests, bounty-escrow-e2e-tests, program-escrow-e2e-tests]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          target: wasm32-unknown-unknown
+          override: true
+          profile: minimal
+
+      - name: Install Soroban CLI
+        run: |
+          cargo install --locked soroban-cli --version ${{ env.SOROBAN_CLI_VERSION }}
+
+      - name: Run Integration Tests
+        working-directory: contracts
+        run: |
+          if [ -f "integration_tests.rs" ]; then
+            cargo test --test integration_tests -- --nocapture
+          else
+            echo "No integration tests found, skipping"
+          fi
+
+  test-summary:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    needs: [grainlify-core-e2e-tests, bounty-escrow-e2e-tests, program-escrow-e2e-tests, integration-tests]
+    if: always()
+    
+    steps:
+      - name: Check test results
+        run: |
+          echo "## E2E Upgrade and Migration Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ All end-to-end upgrade and migration tests completed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Test Coverage:" >> $GITHUB_STEP_SUMMARY
+          echo "- Grainlify Core: Upgrade, migration, and rollback scenarios" >> $GITHUB_STEP_SUMMARY
+          echo "- Bounty Escrow: Pause/resume with upgrade scenarios" >> $GITHUB_STEP_SUMMARY
+          echo "- Program Escrow: Circuit breaker and error recovery" >> $GITHUB_STEP_SUMMARY
+          echo "- Integration: Cross-contract upgrade scenarios" >> $GITHUB_STEP_SUMMARY

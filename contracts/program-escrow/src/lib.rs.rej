@@ -1,0 +1,220 @@
+--- contracts/program-escrow/src/lib.rs
++++ contracts/program-escrow/src/lib.rs
+@@ -299,15 +299,30 @@ pub struct PayoutRecord {
+     pub timestamp: u64,
+ }
+ 
++#[contracttype]
++#[derive(Clone, Debug, Eq, PartialEq)]
++pub struct TreasuryDestination {
++    pub destination: Address,
++    pub weight: u32,
++}
++
+ #[contracttype]
+ #[derive(Clone, Debug, Eq, PartialEq)]
+ pub struct FeeConfig {
+     pub lock_fee_rate: i128,
+     pub payout_fee_rate: i128,
+-    pub fee_recipient: Address,
++    pub destinations: Vec<TreasuryDestination>,
+     pub fee_enabled: bool,
+ }
+ 
++#[contracttype]
++#[derive(Clone, Debug, Eq, PartialEq)]
++pub struct DistributionEvent {
++    pub destination: Address,
++    pub amount: i128,
++    pub timestamp: u64,
++}
++
+ #[contracttype]
+ #[derive(Clone, Debug, Eq, PartialEq)]
+ pub struct ProgramInitializedEvent {
+@@ -646,7 +661,10 @@ impl ProgramEscrowContract {
+                 let fee_config = FeeConfig {
+                     lock_fee_rate: 0,
+                     payout_fee_rate: 0,
+-                    fee_recipient: authorized_payout_key.clone(),
++                    destinations: vec![&env, TreasuryDestination {
++                        destination: authorized_payout_key.clone(),
++                        weight: 100,
++                    }],
+                     fee_enabled: false,
+                 };
+                 env.storage().instance().set(&FEE_CONFIG, &fee_config);
+@@ -693,10 +711,62 @@ impl ProgramEscrowContract {
+             .unwrap_or_else(|| FeeConfig {
+                 lock_fee_rate: 0,
+                 payout_fee_rate: 0,
+-                fee_recipient: env.current_contract_address(),
++                destinations: Vec::new(env),
+                 fee_enabled: false,
+             })
+     }
++
++    /// Distribute collected fees across multiple treasury destinations
++    fn distribute_fees(
++        env: &Env,
++        amount: i128,
++        destinations: Vec<TreasuryDestination>,
++        token_address: &Address,
++    ) {
++        if amount <= 0 || destinations.len() == 0 {
++            return;
++        }
++
++        let mut total_weight: u32 = 0;
++        for dest in destinations.iter() {
++            total_weight += dest.weight;
++        }
++
++        if total_weight == 0 {
++            return;
++        }
++
++        let token_client = token::Client::new(env, token_address);
++        let contract_address = env.current_contract_address();
++        let timestamp = env.ledger().timestamp();
++        let mut remaining_fee = amount;
++
++        for i in 0..destinations.len() {
++            let dest = destinations.get(i).unwrap();
++            let share = if i == destinations.len() - 1 {
++                // Last destination gets the remainder to avoid rounding issues
++                remaining_fee
++            } else {
++                amount
++                    .checked_mul(dest.weight as i128)
++                    .and_then(|x| x.checked_div(total_weight as i128))
++                    .unwrap_or(0)
++            };
++
++            if share > 0 {
++                token_client.transfer(&contract_address, &dest.destination, &share);
++                env.events().publish(
++                    (symbol_short!("dist"),),
++                    DistributionEvent {
++                        destination: dest.destination,
++                        amount: share,
++                        timestamp,
++                    },
++                );
++                remaining_fee -= share;
++            }
++        }
++    }
+     /// Check if a program exists (legacy single-program check)
+     ///
+     /// # Returns
+@@ -739,7 +809,17 @@ impl ProgramEscrowContract {
+ 
+         // Update balances
+         program_data.total_funds += amount;
+-        program_data.remaining_balance += amount;
++        
++        let mut fee_taken = 0i128;
++        let fee_config = Self::get_fee_config_internal(&env);
++        if fee_config.fee_enabled && fee_config.lock_fee_rate > 0 {
++            fee_taken = Self::calculate_fee(amount, fee_config.lock_fee_rate);
++            if fee_taken > 0 {
++                Self::distribute_fees(&env, fee_taken, fee_config.destinations, &program_data.token_address);
++            }
++        }
++
++        program_data.remaining_balance += amount - fee_taken;
+ 
+         // Store updated data
+         env.storage().instance().set(&PROGRAM_DATA, &program_data);
+@@ -1068,6 +1148,26 @@ impl ProgramEscrowContract {
+         // Update program data
+         let mut updated_data = program_data.clone();
+         updated_data.remaining_balance -= total_payout;
++
++        // Apply payout fees if enabled
++        let fee_config = Self::get_fee_config_internal(&env);
++        if fee_config.fee_enabled && fee_config.payout_fee_rate > 0 {
++            let total_fee = Self::calculate_fee(total_payout, fee_config.payout_fee_rate);
++            if total_fee > 0 {
++                if total_fee > updated_data.remaining_balance {
++                    reentrancy_guard::clear_entered(&env);
++                    panic!("Insufficient balance for fees");
++                }
++                updated_data.remaining_balance -= total_fee;
++                Self::distribute_fees(
++                    &env,
++                    total_fee,
++                    fee_config.destinations,
++                    &updated_data.token_address,
++                );
++            }
++        }
++
+         updated_data.payout_history = updated_history;
+ 
+         // Store updated data
+@@ -1152,6 +1252,26 @@ impl ProgramEscrowContract {
+         // Update program data
+         let mut updated_data = program_data.clone();
+         updated_data.remaining_balance -= amount;
++
++        // Apply payout fees if enabled
++        let fee_config = Self::get_fee_config_internal(&env);
++        if fee_config.fee_enabled && fee_config.payout_fee_rate > 0 {
++            let total_fee = Self::calculate_fee(amount, fee_config.payout_fee_rate);
++            if total_fee > 0 {
++                if total_fee > updated_data.remaining_balance {
++                    reentrancy_guard::clear_entered(&env);
++                    panic!("Insufficient balance for fees");
++                }
++                updated_data.remaining_balance -= total_fee;
++                Self::distribute_fees(
++                    &env,
++                    total_fee,
++                    fee_config.destinations,
++                    &updated_data.token_address,
++                );
++            }
++        }
++
+         updated_data.payout_history = updated_history;
+ 
+         // Store updated data
+@@ -1200,6 +1320,36 @@ impl ProgramEscrowContract {
+         program_data.remaining_balance
+     }
+ 
++    /// Update fee configuration (admin only)
++    pub fn update_fee_config(
++        env: Env,
++        admin: Address,
++        lock_fee_rate: i128,
++        payout_fee_rate: i128,
++        destinations: Vec<TreasuryDestination>,
++        fee_enabled: bool,
++    ) {
++        let stored_admin: Address = env.storage().instance().get(&DataKey::Admin).expect("Not initialized");
++        stored_admin.require_auth();
++        admin.require_auth();
++        if admin != stored_admin {
++            panic!("Unauthorized");
++        }
++
++        let config = FeeConfig {
++            lock_fee_rate,
++            payout_fee_rate,
++            destinations,
++            fee_enabled,
++        };
++        env.storage().instance().set(&FEE_CONFIG, &config);
++    }
++
++    /// Get current fee configuration
++    pub fn get_fee_config(env: Env) -> FeeConfig {
++        Self::get_fee_config_internal(&env)
++    }
++
+     /// Create a release schedule entry that can be triggered at/after `release_timestamp`.
+    pub fn create_program_release_schedule(
+     env: Env,

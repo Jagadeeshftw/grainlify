@@ -1,0 +1,35 @@
+{
+  "name": "grainlify-contracts",
+  "version": "1.0.0",
+  "description": "Grainlify smart contracts with machine-readable metadata manifests",
+  "main": "index.js",
+  "scripts": {
+    "validate-manifests": "node scripts/validate-manifests.js",
+    "generate-docs": "node scripts/generate-docs.js",
+    "build": "npm run validate-manifests && npm run generate-docs",
+    "test": "npm run validate-manifests"
+  },
+  "devDependencies": {
+    "ajv-cli": "^5.0.0",
+    "ajv": "^8.12.0"
+  },
+  "keywords": [
+    "stellar",
+    "soroban",
+    "smart-contracts",
+    "blockchain",
+    "escrow",
+    "grants",
+    "metadata"
+  ],
+  "author": "Grainlify Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/grainlify/grainlify"
+  },
+  "bugs": {
+    "url": "https://github.com/grainlify/grainlify/issues"
+  },
+  "homepage": "https://grainlify.dev"
+}

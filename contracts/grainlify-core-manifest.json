@@ -1,0 +1,702 @@
+{
+  "$schema": "./contract-manifest-schema.json",
+  "contract_name": "GrainlifyContract",
+  "contract_purpose": "Provides secure contract upgrade mechanism with version tracking, migration support, multisig governance, and comprehensive monitoring capabilities",
+  "version": {
+    "current": "2.0.0",
+    "schema": "1.0.0",
+    "history": [
+      {
+        "version": "1.0.0",
+        "release_date": "2024-01-01",
+        "changes": [
+          "Initial release with basic upgrade functionality",
+          "Single admin authorization model",
+          "Simple version tracking"
+        ]
+      },
+      {
+        "version": "2.0.0",
+        "release_date": "2024-06-01",
+        "changes": [
+          "Added multisig support for upgrade proposals",
+          "Enhanced migration system with state tracking",
+          "Added governance module",
+          "Comprehensive monitoring and analytics",
+          "Improved version management with semantic versioning",
+          "Added rollback support"
+        ]
+      }
+    ]
+  },
+  "entrypoints": {
+    "public": [
+      {
+        "name": "upgrade",
+        "description": "Upgrade the contract to new WASM code",
+        "parameters": [
+          {
+            "name": "new_wasm_hash",
+            "type": "BytesN<32>",
+            "description": "Hash of the uploaded WASM code"
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success"
+        },
+        "authorization": "admin",
+        "pausable": false,
+        "gas_estimate": "high"
+      },
+      {
+        "name": "set_version",
+        "description": "Update the contract version number",
+        "parameters": [
+          {
+            "name": "new_version",
+            "type": "u32",
+            "description": "New version number"
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success"
+        },
+        "authorization": "admin",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "migrate",
+        "description": "Perform state migration to new version",
+        "parameters": [
+          {
+            "name": "target_version",
+            "type": "u32",
+            "description": "Target version to migrate to"
+          },
+          {
+            "name": "migration_hash",
+            "type": "BytesN<32>",
+            "description": "Hash of the migration data"
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success"
+        },
+        "authorization": "admin",
+        "pausable": false,
+        "gas_estimate": "high"
+      },
+      {
+        "name": "propose_upgrade",
+        "description": "Propose an upgrade with multisig approval",
+        "parameters": [
+          {
+            "name": "proposer",
+            "type": "Address",
+            "description": "Address proposing the upgrade"
+          },
+          {
+            "name": "wasm_hash",
+            "type": "BytesN<32>",
+            "description": "Hash of the new WASM code"
+          }
+        ],
+        "returns": {
+          "type": "u64",
+          "description": "Proposal ID"
+        },
+        "authorization": "signer",
+        "pausable": false,
+        "gas_estimate": "medium"
+      },
+      {
+        "name": "approve_upgrade",
+        "description": "Approve an upgrade proposal",
+        "parameters": [
+          {
+            "name": "proposal_id",
+            "type": "u64",
+            "description": "Proposal ID to approve"
+          },
+          {
+            "name": "signer",
+            "type": "Address",
+            "description": "Address approving the proposal"
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success"
+        },
+        "authorization": "signer",
+        "pausable": false,
+        "gas_estimate": "medium"
+      },
+      {
+        "name": "execute_upgrade",
+        "description": "Execute an approved upgrade proposal",
+        "parameters": [
+          {
+            "name": "proposal_id",
+            "type": "u64",
+            "description": "Proposal ID to execute"
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success"
+        },
+        "authorization": "multisig",
+        "pausable": false,
+        "gas_estimate": "high"
+      }
+    ],
+    "view": [
+      {
+        "name": "get_version",
+        "description": "Get current contract version",
+        "parameters": [],
+        "returns": {
+          "type": "u32",
+          "description": "Current version number"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "get_version_semver_string",
+        "description": "Get semantic version string",
+        "parameters": [],
+        "returns": {
+          "type": "String",
+          "description": "Semantic version (e.g., '1.0.0')"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "get_version_numeric_encoded",
+        "description": "Get numeric encoded semantic version",
+        "parameters": [],
+        "returns": {
+          "type": "u32",
+          "description": "Encoded semantic version (major*10000 + minor*100 + patch)"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "require_min_version",
+        "description": "Ensure current version meets minimum requirement",
+        "parameters": [
+          {
+            "name": "min_numeric",
+            "type": "u32",
+            "description": "Minimum required version"
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Panics if version is too low"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "get_migration_state",
+        "description": "Get current migration state",
+        "parameters": [],
+        "returns": {
+          "type": "Option<MigrationState>",
+          "description": "Migration state if exists"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "get_previous_version",
+        "description": "Get previous version before migration",
+        "parameters": [],
+        "returns": {
+          "type": "Option<u32>",
+          "description": "Previous version if exists"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "health_check",
+        "description": "Get contract health status",
+        "parameters": [],
+        "returns": {
+          "type": "HealthStatus",
+          "description": "Health information"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "get_analytics",
+        "description": "Get usage analytics",
+        "parameters": [],
+        "returns": {
+          "type": "Analytics",
+          "description": "Analytics data"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "get_state_snapshot",
+        "description": "Get current state snapshot",
+        "parameters": [],
+        "returns": {
+          "type": "StateSnapshot",
+          "description": "State snapshot data"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "get_performance_stats",
+        "description": "Get performance stats for a function",
+        "parameters": [
+          {
+            "name": "function_name",
+            "type": "Symbol",
+            "description": "Function name to get stats for"
+          }
+        ],
+        "returns": {
+          "type": "PerformanceStats",
+          "description": "Performance statistics"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low"
+      }
+    ],
+    "admin": [
+      {
+        "name": "init",
+        "description": "Initialize contract with multisig configuration",
+        "parameters": [
+          {
+            "name": "signers",
+            "type": "Vec<Address>",
+            "description": "List of signer addresses"
+          },
+          {
+            "name": "threshold",
+            "type": "u32",
+            "description": "Number of signatures required"
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "medium"
+      },
+      {
+        "name": "init_admin",
+        "description": "Initialize contract with single admin",
+        "parameters": [
+          {
+            "name": "admin",
+            "type": "Address",
+            "description": "Admin address"
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "init_governance",
+        "description": "Initialize governance system",
+        "parameters": [
+          {
+            "name": "admin",
+            "type": "Address",
+            "description": "Governance admin address"
+          },
+          {
+            "name": "config",
+            "type": "GovernanceConfig",
+            "description": "Governance configuration"
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "medium"
+      }
+    ]
+  },
+  "configuration": {
+    "parameters": [
+      {
+        "name": "VERSION",
+        "type": "u32",
+        "default_value": "2",
+        "description": "Current contract version",
+        "constraints": "value > 0",
+        "admin_only": false
+      },
+      {
+        "name": "multisig_threshold",
+        "type": "u32",
+        "default_value": "2",
+        "description": "Number of signatures required for multisig operations",
+        "constraints": "1 <= value <= signer_count",
+        "admin_only": true
+      },
+      {
+        "name": "multisig_signers",
+        "type": "Vec<Address>",
+        "default_value": "[]",
+        "description": "List of authorized multisig signers",
+        "constraints": "non-empty list",
+        "admin_only": true
+      }
+    ],
+    "storage_keys": [
+      {
+        "name": "Admin",
+        "type": "instance",
+        "description": "Administrator address (immutable after init)",
+        "data_structure": "Address"
+      },
+      {
+        "name": "Version",
+        "type": "instance",
+        "description": "Current contract version",
+        "data_structure": "u32"
+      },
+      {
+        "name": "UpgradeProposal",
+        "type": "instance",
+        "description": "Upgrade proposals by ID",
+        "data_structure": "BytesN<32>"
+      },
+      {
+        "name": "MigrationState",
+        "type": "instance",
+        "description": "Migration state tracking",
+        "data_structure": "MigrationState"
+      },
+      {
+        "name": "PreviousVersion",
+        "type": "instance",
+        "description": "Previous version before migration",
+        "data_structure": "u32"
+      }
+    ]
+  },
+  "behaviors": {
+    "security_features": [
+      "Immutable admin after initialization",
+      "Multisig support for critical operations",
+      "Version tracking and audit trail",
+      "State migration with rollback support",
+      "Comprehensive monitoring and analytics",
+      "Performance tracking",
+      "Health check capabilities",
+      "Invariant verification"
+    ],
+    "access_control": [
+      {
+        "mechanism": "admin_auth",
+        "description": "Single admin with upgrade authority",
+        "configuration": "Set during initialization, immutable afterwards"
+      },
+      {
+        "mechanism": "multisig",
+        "description": "Multiple signatures required for upgrade proposals",
+        "configuration": "Configurable threshold and signer list"
+      }
+    ],
+    "critical_behaviors": [
+      {
+        "behavior": "Immutable admin",
+        "impact": "Admin cannot be changed after initialization",
+        "mitigation": "Choose admin carefully, use multisig for additional security"
+      },
+      {
+        "behavior": "WASM upgrade",
+        "impact": "Contract code can be completely replaced",
+        "mitigation": "Require admin authorization and optionally multisig approval"
+      },
+      {
+        "behavior": "State preservation",
+        "impact": "Instance storage survives upgrades",
+        "mitigation": "Use instance storage for critical data like admin address"
+      },
+      {
+        "behavior": "Version tracking",
+        "impact": "All upgrades are tracked with version numbers",
+        "mitigation": "Always update version after successful upgrade"
+      },
+      {
+        "behavior": "Migration system",
+        "impact": "State can be migrated between versions",
+        "mitigation": "Test migrations thoroughly and keep rollback data"
+      }
+    ],
+    "error_handling": [
+      {
+        "error_code": "AlreadyInitialized",
+        "scenario": "Attempting to initialize an already initialized contract",
+        "resolution": "Contract can only be initialized once"
+      },
+      {
+        "error_code": "NotInitialized",
+        "scenario": "Calling admin functions before initialization",
+        "resolution": "Initialize contract with admin or multisig configuration"
+      },
+      {
+        "error_code": "Unauthorized",
+        "scenario": "Non-admin attempting upgrade operations",
+        "resolution": "Ensure caller is admin or authorized multisig signer"
+      },
+      {
+        "error_code": "Threshold not met",
+        "scenario": "Multisig operation without sufficient approvals",
+        "resolution": "Get required number of signatures before executing"
+      },
+      {
+        "error_code": "Incompatible contract version",
+        "scenario": "Version requirement not met",
+        "resolution": "Upgrade contract to required minimum version"
+      }
+    ],
+    "gas_considerations": [
+      {
+        "operation": "upgrade",
+        "cost_level": "high",
+        "notes": "WASM code replacement is expensive"
+      },
+      {
+        "operation": "migrate",
+        "cost_level": "high",
+        "notes": "State migration can be complex and expensive"
+      },
+      {
+        "operation": "multisig operations",
+        "cost_level": "medium",
+        "notes": "Multiple signature validations and storage writes"
+      },
+      {
+        "operation": "view functions",
+        "cost_level": "low",
+        "notes": "Only storage reads, minimal computation"
+      }
+    ],
+    "events": [
+      {
+        "name": "ContractUpgraded",
+        "description": "Contract successfully upgraded",
+        "data": [
+          {
+            "name": "old_version",
+            "type": "u32",
+            "description": "Previous version"
+          },
+          {
+            "name": "new_version",
+            "type": "u32",
+            "description": "New version"
+          },
+          {
+            "name": "wasm_hash",
+            "type": "BytesN<32>",
+            "description": "New WASM hash"
+          },
+          {
+            "name": "timestamp",
+            "type": "u64",
+            "description": "Upgrade timestamp"
+          }
+        ],
+        "trigger": "Successful upgrade operation"
+      },
+      {
+        "name": "MigrationCompleted",
+        "description": "State migration completed",
+        "data": [
+          {
+            "name": "from_version",
+            "type": "u32",
+            "description": "Source version"
+          },
+          {
+            "name": "to_version",
+            "type": "u32",
+            "description": "Target version"
+          },
+          {
+            "name": "migration_hash",
+            "type": "BytesN<32>",
+            "description": "Migration data hash"
+          },
+          {
+            "name": "timestamp",
+            "type": "u64",
+            "description": "Migration timestamp"
+          }
+        ],
+        "trigger": "Successful migration"
+      }
+    ]
+  },
+  "dependencies": {
+    "contracts": [],
+    "tokens": [],
+    "external_apis": []
+  },
+  "deployment": {
+    "networks": [],
+    "initialization": {
+      "steps": [
+        {
+          "step": 1,
+          "description": "Deploy contract to Stellar network",
+          "command": "stellar contract deploy --wasm target/wasm32-unknown-unknown/release/grainlify.wasm",
+          "notes": "Save contract ID from deployment output"
+        },
+        {
+          "step": 2,
+          "description": "Initialize with single admin (simple mode)",
+          "command": "stellar contract invoke --id CONTRACT_ID -- init_admin --admin ADMIN_ADDRESS",
+          "notes": "Use secure admin address (hardware wallet recommended)"
+        },
+        {
+          "step": 3,
+          "description": "OR initialize with multisig (advanced mode)",
+          "command": "stellar contract invoke --id CONTRACT_ID -- init --signers SIGNER1,SIGNER2,SIGNER3 --threshold 2",
+          "notes": "Choose appropriate threshold for your security requirements"
+        }
+      ],
+      "prerequisites": [
+        "Admin address or list of multisig signers",
+        "Sufficient XLM for deployment fees",
+        "Secure storage of admin private keys"
+      ]
+    },
+    "upgrade_process": {
+      "steps": [
+        {
+          "step": 1,
+          "description": "Build new contract version",
+          "command": "cargo build --release --target wasm32-unknown-unknown",
+          "notes": "Ensure all tests pass before building"
+        },
+        {
+          "step": 2,
+          "description": "Upload new WASM to Stellar",
+          "command": "stellar contract install --wasm target/wasm32-unknown-unknown/release/grainlify.wasm",
+          "notes": "Save the WASM hash from output"
+        },
+        {
+          "step": 3,
+          "description": "Test upgrade on testnet first",
+          "command": "stellar contract invoke --id TESTNET_CONTRACT_ID -- upgrade --new_wasm_hash WASM_HASH",
+          "notes": "Verify all functionality works on testnet"
+        },
+        {
+          "step": 4,
+          "description": "Perform mainnet upgrade (single admin)",
+          "command": "stellar contract invoke --id MAINNET_CONTRACT_ID -- upgrade --new_wasm_hash WASM_HASH",
+          "notes": "Ensure admin authorization"
+        },
+        {
+          "step": 5,
+          "description": "OR perform multisig upgrade",
+          "command": "stellar contract invoke --id CONTRACT_ID -- propose_upgrade --proposer PROPOSER --wasm_hash WASM_HASH",
+          "notes": "Get proposal ID, then collect approvals"
+        },
+        {
+          "step": 6,
+          "description": "Approve multisig upgrade",
+          "command": "stellar contract invoke --id CONTRACT_ID -- approve_upgrade --proposal_id PROPOSAL_ID --signer SIGNER",
+          "notes": "Repeat for required number of signers"
+        },
+        {
+          "step": 7,
+          "description": "Execute approved upgrade",
+          "command": "stellar contract invoke --id CONTRACT_ID -- execute_upgrade --proposal_id PROPOSAL_ID",
+          "notes": "Execute after threshold is met"
+        },
+        {
+          "step": 8,
+          "description": "Update version number",
+          "command": "stellar contract invoke --id CONTRACT_ID -- set_version --new_version 2.1.0",
+          "notes": "Track version changes for audit trail"
+        }
+      ],
+      "rollback_procedure": "Keep previous WASM hash to enable emergency rollback by calling upgrade with previous hash",
+      "testing_requirements": [
+        "Test upgrade process on testnet",
+        "Verify state preservation across upgrades",
+        "Test migration procedures if applicable",
+        "Verify multisig workflow if used",
+        "Test rollback procedure"
+      ]
+    }
+  },
+  "testing": {
+    "test_coverage": {
+      "unit_tests": "90%",
+      "integration_tests": "85%",
+      "test_files": [
+        "test_core_monitoring.rs",
+        "upgrade_rollback_tests.rs",
+        "migration_hook_tests.rs"
+      ]
+    },
+    "test_scenarios": [
+      "Contract initialization (single admin and multisig)",
+      "WASM upgrade process",
+      "Version management",
+      "State migration",
+      "Multisig proposal and approval workflow",
+      "Rollback procedures",
+      "Error handling for unauthorized access",
+      "Health check functionality",
+      "Analytics and monitoring",
+      "Performance tracking"
+    ]
+  },
+  "documentation": {
+    "readme": "README.md",
+    "api_docs": "lib.rs (comprehensive inline documentation)",
+    "examples": [
+      "examples/basic_upgrade.rs",
+      "examples/multisig_setup.rs",
+      "examples/migration_example.rs"
+    ]
+  }
+}

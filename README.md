@@ -264,6 +264,104 @@ to:
 
 ---
 
-## 14. One-Line Summary
+## 14. Smart Contract Documentation
+
+### 📋 Contract Manifests
+
+This repository includes machine-readable metadata manifests for all major smart contracts. These manifests provide comprehensive documentation in a structured format that can be used by developers, tools, and documentation systems.
+
+#### Available Manifests
+
+| Contract | Manifest | Description |
+|---|---|---|
+| **BountyEscrowContract** | [`bounty-escrow-manifest.json`](contracts/bounty-escrow-manifest.json) | Manages bounty escrow with multi-token support, capability-based authorization, and comprehensive security features |
+| **GrainlifyContract** | [`grainlify-core-manifest.json`](contracts/grainlify-core-manifest.json) | Provides secure contract upgrade mechanism with version tracking, migration support, and multisig governance |
+| **ProgramEscrowContract** | [`program-escrow-manifest.json`](contracts/program-escrow-manifest.json) | Handles hackathon and program prize pools with batch payouts, dependency management, and circuit breaker protection |
+
+#### Manifest Schema
+
+All manifests follow the [Contract Manifest Schema](contracts/contract-manifest-schema.json), which defines:
+
+- **Contract metadata** (name, purpose, version)
+- **Entrypoints** (public, view, admin functions with parameters and authorization)
+- **Configuration** (parameters, storage keys, defaults)
+- **Behaviors** (security features, access control, critical behaviors, error handling)
+- **Dependencies** (contracts, tokens, external APIs)
+- **Deployment information** (initialization, upgrade process)
+- **Testing coverage** and documentation references
+
+#### Using the Manifests
+
+##### For Developers
+
+```bash
+# Validate manifests locally
+npm install -g ajv-cli
+./scripts/validate-manifests.sh
+
+# View contract information
+jq '.contract_name, .version.current' contracts/bounty-escrow-manifest.json
+
+# List all entrypoints
+jq '.entrypoints.public[].name' contracts/grainlify-core-manifest.json
+```
+
+##### For Tool Integration
+
+The manifests can be used to automatically generate:
+
+- API documentation
+- Client SDKs
+- Type definitions
+- Deployment scripts
+- Test suites
+
+Example: Extract all public functions with their parameters:
+
+```javascript
+const manifest = require('./bounty-escrow-manifest.json');
+const publicFunctions = manifest.entrypoints.public.map(fn => ({
+  name: fn.name,
+  description: fn.description,
+  parameters: fn.parameters,
+  authorization: fn.authorization
+}));
+```
+
+#### Validation
+
+Manifests are automatically validated in CI/CD to ensure:
+
+- Schema compliance
+- Required fields presence
+- Valid authorization values
+- Proper version formatting
+- Structural integrity
+
+You can also validate locally:
+
+```bash
+# Using the provided script
+./scripts/validate-manifests.sh
+
+# Or manually with ajv
+ajv validate -s contracts/contract-manifest-schema.json -d contracts/bounty-escrow-manifest.json
+```
+
+#### Contributing
+
+When adding new contracts or updating existing ones:
+
+1. Update the corresponding manifest file
+2. Ensure all required fields are present
+3. Validate against the schema
+4. Update version numbers if needed
+5. Test the validation script
+
+The manifests are versioned alongside the contracts and should be updated whenever contract interfaces change.
+
+---
+
+## 15. One-Line Summary
 
 > **Grainlify turns ecosystem grants into automatic, verifiable payments for open-source contributions.**

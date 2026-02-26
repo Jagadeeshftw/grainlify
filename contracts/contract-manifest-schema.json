@@ -1,0 +1,620 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://grainlify.dev/schemas/contract-manifest.json",
+  "title": "Smart Contract Metadata Manifest",
+  "description": "Machine-readable metadata manifest for Grainlify smart contracts",
+  "type": "object",
+  "required": ["contract_name", "contract_purpose", "version", "entrypoints", "configuration", "behaviors"],
+  "properties": {
+    "contract_name": {
+      "type": "string",
+      "description": "Human-readable name of the smart contract",
+      "examples": ["BountyEscrowContract", "GrainlifyContract", "ProgramEscrowContract"]
+    },
+    "contract_purpose": {
+      "type": "string",
+      "description": "Clear description of what the contract does",
+      "examples": [
+        "Manages bounty escrow with multi-token support and capability-based authorization",
+        "Provides secure contract upgrade mechanism with version tracking and migration support",
+        "Handles hackathon program prize pools with batch payouts and dependency management"
+      ]
+    },
+    "version": {
+      "type": "object",
+      "description": "Version information for the contract",
+      "required": ["current", "schema"],
+      "properties": {
+        "current": {
+          "type": "string",
+          "description": "Current contract version (semantic versioning)",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "schema": {
+          "type": "string",
+          "description": "Version of this manifest schema",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "history": {
+          "type": "array",
+          "description": "Version history with changelog",
+          "items": {
+            "type": "object",
+            "required": ["version", "release_date", "changes"],
+            "properties": {
+              "version": {
+                "type": "string",
+                "pattern": "^\\d+\\.\\d+\\.\\d+$"
+              },
+              "release_date": {
+                "type": "string",
+                "format": "date"
+              },
+              "changes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "entrypoints": {
+      "type": "object",
+      "description": "Contract entrypoints and their specifications",
+      "required": ["public", "view"],
+      "properties": {
+        "public": {
+          "type": "array",
+          "description": "State-changing functions that require authentication",
+          "items": {
+            "$ref": "#/$defs/entrypoint"
+          }
+        },
+        "view": {
+          "type": "array",
+          "description": "Read-only functions that don't require authentication",
+          "items": {
+            "$ref": "#/$defs/entrypoint"
+          }
+        },
+        "admin": {
+          "type": "array",
+          "description": "Admin-only functions",
+          "items": {
+            "$ref": "#/$defs/entrypoint"
+          }
+        }
+      }
+    },
+    "configuration": {
+      "type": "object",
+      "description": "Configuration parameters and their defaults",
+      "required": ["parameters"],
+      "properties": {
+        "parameters": {
+          "type": "array",
+          "description": "Configurable parameters",
+          "items": {
+            "$ref": "#/$defs/config_parameter"
+          }
+        },
+        "storage_keys": {
+          "type": "array",
+          "description": "Important storage keys used by the contract",
+          "items": {
+            "$ref": "#/$defs/storage_key"
+          }
+        }
+      }
+    },
+    "behaviors": {
+      "type": "object",
+      "description": "Critical behaviors and important notes",
+      "required": ["security_features", "access_control"],
+      "properties": {
+        "security_features": {
+          "type": "array",
+          "description": "Security mechanisms implemented",
+          "items": {
+            "type": "string"
+          }
+        },
+        "access_control": {
+          "type": "array",
+          "description": "Access control mechanisms",
+          "items": {
+            "$ref": "#/$defs/access_control"
+          }
+        },
+        "critical_behaviors": {
+          "type": "array",
+          "description": "Critical behaviors that developers should be aware of",
+          "items": {
+            "$ref": "#/$defs/critical_behavior"
+          }
+        },
+        "error_handling": {
+          "type": "array",
+          "description": "Common error scenarios and their meanings",
+          "items": {
+            "$ref": "#/$defs/error_scenario"
+          }
+        },
+        "gas_considerations": {
+          "type": "array",
+          "description": "Gas cost considerations for different operations",
+          "items": {
+            "type": "object",
+            "required": ["operation", "cost_level", "notes"],
+            "properties": {
+              "operation": {
+                "type": "string"
+              },
+              "cost_level": {
+                "type": "string",
+                "enum": ["low", "medium", "high", "very_high"]
+              },
+              "notes": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "events": {
+          "type": "array",
+          "description": "Events emitted by the contract",
+          "items": {
+            "$ref": "#/$defs/event"
+          }
+        }
+      }
+    },
+    "dependencies": {
+      "type": "object",
+      "description": "External dependencies and integrations",
+      "properties": {
+        "contracts": {
+          "type": "array",
+          "description": "Other contracts this contract interacts with",
+          "items": {
+            "$ref": "#/$defs/contract_dependency"
+          }
+        },
+        "tokens": {
+          "type": "array",
+          "description": "Token contracts this contract works with",
+          "items": {
+            "$ref": "#/$defs/token_dependency"
+          }
+        },
+        "external_apis": {
+          "type": "array",
+          "description": "External APIs or services",
+          "items": {
+            "$ref": "#/$defs/external_api"
+          }
+        }
+      }
+    },
+    "deployment": {
+      "type": "object",
+      "description": "Deployment information",
+      "properties": {
+        "networks": {
+          "type": "array",
+          "description": "Networks where this contract is deployed",
+          "items": {
+            "$ref": "#/$defs/network_deployment"
+          }
+        },
+        "initialization": {
+          "$ref": "#/$defs/initialization_guide"
+        },
+        "upgrade_process": {
+          "$ref": "#/$defs/upgrade_process"
+        }
+      }
+    },
+    "testing": {
+      "type": "object",
+      "description": "Testing information",
+      "properties": {
+        "test_coverage": {
+          "type": "object",
+          "description": "Test coverage information",
+          "properties": {
+            "unit_tests": {
+              "type": "string",
+              "description": "Unit test coverage percentage"
+            },
+            "integration_tests": {
+              "type": "string",
+              "description": "Integration test coverage percentage"
+            },
+            "test_files": {
+              "type": "array",
+              "description": "List of test files",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "test_scenarios": {
+          "type": "array",
+          "description": "Important test scenarios covered",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "documentation": {
+      "type": "object",
+      "description": "Documentation references",
+      "properties": {
+        "readme": {
+          "type": "string",
+          "description": "Path to README file"
+        },
+        "api_docs": {
+          "type": "string",
+          "description": "Path to API documentation"
+        },
+        "examples": {
+          "type": "array",
+          "description": "Example code or tutorials",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "entrypoint": {
+      "type": "object",
+      "required": ["name", "description", "parameters", "returns"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Function name"
+        },
+        "description": {
+          "type": "string",
+          "description": "What the function does"
+        },
+        "parameters": {
+          "type": "array",
+          "description": "Function parameters",
+          "items": {
+            "$ref": "#/$defs/parameter"
+          }
+        },
+        "returns": {
+          "type": "object",
+          "description": "Return value specification",
+          "properties": {
+            "type": {
+              "type": "string",
+              "description": "Return type"
+            },
+            "description": {
+              "type": "string",
+              "description": "What is returned"
+            }
+          }
+        },
+        "authorization": {
+          "type": "string",
+          "description": "Authorization requirements",
+          "enum": ["admin", "signer", "any", "capability", "multisig"]
+        },
+        "pausable": {
+          "type": "boolean",
+          "description": "Whether this function can be paused"
+        },
+        "gas_estimate": {
+          "type": "string",
+          "description": "Gas cost estimate",
+          "enum": ["low", "medium", "high", "very_high"]
+        }
+      }
+    },
+    "parameter": {
+      "type": "object",
+      "required": ["name", "type", "description"],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "optional": {
+          "type": "boolean",
+          "default": false
+        },
+        "validation": {
+          "type": "string",
+          "description": "Validation rules"
+        }
+      }
+    },
+    "config_parameter": {
+      "type": "object",
+      "required": ["name", "type", "default_value", "description"],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "default_value": {
+          "description": "Default value for this parameter"
+        },
+        "description": {
+          "type": "string"
+        },
+        "constraints": {
+          "type": "string",
+          "description": "Constraints or limits on this parameter"
+        },
+        "admin_only": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "storage_key": {
+      "type": "object",
+      "required": ["name", "type", "description"],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["instance", "persistent", "temporary"]
+        },
+        "description": {
+          "type": "string"
+        },
+        "data_structure": {
+          "type": "string",
+          "description": "Data structure stored at this key"
+        }
+      }
+    },
+    "access_control": {
+      "type": "object",
+      "required": ["mechanism", "description"],
+      "properties": {
+        "mechanism": {
+          "type": "string",
+          "enum": ["admin_auth", "multisig", "capability", "rbac", "whitelist"]
+        },
+        "description": {
+          "type": "string"
+        },
+        "configuration": {
+          "type": "string",
+          "description": "How this mechanism is configured"
+        }
+      }
+    },
+    "critical_behavior": {
+      "type": "object",
+      "required": ["behavior", "impact", "mitigation"],
+      "properties": {
+        "behavior": {
+          "type": "string"
+        },
+        "impact": {
+          "type": "string"
+        },
+        "mitigation": {
+          "type": "string"
+        }
+      }
+    },
+    "error_scenario": {
+      "type": "object",
+      "required": ["error_code", "scenario", "resolution"],
+      "properties": {
+        "error_code": {
+          "type": "string"
+        },
+        "scenario": {
+          "type": "string"
+        },
+        "resolution": {
+          "type": "string"
+        }
+      }
+    },
+    "event": {
+      "type": "object",
+      "required": ["name", "description", "data"],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "data": {
+          "type": "array",
+          "description": "Event data fields",
+          "items": {
+            "type": "object",
+            "required": ["name", "type"],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "trigger": {
+          "type": "string",
+          "description": "When this event is emitted"
+        }
+      }
+    },
+    "contract_dependency": {
+      "type": "object",
+      "required": ["contract_name", "interface"],
+      "properties": {
+        "contract_name": {
+          "type": "string"
+        },
+        "interface": {
+          "type": "string",
+          "description": "Interface or functions used"
+        },
+        "purpose": {
+          "type": "string",
+          "description": "Why this dependency is needed"
+        }
+      }
+    },
+    "token_dependency": {
+      "type": "object",
+      "required": ["token_standard", "purpose"],
+      "properties": {
+        "token_standard": {
+          "type": "string",
+          "enum": ["SAC", "Native", "Custom"]
+        },
+        "purpose": {
+          "type": "string"
+        },
+        "requirements": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "external_api": {
+      "type": "object",
+      "required": ["name", "purpose"],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "purpose": {
+          "type": "string"
+        },
+        "authentication": {
+          "type": "string"
+        }
+      }
+    },
+    "network_deployment": {
+      "type": "object",
+      "required": ["network", "contract_id"],
+      "properties": {
+        "network": {
+          "type": "string",
+          "enum": ["mainnet", "testnet", "futurenet", "standalone"]
+        },
+        "contract_id": {
+          "type": "string",
+          "description": "Contract address on this network"
+        },
+        "deployed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "version": {
+          "type": "string"
+        }
+      }
+    },
+    "initialization_guide": {
+      "type": "object",
+      "required": ["steps"],
+      "properties": {
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["step", "description"],
+            "properties": {
+              "step": {
+                "type": "integer"
+              },
+              "description": {
+                "type": "string"
+              },
+              "command": {
+                "type": "string"
+              },
+              "notes": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "prerequisites": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "upgrade_process": {
+      "type": "object",
+      "required": ["steps"],
+      "properties": {
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["step", "description"],
+            "properties": {
+              "step": {
+                "type": "integer"
+              },
+              "description": {
+                "type": "string"
+              },
+              "command": {
+                "type": "string"
+              },
+              "notes": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "rollback_procedure": {
+          "type": "string"
+        },
+        "testing_requirements": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

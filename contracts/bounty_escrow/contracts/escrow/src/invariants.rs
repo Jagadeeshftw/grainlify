@@ -24,8 +24,17 @@ fn assert_enabled(_env: &Env) {}
 pub(crate) fn assert_escrow(env: &Env, escrow: &Escrow) {
     assert_enabled(env);
     record_call(env);
-    if !verify_escrow_invariants(escrow) {
-        panic!("Invariant violated: escrow state inconsistent");
+    if escrow.amount < 0 {
+        panic!("Invariant violated: amount must be non-negative");
+    }
+    if escrow.remaining_amount < 0 {
+        panic!("Invariant violated: remaining_amount must be non-negative");
+    }
+    if escrow.remaining_amount > escrow.amount {
+        panic!("Invariant violated: remaining_amount cannot exceed amount");
+    }
+    if escrow.status == EscrowStatus::Released && escrow.remaining_amount != 0 {
+        panic!("Invariant violated: released escrow must have zero remaining amount");
     }
 }
 

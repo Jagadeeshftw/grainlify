@@ -1,0 +1,245 @@
+name: Validate Contract Manifests
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'contracts/*-manifest.json'
+      - 'contracts/contract-manifest-schema.json'
+      - '.github/workflows/validate-manifests.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'contracts/*-manifest.json'
+      - 'contracts/contract-manifest-schema.json'
+      - '.github/workflows/validate-manifests.yml'
+
+jobs:
+  validate-manifests:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        
+    - name: Install ajv CLI
+      run: npm install -g ajv-cli
+      
+    - name: Validate manifests against schema
+      run: |
+        echo "Validating contract manifests against schema..."
+        
+        # Find all manifest files
+        MANIFESTS=$(find contracts -name "*-manifest.json" -not -path "*/node_modules/*")
+        
+        # Validate each manifest
+        for manifest in $MANIFESTS; do
+          echo "Validating $manifest..."
+          ajv validate -s contracts/contract-manifest-schema.json -d "$manifest" --verbose
+          
+          if [ $? -eq 0 ]; then
+            echo "✅ $manifest is valid"
+          else
+            echo "❌ $manifest validation failed"
+            exit 1
+          fi
+        done
+        
+        echo "All manifests validated successfully!"
+        
+    - name: Check manifest completeness
+      run: |
+        echo "Checking manifest completeness..."
+        
+        # Required manifests
+        REQUIRED_MANIFESTS=(
+          "contracts/bounty-escrow-manifest.json"
+          "contracts/grainlify-core-manifest.json"
+          "contracts/program-escrow-manifest.json"
+        )
+        
+        for manifest in "${REQUIRED_MANIFESTS[@]}"; do
+          if [ -f "$manifest" ]; then
+            echo "✅ $manifest exists"
+          else
+            echo "❌ $manifest is missing"
+            exit 1
+          fi
+        done
+        
+        echo "All required manifests exist!"
+        
+    - name: Validate manifest structure
+      run: |
+        echo "Validating manifest structure..."
+        
+        # Check for required fields in each manifest
+        MANIFESTS=$(find contracts -name "*-manifest.json" -not -path "*/node_modules/*")
+        
+        for manifest in $MANIFESTS; do
+          echo "Checking structure of $manifest..."
+          
+          # Check required top-level fields
+          jq -e 'has("contract_name")' "$manifest" || { echo "❌ Missing contract_name in $manifest"; exit 1; }
+          jq -e 'has("contract_purpose")' "$manifest" || { echo "❌ Missing contract_purpose in $manifest"; exit 1; }
+          jq -e 'has("version")' "$manifest" || { echo "❌ Missing version in $manifest"; exit 1; }
+          jq -e 'has("entrypoints")' "$manifest" || { echo "❌ Missing entrypoints in $manifest"; exit 1; }
+          jq -e 'has("configuration")' "$manifest" || { echo "❌ Missing configuration in $manifest"; exit 1; }
+          jq -e 'has("behaviors")' "$manifest" || { echo "❌ Missing behaviors in $manifest"; exit 1; }
+          
+          # Check entrypoints structure
+          jq -e '.entrypoints | has("public")' "$manifest" || { echo "❌ Missing entrypoints.public in $manifest"; exit 1; }
+          jq -e '.entrypoints | has("view")' "$manifest" || { echo "❌ Missing entrypoints.view in $manifest"; exit 1; }
+          
+          # Check behaviors structure
+          jq -e '.behaviors | has("security_features")' "$manifest" || { echo "❌ Missing behaviors.security_features in $manifest"; exit 1; }
+          jq -e '.behaviors | has("access_control")' "$manifest" || { echo "❌ Missing behaviors.access_control in $manifest"; exit 1; }
+          
+          echo "✅ $manifest structure is valid"
+        done
+        
+        echo "All manifest structures are valid!"
+        
+    - name: Validate version format
+      run: |
+        echo "Validating version formats..."
+        
+        MANIFESTS=$(find contracts -name "*-manifest.json" -not -path "*/node_modules/*")
+        
+        for manifest in $MANIFESTS; do
+          echo "Checking version format in $manifest..."
+          
+          # Check current version format (semantic versioning)
+          CURRENT_VERSION=$(jq -r '.version.current' "$manifest")
+          if [[ ! "$CURRENT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "❌ Invalid version format in $manifest: $CURRENT_VERSION (should be x.y.z)"
+            exit 1
+          fi
+          
+          # Check schema version format
+          SCHEMA_VERSION=$(jq -r '.version.schema' "$manifest")
+          if [[ ! "$SCHEMA_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "❌ Invalid schema version format in $manifest: $SCHEMA_VERSION (should be x.y.z)"
+            exit 1
+          fi
+          
+          echo "✅ $manifest has valid version format"
+        done
+        
+        echo "All version formats are valid!"
+        
+    - name: Validate authorization values
+      run: |
+        echo "Validating authorization values..."
+        
+        MANIFESTS=$(find contracts -name "*-manifest.json" -not -path "*/node_modules/*")
+        
+        # Valid authorization values from schema
+        VALID_AUTH_VALUES=("admin" "signer" "any" "capability" "multisig")
+        
+        for manifest in $MANIFESTS; do
+          echo "Checking authorization values in $manifest..."
+          
+          # Get all authorization values
+          AUTH_VALUES=$(jq -r '.. | objects | .authorization? // empty' "$manifest" | sort -u)
+          
+          for auth in $AUTH_VALUES; do
+            if [[ ! " ${VALID_AUTH_VALUES[@]} " =~ " ${auth} " ]]; then
+              echo "❌ Invalid authorization value '$auth' in $manifest"
+              echo "Valid values: ${VALID_AUTH_VALUES[*]}"
+              exit 1
+            fi
+          done
+          
+          echo "✅ $manifest has valid authorization values"
+        done
+        
+        echo "All authorization values are valid!"
+        
+    - name: Generate validation report
+      run: |
+        echo "Generating validation report..."
+        
+        REPORT_FILE="manifest-validation-report.md"
+        cat > "$REPORT_FILE" << EOF
+        # Contract Manifest Validation Report
+        
+        **Generated:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+        **Commit:** ${{ github.sha }}
+        **Branch:** ${{ github.ref_name }}
+        
+        ## Validation Results
+        
+        EOF
+        
+        MANIFESTS=$(find contracts -name "*-manifest.json" -not -path "*/node_modules/*")
+        VALID_COUNT=0
+        
+        for manifest in $MANIFESTS; do
+          MANIFEST_NAME=$(basename "$manifest" .json)
+          
+          if ajv validate -s contracts/contract-manifest-schema.json -d "$manifest" >/dev/null 2>&1; then
+            STATUS="✅ Valid"
+            VALID_COUNT=$((VALID_COUNT + 1))
+          else
+            STATUS="❌ Invalid"
+          fi
+          
+          cat >> "$REPORT_FILE" << EOF
+        ### $MANIFEST_NAME
+        - **File:** \`$manifest\`
+        - **Status:** $STATUS
+        - **Contract Name:** $(jq -r '.contract_name' "$manifest")
+        - **Version:** $(jq -r '.version.current' "$manifest")
+        - **Schema Version:** $(jq -r '.version.schema' "$manifest")
+        
+        EOF
+        done
+        
+        TOTAL_COUNT=$(echo "$MANIFESTS" | wc -w)
+        
+        cat >> "$REPORT_FILE" << EOF
+        ## Summary
+        
+        - **Total Manifests:** $TOTAL_COUNT
+        - **Valid Manifests:** $VALID_COUNT
+        - **Invalid Manifests:** $((TOTAL_COUNT - VALID_COUNT))
+        - **Success Rate:** $(( VALID_COUNT * 100 / TOTAL_COUNT ))%
+        
+        EOF
+        
+        echo "Validation report generated: $REPORT_FILE"
+        cat "$REPORT_FILE"
+        
+    - name: Upload validation report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: manifest-validation-report
+        path: manifest-validation-report.md
+        retention-days: 30
+        
+    - name: Comment PR with results
+      uses: actions/github-script@v7
+      if: github.event_name == 'pull_request'
+      with:
+        script: |
+          const fs = require('fs');
+          
+          try {
+            const report = fs.readFileSync('manifest-validation-report.md', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: report
+            });
+          } catch (error) {
+            console.log('Could not read report file:', error.message);
+          }

@@ -1,4 +1,5 @@
- //! # Malicious Reentrant Contract
+
+//! # Malicious Reentrant Contract
 //!
 //! This is a test-only contract that attempts to perform reentrancy attacks
 //! on the ProgramEscrow contract. It's used to verify that reentrancy guards
@@ -17,16 +18,12 @@
 
 #![cfg(test)]
 
-use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, Vec, symbol_short};
+use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, Env, Vec};
 
 /// Interface for the ProgramEscrow contract (simplified for testing)
 pub trait ProgramEscrowTrait {
     fn single_payout(env: Env, recipient: Address, amount: i128);
-    fn batch_payout(
-        env: Env,
-        recipients: Vec<Address>,
-        amounts: Vec<i128>,
-    );
+    fn batch_payout(env: Env, recipients: Vec<Address>, amounts: Vec<i128>);
     fn trigger_program_releases(env: Env) -> u32;
 }
 
@@ -65,7 +62,7 @@ impl AttackMode {
             _ => AttackMode::None,
         }
     }
-    
+
     pub fn to_u32(&self) -> u32 {
         *self as u32
     }
@@ -78,7 +75,9 @@ pub struct MaliciousReentrantContract;
 impl MaliciousReentrantContract {
     /// Initialize the malicious contract with the target escrow contract address
     pub fn init(env: Env, target_contract: Address) {
-        env.storage().instance().set(&symbol_short!("TARGET"), &target_contract);
+        env.storage()
+            .instance()
+            .set(&symbol_short!("TARGET"), &target_contract);
     }
 
     /// Get the target contract address
@@ -98,7 +97,8 @@ impl MaliciousReentrantContract {
 
     /// Get current attack mode
     pub fn get_attack_mode(env: &Env) -> AttackMode {
-        let mode: u32 = env.storage()
+        let mode: u32 = env
+            .storage()
             .instance()
             .get(&symbol_short!("MODE"))
             .unwrap_or(0);
@@ -169,9 +169,7 @@ impl MaliciousReentrantContract {
 
     /// Reset attack counter
     pub fn reset_attack_count(env: &Env) {
-        env.storage()
-            .instance()
-            .set(&symbol_short!("COUNT"), &0u32);
+        env.storage().instance().set(&symbol_short!("COUNT"), &0u32);
         env.storage()
             .instance()
             .set(&symbol_short!("CURDEPTH"), &0u32);
@@ -181,17 +179,17 @@ impl MaliciousReentrantContract {
     /// It will attempt reentrancy based on the attack mode
     pub fn on_token_received(env: Env, _from: Address, amount: i128) {
         let attack_mode = Self::get_attack_mode(&env);
-        
+
         // Only attack if we haven't exceeded max attempts
         let attack_count = Self::get_attack_count(&env);
         let max_depth = Self::get_nested_depth(&env);
-        
+
         if attack_count >= max_depth {
             return;
         }
 
         Self::increment_attack_count(&env);
-        
+
         match attack_mode {
             AttackMode::SinglePayoutReentrant => {
                 Self::attempt_single_payout_reentrancy(&env, amount);
@@ -224,7 +222,7 @@ impl MaliciousReentrantContract {
     fn attempt_single_payout_reentrancy(env: &Env, amount: i128) {
         let target = Self::get_target(env);
         let attacker = env.current_contract_address();
-        
+
         // This should be blocked by the reentrancy guard
         let client = crate::ProgramEscrowContractClient::new(env, &target);
         client.single_payout(&attacker, &amount);
@@ -234,10 +232,10 @@ impl MaliciousReentrantContract {
     fn attempt_batch_payout_reentrancy(env: &Env, amount: i128) {
         let target = Self::get_target(env);
         let attacker = env.current_contract_address();
-        
+
         let recipients = Vec::from_array(env, [attacker.clone()]);
         let amounts = Vec::from_array(env, [amount]);
-        
+
         let client = crate::ProgramEscrowContractClient::new(env, &target);
         client.batch_payout(&recipients, &amounts);
     }
@@ -245,7 +243,7 @@ impl MaliciousReentrantContract {
     /// Attempt reentrancy on trigger_program_releases
     fn attempt_trigger_releases_reentrancy(env: &Env) {
         let target = Self::get_target(env);
-        
+
         let client = crate::ProgramEscrowContractClient::new(env, &target);
         client.trigger_program_releases();
     }
@@ -254,11 +252,11 @@ impl MaliciousReentrantContract {
     fn attempt_nested_reentrancy(env: &Env, amount: i128) {
         let target = Self::get_target(env);
         let attacker = env.current_contract_address();
-        
+
         // Track current depth
         let current_depth = Self::get_current_depth(env);
         Self::set_current_depth(env, current_depth + 1);
-        
+
         // Call single_payout which will trigger on_token_received again
         let client = crate::ProgramEscrowContractClient::new(env, &target);
         client.single_payout(&attacker, &amount);
@@ -278,11 +276,11 @@ impl MaliciousReentrantContract {
     fn attempt_cross_function_single_to_batch(env: &Env, amount: i128) {
         let target = Self::get_target(env);
         let attacker = env.current_contract_address();
-        
+
         // Instead of calling single_payout again, try batch_payout
         let recipients = Vec::from_array(env, [attacker]);
         let amounts = Vec::from_array(env, [amount]);
-        
+
         let client = crate::ProgramEscrowContractClient::new(env, &target);
         client.batch_payout(&recipients, &amounts);
     }
@@ -291,7 +289,7 @@ impl MaliciousReentrantContract {
     fn attempt_cross_function_batch_to_single(env: &Env, amount: i128) {
         let target = Self::get_target(env);
         let attacker = env.current_contract_address();
-        
+
         // Instead of calling batch_payout again, try single_payout
         let client = crate::ProgramEscrowContractClient::new(env, &target);
         client.single_payout(&attacker, &amount);
@@ -302,21 +300,17 @@ impl MaliciousReentrantContract {
         let target = Self::get_target(&env);
         Self::reset_attack_count(&env);
         Self::set_attack_mode(&env, AttackMode::SinglePayoutReentrant);
-        
+
         let client = crate::ProgramEscrowContractClient::new(&env, &target);
         client.single_payout(&recipient, &amount);
     }
 
     /// Public function to start a batch_payout attack
-    pub fn attack_batch_payout(
-        env: Env,
-        recipients: Vec<Address>,
-        amounts: Vec<i128>,
-    ) {
+    pub fn attack_batch_payout(env: Env, recipients: Vec<Address>, amounts: Vec<i128>) {
         let target = Self::get_target(&env);
         Self::reset_attack_count(&env);
         Self::set_attack_mode(&env, AttackMode::BatchPayoutReentrant);
-        
+
         let client = crate::ProgramEscrowContractClient::new(&env, &target);
         client.batch_payout(&recipients, &amounts);
     }
@@ -327,7 +321,7 @@ impl MaliciousReentrantContract {
         Self::reset_attack_count(&env);
         Self::set_attack_mode(&env, AttackMode::NestedReentrant);
         Self::set_nested_depth(&env, depth);
-        
+
         let client = crate::ProgramEscrowContractClient::new(&env, &target);
         client.single_payout(&recipient, &amount);
     }
@@ -337,23 +331,28 @@ impl MaliciousReentrantContract {
         let target = Self::get_target(&env);
         Self::reset_attack_count(&env);
         Self::set_attack_mode(&env, AttackMode::ChainReentrant);
-        
+
         let client = crate::ProgramEscrowContractClient::new(&env, &target);
         client.single_payout(&recipient, &amount);
     }
 
     /// Public function to start a cross-function attack
-    pub fn attack_cross_function(env: Env, recipient: Address, amount: i128, from_single_to_batch: bool) {
+    pub fn attack_cross_function(
+        env: Env,
+        recipient: Address,
+        amount: i128,
+        from_single_to_batch: bool,
+    ) {
         let target = Self::get_target(&env);
         Self::reset_attack_count(&env);
-        
+
         let mode = if from_single_to_batch {
             AttackMode::CrossFunctionSingleToBatch
         } else {
             AttackMode::CrossFunctionBatchToSingle
         };
         Self::set_attack_mode(&env, mode);
-        
+
         let client = crate::ProgramEscrowContractClient::new(&env, &target);
         client.single_payout(&recipient, &amount);
     }

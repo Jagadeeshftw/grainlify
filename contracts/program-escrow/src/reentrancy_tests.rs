@@ -13,15 +13,13 @@
 
 #![cfg(test)]
 
+use crate::malicious_reentrant::{
+    AttackMode, MaliciousReentrantContract, MaliciousReentrantContractClient,
+};
 use crate::*;
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
     token, Address, Env, String, Vec,
-};
-use crate::malicious_reentrant::{
-    MaliciousReentrantContract, 
-    MaliciousReentrantContractClient,
-    AttackMode
 };
 
 // Test helper to create a mock token contract
@@ -536,410 +534,391 @@ fn test_reentrancy_guard_model_documentation() {
     assert!(true, "Documentation test - see comments for guarantees");
     // Add these tests to the existing reentrancy_tests.rs file
 
-#[test]
-fn test_malicious_contract_single_payout_reentrancy() {
-    // Test that a malicious contract cannot re-enter single_payout
-    let env = Env::default();
-    env.mock_all_auths();
-    
-    // Deploy contracts
-    let escrow_id = env.register_contract(None, crate::ProgramEscrowContract);
-    let escrow_client = crate::ProgramEscrowContractClient::new(&env, &escrow_id);
-    
-    let malicious_id = env.register_contract(None, MaliciousReentrantContract);
-    let malicious_client = MaliciousReentrantContractClient::new(&env, &malicious_id);
-    
-    // Initialize malicious contract with target
-    malicious_client.init(&escrow_id);
-    
-    // Setup test data
-    let admin = Address::random(&env);
-    let token = register_test_token(&env);
-    let recipient = Address::random(&env);
-    
-    // Initialize escrow
-    escrow_client.initialize(&admin, &token);
-    
-    // Fund the escrow
-    token_client(&env, &token).mint(&escrow_id, &1000);
-    
-    // Create a program with a payout
-    let program_id = 1;
-    let start = env.ledger().timestamp() + 100;
-    let cliff = start + 200;
-    let end = cliff + 1000;
-    let amount = 500;
-    
-    escrow_client.create_program(
-        &admin,
-        &program_id,
-        &start,
-        &cliff,
-        &end,
-        &true,
-        &false,
-    );
-    
-    // Register the malicious contract as a recipient
-    escrow_client.register_recipient(&admin, &program_id, &malicious_id, &amount);
-    
-    // Advance time past the cliff
-    env.ledger().set_timestamp(end + 1);
-    
-    // Attempt the attack
-    let result = std::panic::catch_unwind(|| {
-        malicious_client.attack_single_payout(&malicious_id, &amount);
-    });
-    
-    // Verify the attack was prevented
-    assert!(result.is_err(), "Reentrancy attack should have been prevented");
-    
-    // Verify no funds were transferred
-    let malicious_balance = token_client(&env, &token).balance(&malicious_id);
-    assert_eq!(malicious_balance, 0, "Malicious contract should not have received funds");
-    
-    // Verify escrow still has funds
-    let escrow_balance = token_client(&env, &token).balance(&escrow_id);
-    assert_eq!(escrow_balance, 1000, "Escrow funds should not have been released");
-}
-
-#[test]
-fn test_nested_reentrancy_attack_depth_3() {
-    // Test nested reentrancy with depth 3
-    let env = Env::default();
-    env.mock_all_auths();
-    
-    // Deploy contracts
-    let escrow_id = env.register_contract(None, crate::ProgramEscrowContract);
-    let escrow_client = crate::ProgramEscrowContractClient::new(&env, &escrow_id);
-    
-    let malicious_id = env.register_contract(None, MaliciousReentrantContract);
-    let malicious_client = MaliciousReentrantContractClient::new(&env, &malicious_id);
-    
-    // Initialize
-    malicious_client.init(&escrow_id);
-    
-    // Setup
-    let admin = Address::random(&env);
-    let token = register_test_token(&env);
-    
-    escrow_client.initialize(&admin, &token);
-    token_client(&env, &token).mint(&escrow_id, &1000);
-    
-    // Create program
-    let program_id = 1;
-    let start = env.ledger().timestamp() + 100;
-    let cliff = start + 200;
-    let end = cliff + 1000;
-    
-    escrow_client.create_program(
-        &admin,
-        &program_id,
-        &start,
-        &cliff,
-        &end,
-        &true,
-        &false,
-    );
-    
-    // Register malicious contract as recipient
-    escrow_client.register_recipient(&admin, &program_id, &malicious_id, &500);
-    
-    // Advance time
-    env.ledger().set_timestamp(end + 1);
-    
-    // Attempt nested attack with depth 3
-    let result = std::panic::catch_unwind(|| {
-        malicious_client.attack_nested(&malicious_id, &500, &3);
-    });
-    
-    // Should be blocked at first reentrancy attempt
-    assert!(result.is_err(), "Nested reentrancy should be prevented at first level");
-    
-    // Verify attack count (should be 0 or 1 depending on when guard triggers)
-    let attack_count = malicious_client.get_attack_count();
-    assert!(attack_count <= 1, "Attack should not progress beyond first level");
-}
-
-#[test]
-fn test_cross_contract_reentrancy_chain() {
-    // Test reentrancy across multiple malicious contracts
-    let env = Env::default();
-    env.mock_all_auths();
-    
-    // Deploy main escrow
-    let escrow_id = env.register_contract(None, crate::ProgramEscrowContract);
-    let escrow_client = crate::ProgramEscrowContractClient::new(&env, &escrow_id);
-    
-    // Deploy two malicious contracts
-    let malicious1_id = env.register_contract(None, MaliciousReentrantContract);
-    let malicious1_client = MaliciousReentrantContractClient::new(&env, &malicious1_id);
-    
-    let malicious2_id = env.register_contract(None, MaliciousReentrantContract);
-    let malicious2_client = MaliciousReentrantContractClient::new(&env, &malicious2_id);
-    
-    // Initialize malicious contracts
-    malicious1_client.init(&escrow_id);
-    malicious2_client.init(&escrow_id);
-    
-    // Set up the chain: malicious1 -> malicious2 -> escrow
-    malicious1_client.set_next_contract(&malicious2_id);
-    malicious2_client.set_next_contract(&escrow_id);
-    
-    // Setup escrow
-    let admin = Address::random(&env);
-    let token = register_test_token(&env);
-    
-    escrow_client.initialize(&admin, &token);
-    token_client(&env, &token).mint(&escrow_id, &1000);
-    
-    // Create program
-    let program_id = 1;
-    let start = env.ledger().timestamp() + 100;
-    let cliff = start + 200;
-    let end = cliff + 1000;
-    
-    escrow_client.create_program(
-        &admin,
-        &program_id,
-        &start,
-        &cliff,
-        &end,
-        &true,
-        &false,
-    );
-    
-    // Register malicious1 as recipient
-    escrow_client.register_recipient(&admin, &program_id, &malicious1_id, &500);
-    
-    // Advance time
-    env.ledger().set_timestamp(end + 1);
-    
-    // Start the chain attack
-    let result = std::panic::catch_unwind(|| {
-        malicious1_client.start_chain_attack(&malicious1_id, &500);
-    });
-    
-    // Should be blocked
-    assert!(result.is_err(), "Cross-contract reentrancy chain should be prevented");
-    
-    // Verify no funds were transferred
-    let balance1 = token_client(&env, &token).balance(&malicious1_id);
-    let balance2 = token_client(&env, &token).balance(&malicious2_id);
-    
-    assert_eq!(balance1, 0, "Malicious1 should not have received funds");
-    assert_eq!(balance2, 0, "Malicious2 should not have received funds");
-}
-
-#[test]
-fn test_cross_function_reentrancy_single_to_batch() {
-    // Test reentrancy from single_payout to batch_payout
-    let env = Env::default();
-    env.mock_all_auths();
-    
-    let escrow_id = env.register_contract(None, crate::ProgramEscrowContract);
-    let escrow_client = crate::ProgramEscrowContractClient::new(&env, &escrow_id);
-    
-    let malicious_id = env.register_contract(None, MaliciousReentrantContract);
-    let malicious_client = MaliciousReentrantContractClient::new(&env, &malicious_id);
-    
-    malicious_client.init(&escrow_id);
-    
-    // Setup
-    let admin = Address::random(&env);
-    let token = register_test_token(&env);
-    
-    escrow_client.initialize(&admin, &token);
-    token_client(&env, &token).mint(&escrow_id, &1000);
-    
-    let program_id = 1;
-    let start = env.ledger().timestamp() + 100;
-    let cliff = start + 200;
-    let end = cliff + 1000;
-    
-    escrow_client.create_program(
-        &admin,
-        &program_id,
-        &start,
-        &cliff,
-        &end,
-        &true,
-        &false,
-    );
-    
-    // Register malicious contract
-    escrow_client.register_recipient(&admin, &program_id, &malicious_id, &500);
-    
-    // Advance time
-    env.ledger().set_timestamp(end + 1);
-    
-    // Attack: single_payout should trigger batch_payout reentrancy
-    let result = std::panic::catch_unwind(|| {
-        malicious_client.attack_cross_function(&malicious_id, &500, &true);
-    });
-    
-    assert!(result.is_err(), "Cross-function reentrancy should be prevented");
-}
-
-#[test]
-fn test_reentrancy_guard_prevents_all_attack_patterns() {
-    // Comprehensive test that verifies all attack patterns are blocked
-    let attack_patterns = vec![
-        (1, "Single Payout Reentrant"),
-        (2, "Batch Payout Reentrant"),
-        (3, "Trigger Releases Reentrant"),
-        (4, "Nested Reentrant"),
-        (5, "Chain Reentrant"),
-        (6, "Cross Function Single to Batch"),
-        (7, "Cross Function Batch to Single"),
-    ];
-    
-    for (mode, description) in attack_patterns {
+    #[test]
+    fn test_malicious_contract_single_payout_reentrancy() {
+        // Test that a malicious contract cannot re-enter single_payout
         let env = Env::default();
         env.mock_all_auths();
-        
+
         // Deploy contracts
         let escrow_id = env.register_contract(None, crate::ProgramEscrowContract);
         let escrow_client = crate::ProgramEscrowContractClient::new(&env, &escrow_id);
-        
+
         let malicious_id = env.register_contract(None, MaliciousReentrantContract);
         let malicious_client = MaliciousReentrantContractClient::new(&env, &malicious_id);
-        
-        // Initialize
+
+        // Initialize malicious contract with target
         malicious_client.init(&escrow_id);
-        malicious_client.set_attack_mode(&mode);
-        
-        // Setup
+
+        // Setup test data
         let admin = Address::random(&env);
         let token = register_test_token(&env);
-        
+        let recipient = Address::random(&env);
+
+        // Initialize escrow
         escrow_client.initialize(&admin, &token);
+
+        // Fund the escrow
         token_client(&env, &token).mint(&escrow_id, &1000);
-        
+
+        // Create a program with a payout
         let program_id = 1;
         let start = env.ledger().timestamp() + 100;
         let cliff = start + 200;
         let end = cliff + 1000;
-        
-        escrow_client.create_program(
-            &admin,
-            &program_id,
-            &start,
-            &cliff,
-            &end,
-            &true,
-            &false,
-        );
-        
-        // Register malicious contract
-        escrow_client.register_recipient(&admin, &program_id, &malicious_id, &500);
-        
-        // Advance time
+        let amount = 500;
+
+        escrow_client.create_program(&admin, &program_id, &start, &cliff, &end, &true, &false);
+
+        // Register the malicious contract as a recipient
+        escrow_client.register_recipient(&admin, &program_id, &malicious_id, &amount);
+
+        // Advance time past the cliff
         env.ledger().set_timestamp(end + 1);
-        
-        // Attempt attack
+
+        // Attempt the attack
         let result = std::panic::catch_unwind(|| {
-            match mode {
-                1 | 4 | 5 | 6 | 7 => {
-                    malicious_client.attack_single_payout(&malicious_id, &500);
-                }
-                2 => {
-                    let recipients = Vec::from_array(&env, [malicious_id.clone()]);
-                    let amounts = Vec::from_array(&env, [500]);
-                    malicious_client.attack_batch_payout(&recipients, &amounts);
-                }
-                3 => {
-                    // For trigger_releases, we might need a different setup
-                    // This is a placeholder
-                }
-                _ => {}
-            }
+            malicious_client.attack_single_payout(&malicious_id, &amount);
         });
-        
+
+        // Verify the attack was prevented
         assert!(
             result.is_err(),
-            "Attack pattern '{}' (mode {}) should be prevented",
-            description,
-            mode
+            "Reentrancy attack should have been prevented"
         );
-        
-        println!("✓ {} attack correctly blocked", description);
+
+        // Verify no funds were transferred
+        let malicious_balance = token_client(&env, &token).balance(&malicious_id);
+        assert_eq!(
+            malicious_balance, 0,
+            "Malicious contract should not have received funds"
+        );
+
+        // Verify escrow still has funds
+        let escrow_balance = token_client(&env, &token).balance(&escrow_id);
+        assert_eq!(
+            escrow_balance, 1000,
+            "Escrow funds should not have been released"
+        );
     }
-}
 
-#[test]
-fn test_reentrancy_guard_state_consistency_after_failed_attack() {
-    // Test that contract state remains consistent after a failed reentrancy attack
-    let env = Env::default();
-    env.mock_all_auths();
-    
-    let escrow_id = env.register_contract(None, crate::ProgramEscrowContract);
-    let escrow_client = crate::ProgramEscrowContractClient::new(&env, &escrow_id);
-    
-    let malicious_id = env.register_contract(None, MaliciousReentrantContract);
-    let malicious_client = MaliciousReentrantContractClient::new(&env, &malicious_id);
-    
-    malicious_client.init(&escrow_id);
-    
-    // Setup with multiple recipients
-    let admin = Address::random(&env);
-    let token = register_test_token(&env);
-    let honest_recipient = Address::random(&env);
-    
-    escrow_client.initialize(&admin, &token);
-    token_client(&env, &token).mint(&escrow_id, &1000);
-    
-    let program_id = 1;
-    let start = env.ledger().timestamp() + 100;
-    let cliff = start + 200;
-    let end = cliff + 1000;
-    
-    escrow_client.create_program(
-        &admin,
-        &program_id,
-        &start,
-        &cliff,
-        &end,
-        &true,
-        &false,
-    );
-    
-    // Register both honest recipient and malicious contract
-    escrow_client.register_recipient(&admin, &program_id, &honest_recipient, &300);
-    escrow_client.register_recipient(&admin, &program_id, &malicious_id, &200);
-    
-    // Advance time
-    env.ledger().set_timestamp(end + 1);
-    
-    // Store balances before attack
-    let escrow_balance_before = token_client(&env, &token).balance(&escrow_id);
-    let honest_balance_before = token_client(&env, &token).balance(&honest_recipient);
-    let malicious_balance_before = token_client(&env, &token).balance(&malicious_id);
-    
-    // Attempt attack
-    let _ = std::panic::catch_unwind(|| {
-        malicious_client.attack_single_payout(&malicious_id, &200);
-    });
-    
-    // Verify all balances remain unchanged
-    let escrow_balance_after = token_client(&env, &token).balance(&escrow_id);
-    let honest_balance_after = token_client(&env, &token).balance(&honest_recipient);
-    let malicious_balance_after = token_client(&env, &token).balance(&malicious_id);
-    
-    assert_eq!(escrow_balance_before, escrow_balance_after, "Escrow balance changed");
-    assert_eq!(honest_balance_before, honest_balance_after, "Honest recipient balance changed");
-    assert_eq!(malicious_balance_before, malicious_balance_after, "Malicious contract balance changed");
-}
+    #[test]
+    fn test_nested_reentrancy_attack_depth_3() {
+        // Test nested reentrancy with depth 3
+        let env = Env::default();
+        env.mock_all_auths();
 
-// Helper function to get token client
-fn token_client(env: &Env, token_id: &Address) -> soroban_sdk::token::TokenClient {
-    soroban_sdk::token::TokenClient::new(env, token_id)
-}
+        // Deploy contracts
+        let escrow_id = env.register_contract(None, crate::ProgramEscrowContract);
+        let escrow_client = crate::ProgramEscrowContractClient::new(&env, &escrow_id);
 
-// Helper to register a test token
-fn register_test_token(env: &Env) -> Address {
-    let token_wasm = soroban_sdk::contractfile!(soroban_token_contract::Token);
-    env.deployer().register_wasm(&token_wasm, ())
-}
+        let malicious_id = env.register_contract(None, MaliciousReentrantContract);
+        let malicious_client = MaliciousReentrantContractClient::new(&env, &malicious_id);
 
+        // Initialize
+        malicious_client.init(&escrow_id);
+
+        // Setup
+        let admin = Address::random(&env);
+        let token = register_test_token(&env);
+
+        escrow_client.initialize(&admin, &token);
+        token_client(&env, &token).mint(&escrow_id, &1000);
+
+        // Create program
+        let program_id = 1;
+        let start = env.ledger().timestamp() + 100;
+        let cliff = start + 200;
+        let end = cliff + 1000;
+
+        escrow_client.create_program(&admin, &program_id, &start, &cliff, &end, &true, &false);
+
+        // Register malicious contract as recipient
+        escrow_client.register_recipient(&admin, &program_id, &malicious_id, &500);
+
+        // Advance time
+        env.ledger().set_timestamp(end + 1);
+
+        // Attempt nested attack with depth 3
+        let result = std::panic::catch_unwind(|| {
+            malicious_client.attack_nested(&malicious_id, &500, &3);
+        });
+
+        // Should be blocked at first reentrancy attempt
+        assert!(
+            result.is_err(),
+            "Nested reentrancy should be prevented at first level"
+        );
+
+        // Verify attack count (should be 0 or 1 depending on when guard triggers)
+        let attack_count = malicious_client.get_attack_count();
+        assert!(
+            attack_count <= 1,
+            "Attack should not progress beyond first level"
+        );
+    }
+
+    #[test]
+    fn test_cross_contract_reentrancy_chain() {
+        // Test reentrancy across multiple malicious contracts
+        let env = Env::default();
+        env.mock_all_auths();
+
+        // Deploy main escrow
+        let escrow_id = env.register_contract(None, crate::ProgramEscrowContract);
+        let escrow_client = crate::ProgramEscrowContractClient::new(&env, &escrow_id);
+
+        // Deploy two malicious contracts
+        let malicious1_id = env.register_contract(None, MaliciousReentrantContract);
+        let malicious1_client = MaliciousReentrantContractClient::new(&env, &malicious1_id);
+
+        let malicious2_id = env.register_contract(None, MaliciousReentrantContract);
+        let malicious2_client = MaliciousReentrantContractClient::new(&env, &malicious2_id);
+
+        // Initialize malicious contracts
+        malicious1_client.init(&escrow_id);
+        malicious2_client.init(&escrow_id);
+
+        // Set up the chain: malicious1 -> malicious2 -> escrow
+        malicious1_client.set_next_contract(&malicious2_id);
+        malicious2_client.set_next_contract(&escrow_id);
+
+        // Setup escrow
+        let admin = Address::random(&env);
+        let token = register_test_token(&env);
+
+        escrow_client.initialize(&admin, &token);
+        token_client(&env, &token).mint(&escrow_id, &1000);
+
+        // Create program
+        let program_id = 1;
+        let start = env.ledger().timestamp() + 100;
+        let cliff = start + 200;
+        let end = cliff + 1000;
+
+        escrow_client.create_program(&admin, &program_id, &start, &cliff, &end, &true, &false);
+
+        // Register malicious1 as recipient
+        escrow_client.register_recipient(&admin, &program_id, &malicious1_id, &500);
+
+        // Advance time
+        env.ledger().set_timestamp(end + 1);
+
+        // Start the chain attack
+        let result = std::panic::catch_unwind(|| {
+            malicious1_client.start_chain_attack(&malicious1_id, &500);
+        });
+
+        // Should be blocked
+        assert!(
+            result.is_err(),
+            "Cross-contract reentrancy chain should be prevented"
+        );
+
+        // Verify no funds were transferred
+        let balance1 = token_client(&env, &token).balance(&malicious1_id);
+        let balance2 = token_client(&env, &token).balance(&malicious2_id);
+
+        assert_eq!(balance1, 0, "Malicious1 should not have received funds");
+        assert_eq!(balance2, 0, "Malicious2 should not have received funds");
+    }
+
+    #[test]
+    fn test_cross_function_reentrancy_single_to_batch() {
+        // Test reentrancy from single_payout to batch_payout
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let escrow_id = env.register_contract(None, crate::ProgramEscrowContract);
+        let escrow_client = crate::ProgramEscrowContractClient::new(&env, &escrow_id);
+
+        let malicious_id = env.register_contract(None, MaliciousReentrantContract);
+        let malicious_client = MaliciousReentrantContractClient::new(&env, &malicious_id);
+
+        malicious_client.init(&escrow_id);
+
+        // Setup
+        let admin = Address::random(&env);
+        let token = register_test_token(&env);
+
+        escrow_client.initialize(&admin, &token);
+        token_client(&env, &token).mint(&escrow_id, &1000);
+
+        let program_id = 1;
+        let start = env.ledger().timestamp() + 100;
+        let cliff = start + 200;
+        let end = cliff + 1000;
+
+        escrow_client.create_program(&admin, &program_id, &start, &cliff, &end, &true, &false);
+
+        // Register malicious contract
+        escrow_client.register_recipient(&admin, &program_id, &malicious_id, &500);
+
+        // Advance time
+        env.ledger().set_timestamp(end + 1);
+
+        // Attack: single_payout should trigger batch_payout reentrancy
+        let result = std::panic::catch_unwind(|| {
+            malicious_client.attack_cross_function(&malicious_id, &500, &true);
+        });
+
+        assert!(
+            result.is_err(),
+            "Cross-function reentrancy should be prevented"
+        );
+    }
+
+    #[test]
+    fn test_reentrancy_guard_prevents_all_attack_patterns() {
+        // Comprehensive test that verifies all attack patterns are blocked
+        let attack_patterns = vec![
+            (1, "Single Payout Reentrant"),
+            (2, "Batch Payout Reentrant"),
+            (3, "Trigger Releases Reentrant"),
+            (4, "Nested Reentrant"),
+            (5, "Chain Reentrant"),
+            (6, "Cross Function Single to Batch"),
+            (7, "Cross Function Batch to Single"),
+        ];
+
+        for (mode, description) in attack_patterns {
+            let env = Env::default();
+            env.mock_all_auths();
+
+            // Deploy contracts
+            let escrow_id = env.register_contract(None, crate::ProgramEscrowContract);
+            let escrow_client = crate::ProgramEscrowContractClient::new(&env, &escrow_id);
+
+            let malicious_id = env.register_contract(None, MaliciousReentrantContract);
+            let malicious_client = MaliciousReentrantContractClient::new(&env, &malicious_id);
+
+            // Initialize
+            malicious_client.init(&escrow_id);
+            malicious_client.set_attack_mode(&mode);
+
+            // Setup
+            let admin = Address::random(&env);
+            let token = register_test_token(&env);
+
+            escrow_client.initialize(&admin, &token);
+            token_client(&env, &token).mint(&escrow_id, &1000);
+
+            let program_id = 1;
+            let start = env.ledger().timestamp() + 100;
+            let cliff = start + 200;
+            let end = cliff + 1000;
+
+            escrow_client.create_program(&admin, &program_id, &start, &cliff, &end, &true, &false);
+
+            // Register malicious contract
+            escrow_client.register_recipient(&admin, &program_id, &malicious_id, &500);
+
+            // Advance time
+            env.ledger().set_timestamp(end + 1);
+
+            // Attempt attack
+            let result = std::panic::catch_unwind(|| {
+                match mode {
+                    1 | 4 | 5 | 6 | 7 => {
+                        malicious_client.attack_single_payout(&malicious_id, &500);
+                    }
+                    2 => {
+                        let recipients = Vec::from_array(&env, [malicious_id.clone()]);
+                        let amounts = Vec::from_array(&env, [500]);
+                        malicious_client.attack_batch_payout(&recipients, &amounts);
+                    }
+                    3 => {
+                        // For trigger_releases, we might need a different setup
+                        // This is a placeholder
+                    }
+                    _ => {}
+                }
+            });
+
+            assert!(
+                result.is_err(),
+                "Attack pattern '{}' (mode {}) should be prevented",
+                description,
+                mode
+            );
+
+            println!("✓ {} attack correctly blocked", description);
+        }
+    }
+
+    #[test]
+    fn test_reentrancy_guard_state_consistency_after_failed_attack() {
+        // Test that contract state remains consistent after a failed reentrancy attack
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let escrow_id = env.register_contract(None, crate::ProgramEscrowContract);
+        let escrow_client = crate::ProgramEscrowContractClient::new(&env, &escrow_id);
+
+        let malicious_id = env.register_contract(None, MaliciousReentrantContract);
+        let malicious_client = MaliciousReentrantContractClient::new(&env, &malicious_id);
+
+        malicious_client.init(&escrow_id);
+
+        // Setup with multiple recipients
+        let admin = Address::random(&env);
+        let token = register_test_token(&env);
+        let honest_recipient = Address::random(&env);
+
+        escrow_client.initialize(&admin, &token);
+        token_client(&env, &token).mint(&escrow_id, &1000);
+
+        let program_id = 1;
+        let start = env.ledger().timestamp() + 100;
+        let cliff = start + 200;
+        let end = cliff + 1000;
+
+        escrow_client.create_program(&admin, &program_id, &start, &cliff, &end, &true, &false);
+
+        // Register both honest recipient and malicious contract
+        escrow_client.register_recipient(&admin, &program_id, &honest_recipient, &300);
+        escrow_client.register_recipient(&admin, &program_id, &malicious_id, &200);
+
+        // Advance time
+        env.ledger().set_timestamp(end + 1);
+
+        // Store balances before attack
+        let escrow_balance_before = token_client(&env, &token).balance(&escrow_id);
+        let honest_balance_before = token_client(&env, &token).balance(&honest_recipient);
+        let malicious_balance_before = token_client(&env, &token).balance(&malicious_id);
+
+        // Attempt attack
+        let _ = std::panic::catch_unwind(|| {
+            malicious_client.attack_single_payout(&malicious_id, &200);
+        });
+
+        // Verify all balances remain unchanged
+        let escrow_balance_after = token_client(&env, &token).balance(&escrow_id);
+        let honest_balance_after = token_client(&env, &token).balance(&honest_recipient);
+        let malicious_balance_after = token_client(&env, &token).balance(&malicious_id);
+
+        assert_eq!(
+            escrow_balance_before, escrow_balance_after,
+            "Escrow balance changed"
+        );
+        assert_eq!(
+            honest_balance_before, honest_balance_after,
+            "Honest recipient balance changed"
+        );
+        assert_eq!(
+            malicious_balance_before, malicious_balance_after,
+            "Malicious contract balance changed"
+        );
+    }
+
+    // Helper function to get token client
+    fn token_client(env: &Env, token_id: &Address) -> soroban_sdk::token::TokenClient {
+        soroban_sdk::token::TokenClient::new(env, token_id)
+    }
+
+    // Helper to register a test token
+    fn register_test_token(env: &Env) -> Address {
+        let token_wasm = soroban_sdk::contractfile!(soroban_token_contract::Token);
+        env.deployer().register_wasm(&token_wasm, ())
+    }
 }

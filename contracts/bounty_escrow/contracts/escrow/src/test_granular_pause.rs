@@ -670,7 +670,7 @@ fn test_authorize_claim_blocked_when_release_paused() {
     client.set_paused(&None, &Some(true), &None, &None);
 
     let contributor = Address::generate(&env);
-    let result = client.try_authorize_claim(&1, &contributor);
+    let result = client.try_authorize_claim(&1, &contributor, &DisputeReason::Other);
     assert!(result.is_err());
 }
 
@@ -684,7 +684,7 @@ fn test_authorize_claim_allowed_when_lock_and_refund_paused() {
     client.set_paused(&Some(true), &None, &Some(true), &None);
 
     let contributor = Address::generate(&env);
-    client.authorize_claim(&1, &contributor);
+    client.authorize_claim(&1, &contributor, &DisputeReason::Other);
 
     let claim = client.get_pending_claim(&1);
     assert_eq!(claim.amount, 500);
@@ -699,7 +699,7 @@ fn test_claim_blocked_when_release_paused() {
     client.set_claim_window(&3600);
 
     let contributor = Address::generate(&env);
-    client.authorize_claim(&1, &contributor);
+    client.authorize_claim(&1, &contributor, &DisputeReason::Other);
 
     // Now pause release — claim should be blocked
     client.set_paused(&None, &Some(true), &None, &None);
@@ -716,7 +716,7 @@ fn test_claim_allowed_when_only_lock_paused() {
     client.set_claim_window(&3600);
 
     let contributor = Address::generate(&env);
-    client.authorize_claim(&1, &contributor);
+    client.authorize_claim(&1, &contributor, &DisputeReason::Other);
 
     client.set_paused(&Some(true), &None, &None, &None);
     client.claim(&1);
@@ -994,13 +994,13 @@ fn test_cancel_pending_claim_unaffected_by_all_paused() {
     client.set_claim_window(&3600);
 
     let contributor = Address::generate(&env);
-    client.authorize_claim(&1, &contributor);
+    client.authorize_claim(&1, &contributor, &DisputeReason::Other);
 
     // Pause everything
     client.set_paused(&Some(true), &Some(true), &Some(true), &None);
 
     // cancel_pending_claim is admin-only and not gated by pause flags
-    client.cancel_pending_claim(&1);
+    client.cancel_pending_claim(&1, &DisputeOutcome::CancelledByAdmin);
 
     // Claim record should be gone
     assert!(client.try_get_pending_claim(&1).is_err());

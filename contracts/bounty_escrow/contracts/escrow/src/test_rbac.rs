@@ -141,7 +141,7 @@ fn test_admin_can_set_whitelist() {
     let setup = RbacSetup::new();
 
     // Contract Admin can set whitelist in our implementation
-    setup.client.set_whitelist(&setup.random, &true);
+    setup.client.set_whitelist_entry(&setup.random, &true);
 }
 
 // ─────────────────────────────────────────────────────────

@@ -20,29 +20,32 @@ jobs:
     name: Format, Build, Test, and Stellar Build Check
     runs-on: macos-latest
 
-    defaults:
-      run:
-        working-directory: contracts/bounty_escrow
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Rust
-        run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-          source $HOME/.cargo/env
+      - name: Setup Rust (with Soroban target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none, wasm32-unknown-unknown
 
-      - name: Install Rust target for Soroban
+      - name: Install Stellar CLI
         run: |
-          source $HOME/.cargo/env
-          rustup target add wasm32v1-none
-
-      - name: Install Stellar CLI with Homebrew
-        run: |
-          brew update
-          brew install stellar-cli
-          stellar --version
+          VERSION="22.5.0"
+          ARCH="$(uname -m)"
+          case "$ARCH" in
+            arm64|aarch64) TARGET="aarch64-apple-darwin" ;;
+            x86_64) TARGET="x86_64-apple-darwin" ;;
+            *) echo "Unsupported macOS architecture: $ARCH" && exit 1 ;;
+          esac
+          URL="https://github.com/stellar/stellar-cli/releases/download/v${VERSION}/stellar-cli-${VERSION}-${TARGET}.tar.gz"
+          curl -fL "$URL" -o stellar-cli.tar.gz
+          tar -xzf stellar-cli.tar.gz
+          mkdir -p "$HOME/.local/bin"
+          mv stellar "$HOME/.local/bin/stellar"
+          chmod +x "$HOME/.local/bin/stellar"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/stellar" --version
 
       - name: Cache Cargo dependencies
         uses: actions/cache@v4
@@ -52,54 +55,53 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+            contracts/bounty_escrow/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('contracts/bounty_escrow/**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
       - name: Check code formatting
         run: |
           source $HOME/.cargo/env
-          cd contracts/escrow
+          cd contracts/bounty_escrow/contracts/escrow
           cargo fmt --check --all
 
       - name: Build contracts
         run: |
           source $HOME/.cargo/env
-          cd contracts/escrow
+          cd contracts/bounty_escrow/contracts/escrow
           cargo build --release --target wasm32v1-none
 
       - name: Run tests
         run: |
           source $HOME/.cargo/env
-          cd contracts/escrow
+          cd contracts/bounty_escrow/contracts/escrow
           cargo test --verbose --lib
 
       - name: Run invariant checker tests
         run: |
           source $HOME/.cargo/env
-          cd contracts/escrow
+          cd contracts/bounty_escrow/contracts/escrow
           cargo test --verbose --lib invariant_checker_ci
 
       - name: Build Soroban contract
         run: |
           source $HOME/.cargo/env
-          cd contracts/escrow
+          cd contracts/bounty_escrow/contracts/escrow
           stellar contract build --verbose
 
       - name: Stellar build check
         run: |
           source $HOME/.cargo/env
-          # Verify WASM files were generated
+          # Cargo puts target/ at the workspace root (contracts/bounty_escrow), not in contracts/escrow
+          wasm_file="contracts/bounty_escrow/target/wasm32v1-none/release/bounty_escrow.wasm"
           echo "Checking for generated WASM files..."
-          wasm_file="$GITHUB_WORKSPACE/contracts/bounty_escrow/target/wasm32v1-none/release/bounty_escrow.wasm"
           if [ ! -f "$wasm_file" ]; then
             echo "Error: WASM file not found"
             echo "Expected: $wasm_file"
             exit 1
           fi
           echo "✓ Found WASM file"
-          # Verify WASM file is not empty
           if [ ! -s "$wasm_file" ]; then
             echo "Error: WASM file is empty"
             exit 1
@@ -108,10 +110,10 @@ jobs:
 
       - name: Run script tests
         run: |
-          chmod +x ../scripts/test_deploy_failures.sh
-          chmod +x ../scripts/test_upgrade_failures.sh
-          ../scripts/test_deploy_failures.sh
-          ../scripts/test_upgrade_failures.sh
+          chmod +x contracts/scripts/test_deploy_failures.sh
+          chmod +x contracts/scripts/test_upgrade_failures.sh
+          contracts/scripts/test_deploy_failures.sh
+          contracts/scripts/test_upgrade_failures.sh
 
   sdk-smoke-tests:
     name: SDK Smoke Tests

@@ -4,7 +4,7 @@ extern crate std;
 
 use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, Vec as SorobanVec};
 
-use super::WASM;
+// use super::WASM;
 use crate::{GrainlifyContract, GrainlifyContractClient};
 
 // ============================================================================

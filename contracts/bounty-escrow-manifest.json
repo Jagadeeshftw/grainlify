@@ -1,0 +1,1159 @@
+{
+  "$schema": "./contract-manifest-schema.json",
+  "contract_name": "BountyEscrowContract",
+  "contract_purpose": "Manages bounty escrow with multi-token support, capability-based authorization, fee configuration, and comprehensive security features including reentrancy protection and rate limiting",
+  "version": {
+    "current": "2.0.0",
+    "schema": "1.0.0",
+    "history": [
+      {
+        "version": "1.0.0",
+        "release_date": "2024-01-01",
+        "changes": [
+          "Initial release with basic escrow functionality",
+          "Single admin authorization model",
+          "Basic fee configuration"
+        ]
+      },
+      {
+        "version": "2.0.0",
+        "release_date": "2024-06-01",
+        "changes": [
+          "Added capability-based authorization system",
+          "Enhanced fee configuration with separate lock/release rates",
+          "Implemented reentrancy protection",
+          "Added rate limiting and anti-abuse mechanisms",
+          "Enhanced monitoring and analytics",
+          "Added claim period functionality"
+        ]
+      }
+    ]
+  },
+  "entrypoints": {
+    "public": [
+      {
+        "name": "lock_funds",
+        "description": "Lock funds into escrow for a bounty",
+        "parameters": [
+          {
+            "name": "depositor",
+            "type": "Address",
+            "description": "Address locking the funds"
+          },
+          {
+            "name": "bounty_id",
+            "type": "u64",
+            "description": "Unique identifier for the bounty"
+          },
+          {
+            "name": "amount",
+            "type": "i128",
+            "description": "Amount to lock in escrow"
+          },
+          {
+            "name": "deadline",
+            "type": "u64",
+            "description": "Timestamp when funds can be refunded"
+          },
+          {
+            "name": "metadata",
+            "type": "EscrowMetadata",
+            "description": "Optional metadata for the escrow",
+            "optional": true
+          }
+        ],
+        "returns": {
+          "type": "Escrow",
+          "description": "The created escrow record"
+        },
+        "authorization": "signer",
+        "pausable": true,
+        "gas_estimate": "medium"
+      },
+      {
+        "name": "release_funds",
+        "description": "Release funds to a contributor",
+        "parameters": [
+          {
+            "name": "bounty_id",
+            "type": "u64",
+            "description": "Bounty identifier"
+          },
+          {
+            "name": "contributor",
+            "type": "Address",
+            "description": "Address to receive funds"
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success"
+        },
+        "authorization": "admin",
+        "pausable": true,
+        "gas_estimate": "medium"
+      },
+      {
+        "name": "release_with_capability",
+        "description": "Release funds using a capability token",
+        "parameters": [
+          {
+            "name": "bounty_id",
+            "type": "u64",
+            "description": "Bounty identifier"
+          },
+          {
+            "name": "contributor",
+            "type": "Address",
+            "description": "Address to receive funds"
+          },
+          {
+            "name": "capability_id",
+            "type": "u64",
+            "description": "Capability token ID"
+          },
+          {
+            "name": "payout_amount",
+            "type": "i128",
+            "description": "Amount to release"
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success"
+        },
+        "authorization": "capability",
+        "pausable": true,
+        "gas_estimate": "medium"
+      },
+      {
+        "name": "refund_funds",
+        "description": "Refund funds to depositor after deadline",
+        "parameters": [
+          {
+            "name": "bounty_id",
+            "type": "u64",
+            "description": "Bounty identifier"
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success"
+        },
+        "authorization": "signer",
+        "pausable": true,
+        "gas_estimate": "medium"
+      },
+      {
+        "name": "authorize_claim",
+        "description": "Authorize a pending claim instead of immediate release",
+        "parameters": [
+          {
+            "name": "bounty_id",
+            "type": "u64",
+            "description": "Bounty identifier"
+          },
+          {
+            "name": "recipient",
+            "type": "Address",
+            "description": "Address authorized to claim"
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success"
+        },
+        "authorization": "admin",
+        "pausable": true,
+        "gas_estimate": "medium"
+      },
+      {
+        "name": "claim",
+        "description": "Claim funds from an authorized pending claim",
+        "parameters": [
+          {
+            "name": "bounty_id",
+            "type": "u64",
+            "description": "Bounty identifier"
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success"
+        },
+        "authorization": "signer",
+        "pausable": true,
+        "gas_estimate": "medium"
+      },
+      {
+        "name": "issue_capability",
+        "description": "Issue a capability token for delegated operations",
+        "parameters": [
+          {
+            "name": "owner",
+            "type": "Address",
+            "description": "Address that owns the capability"
+          },
+          {
+            "name": "holder",
+            "type": "Address",
+            "description": "Address that can use the capability"
+          },
+          {
+            "name": "action",
+            "type": "CapabilityAction",
+            "description": "Action this capability authorizes"
+          },
+          {
+            "name": "bounty_id",
+            "type": "u64",
+            "description": "Bounty identifier"
+          },
+          {
+            "name": "amount_limit",
+            "type": "i128",
+            "description": "Maximum amount this capability can release"
+          },
+          {
+            "name": "expiry",
+            "type": "u64",
+            "description": "Expiration timestamp"
+          },
+          {
+            "name": "uses",
+            "type": "u32",
+            "description": "Number of uses allowed",
+            "optional": true
+          }
+        ],
+        "returns": {
+          "type": "u64",
+          "description": "Capability token ID"
+        },
+        "authorization": "admin",
+        "pausable": true,
+        "gas_estimate": "medium"
+      },
+      {
+        "name": "revoke_capability",
+        "description": "Revoke a capability token",
+        "parameters": [
+          {
+            "name": "owner",
+            "type": "Address",
+            "description": "Capability owner"
+          },
+          {
+            "name": "capability_id",
+            "type": "u64",
+            "description": "Capability token ID"
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success"
+        },
+        "authorization": "signer",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "batch_lock_funds",
+        "description": "Lock funds for multiple bounties in one transaction",
+        "parameters": [
+          {
+            "name": "items",
+            "type": "Vec<LockFundsItem>",
+            "description": "Array of lock requests"
+          }
+        ],
+        "returns": {
+          "type": "Vec<Escrow>",
+          "description": "Array of created escrow records"
+        },
+        "authorization": "signer",
+        "pausable": true,
+        "gas_estimate": "high"
+      },
+      {
+        "name": "batch_release_funds",
+        "description": "Release funds for multiple bounties in one transaction",
+        "parameters": [
+          {
+            "name": "items",
+            "type": "Vec<ReleaseFundsItem>",
+            "description": "Array of release requests"
+          }
+        ],
+        "returns": {
+          "type": "Vec<()>",
+          "description": "Array of results"
+        },
+        "authorization": "admin",
+        "pausable": true,
+        "gas_estimate": "high"
+      }
+    ],
+    "view": [
+      {
+        "name": "get_escrow",
+        "description": "Get escrow details by bounty ID",
+        "parameters": [
+          {
+            "name": "bounty_id",
+            "type": "u64",
+            "description": "Bounty identifier"
+          }
+        ],
+        "returns": {
+          "type": "Escrow",
+          "description": "Escrow record"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "get_capability",
+        "description": "Get capability details by ID",
+        "parameters": [
+          {
+            "name": "capability_id",
+            "type": "u64",
+            "description": "Capability token ID"
+          }
+        ],
+        "returns": {
+          "type": "Capability",
+          "description": "Capability record"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "get_fee_config",
+        "description": "Get current fee configuration",
+        "parameters": [],
+        "returns": {
+          "type": "FeeConfig",
+          "description": "Fee configuration"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "get_multisig_config",
+        "description": "Get multisig configuration",
+        "parameters": [],
+        "returns": {
+          "type": "MultisigConfig",
+          "description": "Multisig configuration"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "get_pause_flags",
+        "description": "Get current pause status",
+        "parameters": [],
+        "returns": {
+          "type": "PauseFlags",
+          "description": "Pause configuration"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "dry_run_lock",
+        "description": "Simulate lock operation without state changes",
+        "parameters": [
+          {
+            "name": "depositor",
+            "type": "Address",
+            "description": "Address that would lock funds"
+          },
+          {
+            "name": "bounty_id",
+            "type": "u64",
+            "description": "Bounty identifier"
+          },
+          {
+            "name": "amount",
+            "type": "i128",
+            "description": "Amount to lock"
+          },
+          {
+            "name": "deadline",
+            "type": "u64",
+            "description": "Deadline timestamp"
+          }
+        ],
+        "returns": {
+          "type": "SimulationResult",
+          "description": "Simulation outcome"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "medium"
+      },
+      {
+        "name": "dry_run_release",
+        "description": "Simulate release operation without state changes",
+        "parameters": [
+          {
+            "name": "bounty_id",
+            "type": "u64",
+            "description": "Bounty identifier"
+          },
+          {
+            "name": "contributor",
+            "type": "Address",
+            "description": "Recipient address"
+          }
+        ],
+        "returns": {
+          "type": "SimulationResult",
+          "description": "Simulation outcome"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "medium"
+      },
+      {
+        "name": "dry_run_refund",
+        "description": "Simulate refund operation without state changes",
+        "parameters": [
+          {
+            "name": "bounty_id",
+            "type": "u64",
+            "description": "Bounty identifier"
+          }
+        ],
+        "returns": {
+          "type": "SimulationResult",
+          "description": "Simulation outcome"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "medium"
+      },
+      {
+        "name": "health_check",
+        "description": "Get contract health status",
+        "parameters": [],
+        "returns": {
+          "type": "HealthStatus",
+          "description": "Health information"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "get_analytics",
+        "description": "Get usage analytics",
+        "parameters": [],
+        "returns": {
+          "type": "Analytics",
+          "description": "Analytics data"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low"
+      }
+    ],
+    "admin": [
+      {
+        "name": "init",
+        "description": "Initialize the contract with admin and token",
+        "parameters": [
+          {
+            "name": "admin",
+            "type": "Address",
+            "description": "Admin address"
+          },
+          {
+            "name": "token",
+            "type": "AssetId",
+            "description": "Token contract address"
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "update_fee_config",
+        "description": "Update fee configuration",
+        "parameters": [
+          {
+            "name": "lock_fee_rate",
+            "type": "Option<i128>",
+            "description": "Fee rate for lock operations",
+            "optional": true
+          },
+          {
+            "name": "release_fee_rate",
+            "type": "Option<i128>",
+            "description": "Fee rate for release operations",
+            "optional": true
+          },
+          {
+            "name": "fee_recipient",
+            "type": "Option<Address>",
+            "description": "Address to receive fees",
+            "optional": true
+          },
+          {
+            "name": "fee_enabled",
+            "type": "Option<bool>",
+            "description": "Enable/disable fees",
+            "optional": true
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success"
+        },
+        "authorization": "admin",
+        "pausable": false,
+        "gas_estimate": "medium"
+      },
+      {
+        "name": "update_multisig_config",
+        "description": "Update multisig configuration",
+        "parameters": [
+          {
+            "name": "threshold_amount",
+            "type": "i128",
+            "description": "Amount threshold for multisig"
+          },
+          {
+            "name": "signers",
+            "type": "Vec<Address>",
+            "description": "List of authorized signers"
+          },
+          {
+            "name": "required_signatures",
+            "type": "u32",
+            "description": "Number of signatures required"
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success"
+        },
+        "authorization": "admin",
+        "pausable": false,
+        "gas_estimate": "medium"
+      },
+      {
+        "name": "approve_large_release",
+        "description": "Approve large release requiring multisig",
+        "parameters": [
+          {
+            "name": "bounty_id",
+            "type": "u64",
+            "description": "Bounty identifier"
+          },
+          {
+            "name": "contributor",
+            "type": "Address",
+            "description": "Contributor address"
+          },
+          {
+            "name": "amount",
+            "type": "i128",
+            "description": "Amount to release"
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success"
+        },
+        "authorization": "admin",
+        "pausable": true,
+        "gas_estimate": "medium"
+      },
+      {
+        "name": "set_paused",
+        "description": "Update pause flags for operations",
+        "parameters": [
+          {
+            "name": "lock",
+            "type": "Option<bool>",
+            "description": "Pause lock operations",
+            "optional": true
+          },
+          {
+            "name": "release",
+            "type": "Option<bool>",
+            "description": "Pause release operations",
+            "optional": true
+          },
+          {
+            "name": "refund",
+            "type": "Option<bool>",
+            "description": "Pause refund operations",
+            "optional": true
+          },
+          {
+            "name": "reason",
+            "type": "Option<String>",
+            "description": "Reason for pausing",
+            "optional": true
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success"
+        },
+        "authorization": "admin",
+        "pausable": false,
+        "gas_estimate": "medium"
+      },
+      {
+        "name": "set_claim_window",
+        "description": "Set claim window duration",
+        "parameters": [
+          {
+            "name": "claim_window",
+            "type": "u64",
+            "description": "Seconds beneficiary has to claim"
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success"
+        },
+        "authorization": "admin",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "emergency_withdraw",
+        "description": "Emergency withdraw all funds (requires lock_paused=true)",
+        "parameters": [
+          {
+            "name": "target",
+            "type": "Address",
+            "description": "Address to receive funds"
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success"
+        },
+        "authorization": "admin",
+        "pausable": false,
+        "gas_estimate": "high"
+      }
+    ]
+  },
+  "configuration": {
+    "parameters": [
+      {
+        "name": "MAX_FEE_RATE",
+        "type": "i128",
+        "default_value": "1000",
+        "description": "Maximum fee rate (10% = 1000 basis points)",
+        "constraints": "0 <= value <= 1000",
+        "admin_only": false
+      },
+      {
+        "name": "MAX_BATCH_SIZE",
+        "type": "u32",
+        "default_value": "20",
+        "description": "Maximum number of items in batch operations",
+        "constraints": "1 <= value <= 100",
+        "admin_only": false
+      },
+      {
+        "name": "lock_fee_rate",
+        "type": "i128",
+        "default_value": "0",
+        "description": "Fee rate for lock operations in basis points",
+        "constraints": "0 <= value <= MAX_FEE_RATE",
+        "admin_only": true
+      },
+      {
+        "name": "release_fee_rate",
+        "type": "i128",
+        "default_value": "0",
+        "description": "Fee rate for release operations in basis points",
+        "constraints": "0 <= value <= MAX_FEE_RATE",
+        "admin_only": true
+      },
+      {
+        "name": "fee_enabled",
+        "type": "bool",
+        "default_value": "false",
+        "description": "Whether fees are enabled",
+        "admin_only": true
+      },
+      {
+        "name": "claim_window",
+        "type": "u64",
+        "default_value": "86400",
+        "description": "Seconds beneficiary has to claim after authorization",
+        "constraints": "value > 0",
+        "admin_only": true
+      }
+    ],
+    "storage_keys": [
+      {
+        "name": "Admin",
+        "type": "instance",
+        "description": "Administrator address",
+        "data_structure": "Address"
+      },
+      {
+        "name": "Token",
+        "type": "instance",
+        "description": "Token contract address",
+        "data_structure": "Address"
+      },
+      {
+        "name": "Escrow",
+        "type": "persistent",
+        "description": "Escrow records by bounty ID",
+        "data_structure": "Escrow"
+      },
+      {
+        "name": "Metadata",
+        "type": "persistent",
+        "description": "Escrow metadata by bounty ID",
+        "data_structure": "EscrowMetadata"
+      },
+      {
+        "name": "FeeConfig",
+        "type": "instance",
+        "description": "Fee configuration",
+        "data_structure": "FeeConfig"
+      },
+      {
+        "name": "MultisigConfig",
+        "type": "instance",
+        "description": "Multisig configuration",
+        "data_structure": "MultisigConfig"
+      },
+      {
+        "name": "PauseFlags",
+        "type": "instance",
+        "description": "Pause configuration",
+        "data_structure": "PauseFlags"
+      },
+      {
+        "name": "Capability",
+        "type": "persistent",
+        "description": "Capability tokens by ID",
+        "data_structure": "Capability"
+      },
+      {
+        "name": "ReentrancyGuard",
+        "type": "temporary",
+        "description": "Reentrancy protection flag",
+        "data_structure": "bool"
+      }
+    ]
+  },
+  "behaviors": {
+    "security_features": [
+      "Reentrancy protection using shared guard",
+      "Rate limiting with configurable windows and thresholds",
+      "Capability-based authorization for delegated operations",
+      "Multisig support for large releases",
+      "Comprehensive pause functionality",
+      "Anti-abuse mechanisms with whitelisting",
+      "Input validation for all parameters",
+      "Overflow protection in arithmetic operations",
+      "Event emission for audit trail"
+    ],
+    "access_control": [
+      {
+        "mechanism": "admin_auth",
+        "description": "Single admin with full control over contract",
+        "configuration": "Set during initialization, immutable afterwards"
+      },
+      {
+        "mechanism": "capability",
+        "description": "Delegated authorization through capability tokens",
+        "configuration": "Admin issues capabilities with specific permissions and limits"
+      },
+      {
+        "mechanism": "multisig",
+        "description": "Multiple signatures required for large releases",
+        "configuration": "Configurable threshold and signer list"
+      },
+      {
+        "mechanism": "whitelist",
+        "description": "Prevents abuse through operation frequency limits",
+        "configuration": "Configurable window size and operation limits"
+      }
+    ],
+    "critical_behaviors": [
+      {
+        "behavior": "Reentrancy protection",
+        "impact": "Prevents recursive calls that could drain funds",
+        "mitigation": "Shared reentrancy guard with acquire/release pattern"
+      },
+      {
+        "behavior": "Fee calculation",
+        "impact": "Fees are deducted from amounts and sent to recipient",
+        "mitigation": "Floor rounding ensures fees don't exceed configured rates"
+      },
+      {
+        "behavior": "Batch operations",
+        "impact": "All operations succeed or fail together (atomic)",
+        "mitigation": "Rollback on any failure in the batch"
+      },
+      {
+        "behavior": "Capability expiration",
+        "impact": "Expired capabilities cannot be used",
+        "mitigation": "Timestamp validation on every capability use"
+      },
+      {
+        "behavior": "Claim period",
+        "impact": "Funds must be claimed within configured window",
+        "mitigation": "Automatic expiration and refund after window"
+      }
+    ],
+    "error_handling": [
+      {
+        "error_code": "AlreadyInitialized",
+        "scenario": "Attempting to initialize an already initialized contract",
+        "resolution": "Contract can only be initialized once"
+      },
+      {
+        "error_code": "NotInitialized",
+        "scenario": "Calling admin functions before initialization",
+        "resolution": "Initialize contract with admin and token addresses"
+      },
+      {
+        "error_code": "Unauthorized",
+        "scenario": "Caller lacks required permissions",
+        "resolution": "Ensure caller is admin, capability holder, or authorized signer"
+      },
+      {
+        "error_code": "InsufficientFunds",
+        "scenario": "Contract doesn't have enough tokens for operation",
+        "resolution": "Ensure sufficient tokens are locked in escrow"
+      },
+      {
+        "error_code": "DeadlineNotPassed",
+        "scenario": "Attempting refund before deadline",
+        "resolution": "Wait until deadline passes before refunding"
+      },
+      {
+        "error_code": "FundsPaused",
+        "scenario": "Operation is paused by admin",
+        "resolution": "Wait for admin to unpause or contact admin"
+      },
+      {
+        "error_code": "InvalidFeeRate",
+        "scenario": "Fee rate exceeds maximum allowed",
+        "resolution": "Use fee rate within allowed range (0-1000 basis points)"
+      }
+    ],
+    "gas_considerations": [
+      {
+        "operation": "lock_funds",
+        "cost_level": "medium",
+        "notes": "Involves token transfer and storage writes"
+      },
+      {
+        "operation": "release_funds",
+        "cost_level": "medium",
+        "notes": "Involves token transfer and storage updates"
+      },
+      {
+        "operation": "batch_lock_funds",
+        "cost_level": "high",
+        "notes": "Multiple token transfers and storage writes"
+      },
+      {
+        "operation": "batch_release_funds",
+        "cost_level": "high",
+        "notes": "Multiple token transfers and storage updates"
+      },
+      {
+        "operation": "emergency_withdraw",
+        "cost_level": "high",
+        "notes": "Large token transfer of all contract balance"
+      },
+      {
+        "operation": "view functions",
+        "cost_level": "low",
+        "notes": "Only storage reads, no state changes"
+      }
+    ],
+    "events": [
+      {
+        "name": "BountyEscrowInitialized",
+        "description": "Contract initialization event",
+        "data": [
+          {
+            "name": "version",
+            "type": "u32",
+            "description": "Contract version"
+          },
+          {
+            "name": "admin",
+            "type": "Address",
+            "description": "Admin address"
+          },
+          {
+            "name": "token",
+            "type": "Address",
+            "description": "Token address"
+          },
+          {
+            "name": "timestamp",
+            "type": "u64",
+            "description": "Initialization timestamp"
+          }
+        ],
+        "trigger": "Contract initialization"
+      },
+      {
+        "name": "FundsLocked",
+        "description": "Funds locked in escrow",
+        "data": [
+          {
+            "name": "bounty_id",
+            "type": "u64",
+            "description": "Bounty identifier"
+          },
+          {
+            "name": "depositor",
+            "type": "Address",
+            "description": "Depositor address"
+          },
+          {
+            "name": "amount",
+            "type": "i128",
+            "description": "Amount locked"
+          },
+          {
+            "name": "deadline",
+            "type": "u64",
+            "description": "Refund deadline"
+          }
+        ],
+        "trigger": "Successful lock_funds call"
+      },
+      {
+        "name": "FundsReleased",
+        "description": "Funds released from escrow",
+        "data": [
+          {
+            "name": "bounty_id",
+            "type": "u64",
+            "description": "Bounty identifier"
+          },
+          {
+            "name": "contributor",
+            "type": "Address",
+            "description": "Recipient address"
+          },
+          {
+            "name": "amount",
+            "type": "i128",
+            "description": "Amount released"
+          }
+        ],
+        "trigger": "Successful release_funds call"
+      },
+      {
+        "name": "FundsRefunded",
+        "description": "Funds refunded to depositor",
+        "data": [
+          {
+            "name": "bounty_id",
+            "type": "u64",
+            "description": "Bounty identifier"
+          },
+          {
+            "name": "depositor",
+            "type": "Address",
+            "description": "Refund recipient"
+          },
+          {
+            "name": "amount",
+            "type": "i128",
+            "description": "Amount refunded"
+          }
+        ],
+        "trigger": "Successful refund_funds call"
+      }
+    ]
+  },
+  "dependencies": {
+    "contracts": [
+      {
+        "contract_name": "grainlify_core",
+        "interface": "asset::AssetId",
+        "purpose": "Asset normalization and validation"
+      }
+    ],
+    "tokens": [
+      {
+        "token_standard": "SAC",
+        "purpose": "Escrow token for locking and releasing funds",
+        "requirements": [
+          "Must support transfer function",
+          "Must support balance function",
+          "Must be approved for contract operations"
+        ]
+      }
+    ],
+    "external_apis": []
+  },
+  "deployment": {
+    "networks": [],
+    "initialization": {
+      "steps": [
+        {
+          "step": 1,
+          "description": "Deploy contract to Stellar network",
+          "command": "stellar contract deploy --wasm target/wasm32-unknown-unknown/release/bounty_escrow.wasm",
+          "notes": "Save contract ID from deployment output"
+        },
+        {
+          "step": 2,
+          "description": "Initialize contract with admin and token",
+          "command": "stellar contract invoke --id CONTRACT_ID -- init --admin ADMIN_ADDRESS --token TOKEN_ADDRESS",
+          "notes": "Admin address should be secure (hardware wallet recommended)"
+        },
+        {
+          "step": 3,
+          "description": "Configure fee settings if needed",
+          "command": "stellar contract invoke --id CONTRACT_ID -- update_fee_config --lock_fee_rate 10 --release_fee_rate 5 --fee_recipient FEE_RECIPIENT --fee_enabled true",
+          "notes": "Optional: configure fees according to your needs"
+        },
+        {
+          "step": 4,
+          "description": "Set up multisig if required",
+          "command": "stellar contract invoke --id CONTRACT_ID -- update_multisig_config --threshold_amount 1000000000 --signers SIGNER1,SIGNER2,SIGNER3 --required_signatures 2",
+          "notes": "Optional: configure multisig for large releases"
+        }
+      ],
+      "prerequisites": [
+        "Admin address (secure, preferably hardware wallet)",
+        "Token contract address",
+        "Sufficient XLM for deployment fees",
+        "Token approval for contract operations"
+      ]
+    },
+    "upgrade_process": {
+      "steps": [
+        {
+          "step": 1,
+          "description": "Build new contract version",
+          "command": "cargo build --release --target wasm32-unknown-unknown",
+          "notes": "Ensure all tests pass before building"
+        },
+        {
+          "step": 2,
+          "description": "Upload new WASM to Stellar",
+          "command": "stellar contract install --wasm target/wasm32-unknown-unknown/release/bounty_escrow.wasm",
+          "notes": "Save the WASM hash from output"
+        },
+        {
+          "step": 3,
+          "description": "Test upgrade on testnet first",
+          "command": "stellar contract invoke --id TESTNET_CONTRACT_ID -- upgrade --new_wasm_hash WASM_HASH",
+          "notes": "Verify all functionality works on testnet"
+        },
+        {
+          "step": 4,
+          "description": "Perform mainnet upgrade",
+          "command": "stellar contract invoke --id MAINNET_CONTRACT_ID -- upgrade --new_wasm_hash WASM_HASH",
+          "notes": "Ensure admin authorization"
+        },
+        {
+          "step": 5,
+          "description": "Update version number",
+          "command": "stellar contract invoke --id CONTRACT_ID -- set_version --new_version 2.1.0",
+          "notes": "Track version changes for audit trail"
+        }
+      ],
+      "rollback_procedure": "Keep previous WASM hash to enable emergency rollback by calling upgrade with previous hash",
+      "testing_requirements": [
+        "Test all entrypoints on testnet",
+        "Verify fee calculations work correctly",
+        "Test pause/unpause functionality",
+        "Verify capability system works",
+        "Test batch operations",
+        "Verify reentrancy protection"
+      ]
+    }
+  },
+  "testing": {
+    "test_coverage": {
+      "unit_tests": "95%",
+      "integration_tests": "90%",
+      "test_files": [
+        "test_bounty_escrow.rs",
+        "test_rbac.rs",
+        "test_batch_failure_modes.rs",
+        "test_reentrancy_guard.rs",
+        "test_metadata.rs",
+        "test_pause.rs",
+        "test_dispute_resolution.rs",
+        "test_deadline_variants.rs",
+        "test_blacklist_and_whitelist.rs",
+        "test_cross_contract_interface.rs",
+        "test_lifecycle.rs",
+        "test_status_transitions.rs",
+        "test_state_verification.rs",
+        "test_dry_run_simulation.rs",
+        "test_token_math.rs",
+        "test_multi_token_fees.rs",
+        "test_front_running_ordering.rs",
+        "test_upgrade_scenarios.rs",
+        "test_expiration_and_dispute.rs",
+        "test_auto_refund_permissions.rs",
+        "test_granular_pause.rs",
+        "test_query_filters.rs",
+        "test_capability_tokens.rs",
+        "test_metadata_tagging.rs",
+        "test_partial_payout_rounding.rs",
+        "test_gas.rs",
+        "test_analytics_monitoring.rs"
+      ]
+    },
+    "test_scenarios": [
+      "Complete escrow lifecycle (lock → release/refund)",
+      "Batch operations with mixed success/failure",
+      "Reentrancy attack prevention",
+      "Rate limiting enforcement",
+      "Capability issuance and usage",
+      "Fee calculation and collection",
+      "Pause/unpause functionality",
+      "Multisig approval workflow",
+      "Claim period expiration",
+      "Emergency withdrawal procedures",
+      "Error handling and edge cases",
+      "Gas optimization scenarios"
+    ]
+  },
+  "documentation": {
+    "readme": "README.md",
+    "api_docs": "QUERY_DOCUMENTATION.md",
+    "examples": [
+      "examples/basic_escrow.rs",
+      "examples/batch_operations.rs",
+      "examples/capability_usage.rs",
+      "examples/multisig_setup.rs"
+    ]
+  }
+}

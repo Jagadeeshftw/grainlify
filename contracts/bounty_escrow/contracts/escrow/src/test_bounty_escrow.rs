@@ -1364,7 +1364,7 @@ fn test_anti_abuse_whitelisted_address_bypasses_checks() {
     client.init(&admin, &token);
 
     client.update_anti_abuse_config(&3600, &2, &60);
-    client.set_whitelist(&depositor, &true);
+    client.set_whitelist_entry(&depositor, &true);
 
     token_admin_client.mint(&depositor, &50_000);
 
@@ -1420,4 +1420,77 @@ fn test_non_admin_cannot_update_anti_abuse_config() {
         },
     }]);
     client.update_anti_abuse_config(&7200, &5, &120);
+}
+// ========================================================================
+// Pause Functionality Tests
+// ========================================================================
+
+#[test]
+fn test_pause_functionality() {
+    let (env, client, contract_id) = create_test_env();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+
+    // Create and setup token
+    let (token_address, token_client, token_admin) = create_token_contract(&env, &admin);
+
+    // Initialize escrow
+    client.init(&admin, &token_address);
+
+    // Initially not paused
+    let flags = client.get_pause_flags();
+    assert!(!flags.lock_paused);
+
+    // Pause lock
+    client.set_paused(
+        &Some(true),
+        &None::<bool>,
+        &None::<bool>,
+        &Some(soroban_sdk::String::from_str(&env, "test pause")),
+    );
+    let flags = client.get_pause_flags();
+    assert!(flags.lock_paused);
+
+    // Unpause lock
+    client.set_paused(
+        &Some(false),
+        &None::<bool>,
+        &None::<bool>,
+        &None::<soroban_sdk::String>,
+    );
+    let flags = client.get_pause_flags();
+    assert!(!flags.lock_paused);
+}
+
+#[test]
+fn test_emergency_withdraw() {
+    let (env, client, _contract_id) = create_test_env();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+
+    // Create and setup token
+    let (token_address, _token_client, _token_admin) = create_token_contract(&env, &admin);
+
+    // Initialize escrow
+    client.init(&admin, &token_address);
+
+    // Pause lock to enable emergency withdraw
+    client.set_paused(
+        &Some(true),
+        &None::<bool>,
+        &None::<bool>,
+        &Some(soroban_sdk::String::from_str(&env, "emergency")),
+    );
+    let flags = client.get_pause_flags();
+    assert!(flags.lock_paused);
+
+    // Call emergency_withdraw (it will fail gracefully if no funds)
+    let emergency_recipient = Address::generate(&env);
+    client.emergency_withdraw(&emergency_recipient);
+
+    // Verify pause state still true
+    let flags = client.get_pause_flags();
+    assert!(flags.lock_paused);
 }

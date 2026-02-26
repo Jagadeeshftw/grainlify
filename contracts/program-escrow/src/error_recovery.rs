@@ -463,7 +463,7 @@ pub struct RetryResult {
     pub succeeded: bool,
     pub attempts: u32,
     pub final_error: u32, // ERR_NONE if succeeded
-    pub total_delay: u64,  // Total backoff delay accumulated
+    pub total_delay: u64, // Total backoff delay accumulated
 }
 
 /// Execute a fallible operation with retry, integrated with the circuit breaker.
