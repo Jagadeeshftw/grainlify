@@ -85,7 +85,12 @@ fn test_events_emit_v2_version_tags_for_all_bounty_emitters() {
     assert_current_call_has_versioned_contract_event(&env, &contract_id);
 
     token_admin_client.mint(&depositor, &10_000);
-    client.lock_funds(&depositor, &1, &10_000, &(env.ledger().timestamp() + 10));
+    client.lock_funds(
+        &depositor,
+        &1,
+        &10_000,
+        &Some((env.ledger()).timestamp() + 10),
+    );
     assert_current_call_has_versioned_contract_event(&env, &contract_id);
 
     client.release_funds(&1, &contributor);
@@ -114,7 +119,7 @@ fn test_lock_fund() {
 
     token_admin_client.mint(&depositor, &amount);
 
-    client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
+    client.lock_funds(&depositor, &bounty_id, &amount, &Some(deadline));
 
     // Get all events emitted
     let events = env.events().all();
@@ -146,7 +151,7 @@ fn test_release_fund() {
 
     token_admin_client.mint(&depositor, &amount);
 
-    client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
+    client.lock_funds(&depositor, &bounty_id, &amount, &Some(deadline));
 
     client.release_funds(&bounty_id, &contributor);
 
@@ -185,7 +190,7 @@ fn test_lock_funds_zero_amount_edge_case() {
     client.init(&admin, &token);
     token_admin_client.mint(&depositor, &1_000);
 
-    client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
+    client.lock_funds(&depositor, &bounty_id, &amount, &Some(deadline));
 
     let escrow = client.get_escrow_info(&bounty_id);
     assert_eq!(escrow.amount, 0);
@@ -208,7 +213,7 @@ fn test_lock_funds_insufficient_balance_rejected() {
     client.init(&admin, &token);
     token_admin_client.mint(&depositor, &100);
 
-    client.lock_funds(&depositor, &bounty_id, &1_000, &deadline);
+    client.lock_funds(&depositor, &bounty_id, &1_000, &Some(deadline));
 }
 
 #[test]
@@ -227,7 +232,7 @@ fn test_refund_allows_exact_deadline_boundary() {
     let (token, token_client, token_admin_client) = create_token_contract(&env, &token_admin);
     client.init(&admin, &token);
     token_admin_client.mint(&depositor, &amount);
-    client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
+    client.lock_funds(&depositor, &bounty_id, &amount, &Some(deadline));
 
     env.ledger().set_timestamp(deadline);
     client.refund(&bounty_id);
@@ -253,7 +258,7 @@ fn test_maximum_lock_and_release_path() {
     let (token, token_client, token_admin_client) = create_token_contract(&env, &token_admin);
     client.init(&admin, &token);
     token_admin_client.mint(&depositor, &amount);
-    client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
+    client.lock_funds(&depositor, &bounty_id, &amount, &Some(deadline));
 
     assert_eq!(token_client.balance(&client.address), amount);
     client.release_funds(&bounty_id, &contributor);
@@ -276,9 +281,9 @@ fn test_integration_multi_bounty_lifecycle() {
     client.init(&admin, &token);
     token_admin_client.mint(&depositor, &10_000);
 
-    client.lock_funds(&depositor, &201, &3_000, &(now + 100));
-    client.lock_funds(&depositor, &202, &2_000, &(now + 200));
-    client.lock_funds(&depositor, &203, &1_000, &(now + 300));
+    client.lock_funds(&depositor, &201, &3_000, &Some((now + 100)));
+    client.lock_funds(&depositor, &202, &2_000, &Some((now + 200)));
+    client.lock_funds(&depositor, &203, &1_000, &Some((now + 300)));
     assert_eq!(token_client.balance(&client.address), 6_000);
 
     client.release_funds(&201, &contributor);
@@ -327,7 +332,7 @@ fn test_property_fuzz_lock_release_refund_invariants() {
 
     // Lock deterministic fuzz cases.
     for (id, amount, deadline) in fuzz_cases.iter() {
-        client.lock_funds(&depositor, id, amount, deadline);
+        client.lock_funds(&depositor, id, amount, &Some(*deadline));
     }
 
     let mut expected_locked_balance = client.get_balance();
@@ -339,7 +344,7 @@ fn test_property_fuzz_lock_release_refund_invariants() {
             expected_locked_balance -= info.amount;
         } else if i % 3 == 1 {
             let info = client.get_escrow_info(&id);
-            env.ledger().set_timestamp(info.deadline);
+            env.ledger().set_timestamp(info.deadline.unwrap());
             client.refund(&id);
             expected_locked_balance -= info.amount;
         }
@@ -366,7 +371,7 @@ fn test_stress_high_load_bounty_operations() {
     for i in 0..40_u64 {
         let amount = 100 + (i as i128 % 10);
         let deadline = now + 30 + i;
-        client.lock_funds(&depositor, &(5_000 + i), &amount, &deadline);
+        client.lock_funds(&depositor, &(5_000 + i), &amount, &Some(deadline));
     }
     assert!(client.get_balance() > 0);
 
@@ -376,7 +381,7 @@ fn test_stress_high_load_bounty_operations() {
             client.release_funds(&id, &contributor);
         } else {
             let info = client.get_escrow_info(&id);
-            env.ledger().set_timestamp(info.deadline);
+            env.ledger().set_timestamp(info.deadline.unwrap());
             client.refund(&id);
         }
     }
@@ -403,7 +408,7 @@ fn test_gas_proxy_event_footprint_per_operation_is_constant() {
     let before_lock = env.events().all().len();
     for offset in 0..20_u64 {
         let id = 8_001 + offset;
-        client.lock_funds(&depositor, &id, &10, &(now + 100 + offset));
+        client.lock_funds(&depositor, &id, &10, &Some((now + 100 + offset)));
     }
     let after_locks = env.events().all().len();
     let lock_event_growth = after_locks - before_lock;

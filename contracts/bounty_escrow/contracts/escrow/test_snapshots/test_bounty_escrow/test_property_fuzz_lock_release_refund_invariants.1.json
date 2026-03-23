@@ -19145,17 +19145,6 @@
                 },
                 {
                   "key": {
-                    "symbol": "remaining_amount"
-                  },
-                  "val": {
-                    "i128": {
-                      "hi": 0,
-                      "lo": 162
-                    }
-                  }
-                },
-                {
-                  "key": {
                     "symbol": "refund_history"
                   },
                   "val": {

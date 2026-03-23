@@ -48,21 +48,21 @@ fn test_granular_pause_lock() {
 
     let bounty_id_1: u64 = 1;
     let deadline = env.ledger().timestamp() + 1000;
-    escrow_client.lock_funds(&depositor, &bounty_id_1, &100, &deadline);
+    escrow_client.lock_funds(&depositor, &bounty_id_1, &100, &Some(deadline));
 
     escrow_client.set_paused(&Some(true), &None, &None);
     let flags = escrow_client.get_pause_flags();
     assert_eq!(flags.lock_paused, true);
 
     let bounty_id_2: u64 = 2;
-    let res = escrow_client.try_lock_funds(&depositor, &bounty_id_2, &100, &deadline);
+    let res = escrow_client.try_lock_funds(&depositor, &bounty_id_2, &100, &Some(deadline));
     assert!(res.is_err());
 
     escrow_client.set_paused(&Some(false), &None, &None);
     let flags = escrow_client.get_pause_flags();
     assert_eq!(flags.lock_paused, false);
 
-    escrow_client.lock_funds(&depositor, &bounty_id_2, &100, &deadline);
+    escrow_client.lock_funds(&depositor, &bounty_id_2, &100, &Some(deadline));
 }
 
 #[test]
@@ -83,7 +83,7 @@ fn test_granular_pause_release() {
 
     let bounty_id: u64 = 1;
     let deadline = env.ledger().timestamp() + 1000;
-    escrow_client.lock_funds(&depositor, &bounty_id, &100, &deadline);
+    escrow_client.lock_funds(&depositor, &bounty_id, &100, &Some(deadline));
 
     escrow_client.set_paused(&None, &Some(true), &None);
     let flags = escrow_client.get_pause_flags();
@@ -117,7 +117,7 @@ fn test_granular_pause_refund() {
     let bounty_id: u64 = 1;
     let deadline = env.ledger().timestamp() + 1000;
 
-    escrow_client.lock_funds(&depositor, &bounty_id, &100, &deadline);
+    escrow_client.lock_funds(&depositor, &bounty_id, &100, &Some(deadline));
 
     env.ledger().set_timestamp(deadline + 1);
 

@@ -23,7 +23,7 @@ pub struct FundsLocked {
     pub bounty_id: u64,
     pub amount: i128,
     pub depositor: Address,
-    pub deadline: u64,
+    pub deadline: Option<u64>,
 }
 
 pub fn emit_funds_locked(env: &Env, event: FundsLocked) {

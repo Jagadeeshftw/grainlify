@@ -3887,17 +3887,6 @@
                     },
                     {
                       "key": {
-                        "symbol": "remaining_amount"
-                      },
-                      "val": {
-                        "i128": {
-                          "hi": 0,
-                          "lo": 0
-                        }
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "status"
                       },
                       "val": {
@@ -4933,17 +4922,6 @@
                         "i128": {
                           "hi": 0,
                           "lo": 108
-                        }
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "remaining_amount"
-                      },
-                      "val": {
-                        "i128": {
-                          "hi": 0,
-                          "lo": 0
                         }
                       }
                     },
@@ -6802,17 +6780,6 @@
                     },
                     {
                       "key": {
-                        "symbol": "remaining_amount"
-                      },
-                      "val": {
-                        "i128": {
-                          "hi": 0,
-                          "lo": 0
-                        }
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "refund_history"
                       },
                       "val": {
@@ -7139,17 +7106,6 @@
                         "i128": {
                           "hi": 0,
                           "lo": 109
-                        }
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "remaining_amount"
-                      },
-                      "val": {
-                        "i128": {
-                          "hi": 0,
-                          "lo": 107
                         }
                       }
                     },

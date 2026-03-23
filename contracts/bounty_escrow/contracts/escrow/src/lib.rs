@@ -387,7 +387,7 @@ pub struct Escrow {
     /// Reaches 0 when fully paid out, at which point status becomes Released.
     pub remaining_amount: i128,
     pub status: EscrowStatus,
-    pub deadline: u64,
+    pub deadline: Option<u64>,
     pub refund_history: Vec<RefundRecord>,
 }
 
@@ -510,7 +510,7 @@ pub struct LockFundsItem {
     pub bounty_id: u64,
     pub depositor: Address,
     pub amount: i128,
-    pub deadline: u64,
+    pub deadline: Option<u64>,
 }
 
 #[contracttype]
@@ -824,7 +824,7 @@ impl BountyEscrowContract {
         depositor: Address,
         bounty_id: u64,
         amount: i128,
-        deadline: u64,
+        deadline: Option<u64>,
     ) -> Result<(), Error> {
         // Apply rate limiting
         anti_abuse::check_rate_limit(&env, depositor.clone());
@@ -1281,6 +1281,7 @@ impl BountyEscrowContract {
         emit_funds_released(
             &env,
             FundsReleased {
+                version: events::EVENT_VERSION_V2,
                 bounty_id,
                 amount: payout_amount,
                 recipient: contributor.clone(),
@@ -1313,7 +1314,11 @@ impl BountyEscrowContract {
         }
 
         let now = env.ledger().timestamp();
-        if now < escrow.deadline {
+        if let Some(dl) = escrow.deadline {
+            if now < dl {
+                return Err(Error::DeadlineNotPassed);
+            }
+        } else {
             return Err(Error::DeadlineNotPassed);
         }
 
@@ -1478,7 +1483,11 @@ impl BountyEscrowContract {
                 .persistent()
                 .get::<DataKey, Escrow>(&DataKey::Escrow(bounty_id))
             {
-                if escrow.deadline >= min_deadline && escrow.deadline <= max_deadline {
+                let within_range = match escrow.deadline {
+                    Some(dl) => dl >= min_deadline && dl <= max_deadline,
+                    None => false,
+                };
+                if within_range {
                     if skipped < offset {
                         skipped += 1;
                         continue;
@@ -1659,7 +1668,10 @@ impl BountyEscrowContract {
             .unwrap();
 
         let now = env.ledger().timestamp();
-        let deadline_passed = now >= escrow.deadline;
+        let deadline_passed = match escrow.deadline {
+            Some(dl) => now >= dl,
+            None => false,
+        };
 
         let approval = if env
             .storage()
@@ -1955,5 +1967,7 @@ impl BountyEscrowContract {
 mod test;
 #[cfg(test)]
 mod test_auto_refund_permissions;
+#[cfg(test)]
+mod test_deadline_cases;
 #[cfg(test)]
 mod test_pause;

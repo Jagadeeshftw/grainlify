@@ -75,7 +75,7 @@ fn test_lock_funds_success() {
     // Lock funds
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &Some(deadline));
 
     // Verify stored escrow data
     let stored_escrow = setup.escrow.get_escrow_info(&bounty_id);
@@ -84,7 +84,7 @@ fn test_lock_funds_success() {
     // remaining_amount must equal amount immediately after lock
     assert_eq!(stored_escrow.remaining_amount, amount);
     assert_eq!(stored_escrow.status, EscrowStatus::Locked);
-    assert_eq!(stored_escrow.deadline, deadline);
+    assert_eq!(stored_escrow.deadline, Some(deadline));
 
     // Verify contract balance
     assert_eq!(setup.token.balance(&setup.escrow.address), amount);
@@ -100,12 +100,12 @@ fn test_lock_funds_duplicate() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &Some(deadline));
 
     // Try to lock again with same bounty_id
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &Some(deadline));
 }
 
 #[test]
@@ -118,7 +118,7 @@ fn test_lock_funds_negative_amount() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &Some(deadline));
 }
 
 #[test]
@@ -130,12 +130,12 @@ fn test_get_escrow_info() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &Some(deadline));
 
     let escrow = setup.escrow.get_escrow_info(&bounty_id);
     assert_eq!(escrow.amount, amount);
     assert_eq!(escrow.remaining_amount, amount);
-    assert_eq!(escrow.deadline, deadline);
+    assert_eq!(escrow.deadline, Some(deadline));
     assert_eq!(escrow.depositor, setup.depositor);
     assert_eq!(escrow.status, EscrowStatus::Locked);
 }
@@ -149,7 +149,7 @@ fn test_release_funds_success() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &Some(deadline));
 
     // Verify initial balances
     assert_eq!(setup.token.balance(&setup.escrow.address), amount);
@@ -177,7 +177,7 @@ fn test_release_funds_already_released() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &Some(deadline));
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
 
     // Try to release again
@@ -202,7 +202,7 @@ fn test_refund_success() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &Some(deadline));
 
     // Advance time past deadline
     setup.env.ledger().set_timestamp(deadline + 1);
@@ -236,7 +236,7 @@ fn test_refund_too_early() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &Some(deadline));
 
     // Attempt refund before deadline
     setup.escrow.refund(&bounty_id);
@@ -254,7 +254,7 @@ fn test_get_balance() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &Some(deadline));
 
     // Balance should be updated
     assert_eq!(setup.escrow.get_balance(), amount);
@@ -275,7 +275,7 @@ fn test_partial_release_single_minimum_unit() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &Some(deadline));
 
     let payout = 1_i128;
     setup
@@ -300,7 +300,7 @@ fn test_partial_release_leaves_tiny_remainder() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &Some(deadline));
 
     let payout = amount - 1; // leave exactly 1 unit behind
     setup
@@ -326,7 +326,7 @@ fn test_partial_release_multiple_sequential_small_amounts() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &Some(deadline));
 
     let payout_per_step = 10_i128;
     let steps = 10_i128;
@@ -368,7 +368,7 @@ fn test_partial_release_full_amount_in_one_shot_marks_released() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &Some(deadline));
 
     setup
         .escrow
@@ -394,7 +394,7 @@ fn test_partial_release_overpayment_panics() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &Some(deadline));
 
     // First partial release leaves 10 remaining
     setup
@@ -418,7 +418,7 @@ fn test_partial_release_exact_remaining_after_prior_release() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &Some(deadline));
 
     // Release 60, then release the exact remaining 40
     setup
@@ -450,7 +450,7 @@ fn test_partial_release_zero_amount_rejected() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &Some(deadline));
 
     setup
         .escrow
@@ -469,7 +469,7 @@ fn test_partial_release_remaining_amount_never_goes_negative() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &Some(deadline));
 
     // Uneven splits that sum to exactly 7
     for payout in [3_i128, 3_i128, 1_i128] {
@@ -514,7 +514,7 @@ fn test_partial_release_on_already_released_bounty_panics() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &Some(deadline));
 
     // Full release via the standard path
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
@@ -537,7 +537,7 @@ fn test_refund_after_partial_release_returns_only_remainder() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &Some(deadline));
 
     // Partially release 300 to contributor
     setup
