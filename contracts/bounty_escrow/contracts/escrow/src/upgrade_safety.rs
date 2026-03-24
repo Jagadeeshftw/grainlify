@@ -19,7 +19,7 @@
 //! 9. **Version Compatibility** - Validate version information
 //! 10. **Balance Sanity** - Verify token balance consistency
 
-use crate::{Escrow, EscrowStatus, Error};
+use crate::{Error, Escrow, EscrowStatus};
 use soroban_sdk::{contracttype, Env, String, Vec};
 
 /// Result of upgrade safety validation
@@ -97,9 +97,7 @@ pub fn is_safety_checks_enabled(env: &Env) -> bool {
 /// Record last safety check timestamp
 pub fn record_safety_check(env: &Env) {
     let timestamp = env.ledger().timestamp();
-    env.storage()
-        .instance()
-        .set(&LAST_SAFETY_CHECK, &timestamp);
+    env.storage().instance().set(&LAST_SAFETY_CHECK, &timestamp);
 }
 
 /// Get last safety check timestamp
@@ -124,7 +122,10 @@ pub fn simulate_upgrade(env: &Env) -> UpgradeSafetyReport {
         checks_failed += 1;
         errors.push_back(UpgradeError {
             code: safety_codes::STORAGE_LAYOUT,
-            message: soroban_sdk::String::from_str(env, "Storage layout incompatible with current state"),
+            message: soroban_sdk::String::from_str(
+                env,
+                "Storage layout incompatible with current state",
+            ),
         });
     }
 
@@ -284,7 +285,11 @@ fn check_escrow_states(env: &Env) -> (bool, Vec<UpgradeWarning>) {
 
     for idx in 0..sample_len {
         let bounty_id = ids.get(idx).unwrap();
-        if env.storage().persistent().has(&crate::DataKey::Escrow(bounty_id)) {
+        if env
+            .storage()
+            .persistent()
+            .has(&crate::DataKey::Escrow(bounty_id))
+        {
             let escrow: Escrow = env
                 .storage()
                 .persistent()
@@ -372,11 +377,10 @@ fn check_admin_authority(env: &Env) -> bool {
         return false;
     }
     // Ensure the stored value actually deserialises as Address.
-    let _admin: soroban_sdk::Address =
-        match env.storage().instance().get(&crate::DataKey::Admin) {
-            Some(a) => a,
-            None => return false,
-        };
+    let _admin: soroban_sdk::Address = match env.storage().instance().get(&crate::DataKey::Admin) {
+        Some(a) => a,
+        None => return false,
+    };
     true
 }
 
@@ -388,23 +392,35 @@ fn check_token_config(env: &Env) -> bool {
 fn check_feature_flags(env: &Env) -> bool {
     // Check pause flags if they exist
     if env.storage().instance().has(&crate::DataKey::PauseFlags) {
-        let flags: crate::PauseFlags = env.storage().instance().get(&crate::DataKey::PauseFlags).unwrap();
-        
+        let flags: crate::PauseFlags = env
+            .storage()
+            .instance()
+            .get(&crate::DataKey::PauseFlags)
+            .unwrap();
+
         // If contract is fully paused, warn about upgrade
         // This is not a failure but a warning
         if flags.lock_paused {
             return false; // Will become a warning in the main check
         }
     }
-    
+
     true
 }
 
 fn check_no_reentrancy_locks(env: &Env) -> bool {
     // If reentrancy guard exists and is set, it should be cleared
     // A stuck reentrancy guard would prevent contract operation
-    if env.storage().instance().has(&crate::DataKey::ReentrancyGuard) {
-        let guard: bool = env.storage().instance().get(&crate::DataKey::ReentrancyGuard).unwrap();
+    if env
+        .storage()
+        .instance()
+        .has(&crate::DataKey::ReentrancyGuard)
+    {
+        let guard: bool = env
+            .storage()
+            .instance()
+            .get(&crate::DataKey::ReentrancyGuard)
+            .unwrap();
         if guard {
             return false; // Reentrancy lock is stuck
         }
@@ -541,10 +557,14 @@ mod tests {
         let env = Env::default();
         let contract_id = env.register_contract(None, BountyEscrowContract);
 
-        assert!(env.as_contract(&contract_id, || get_last_safety_check(&env)).is_none());
+        assert!(env
+            .as_contract(&contract_id, || get_last_safety_check(&env))
+            .is_none());
 
         env.as_contract(&contract_id, || record_safety_check(&env));
 
-        assert!(env.as_contract(&contract_id, || get_last_safety_check(&env)).is_some());
+        assert!(env
+            .as_contract(&contract_id, || get_last_safety_check(&env))
+            .is_some());
     }
 }

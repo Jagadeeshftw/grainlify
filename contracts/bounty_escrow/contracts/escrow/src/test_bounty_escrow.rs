@@ -84,12 +84,7 @@ fn test_events_emit_v2_version_tags_for_all_bounty_emitters() {
     assert_current_call_has_versioned_contract_event(&env, &contract_id);
 
     token_admin_client.mint(&depositor, &10_000);
-    client.lock_funds(
-        &depositor,
-        &1,
-        &10_000,
-        &(env.ledger().timestamp() + 10),
-    );
+    client.lock_funds(&depositor, &1, &10_000, &(env.ledger().timestamp() + 10));
     assert_current_call_has_versioned_contract_event(&env, &contract_id);
 
     client.release_funds(&1, &contributor);

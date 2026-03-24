@@ -127,8 +127,7 @@ fn test_zero_deadline_release_succeeds() {
 fn test_future_deadline_stored_correctly() {
     let s = Setup::new();
     let deadline = s.env.ledger().timestamp() + 3_600;
-    s.escrow
-        .lock_funds(&s.depositor, &10, &500, &deadline);
+    s.escrow.lock_funds(&s.depositor, &10, &500, &deadline);
 
     let info = s.escrow.get_escrow_info(&10);
     assert_eq!(info.deadline, deadline);
@@ -139,8 +138,7 @@ fn test_future_deadline_stored_correctly() {
 fn test_future_deadline_refund_blocked_before_expiry() {
     let s = Setup::new();
     let deadline = s.env.ledger().timestamp() + 10_000;
-    s.escrow
-        .lock_funds(&s.depositor, &11, &1_000, &deadline);
+    s.escrow.lock_funds(&s.depositor, &11, &1_000, &deadline);
 
     let result = s.escrow.try_refund(&11);
     assert_eq!(result.unwrap_err().unwrap(), Error::DeadlineNotPassed);
@@ -155,8 +153,7 @@ fn test_future_deadline_refund_succeeds_after_expiry() {
     let s = Setup::new();
     let now = s.env.ledger().timestamp();
     let deadline = now + 500;
-    s.escrow
-        .lock_funds(&s.depositor, &12, &1_200, &deadline);
+    s.escrow.lock_funds(&s.depositor, &12, &1_200, &deadline);
 
     s.env.ledger().set_timestamp(deadline + 1);
 
@@ -173,8 +170,7 @@ fn test_future_deadline_refund_succeeds_after_expiry() {
 fn test_future_deadline_early_refund_with_admin_approval() {
     let s = Setup::new();
     let deadline = s.env.ledger().timestamp() + 86_400;
-    s.escrow
-        .lock_funds(&s.depositor, &13, &2_000, &deadline);
+    s.escrow.lock_funds(&s.depositor, &13, &2_000, &deadline);
 
     s.escrow
         .approve_refund(&13, &2_000, &s.depositor, &RefundMode::Full);
@@ -191,8 +187,7 @@ fn test_future_deadline_early_refund_with_admin_approval() {
 fn test_future_deadline_release_unaffected_by_deadline() {
     let s = Setup::new();
     let deadline = s.env.ledger().timestamp() + 86_400;
-    s.escrow
-        .lock_funds(&s.depositor, &14, &3_000, &deadline);
+    s.escrow.lock_funds(&s.depositor, &14, &3_000, &deadline);
 
     s.escrow.release_funds(&14, &s.contributor);
 
@@ -214,8 +209,7 @@ const NO_DEADLINE: u64 = u64::MAX;
 #[test]
 fn test_no_deadline_stored_correctly() {
     let s = Setup::new();
-    s.escrow
-        .lock_funds(&s.depositor, &20, &500, &NO_DEADLINE);
+    s.escrow.lock_funds(&s.depositor, &20, &500, &NO_DEADLINE);
 
     let info = s.escrow.get_escrow_info(&20);
     assert_eq!(info.deadline, NO_DEADLINE);
@@ -225,8 +219,7 @@ fn test_no_deadline_stored_correctly() {
 #[test]
 fn test_no_deadline_refund_blocked_without_approval() {
     let s = Setup::new();
-    s.escrow
-        .lock_funds(&s.depositor, &21, &1_000, &NO_DEADLINE);
+    s.escrow.lock_funds(&s.depositor, &21, &1_000, &NO_DEADLINE);
 
     let result = s.escrow.try_refund(&21);
     assert_eq!(result.unwrap_err().unwrap(), Error::DeadlineNotPassed);
@@ -239,8 +232,7 @@ fn test_no_deadline_refund_blocked_without_approval() {
 #[test]
 fn test_no_deadline_refund_blocked_even_after_large_time_advance() {
     let s = Setup::new();
-    s.escrow
-        .lock_funds(&s.depositor, &22, &1_000, &NO_DEADLINE);
+    s.escrow.lock_funds(&s.depositor, &22, &1_000, &NO_DEADLINE);
 
     // Advance the clock by 100 years worth of seconds — still less than u64::MAX
     s.env.ledger().set_timestamp(100 * 365 * 24 * 3600);
@@ -252,8 +244,7 @@ fn test_no_deadline_refund_blocked_even_after_large_time_advance() {
 #[test]
 fn test_no_deadline_refund_succeeds_with_admin_approval() {
     let s = Setup::new();
-    s.escrow
-        .lock_funds(&s.depositor, &23, &1_500, &NO_DEADLINE);
+    s.escrow.lock_funds(&s.depositor, &23, &1_500, &NO_DEADLINE);
 
     s.escrow
         .approve_refund(&23, &1_500, &s.depositor, &RefundMode::Full);
@@ -270,8 +261,7 @@ fn test_no_deadline_refund_succeeds_with_admin_approval() {
 #[test]
 fn test_no_deadline_partial_refund_with_admin_approval() {
     let s = Setup::new();
-    s.escrow
-        .lock_funds(&s.depositor, &24, &2_000, &NO_DEADLINE);
+    s.escrow.lock_funds(&s.depositor, &24, &2_000, &NO_DEADLINE);
 
     s.escrow
         .approve_refund(&24, &800, &s.depositor, &RefundMode::Partial);
@@ -287,8 +277,7 @@ fn test_no_deadline_partial_refund_with_admin_approval() {
 #[test]
 fn test_no_deadline_release_succeeds() {
     let s = Setup::new();
-    s.escrow
-        .lock_funds(&s.depositor, &25, &2_500, &NO_DEADLINE);
+    s.escrow.lock_funds(&s.depositor, &25, &2_500, &NO_DEADLINE);
 
     s.escrow.release_funds(&25, &s.contributor);
 
@@ -332,8 +321,7 @@ fn test_deadline_future_vs_no_deadline_after_expiry() {
     // Bounty C: finite future deadline
     s.escrow.lock_funds(&s.depositor, &32, &600, &future);
     // Bounty D: no deadline (u64::MAX)
-    s.escrow
-        .lock_funds(&s.depositor, &33, &600, &NO_DEADLINE);
+    s.escrow.lock_funds(&s.depositor, &33, &600, &NO_DEADLINE);
 
     // Advance clock past the finite deadline
     s.env.ledger().set_timestamp(future + 1);

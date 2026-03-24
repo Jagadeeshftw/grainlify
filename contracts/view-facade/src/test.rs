@@ -95,7 +95,10 @@ fn test_init_emits_initialized_event() {
         payload.admin == admin
     });
 
-    assert!(found, "Initialized event must be emitted with correct admin");
+    assert!(
+        found,
+        "Initialized event must be emitted with correct admin"
+    );
 }
 
 // ---------------------------------------------------------------------------

@@ -325,7 +325,7 @@ pub(crate) fn assert_all_invariants(env: &Env) {
 pub(crate) fn assert_after_lock(env: &Env) {
     let key = soroban_sdk::Symbol::new(env, "InvOff");
     let disabled: bool = env.storage().instance().get(&key).unwrap_or(false);
-    
+
     if disabled {
         return;
     }
@@ -343,7 +343,7 @@ pub(crate) fn assert_after_lock(env: &Env) {
 pub(crate) fn assert_after_disbursement(env: &Env) {
     let key = soroban_sdk::Symbol::new(env, "InvOff");
     let disabled: bool = env.storage().instance().get(&key).unwrap_or(false);
-    
+
     if disabled {
         return;
     }

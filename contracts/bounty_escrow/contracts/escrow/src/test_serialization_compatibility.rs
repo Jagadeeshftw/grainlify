@@ -190,7 +190,7 @@ fn serialization_compatibility_public_types_and_events() {
                 amount: 1234,
                 expires_at: 555,
                 claimed: false,
-            reason: DisputeReason::Other,
+                reason: DisputeReason::Other,
             }
             .into_val(&env),
         ),

@@ -131,7 +131,9 @@ fn test_e2e_upgrade_with_pause() {
 
     // Step 1: Pre-upgrade — lock funds into two bounties
     s.lock_bounty(1, 10_000, 1_000);
-    s.env.ledger().set_timestamp(s.env.ledger().timestamp() + 100);
+    s.env
+        .ledger()
+        .set_timestamp(s.env.ledger().timestamp() + 100);
     s.lock_bounty(2, 20_000, 1_000);
 
     let balance_before = s.token_client.balance(&s.escrow_id);
@@ -145,7 +147,9 @@ fn test_e2e_upgrade_with_pause() {
     assert!(flags.lock_paused);
 
     // Step 3: Run upgrade safety simulation while paused
-    let report = s.env.as_contract(&s.escrow_id, || upgrade_safety::simulate_upgrade(&s.env));
+    let report = s
+        .env
+        .as_contract(&s.escrow_id, || upgrade_safety::simulate_upgrade(&s.env));
     assert!(report.is_safe);
     assert_eq!(report.checks_failed, 0);
 
@@ -216,7 +220,9 @@ fn test_e2e_upgrade_with_pause_preserves_balance() {
     s.advance_time();
     s.pause_all("upgrade prep");
 
-    let _report = s.env.as_contract(&s.escrow_id, || upgrade_safety::simulate_upgrade(&s.env));
+    let _report = s
+        .env
+        .as_contract(&s.escrow_id, || upgrade_safety::simulate_upgrade(&s.env));
 
     let balance_during_pause = s.token_client.balance(&s.escrow_id);
     assert_eq!(balance_during_pause, balance_before);
@@ -239,9 +245,13 @@ fn test_full_upgrade_lifecycle() {
 
     // Phase 1: Normal operations — create bounties
     s.lock_bounty(10, 10_000, 5_000);
-    s.env.ledger().set_timestamp(s.env.ledger().timestamp() + 100);
+    s.env
+        .ledger()
+        .set_timestamp(s.env.ledger().timestamp() + 100);
     s.lock_bounty(20, 20_000, 5_000);
-    s.env.ledger().set_timestamp(s.env.ledger().timestamp() + 100);
+    s.env
+        .ledger()
+        .set_timestamp(s.env.ledger().timestamp() + 100);
     s.lock_bounty(30, 30_000, 100); // short deadline for refund test
 
     let total_locked = s.token_client.balance(&s.escrow_id);
@@ -252,7 +262,9 @@ fn test_full_upgrade_lifecycle() {
     s.pause_all("Upgrade to v3");
 
     // Phase 3: Safety check
-    let report = s.env.as_contract(&s.escrow_id, || upgrade_safety::simulate_upgrade(&s.env));
+    let report = s
+        .env
+        .as_contract(&s.escrow_id, || upgrade_safety::simulate_upgrade(&s.env));
     assert_eq!(report.checks_failed, 0);
 
     // Phase 4: All ops blocked
@@ -321,8 +333,7 @@ fn test_partial_release_across_upgrade_boundary() {
 
     // Partial release before pause
     s.advance_time();
-    s.escrow_client
-        .partial_release(&1, &s.contributor, &3_000);
+    s.escrow_client.partial_release(&1, &s.contributor, &3_000);
     let escrow = s.escrow_client.get_escrow_info(&1);
     assert_eq!(escrow.remaining_amount, 7_000);
     assert_eq!(escrow.status, EscrowStatus::Locked);
@@ -335,12 +346,11 @@ fn test_partial_release_across_upgrade_boundary() {
 
     // Complete the remaining release
     s.advance_time();
-    s.escrow_client
-        .partial_release(&1, &s.contributor, &7_000);
+    s.escrow_client.partial_release(&1, &s.contributor, &7_000);
     let escrow_after_second_partial = s.escrow_client.get_escrow_info(&1); // Renamed variable
     assert_eq!(escrow_after_second_partial.remaining_amount, 0); // Used renamed variable
     assert_eq!(escrow_after_second_partial.status, EscrowStatus::Released); // Used renamed variable
-    // 3,000 + 7,000 = 10,000
+                                                                            // 3,000 + 7,000 = 10,000
     assert_eq!(s.token_client.balance(&s.contributor), 10_000);
 }
 
@@ -373,7 +383,9 @@ fn test_upgrade_with_mixed_escrow_states() {
     s.advance_time();
     s.pause_all("mixed state upgrade");
 
-    let report = s.env.as_contract(&s.escrow_id, || upgrade_safety::simulate_upgrade(&s.env));
+    let report = s
+        .env
+        .as_contract(&s.escrow_id, || upgrade_safety::simulate_upgrade(&s.env));
     assert_eq!(report.checks_failed, 0);
 
     // Verify all states preserved
@@ -420,7 +432,9 @@ fn test_safety_check_fails_before_init() {
 #[test]
 fn test_safety_check_passes_after_init() {
     let s = TestSetup::new();
-    let report = s.env.as_contract(&s.escrow_id, || upgrade_safety::simulate_upgrade(&s.env));
+    let report = s
+        .env
+        .as_contract(&s.escrow_id, || upgrade_safety::simulate_upgrade(&s.env));
     assert!(report.is_safe);
     assert_eq!(report.checks_failed, 0);
 }
@@ -435,7 +449,9 @@ fn test_safety_check_passes_with_locked_escrows() {
     s.advance_time();
     s.lock_bounty(2, 15_000, 1_000);
 
-    let report = s.env.as_contract(&s.escrow_id, || upgrade_safety::simulate_upgrade(&s.env));
+    let report = s
+        .env
+        .as_contract(&s.escrow_id, || upgrade_safety::simulate_upgrade(&s.env));
     assert!(report.is_safe);
     assert_eq!(report.checks_passed, 10);
 }
@@ -518,13 +534,29 @@ fn test_upgrade_safety_toggle() {
     let env = Env::default();
     let contract_id = env.register_contract(None, BountyEscrowContract);
 
-    assert!(env.as_contract(&contract_id, || upgrade_safety::is_safety_checks_enabled(&env)));
+    assert!(
+        env.as_contract(&contract_id, || upgrade_safety::is_safety_checks_enabled(
+            &env
+        ))
+    );
 
-    env.as_contract(&contract_id, || upgrade_safety::set_safety_checks_enabled(&env, false));
-    assert!(!env.as_contract(&contract_id, || upgrade_safety::is_safety_checks_enabled(&env)));
+    env.as_contract(&contract_id, || {
+        upgrade_safety::set_safety_checks_enabled(&env, false)
+    });
+    assert!(
+        !env.as_contract(&contract_id, || upgrade_safety::is_safety_checks_enabled(
+            &env
+        ))
+    );
 
-    env.as_contract(&contract_id, || upgrade_safety::set_safety_checks_enabled(&env, true));
-    assert!(env.as_contract(&contract_id, || upgrade_safety::is_safety_checks_enabled(&env)));
+    env.as_contract(&contract_id, || {
+        upgrade_safety::set_safety_checks_enabled(&env, true)
+    });
+    assert!(
+        env.as_contract(&contract_id, || upgrade_safety::is_safety_checks_enabled(
+            &env
+        ))
+    );
 }
 
 // ── Validate Upgrade Gate ───────────────────────────────────────────────────
@@ -533,7 +565,9 @@ fn test_upgrade_safety_toggle() {
 #[test]
 fn test_validate_upgrade_ok_for_initialized_contract() {
     let s = TestSetup::new();
-    let result = s.env.as_contract(&s.escrow_id, || upgrade_safety::validate_upgrade(&s.env));
+    let result = s
+        .env
+        .as_contract(&s.escrow_id, || upgrade_safety::validate_upgrade(&s.env));
     assert!(result.is_ok());
 }
 
@@ -556,7 +590,9 @@ fn test_validate_upgrade_skips_when_disabled() {
     let contract_id = env.register_contract(None, BountyEscrowContract);
 
     // Would fail — contract not initialized
-    env.as_contract(&contract_id, || upgrade_safety::set_safety_checks_enabled(&env, false));
+    env.as_contract(&contract_id, || {
+        upgrade_safety::set_safety_checks_enabled(&env, false)
+    });
     let result = env.as_contract(&contract_id, || upgrade_safety::validate_upgrade(&env));
     assert!(result.is_ok(), "Should skip checks when disabled");
 }
@@ -568,12 +604,21 @@ fn test_validate_upgrade_skips_when_disabled() {
 fn test_safety_check_records_timestamp() {
     let s = TestSetup::new();
 
-    assert!(s.env.as_contract(&s.escrow_id, || upgrade_safety::get_last_safety_check(&s.env)).is_none());
+    assert!(s
+        .env
+        .as_contract(&s.escrow_id, || upgrade_safety::get_last_safety_check(
+            &s.env
+        ))
+        .is_none());
 
     s.env.ledger().set_timestamp(12345);
-    let _report = s.env.as_contract(&s.escrow_id, || upgrade_safety::simulate_upgrade(&s.env));
+    let _report = s
+        .env
+        .as_contract(&s.escrow_id, || upgrade_safety::simulate_upgrade(&s.env));
 
-    let ts = s.env.as_contract(&s.escrow_id, || upgrade_safety::get_last_safety_check(&s.env));
+    let ts = s.env.as_contract(&s.escrow_id, || {
+        upgrade_safety::get_last_safety_check(&s.env)
+    });
     assert_eq!(ts, Some(12345));
 }
 
@@ -605,10 +650,16 @@ fn test_safety_report_error_codes() {
     let report = env.as_contract(&contract_id, || upgrade_safety::simulate_upgrade(&env));
     assert!(!report.is_safe);
     assert!(report.checks_failed > 0);
-    
+
     // Should have INITIALIZATION error since we didn't call init()
-    let init_error = report.errors.iter().find(|e| e.code == crate::upgrade_safety::safety_codes::INITIALIZATION);
-    assert!(init_error.is_some(), "Expected INITIALIZATION error but not found");
+    let init_error = report
+        .errors
+        .iter()
+        .find(|e| e.code == crate::upgrade_safety::safety_codes::INITIALIZATION);
+    assert!(
+        init_error.is_some(),
+        "Expected INITIALIZATION error but not found"
+    );
 }
 
 // ── Edge Case 2: Balance Remains Consistent Across 5 Cycles ─────────────────
@@ -616,30 +667,32 @@ fn test_safety_report_error_codes() {
 #[test]
 fn test_multiple_pause_resume_cycles_balance() {
     let s = TestSetup::new();
-    
+
     s.lock_bounty(1, 5_000, 1_000);
     s.advance_time();
     s.lock_bounty(2, 5_000, 1_000);
-    
+
     let expected_balance = 10_000;
-    
+
     for i in 0..5 {
         s.advance_time();
         s.pause_all("Cycle");
         assert_eq!(s.token_client.balance(&s.escrow_id), expected_balance);
-        
-        s.env.ledger().set_timestamp(s.env.ledger().timestamp() + 100);
+
+        s.env
+            .ledger()
+            .set_timestamp(s.env.ledger().timestamp() + 100);
         s.advance_time();
         s.unpause_all();
         assert_eq!(s.token_client.balance(&s.escrow_id), expected_balance);
         s.advance_time();
     }
-    
+
     s.advance_time();
     s.escrow_client.release_funds(&1, &s.contributor);
     s.advance_time();
     s.escrow_client.release_funds(&2, &s.contributor);
-    
+
     assert_eq!(s.token_client.balance(&s.escrow_id), 0);
     assert_eq!(s.token_client.balance(&s.contributor), 10_000);
 }
@@ -649,33 +702,38 @@ fn test_multiple_pause_resume_cycles_balance() {
 #[test]
 fn test_upgrade_with_high_value_bounties() {
     let s = TestSetup::new();
-    
+
     let high_value: i128 = 100_000_000 * 10_000_000; // 100M tokens with 7 decimals
-    
+
     // Setup rich depositor
     s.token_admin_client.mint(&s.depositor, &(high_value * 3));
-    
+
     // Lock 3 high-value bounties
     let deadline = s.env.ledger().timestamp() + 100_000;
-    s.escrow_client.lock_funds(&s.depositor, &100, &high_value, &deadline);
+    s.escrow_client
+        .lock_funds(&s.depositor, &100, &high_value, &deadline);
     s.advance_time();
-    s.escrow_client.lock_funds(&s.depositor, &200, &high_value, &deadline);
+    s.escrow_client
+        .lock_funds(&s.depositor, &200, &high_value, &deadline);
     s.advance_time();
-    s.escrow_client.lock_funds(&s.depositor, &300, &high_value, &deadline);
-    
+    s.escrow_client
+        .lock_funds(&s.depositor, &300, &high_value, &deadline);
+
     assert_eq!(s.token_client.balance(&s.escrow_id), high_value * 3);
-    
+
     // Pause
     s.advance_time();
     s.pause_all("High value upgrade prep");
-    
+
     // "Upgrade" dummy step
-    s.env.as_contract(&s.escrow_id, || crate::upgrade_safety::simulate_upgrade(&s.env));
-    
+    s.env.as_contract(&s.escrow_id, || {
+        crate::upgrade_safety::simulate_upgrade(&s.env)
+    });
+
     // Unpause
     s.advance_time();
     s.unpause_all();
-    
+
     // Release
     s.advance_time();
     s.escrow_client.release_funds(&100, &s.contributor);
@@ -683,7 +741,7 @@ fn test_upgrade_with_high_value_bounties() {
     s.escrow_client.release_funds(&200, &s.contributor);
     s.advance_time();
     s.escrow_client.release_funds(&300, &s.contributor);
-    
+
     assert_eq!(s.token_client.balance(&s.escrow_id), 0);
     assert_eq!(s.token_client.balance(&s.contributor), high_value * 3);
 }

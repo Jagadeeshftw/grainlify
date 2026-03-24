@@ -977,11 +977,7 @@ impl ProgramEscrowContract {
             panic!("Amount must be greater than zero");
         }
 
-        let mut program_data: ProgramData = env
-            .storage()
-            .instance()
-            .get(&PROGRAM_DATA)
-            .unwrap();
+        let mut program_data: ProgramData = env.storage().instance().get(&PROGRAM_DATA).unwrap();
 
         // Update balances
         program_data.total_funds += amount;
@@ -1439,14 +1435,14 @@ impl ProgramEscrowContract {
         reentrancy_guard::set_entered(&env);
 
         // 2. Contract must be initialized
-        let program_data: ProgramData = env
-            .storage()
-            .instance()
-            .get(&PROGRAM_DATA)
-            .unwrap_or_else(|| {
-                reentrancy_guard::clear_entered(&env);
-                panic!("Program not initialized")
-            });
+        let program_data: ProgramData =
+            env.storage()
+                .instance()
+                .get(&PROGRAM_DATA)
+                .unwrap_or_else(|| {
+                    reentrancy_guard::clear_entered(&env);
+                    panic!("Program not initialized")
+                });
 
         // 3. Operational state: paused
         if Self::check_paused(&env, symbol_short!("release")) {
@@ -1557,14 +1553,14 @@ impl ProgramEscrowContract {
         reentrancy_guard::set_entered(&env);
 
         // 2. Contract must be initialized
-        let program_data: ProgramData = env
-            .storage()
-            .instance()
-            .get(&PROGRAM_DATA)
-            .unwrap_or_else(|| {
-                reentrancy_guard::clear_entered(&env);
-                panic!("Program not initialized")
-            });
+        let program_data: ProgramData =
+            env.storage()
+                .instance()
+                .get(&PROGRAM_DATA)
+                .unwrap_or_else(|| {
+                    reentrancy_guard::clear_entered(&env);
+                    panic!("Program not initialized")
+                });
 
         // 3. Operational state: paused
         if Self::check_paused(&env, symbol_short!("release")) {
