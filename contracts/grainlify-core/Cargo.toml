@@ -4,11 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-# Use rlib only to avoid Windows "export ordinal too large" when this crate
-# is built as a dependency for host targets (e.g. tests). Build the WASM contract
-# via a dedicated contract crate or: cargo build -p grainlify-core --target wasm32-unknown-unknown
-# with cdylib added back if needed for deployment.
-crate-type = ["rlib"]
+# Keep `rlib` for host-side dependency builds/tests and emit `cdylib` so
+# CI contract jobs can produce `target/.../release/grainlify_core.wasm`.
+crate-type = ["cdylib", "rlib"]
 
 [features]
 default = ["contract"]
