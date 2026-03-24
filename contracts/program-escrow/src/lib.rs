@@ -156,6 +156,8 @@ const MAINTENANCE_MODE_CHANGED: Symbol = symbol_short!("MaintSt");
 const PROGRAM_RISK_FLAGS_UPDATED: Symbol = symbol_short!("pr_risk");
 const PROGRAM_REGISTRY: Symbol = symbol_short!("ProgReg");
 const PROGRAM_REGISTERED: Symbol = symbol_short!("ProgRgd");
+const DISPUTE_OPENED: Symbol = symbol_short!("Dispute");
+const DISPUTE_RESOLVED: Symbol = symbol_short!("DisResolv");
 
 // Storage keys
 const PROGRAM_DATA: Symbol = symbol_short!("ProgData");
@@ -376,6 +378,7 @@ pub enum DataKey {
     MaintenanceMode,                 // bool flag
     ProgramDependencies(String),     // program_id -> Vec<String>
     DependencyStatus(String),        // program_id -> DependencyStatus
+    Dispute(String),                 // program_id -> DisputeRecord
 }
 
 #[contracttype]
@@ -470,6 +473,54 @@ pub enum DependencyStatus {
     Pending,
     Verified,
     Rejected,
+}
+
+// ========================================================================
+// Dispute Resolution Data Structures
+// ========================================================================
+
+/// Dispute status enumeration
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DisputeStatus {
+    None,       // No dispute
+    Open,       // Dispute is open and active
+    Resolved,   // Dispute has been resolved
+}
+
+/// Dispute record containing all information about a dispute
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeRecord {
+    pub status: DisputeStatus,
+    pub opened_at: u64,
+    pub opened_by: Address,
+    pub reason: String,
+    pub resolved_at: Option<u64>,
+    pub resolved_by: Option<Address>,
+    pub resolution_notes: Option<String>,
+}
+
+/// Event emitted when a dispute is opened
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeOpenedEvent {
+    pub version: u32,
+    pub program_id: String,
+    pub opened_by: Address,
+    pub reason: String,
+    pub timestamp: u64,
+}
+
+/// Event emitted when a dispute is resolved
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeResolvedEvent {
+    pub version: u32,
+    pub program_id: String,
+    pub resolved_by: Address,
+    pub resolution_notes: Option<String>,
+    pub timestamp: u64,
 }
 
 #[contracttype]
@@ -1413,6 +1464,194 @@ impl ProgramEscrowContract {
             .unwrap_or_else(|| panic!("Not initialized"));
         admin.require_auth();
     }
+
+    // ========================================================================
+    // Dispute Resolution Functions
+    // ========================================================================
+
+    /// Open a dispute on the program, blocking all payouts until resolved
+    ///
+    /// # Arguments
+    /// * `program_id` - The program to dispute
+    /// * `reason` - Reason for opening the dispute
+    ///
+    /// # Security
+    /// - Only admin or authorized payout key can open disputes
+    /// - Once opened, all payout operations are blocked
+    /// - Emits DisputeOpenedEvent
+    ///
+    /// # Returns
+    /// The created DisputeRecord
+    pub fn open_dispute(env: Env, program_id: String, reason: String) -> DisputeRecord {
+        // Validate reason is not empty
+        if reason.is_empty() {
+            panic!("Dispute reason cannot be empty");
+        }
+
+        // Get program data to verify program exists
+        let program_data = Self::get_program_data_by_id(&env, &program_id);
+
+        // Authorization: admin or authorized payout key can open disputes
+        let admin: Option<Address> = env.storage().instance().get(&DataKey::Admin);
+        let caller = env.invoker();
+        
+        let authorized = if let Some(admin_addr) = admin {
+            caller == admin_addr || caller == program_data.authorized_payout_key
+        } else {
+            caller == program_data.authorized_payout_key
+        };
+
+        if !authorized {
+            panic!("Unauthorized: only admin or authorized payout key can open disputes");
+        }
+
+        // Check if dispute is already open
+        let dispute_key = DataKey::Dispute(program_id.clone());
+        if env.storage().instance().has(&dispute_key) {
+            let existing: DisputeRecord = env.storage().instance().get(&dispute_key).unwrap();
+            if existing.status == DisputeStatus::Open {
+                panic!("Dispute already open for this program");
+            }
+        }
+
+        // Create dispute record
+        let timestamp = env.ledger().timestamp();
+        let dispute_record = DisputeRecord {
+            status: DisputeStatus::Open,
+            opened_at: timestamp,
+            opened_by: caller.clone(),
+            reason: reason.clone(),
+            resolved_at: None,
+            resolved_by: None,
+            resolution_notes: None,
+        };
+
+        // Store dispute record
+        env.storage().instance().set(&dispute_key, &dispute_record);
+
+        // Emit event
+        env.events().publish(
+            (DISPUTE_OPENED, program_id.clone()),
+            DisputeOpenedEvent {
+                version: EVENT_VERSION_V2,
+                program_id,
+                opened_by: caller,
+                reason,
+                timestamp,
+            },
+        );
+
+        dispute_record
+    }
+
+    /// Resolve an open dispute, allowing payouts to resume
+    ///
+    /// # Arguments
+    /// * `program_id` - The program with the dispute
+    /// * `resolution_notes` - Optional notes about the resolution
+    ///
+    /// # Security
+    /// - Only admin can resolve disputes
+    /// - Must have an open dispute to resolve
+    /// - Emits DisputeResolvedEvent
+    ///
+    /// # Returns
+    /// The updated DisputeRecord
+    pub fn resolve_dispute(env: Env, program_id: String, resolution_notes: Option<String>) -> DisputeRecord {
+        // Get program data to verify program exists
+        let _program_data = Self::get_program_data_by_id(&env, &program_id);
+
+        // Authorization: only admin can resolve disputes
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .unwrap_or_else(|| panic!("Not initialized"));
+        admin.require_auth();
+
+        // Get existing dispute record
+        let dispute_key = DataKey::Dispute(program_id.clone());
+        let mut dispute_record: DisputeRecord = env
+            .storage()
+            .instance()
+            .get(&dispute_key)
+            .unwrap_or_else(|| panic!("No dispute found for this program"));
+
+        // Verify dispute is open
+        if dispute_record.status != DisputeStatus::Open {
+            panic!("Dispute is not open");
+        }
+
+        // Update dispute record
+        let timestamp = env.ledger().timestamp();
+        dispute_record.status = DisputeStatus::Resolved;
+        dispute_record.resolved_at = Some(timestamp);
+        dispute_record.resolved_by = Some(admin.clone());
+        dispute_record.resolution_notes = resolution_notes.clone();
+
+        // Store updated dispute record
+        env.storage().instance().set(&dispute_key, &dispute_record);
+
+        // Emit event
+        env.events().publish(
+            (DISPUTE_RESOLVED, program_id.clone()),
+            DisputeResolvedEvent {
+                version: EVENT_VERSION_V2,
+                program_id,
+                resolved_by: admin,
+                resolution_notes,
+                timestamp,
+            },
+        );
+
+        dispute_record
+    }
+
+    /// Get the current dispute status for a program
+    ///
+    /// # Arguments
+    /// * `program_id` - The program to check
+    ///
+    /// # Returns
+    /// The DisputeRecord (with status None if no dispute exists)
+    pub fn get_dispute_status(env: Env, program_id: String) -> DisputeRecord {
+        let dispute_key = DataKey::Dispute(program_id.clone());
+        
+        if env.storage().instance().has(&dispute_key) {
+            env.storage().instance().get(&dispute_key).unwrap()
+        } else {
+            // Return default record with None status
+            DisputeRecord {
+                status: DisputeStatus::None,
+                opened_at: 0,
+                opened_by: env.current_contract_address(),
+                reason: String::from_str(&env, ""),
+                resolved_at: None,
+                resolved_by: None,
+                resolution_notes: None,
+            }
+        }
+    }
+
+    /// Check if a program has an open dispute (internal helper)
+    ///
+    /// # Arguments
+    /// * `env` - The environment
+    /// * `program_id` - The program to check
+    ///
+    /// # Returns
+    /// true if dispute is open, false otherwise
+    fn is_disputed(env: &Env, program_id: &String) -> bool {
+        let dispute_key = DataKey::Dispute(program_id.clone());
+        
+        if env.storage().instance().has(&dispute_key) {
+            let dispute: DisputeRecord = env.storage().instance().get(&dispute_key).unwrap();
+            dispute.status == DisputeStatus::Open
+        } else {
+            false
+        }
+    }
+
     // ========================================================================
     // Payout Functions
     // ========================================================================
@@ -1430,6 +1669,7 @@ impl ProgramEscrowContract {
         // 1. Reentrancy guard
         // 2. Contract initialized
         // 3. Paused (operational state)
+        // 3b. Dispute check
         // 4. Authorization
         // 5. Input validation (batch size, amounts)
         // 6. Business logic (sufficient balance)
@@ -1452,6 +1692,12 @@ impl ProgramEscrowContract {
         if Self::check_paused(&env, symbol_short!("release")) {
             reentrancy_guard::clear_entered(&env);
             panic!("Funds Paused");
+        }
+
+        // 3b. Check for open dispute (blocks all payouts)
+        if Self::is_disputed(&env, &program_data.program_id) {
+            reentrancy_guard::clear_entered(&env);
+            panic!("Payout blocked: dispute is open");
         }
 
         // 4. Authorization
@@ -1548,6 +1794,7 @@ impl ProgramEscrowContract {
         // 1. Reentrancy guard
         // 2. Contract initialized
         // 3. Paused (operational state)
+        // 3b. Dispute check
         // 4. Authorization
         // 5. Input validation (amount)
         // 6. Business logic (sufficient balance)
@@ -1570,6 +1817,12 @@ impl ProgramEscrowContract {
         if Self::check_paused(&env, symbol_short!("release")) {
             reentrancy_guard::clear_entered(&env);
             panic!("Funds Paused");
+        }
+
+        // 3b. Check for open dispute (blocks all payouts)
+        if Self::is_disputed(&env, &program_data.program_id) {
+            reentrancy_guard::clear_entered(&env);
+            panic!("Payout blocked: dispute is open");
         }
 
         // 4. Authorization
@@ -1722,6 +1975,12 @@ impl ProgramEscrowContract {
         if Self::check_paused(&env, symbol_short!("release")) {
             reentrancy_guard::clear_entered(&env);
             panic!("Funds Paused");
+        }
+
+        // Check for open dispute (blocks all releases)
+        if Self::is_disputed(&env, &program_data.program_id) {
+            reentrancy_guard::clear_entered(&env);
+            panic!("Release blocked: dispute is open");
         }
 
         let mut schedules: Vec<ProgramReleaseSchedule> = env
@@ -2203,6 +2462,11 @@ impl ProgramEscrowContract {
 
         program_data.authorized_payout_key.require_auth();
 
+        // Check for open dispute (blocks all releases)
+        if Self::is_disputed(&env, &program_data.program_id) {
+            panic!("Release blocked: dispute is open");
+        }
+
         let caller = program_data.authorized_payout_key.clone();
         let now = env.ledger().timestamp();
         let mut released_schedule: Option<ProgramReleaseSchedule> = None;
@@ -2262,6 +2526,12 @@ impl ProgramEscrowContract {
     pub fn release_prog_schedule_automatic(env: Env, schedule_id: u64) {
         let mut schedules = Self::get_release_schedules(env.clone());
         let program_data = Self::get_program_info(env.clone());
+
+        // Check for open dispute (blocks all releases)
+        if Self::is_disputed(&env, &program_data.program_id) {
+            panic!("Release blocked: dispute is open");
+        }
+
         let now = env.ledger().timestamp();
         let mut released_schedule: Option<ProgramReleaseSchedule> = None;
 
