@@ -94,7 +94,11 @@ fn replay_old_nonce_rejected_after_multiple_increments() {
     // All previous nonces must be rejected
     for stale in 0u64..3 {
         let err = validate_and_increment_nonce(&e, &signer, stale).unwrap_err();
-        assert_eq!(err, NonceError::InvalidNonce, "stale nonce {stale} should be rejected");
+        assert_eq!(
+            err,
+            NonceError::InvalidNonce,
+            "stale nonce {stale} should be rejected"
+        );
     }
 }
 
@@ -116,7 +120,11 @@ fn failed_validation_does_not_advance_nonce() {
     let signer = addr(&e);
 
     let _ = validate_and_increment_nonce(&e, &signer, 99);
-    assert_eq!(get_nonce(&e, &signer), 0, "nonce must stay at 0 after rejection");
+    assert_eq!(
+        get_nonce(&e, &signer),
+        0,
+        "nonce must stay at 0 after rejection"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -187,8 +195,7 @@ fn domain_replay_rejected() {
 
     validate_and_increment_nonce_with_domain(&e, &signer, domain.clone(), 0).unwrap();
 
-    let err =
-        validate_and_increment_nonce_with_domain(&e, &signer, domain.clone(), 0).unwrap_err();
+    let err = validate_and_increment_nonce_with_domain(&e, &signer, domain.clone(), 0).unwrap_err();
     assert_eq!(err, NonceError::InvalidNonce);
 }
 
