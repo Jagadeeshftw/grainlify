@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 env:
-  RUST_VERSION: 1.85.0
+  RUST_VERSION: 1.88.0
   STELLAR_CLI_VERSION: 22.5.0
 
 jobs:
