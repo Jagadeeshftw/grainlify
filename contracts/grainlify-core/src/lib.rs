@@ -1500,6 +1500,7 @@ mod test {
     // Include end-to-end upgrade and migration tests
     pub mod e2e_upgrade_migration_tests;
     pub mod invariant_entrypoints_tests;
+    pub mod nonce_tests;
     pub mod upgrade_rollback_tests;
 
     // WASM for testing
