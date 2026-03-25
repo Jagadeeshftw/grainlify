@@ -76,7 +76,6 @@ mod test_batch_failure_modes {
             depositor,
             amount,
             deadline,
-            non_transferable_rewards: false,
         }
     }
 
@@ -283,7 +282,6 @@ mod test_batch_failure_modes {
                 depositor,
                 amount: 100,
                 deadline: 9_999_999,
-                non_transferable_rewards: false,
             },
         ];
 

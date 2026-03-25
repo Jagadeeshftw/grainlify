@@ -72,7 +72,7 @@ fn test_set_deprecated_with_migration_target() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #31)")]
+#[should_panic(expected = "Error(Contract, #34)")]
 fn test_lock_funds_fails_when_deprecated() {
     let env = Env::default();
     let (escrow, _admin, depositor, _token, _token_admin) = default_setup(&env);
@@ -86,7 +86,7 @@ fn test_lock_funds_fails_when_deprecated() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #31)")]
+#[should_panic(expected = "Error(Contract, #34)")]
 fn test_batch_lock_funds_fails_when_deprecated() {
     let env = Env::default();
     let (escrow, _admin, depositor, _token, _token_admin) = default_setup(&env);

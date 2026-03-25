@@ -46,6 +46,13 @@ Jurisdiction-aware tagging/configuration for escrows and programs is documented 
 
 - [`contracts/JURISDICTION_SEGMENTATION.md`](./contracts/JURISDICTION_SEGMENTATION.md)
 
+## Program Escrow Search
+
+Search helper behavior and indexing assumptions for the Soroban
+`program-escrow` crate are documented in:
+
+- [`contracts/program-escrow/README.md`](./contracts/program-escrow/README.md)
+
 ### Install Soroban CLI
 ```bash
 cargo install --locked soroban-cli

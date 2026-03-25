@@ -13,6 +13,43 @@ A Soroban smart contract for managing program-level escrow funds for hackathons 
 - **Authorization**: Only authorized payout key can trigger payouts
 - **Event Emission**: All operations emit events for off-chain tracking
 - **Payout History**: Maintains a complete history of all payouts
+- **Dispute Resolution**: Admin-controlled dispute lifecycle that blocks payouts while a dispute is open
+
+## Dispute Lifecycle
+
+A dispute can be raised by the contract admin to freeze all payout operations pending investigation.
+
+```text
+(no dispute) ──open_dispute()──► Open ──resolve_dispute()──► Resolved
+                                   │
+                          single_payout()  ← BLOCKED
+                          batch_payout()   ← BLOCKED
+```
+
+### Entrypoints
+
+| Function | Auth | Description |
+|---|---|---|
+| `open_dispute(reason)` | Admin | Opens a dispute; blocks all payouts |
+| `resolve_dispute(notes)` | Admin | Resolves the open dispute; unblocks payouts |
+| `get_dispute()` | Public (view) | Returns the current `DisputeRecord`, if any |
+
+### Rules
+
+- Only **one active dispute** at a time. A second `open_dispute` while one is `Open` panics.
+- `resolve_dispute` on a non-open record panics.
+- After a dispute is `Resolved`, a new dispute can be opened (fresh incident).
+- `lock_program_funds` is **not** blocked by a dispute — only payout operations are.
+- Dispute state is stored in instance storage under `DataKey::Dispute`.
+
+### Events
+
+| Symbol | Payload | Trigger |
+|---|---|---|
+| `DspOpen` | `DisputeOpenedEvent` | `open_dispute()` |
+| `DspRslv` | `DisputeResolvedEvent` | `resolve_dispute()` |
+
+Both events carry `version: 2` for consistency with the rest of the event schema.
 
 ## Contract Structure
 

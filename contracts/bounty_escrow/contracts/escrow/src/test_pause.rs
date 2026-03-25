@@ -232,13 +232,13 @@ fn test_batch_lock_funds_while_paused_fails() {
             amount: 100,
             depositor: depositor.clone(),
             deadline,
-            },
+        },
         LockFundsItem {
             bounty_id: 2,
             amount: 100,
             depositor: depositor.clone(),
             deadline,
-            }
+        }
     ];
 
     let res = escrow_client.try_batch_lock_funds(&items);

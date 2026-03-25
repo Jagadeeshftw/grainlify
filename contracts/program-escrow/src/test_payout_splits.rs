@@ -17,6 +17,7 @@ use crate::{
     payout_splits::{
         BeneficiarySplit, SplitConfig, TOTAL_BASIS_POINTS,
         disable_split_config, execute_split_payout, get_split_config, preview_split, set_split_config,
+        SplitConfigSetEvent, SplitPayoutEvent,
     },
     DataKey, ProgramData, PROGRAM_DATA,
 };
@@ -203,49 +204,122 @@ fn test_set_split_config_rejects_zero_share() {
 }
 
 // ── execute_split_payout ──────────────────────────────────────────────────────
-// ── preview_split ─────────────────────────────────────────────────────────────
 
 #[test]
-fn test_preview_split_no_transfer() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let payout_key = Address::generate(&env);
-    let token_admin = Address::generate(&env);
-    let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
-    let token = token_contract.address();
-    let contract_id = env.register_contract(None, crate::ProgramEscrowContract);
-    let r1 = Address::generate(&env);
-    let r2 = Address::generate(&env);
-    let program_id = String::from_str(&env, "Preview");
+fn test_execute_split_payout_success_three_beneficiaries() {
+    let s = setup();
+    let env = &s.env;
+    let r1 = Address::generate(env);
+    let r2 = Address::generate(env);
+    let r3 = Address::generate(env);
 
+    let beneficiaries = vec![
+        env,
+        BeneficiarySplit { recipient: r1.clone(), share_bps: 5_000 },
+        BeneficiarySplit { recipient: r2.clone(), share_bps: 3_000 },
+        BeneficiarySplit { recipient: r3.clone(), share_bps: 2_000 },
+    ];
+
+    let contract_id = env.register_contract(None, crate::ProgramEscrowContract);
     env.as_contract(&contract_id, || {
         let program_data = ProgramData {
-            program_id: program_id.clone(),
-            total_funds: 1_000,
-            remaining_balance: 1_000,
-            authorized_payout_key: payout_key.clone(),
-            payout_history: vec![&env],
-            token_address: token.clone(),
+            program_id: s.program_id.clone(),
+            total_funds: 10_000,
+            remaining_balance: 10_000,
+            authorized_payout_key: s.payout_key.clone(),
+            payout_history: vec![env],
+            token_address: s.token.clone(),
             initial_liquidity: 0,
+            risk_flags: 0,
+            reference_hash: None,
         };
         env.storage().instance().set(&PROGRAM_DATA, &program_data);
+        set_split_config(env, &s.program_id, beneficiaries);
 
-        let bens = vec![
-            &env,
-            BeneficiarySplit { recipient: r1.clone(), share_bps: 8_000 },
-            BeneficiarySplit { recipient: r2.clone(), share_bps: 2_000 },
-        ];
-        set_split_config(&env, &program_id, bens);
-
-        let preview = preview_split(&env, &program_id, 1_000);
-        // share_bps field repurposed to hold computed amount
-        assert_eq!(preview.get(0).unwrap().share_bps, 800);
-        assert_eq!(preview.get(1).unwrap().share_bps, 200);
-
-        // Balance must be unchanged (no transfers)
-        let pd: ProgramData = env.storage().instance().get(&PROGRAM_DATA).unwrap();
-        assert_eq!(pd.remaining_balance, 1_000);
+        let result = execute_split_payout(env, &s.program_id, 1_000);
+        assert_eq!(result.total_distributed, 1_000);
+        assert_eq!(result.recipient_count, 3);
+        assert_eq!(result.remaining_balance, 9_000);
     });
+
+    let token_client = token::Client::new(env, &s.token);
+    assert_eq!(token_client.balance(&r1), 500);
+    assert_eq!(token_client.balance(&r2), 300);
+    assert_eq!(token_client.balance(&r3), 200);
 }
 
-// ── Single-beneficiary edge case ─────────────────────────────────────────────
+#[test]
+fn test_execute_split_payout_dust_distribution() {
+    let s = setup();
+    let env = &s.env;
+    let r1 = Address::generate(env);
+    let r2 = Address::generate(env);
+
+    let beneficiaries = vec![
+        env,
+        BeneficiarySplit { recipient: r1.clone(), share_bps: 3_333 },
+        BeneficiarySplit { recipient: r2.clone(), share_bps: 6_667 },
+    ];
+
+    let contract_id = env.register_contract(None, crate::ProgramEscrowContract);
+    env.as_contract(&contract_id, || {
+        let program_data = ProgramData {
+            program_id: s.program_id.clone(),
+            total_funds: 10_000,
+            remaining_balance: 10_000,
+            authorized_payout_key: s.payout_key.clone(),
+            payout_history: vec![env],
+            token_address: s.token.clone(),
+            initial_liquidity: 0,
+            risk_flags: 0,
+            reference_hash: None,
+        };
+        env.storage().instance().set(&PROGRAM_DATA, &program_data);
+        set_split_config(env, &s.program_id, beneficiaries);
+
+        // 100 * 0.3333 = 33.33 -> 33
+        // 100 * 0.6667 = 66.67 -> 66
+        // Total = 99. Dust = 1.
+        // Index 0 (r1) should get 33 + 1 = 34.
+        let result = execute_split_payout(env, &s.program_id, 100);
+        assert_eq!(result.total_distributed, 100);
+        assert_eq!(result.remaining_balance, 9_900);
+    });
+
+    let token_client = token::Client::new(env, &s.token);
+    assert_eq!(token_client.balance(&r1), 34); 
+    assert_eq!(token_client.balance(&r2), 66);
+}
+
+#[test]
+#[should_panic(expected = "SplitPayout: split config is disabled")]
+fn test_execute_split_payout_fails_when_disabled() {
+    let s = setup();
+    let env = &s.env;
+    let r1 = Address::generate(env);
+
+    let beneficiaries = vec![
+        env,
+        BeneficiarySplit { recipient: r1.clone(), share_bps: 10_000 },
+    ];
+
+    let contract_id = env.register_contract(None, crate::ProgramEscrowContract);
+    env.as_contract(&contract_id, || {
+        let program_data = ProgramData {
+            program_id: s.program_id.clone(),
+            total_funds: 10_000,
+            remaining_balance: 10_000,
+            authorized_payout_key: s.payout_key.clone(),
+            payout_history: vec![env],
+            token_address: s.token.clone(),
+            initial_liquidity: 0,
+            risk_flags: 0,
+            reference_hash: None,
+        };
+        env.storage().instance().set(&PROGRAM_DATA, &program_data);
+        set_split_config(env, &s.program_id, beneficiaries);
+        disable_split_config(env, &s.program_id);
+
+        execute_split_payout(env, &s.program_id, 1_000);
+    });
+}

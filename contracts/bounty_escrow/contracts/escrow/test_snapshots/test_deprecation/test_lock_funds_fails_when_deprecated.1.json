@@ -966,6 +966,26 @@
       "event": {
         "ext": "v0",
         "contract_id": "0000000000000000000000000000000000000000000000000000000000000005",
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "log"
+              }
+            ],
+            "data": {
+              "string": "admin ok"
+            }
+          }
+        }
+      },
+      "failed_call": true
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000005",
         "type_": "contract",
         "body": {
           "v0": {
@@ -1009,14 +1029,6 @@
                   },
                   "val": {
                     "u64": 0
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "version"
-                  },
-                  "val": {
-                    "u32": 2
                   }
                 }
               ]

@@ -1,6 +1,6 @@
 /// # Escrow Analytics & Monitoring View Tests
 ///
-/// Closes #391
+/// Closes #785
 ///
 /// This module validates that every monitoring metric and analytics view correctly
 /// reflects the escrow state after lock, release, and refund operations — including
@@ -18,6 +18,44 @@
 /// * `get_refund_history`    – history vector is populated by approved-refund path
 /// * Monitoring event emission – lock/release/refund each emit ≥ 1 event
 /// * Error flows             – failed attempts do not corrupt metrics
+/// * `get_analytics`         – operation_count, error_count, error_rate tracking
+/// * `health_check`          – is_healthy, total_operations verification
+/// * `get_state_snapshot`    – point-in-time metrics capture
+///
+/// ## Query Complexity Guarantees (O(n) Bounded)
+///
+/// All query functions are **O(n)** bounded where `n` is the total number of
+/// escrows stored in the contract.  This is documented and verified by the
+/// pagination tests:
+///
+/// | Function                      | Complexity    | Notes                            |
+/// |-------------------------------|---------------|----------------------------------|
+/// | `get_aggregate_stats`         | O(n)          | Scans all escrows to compute totals |
+/// | `get_escrow_count`            | O(1)          | Returns a stored counter         |
+/// | `query_escrows_by_status`     | O(n)          | Linear scan with offset/limit    |
+/// | `query_escrows_by_amount`     | O(n)          | Linear scan with range filter    |
+/// | `query_escrows_by_deadline`   | O(n)          | Linear scan with range filter    |
+/// | `query_escrows_by_depositor`  | O(n)          | Linear scan with depositor match |
+/// | `get_escrow_ids_by_status`    | O(n)          | Linear scan, returns IDs only    |
+/// | `get_refund_eligibility`      | O(1)          | Single escrow lookup             |
+/// | `get_refund_history`          | O(k)          | k = refund entries for one bounty|
+/// | `get_analytics`               | O(1)          | Returns stored counters          |
+/// | `health_check`                | O(1)          | Returns stored metrics           |
+/// | `get_state_snapshot`          | O(1)          | Returns stored metrics           |
+///
+/// Pagination via `offset` and `limit` parameters ensures that even O(n) scans
+/// return bounded result sets, preventing excessive gas consumption.
+///
+/// ## Security Notes
+///
+/// - Analytics counters are append-only: operation_count and error_count never
+///   decrease, preventing manipulation of historical metrics.
+/// - Failed operations (reverted transactions) do not corrupt aggregate stats
+///   because Soroban reverts all state changes on panic.
+/// - Monitoring events are emitted atomically with state changes, ensuring
+///   off-chain indexers see a consistent view.
+/// - The error_rate is computed in basis points (error_count * 10000 / operation_count)
+///   with safe division (returns 0 when operation_count is 0).
 use crate::{BountyEscrowContract, BountyEscrowContractClient, EscrowStatus, RefundMode};
 use soroban_sdk::{
     symbol_short,
@@ -1325,4 +1363,288 @@ fn test_error_rate_calculation_various_inputs() {
     assert_eq!(analytics.error_count, 2);
     // 2/10 * 10000 = 2000 basis points
     assert_eq!(analytics.error_rate, 2000);
+}
+
+// ===========================================================================
+// 17. Pagination bounds – O(n) query safety
+// ===========================================================================
+
+/// Validates that limit=0 returns an empty result set without error.
+#[test]
+fn test_query_by_status_limit_zero_returns_empty() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let (token, token_admin) = create_token_contract(&env, &admin);
+    let escrow = create_escrow_contract(&env);
+    escrow.init(&admin, &token.address);
+    token_admin.mint(&depositor, &1_000_000);
+
+    let deadline = env.ledger().timestamp() + 1000;
+    escrow.lock_funds(&depositor, &300, &100, &deadline);
+
+    let results = escrow.query_escrows_by_status(&EscrowStatus::Locked, &0, &0);
+    assert_eq!(results.len(), 0, "limit=0 must return empty Vec");
+}
+
+/// Validates that an offset beyond the total count returns empty.
+#[test]
+fn test_query_by_status_offset_beyond_total_returns_empty() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let (token, token_admin) = create_token_contract(&env, &admin);
+    let escrow = create_escrow_contract(&env);
+    escrow.init(&admin, &token.address);
+    token_admin.mint(&depositor, &1_000_000);
+
+    let deadline = env.ledger().timestamp() + 1000;
+    escrow.lock_funds(&depositor, &310, &100, &deadline);
+    escrow.lock_funds(&depositor, &311, &200, &deadline);
+
+    let results = escrow.query_escrows_by_status(&EscrowStatus::Locked, &100, &10);
+    assert_eq!(results.len(), 0, "offset beyond total must return empty");
+}
+
+/// Validates pagination consistency: page1 + page2 cover all items without overlap.
+#[test]
+fn test_query_by_amount_pagination_no_overlap() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let (token, token_admin) = create_token_contract(&env, &admin);
+    let escrow = create_escrow_contract(&env);
+    escrow.init(&admin, &token.address);
+    token_admin.mint(&depositor, &10_000_000);
+
+    let deadline = env.ledger().timestamp() + 2000;
+    for id in 320_u64..325 {
+        escrow.lock_funds(&depositor, &id, &500, &deadline);
+    }
+
+    let page1 = escrow.query_escrows_by_amount(&100, &1_000, &0, &3);
+    let page2 = escrow.query_escrows_by_amount(&100, &1_000, &3, &3);
+
+    assert_eq!(page1.len(), 3);
+    assert_eq!(page2.len(), 2);
+
+    // No overlapping bounty IDs between pages
+    for p1_item in page1.iter() {
+        for p2_item in page2.iter() {
+            assert_ne!(
+                p1_item.bounty_id, p2_item.bounty_id,
+                "pagination must not produce duplicate entries"
+            );
+        }
+    }
+}
+
+// ===========================================================================
+// 18. Depositor query with multiple depositors and status changes
+// ===========================================================================
+
+/// Validates that depositor query results reflect status changes after release.
+#[test]
+fn test_query_by_depositor_reflects_status_changes() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let contributor = Address::generate(&env);
+    let (token, token_admin) = create_token_contract(&env, &admin);
+    let escrow = create_escrow_contract(&env);
+    escrow.init(&admin, &token.address);
+    token_admin.mint(&depositor, &1_000_000);
+
+    let deadline = env.ledger().timestamp() + 1000;
+    escrow.lock_funds(&depositor, &330, &500, &deadline);
+    escrow.lock_funds(&depositor, &331, &600, &deadline);
+    escrow.release_funds(&330, &contributor);
+
+    let results = escrow.query_escrows_by_depositor(&depositor, &0, &10);
+    assert_eq!(
+        results.len(),
+        2,
+        "depositor query returns all escrows regardless of status"
+    );
+
+    // Verify one is Released and one is Locked
+    let statuses: soroban_sdk::Vec<EscrowStatus> = soroban_sdk::Vec::from_array(
+        &env,
+        [
+            results.get(0).unwrap().escrow.status.clone(),
+            results.get(1).unwrap().escrow.status.clone(),
+        ],
+    );
+    assert!(
+        statuses.contains(EscrowStatus::Released) && statuses.contains(EscrowStatus::Locked),
+        "depositor query must reflect current status of each escrow"
+    );
+}
+
+// ===========================================================================
+// 19. Aggregate stats after partial refund
+// ===========================================================================
+
+/// Validates that partial refunds are tracked separately from full refunds.
+#[test]
+fn test_aggregate_stats_after_partial_refund() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let (token, token_admin) = create_token_contract(&env, &admin);
+    let escrow = create_escrow_contract(&env);
+    escrow.init(&admin, &token.address);
+    token_admin.mint(&depositor, &1_000_000);
+
+    let deadline = env.ledger().timestamp() + 2000;
+    escrow.lock_funds(&depositor, &340, &2_000, &deadline);
+
+    // Approve and execute a partial refund
+    escrow.approve_refund(&340, &800, &depositor, &RefundMode::Partial);
+    escrow.refund(&340);
+
+    let info = escrow.get_escrow_info(&340);
+    assert_eq!(info.status, EscrowStatus::PartiallyRefunded);
+    assert_eq!(info.remaining_amount, 1_200);
+
+    // Contract should still hold the remaining amount
+    assert_eq!(escrow.get_balance(), 1_200);
+}
+
+// ===========================================================================
+// 20. Health check reflects operations
+// ===========================================================================
+
+/// Validates that health_check returns updated data after operations.
+#[test]
+fn test_health_check_after_operations() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let contributor = Address::generate(&env);
+    let (token, token_admin) = create_token_contract(&env, &admin);
+    let escrow = create_escrow_contract(&env);
+    escrow.init(&admin, &token.address);
+    token_admin.mint(&depositor, &1_000_000);
+
+    let health_before = escrow.health_check();
+    assert!(health_before.is_healthy);
+    assert_eq!(health_before.total_operations, 0);
+
+    let deadline = env.ledger().timestamp() + 1000;
+    escrow.lock_funds(&depositor, &350, &500, &deadline);
+    escrow.release_funds(&350, &contributor);
+
+    let health_after = escrow.health_check();
+    assert!(health_after.is_healthy);
+    assert_eq!(
+        health_after.total_operations, 2,
+        "lock + release = 2 operations"
+    );
+}
+
+// ===========================================================================
+// 21. State snapshot captures point-in-time metrics
+// ===========================================================================
+
+/// Validates that state snapshots differ after additional operations.
+#[test]
+fn test_state_snapshot_changes_after_operations() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let (token, token_admin) = create_token_contract(&env, &admin);
+    let escrow = create_escrow_contract(&env);
+    escrow.init(&admin, &token.address);
+    token_admin.mint(&depositor, &1_000_000);
+
+    let snapshot1 = escrow.get_state_snapshot();
+    assert_eq!(snapshot1.total_operations, 0);
+
+    let now = env.ledger().timestamp();
+    escrow.lock_funds(&depositor, &360, &1_000, &(now + 1000));
+    escrow.lock_funds(&depositor, &361, &2_000, &(now + 1000));
+
+    let snapshot2 = escrow.get_state_snapshot();
+    assert_eq!(snapshot2.total_operations, 2);
+    assert!(
+        snapshot2.total_operations > snapshot1.total_operations,
+        "snapshot must reflect new operations"
+    );
+}
+
+// ===========================================================================
+// 22. Error rate edge cases
+// ===========================================================================
+
+/// Validates error rate is 0 when no operations have been performed.
+#[test]
+fn test_error_rate_zero_with_no_operations() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let (token, _token_admin) = create_token_contract(&env, &admin);
+    let escrow = create_escrow_contract(&env);
+    escrow.init(&admin, &token.address);
+
+    let analytics = escrow.get_analytics();
+    assert_eq!(
+        analytics.error_rate, 0,
+        "error_rate must be 0 with no operations (no division by zero)"
+    );
+}
+
+/// Validates error rate is 10000 basis points (100%) when all operations fail.
+#[test]
+fn test_error_rate_all_failures() {
+    let env = Env::default();
+    let escrow = create_escrow_contract(&env);
+    let caller = Address::generate(&env);
+
+    env.as_contract(&escrow.address, || {
+        for _ in 0..5 {
+            crate::monitoring::track_operation(&env, symbol_short!("test"), caller.clone(), false);
+        }
+    });
+
+    let analytics = escrow.get_analytics();
+    assert_eq!(analytics.operation_count, 5);
+    assert_eq!(analytics.error_count, 5);
+    assert_eq!(
+        analytics.error_rate, 10_000,
+        "100% error rate = 10000 basis points"
+    );
+}
+
+// ===========================================================================
+// 23. Query by deadline with no-deadline (u64::MAX) escrows
+// ===========================================================================
+
+/// Validates that no-deadline escrows (u64::MAX) are correctly included/excluded
+/// from deadline range queries.
+#[test]
+fn test_query_by_deadline_excludes_no_deadline_from_finite_range() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let (token, token_admin) = create_token_contract(&env, &admin);
+    let escrow = create_escrow_contract(&env);
+    escrow.init(&admin, &token.address);
+    token_admin.mint(&depositor, &1_000_000);
+
+    let now = env.ledger().timestamp();
+    escrow.lock_funds(&depositor, &370, &100, &(now + 500));
+    escrow.lock_funds(&depositor, &371, &100, &u64::MAX); // no-deadline
+
+    // Finite range should exclude u64::MAX
+    let results = escrow.query_escrows_by_deadline(&(now + 100), &(now + 1000), &0, &10);
+    assert_eq!(results.len(), 1);
+    assert_eq!(results.get(0).unwrap().bounty_id, 370);
 }

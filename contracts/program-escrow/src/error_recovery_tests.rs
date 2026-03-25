@@ -1591,3 +1591,1318 @@ fn test_zero_initial_backoff_with_multiplier() {
     assert_eq!(config.compute_backoff(1), 0);
     assert_eq!(config.compute_backoff(10), 0);
 }
+
+// ─────────────────────────────────────────────────────────
+// 29. Batch Recovery Configuration Tests
+// ─────────────────────────────────────────────────────────
+
+#[test]
+fn test_batch_recovery_config_default() {
+    let config = crate::error_recovery::BatchRecoveryConfig::default();
+    assert_eq!(config.max_retries, 3);
+    assert_eq!(config.auto_retry, false);
+    assert_eq!(config.max_batch_size, 100);
+    assert_eq!(config.rollback_enabled, true);
+    assert_eq!(config.recovery_timeout_secs, 86400);
+}
+
+#[test]
+fn test_batch_recovery_config_validation() {
+    // Valid config
+    let valid = crate::error_recovery::BatchRecoveryConfig::default();
+    assert!(valid.validate().is_ok());
+
+    // Invalid: max_retries too high
+    let invalid_retries = crate::error_recovery::BatchRecoveryConfig {
+        max_retries: 15,
+        ..crate::error_recovery::BatchRecoveryConfig::default()
+    };
+    assert!(invalid_retries.validate().is_err());
+
+    // Invalid: batch size 0
+    let invalid_batch_zero = crate::error_recovery::BatchRecoveryConfig {
+        max_batch_size: 0,
+        ..crate::error_recovery::BatchRecoveryConfig::default()
+    };
+    assert!(invalid_batch_zero.validate().is_err());
+
+    // Invalid: batch size too large
+    let invalid_batch_large = crate::error_recovery::BatchRecoveryConfig {
+        max_batch_size: 600,
+        ..crate::error_recovery::BatchRecoveryConfig::default()
+    };
+    assert!(invalid_batch_large.validate().is_err());
+
+    // Invalid: timeout too short
+    let invalid_timeout_short = crate::error_recovery::BatchRecoveryConfig {
+        recovery_timeout_secs: 100,
+        ..crate::error_recovery::BatchRecoveryConfig::default()
+    };
+    assert!(invalid_timeout_short.validate().is_err());
+
+    // Invalid: timeout too long
+    let invalid_timeout_long = crate::error_recovery::BatchRecoveryConfig {
+        recovery_timeout_secs: 700000,
+        ..crate::error_recovery::BatchRecoveryConfig::default()
+    };
+    assert!(invalid_timeout_long.validate().is_err());
+}
+
+#[test]
+fn test_set_and_get_batch_recovery_config() {
+    let (env, contract_id) = setup_env();
+    let config = crate::error_recovery::BatchRecoveryConfig {
+        max_retries: 5,
+        auto_retry: true,
+        max_batch_size: 50,
+        rollback_enabled: false,
+        recovery_timeout_secs: 172800,
+    };
+
+    env.as_contract(&contract_id, || {
+        let result = crate::error_recovery::set_batch_recovery_config(&env, config.clone());
+        assert!(result.is_ok());
+
+        let stored = crate::error_recovery::get_batch_recovery_config(&env);
+        assert_eq!(stored.max_retries, 5);
+        assert_eq!(stored.auto_retry, true);
+        assert_eq!(stored.max_batch_size, 50);
+        assert_eq!(stored.rollback_enabled, false);
+        assert_eq!(stored.recovery_timeout_secs, 172800);
+    });
+}
+
+// ─────────────────────────────────────────────────────────
+// 30. Batch State Storage Tests
+// ─────────────────────────────────────────────────────────
+
+#[test]
+fn test_store_batch_state_basic() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        let program_id = String::from_str(&env, "TestProgram");
+        let recipients = soroban_sdk::vec![&env, recipient1.clone(), recipient2.clone()];
+        let amounts = soroban_sdk::vec![&env, 1000i128, 2000i128];
+
+        let result = crate::error_recovery::store_batch_state(
+            &env,
+            program_id.clone(),
+            recipients,
+            amounts,
+            10000i128,
+            authorized.clone(),
+        );
+
+        assert!(result.is_ok());
+        let batch_id = result.unwrap();
+        assert!(batch_id > 0);
+
+        let state = crate::error_recovery::get_batch_state(&env, batch_id);
+        assert!(state.is_some());
+
+        let state = state.unwrap();
+        assert_eq!(state.batch_id, batch_id);
+        assert_eq!(state.program_id, program_id);
+        assert_eq!(state.original_balance, 10000);
+        assert_eq!(state.total_amount, 3000);
+        assert_eq!(state.successful_amount, 0);
+        assert_eq!(state.item_count, 2);
+        assert_eq!(state.pending_recovery, false);
+        assert_eq!(state.authorized_key, authorized);
+    });
+}
+
+#[test]
+fn test_store_batch_state_exceeds_max_size() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        // Set a small max batch size
+        let config = crate::error_recovery::BatchRecoveryConfig {
+            max_batch_size: 2,
+            ..crate::error_recovery::BatchRecoveryConfig::default()
+        };
+        let _ = crate::error_recovery::set_batch_recovery_config(&env, config);
+
+        let program_id = String::from_str(&env, "TestProgram");
+        let recipients = soroban_sdk::vec![
+            &env,
+            Address::generate(&env),
+            Address::generate(&env),
+            Address::generate(&env)
+        ];
+        let amounts = soroban_sdk::vec![&env, 1000i128, 2000i128, 3000i128];
+
+        let result = crate::error_recovery::store_batch_state(
+            &env,
+            program_id,
+            recipients,
+            amounts,
+            10000i128,
+            authorized,
+        );
+
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), crate::error_recovery::ERR_BATCH_SIZE_EXCEEDED);
+    });
+}
+
+#[test]
+fn test_get_batch_state_not_found() {
+    let (env, contract_id) = setup_env();
+
+    env.as_contract(&contract_id, || {
+        let state = crate::error_recovery::get_batch_state(&env, 99999);
+        assert!(state.is_none());
+    });
+}
+
+#[test]
+fn test_clear_batch_state() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        let program_id = String::from_str(&env, "TestProgram");
+        let recipients = soroban_sdk::vec![&env, recipient];
+        let amounts = soroban_sdk::vec![&env, 1000i128];
+
+        let batch_id = crate::error_recovery::store_batch_state(
+            &env,
+            program_id,
+            recipients,
+            amounts,
+            10000i128,
+            authorized,
+        ).unwrap();
+
+        // Verify it exists
+        assert!(crate::error_recovery::get_batch_state(&env, batch_id).is_some());
+
+        // Clear it
+        crate::error_recovery::clear_batch_state(&env, batch_id);
+
+        // Verify it's gone
+        assert!(crate::error_recovery::get_batch_state(&env, batch_id).is_none());
+    });
+}
+
+// ─────────────────────────────────────────────────────────
+// 31. Batch Item Status Tests
+// ─────────────────────────────────────────────────────────
+
+#[test]
+fn test_mark_item_success() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        let program_id = String::from_str(&env, "TestProgram");
+        let recipients = soroban_sdk::vec![&env, recipient.clone()];
+        let amounts = soroban_sdk::vec![&env, 1000i128];
+
+        let batch_id = crate::error_recovery::store_batch_state(
+            &env,
+            program_id,
+            recipients,
+            amounts,
+            10000i128,
+            authorized,
+        ).unwrap();
+
+        let result = crate::error_recovery::mark_item_success(&env, batch_id, 0);
+        assert!(result.is_ok());
+
+        let state = crate::error_recovery::get_batch_state(&env, batch_id).unwrap();
+        assert_eq!(state.successful_amount, 1000);
+
+        let item = state.items.get(0).unwrap();
+        assert_eq!(item.status, crate::error_recovery::BatchItemStatus::Success);
+    });
+}
+
+#[test]
+fn test_mark_item_failed() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        let program_id = String::from_str(&env, "TestProgram");
+        let recipients = soroban_sdk::vec![&env, recipient];
+        let amounts = soroban_sdk::vec![&env, 1000i128];
+
+        let batch_id = crate::error_recovery::store_batch_state(
+            &env,
+            program_id,
+            recipients,
+            amounts,
+            10000i128,
+            authorized,
+        ).unwrap();
+
+        let result = crate::error_recovery::mark_item_failed(&env, batch_id, 0, 500);
+        assert!(result.is_ok());
+
+        let state = crate::error_recovery::get_batch_state(&env, batch_id).unwrap();
+        assert_eq!(state.pending_recovery, true);
+
+        let item = state.items.get(0).unwrap();
+        assert_eq!(item.status, crate::error_recovery::BatchItemStatus::Failed);
+        assert_eq!(item.error_code, 500);
+    });
+}
+
+#[test]
+fn test_mark_item_rolled_back() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        let program_id = String::from_str(&env, "TestProgram");
+        let recipients = soroban_sdk::vec![&env, recipient];
+        let amounts = soroban_sdk::vec![&env, 1000i128];
+
+        let batch_id = crate::error_recovery::store_batch_state(
+            &env,
+            program_id,
+            recipients,
+            amounts,
+            10000i128,
+            authorized,
+        ).unwrap();
+
+        // First mark as success
+        crate::error_recovery::mark_item_success(&env, batch_id, 0).unwrap();
+
+        let state = crate::error_recovery::get_batch_state(&env, batch_id).unwrap();
+        assert_eq!(state.successful_amount, 1000);
+
+        // Then roll back
+        crate::error_recovery::mark_item_rolled_back(&env, batch_id, 0).unwrap();
+
+        let state = crate::error_recovery::get_batch_state(&env, batch_id).unwrap();
+        assert_eq!(state.successful_amount, 0);
+
+        let item = state.items.get(0).unwrap();
+        assert_eq!(item.status, crate::error_recovery::BatchItemStatus::RolledBack);
+    });
+}
+
+#[test]
+fn test_mark_item_invalid_index() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        let program_id = String::from_str(&env, "TestProgram");
+        let recipients = soroban_sdk::vec![&env, recipient];
+        let amounts = soroban_sdk::vec![&env, 1000i128];
+
+        let batch_id = crate::error_recovery::store_batch_state(
+            &env,
+            program_id,
+            recipients,
+            amounts,
+            10000i128,
+            authorized,
+        ).unwrap();
+
+        // Try to mark an item with invalid index
+        let result = crate::error_recovery::mark_item_success(&env, batch_id, 99);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), crate::error_recovery::ERR_BATCH_NOT_FOUND);
+    });
+}
+
+// ─────────────────────────────────────────────────────────
+// 32. Partial Failure Recovery Tests
+// ─────────────────────────────────────────────────────────
+
+#[test]
+fn test_get_failed_items() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+    let recipient3 = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        let program_id = String::from_str(&env, "TestProgram");
+        let recipients = soroban_sdk::vec![&env, recipient1, recipient2, recipient3];
+        let amounts = soroban_sdk::vec![&env, 1000i128, 2000i128, 3000i128];
+
+        let batch_id = crate::error_recovery::store_batch_state(
+            &env,
+            program_id,
+            recipients,
+            amounts,
+            10000i128,
+            authorized,
+        ).unwrap();
+
+        // Mark first as success, second as failed, third as pending
+        crate::error_recovery::mark_item_success(&env, batch_id, 0).unwrap();
+        crate::error_recovery::mark_item_failed(&env, batch_id, 1, 500).unwrap();
+        // Item 2 remains pending
+
+        let failed = crate::error_recovery::get_failed_items(&env, batch_id).unwrap();
+        assert_eq!(failed.len(), 1);
+        assert_eq!(failed.get(0).unwrap(), 1);
+    });
+}
+
+#[test]
+fn test_get_successful_items() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+    let recipient3 = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        let program_id = String::from_str(&env, "TestProgram");
+        let recipients = soroban_sdk::vec![&env, recipient1, recipient2, recipient3];
+        let amounts = soroban_sdk::vec![&env, 1000i128, 2000i128, 3000i128];
+
+        let batch_id = crate::error_recovery::store_batch_state(
+            &env,
+            program_id,
+            recipients,
+            amounts,
+            10000i128,
+            authorized,
+        ).unwrap();
+
+        // Mark first as success, second as failed, third as success
+        crate::error_recovery::mark_item_success(&env, batch_id, 0).unwrap();
+        crate::error_recovery::mark_item_failed(&env, batch_id, 1, 500).unwrap();
+        crate::error_recovery::mark_item_success(&env, batch_id, 2).unwrap();
+
+        let successful = crate::error_recovery::get_successful_items(&env, batch_id).unwrap();
+        assert_eq!(successful.len(), 2);
+        assert_eq!(successful.get(0).unwrap(), 0);
+        assert_eq!(successful.get(1).unwrap(), 2);
+    });
+}
+
+#[test]
+fn test_partial_batch_failure_tracking() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let recipients = soroban_sdk::vec![
+        &env,
+        Address::generate(&env),
+        Address::generate(&env),
+        Address::generate(&env),
+        Address::generate(&env),
+        Address::generate(&env),
+    ];
+
+    env.as_contract(&contract_id, || {
+        let program_id = String::from_str(&env, "TestProgram");
+        let amounts = soroban_sdk::vec![&env, 1000i128, 2000i128, 3000i128, 4000i128, 5000i128];
+
+        let batch_id = crate::error_recovery::store_batch_state(
+            &env,
+            program_id,
+            recipients,
+            amounts,
+            20000i128,
+            authorized,
+        ).unwrap();
+
+        // Simulate partial failure: items 0, 2, 4 succeed; 1, 3 fail
+        crate::error_recovery::mark_item_success(&env, batch_id, 0).unwrap();
+        crate::error_recovery::mark_item_failed(&env, batch_id, 1, 100).unwrap();
+        crate::error_recovery::mark_item_success(&env, batch_id, 2).unwrap();
+        crate::error_recovery::mark_item_failed(&env, batch_id, 3, 200).unwrap();
+        crate::error_recovery::mark_item_success(&env, batch_id, 4).unwrap();
+
+        let state = crate::error_recovery::get_batch_state(&env, batch_id).unwrap();
+
+        // Verify amounts
+        assert_eq!(state.successful_amount, 1000 + 3000 + 5000); // 9000
+        assert_eq!(state.total_amount, 15000);
+        assert_eq!(state.pending_recovery, true);
+
+        // Verify failed items count
+        let failed = crate::error_recovery::get_failed_items(&env, batch_id).unwrap();
+        assert_eq!(failed.len(), 2);
+
+        // Verify successful items count
+        let successful = crate::error_recovery::get_successful_items(&env, batch_id).unwrap();
+        assert_eq!(successful.len(), 3);
+    });
+}
+
+// ─────────────────────────────────────────────────────────
+// 33. Rollback Mechanism Tests
+// ─────────────────────────────────────────────────────────
+
+#[test]
+fn test_calculate_rollback_amount() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+    let recipient3 = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        let program_id = String::from_str(&env, "TestProgram");
+        let recipients = soroban_sdk::vec![&env, recipient1, recipient2, recipient3];
+        let amounts = soroban_sdk::vec![&env, 1000i128, 2000i128, 3000i128];
+
+        let batch_id = crate::error_recovery::store_batch_state(
+            &env,
+            program_id,
+            recipients,
+            amounts,
+            10000i128,
+            authorized,
+        ).unwrap();
+
+        // Only mark first two as success
+        crate::error_recovery::mark_item_success(&env, batch_id, 0).unwrap();
+        crate::error_recovery::mark_item_success(&env, batch_id, 1).unwrap();
+        // Third item fails
+        crate::error_recovery::mark_item_failed(&env, batch_id, 2, 500).unwrap();
+
+        let rollback_amount = crate::error_recovery::calculate_rollback_amount(&env, batch_id).unwrap();
+        assert_eq!(rollback_amount, 3000); // 1000 + 2000
+    });
+}
+
+#[test]
+fn test_calculate_rollback_no_successful_items() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        let program_id = String::from_str(&env, "TestProgram");
+        let recipients = soroban_sdk::vec![&env, recipient];
+        let amounts = soroban_sdk::vec![&env, 1000i128];
+
+        let batch_id = crate::error_recovery::store_batch_state(
+            &env,
+            program_id,
+            recipients,
+            amounts,
+            10000i128,
+            authorized,
+        ).unwrap();
+
+        // Only failure, no success
+        crate::error_recovery::mark_item_failed(&env, batch_id, 0, 500).unwrap();
+
+        let rollback_amount = crate::error_recovery::calculate_rollback_amount(&env, batch_id).unwrap();
+        assert_eq!(rollback_amount, 0);
+    });
+}
+
+#[test]
+fn test_prepare_rollback_success() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        let program_id = String::from_str(&env, "TestProgram");
+        let recipients = soroban_sdk::vec![&env, recipient1.clone(), recipient2.clone()];
+        let amounts = soroban_sdk::vec![&env, 1000i128, 2000i128];
+
+        let batch_id = crate::error_recovery::store_batch_state(
+            &env,
+            program_id,
+            recipients,
+            amounts,
+            10000i128,
+            authorized.clone(),
+        ).unwrap();
+
+        crate::error_recovery::mark_item_success(&env, batch_id, 0).unwrap();
+        crate::error_recovery::mark_item_success(&env, batch_id, 1).unwrap();
+
+        let result = crate::error_recovery::prepare_rollback(&env, batch_id, &authorized);
+        assert!(result.is_ok());
+
+        let rollback = result.unwrap();
+        assert_eq!(rollback.batch_id, batch_id);
+        assert_eq!(rollback.items_rolled_back, 2);
+        assert_eq!(rollback.amount_returned, 3000);
+        assert_eq!(rollback.affected_recipients.len(), 2);
+    });
+}
+
+#[test]
+fn test_prepare_rollback_unauthorized() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let impostor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        let program_id = String::from_str(&env, "TestProgram");
+        let recipients = soroban_sdk::vec![&env, recipient];
+        let amounts = soroban_sdk::vec![&env, 1000i128];
+
+        let batch_id = crate::error_recovery::store_batch_state(
+            &env,
+            program_id,
+            recipients,
+            amounts,
+            10000i128,
+            authorized,
+        ).unwrap();
+
+        crate::error_recovery::mark_item_success(&env, batch_id, 0).unwrap();
+
+        let result = crate::error_recovery::prepare_rollback(&env, batch_id, &impostor);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), crate::error_recovery::ERR_UNAUTHORIZED_RECOVERY);
+    });
+}
+
+#[test]
+fn test_prepare_rollback_no_successful_items() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        let program_id = String::from_str(&env, "TestProgram");
+        let recipients = soroban_sdk::vec![&env, recipient];
+        let amounts = soroban_sdk::vec![&env, 1000i128];
+
+        let batch_id = crate::error_recovery::store_batch_state(
+            &env,
+            program_id,
+            recipients,
+            amounts,
+            10000i128,
+            authorized.clone(),
+        ).unwrap();
+
+        // Only failure, no success
+        crate::error_recovery::mark_item_failed(&env, batch_id, 0, 500).unwrap();
+
+        let result = crate::error_recovery::prepare_rollback(&env, batch_id, &authorized);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), crate::error_recovery::ERR_NO_SUCCESSFUL_ITEMS);
+    });
+}
+
+#[test]
+fn test_rollback_disabled() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        // Disable rollback
+        let config = crate::error_recovery::BatchRecoveryConfig {
+            rollback_enabled: false,
+            ..crate::error_recovery::BatchRecoveryConfig::default()
+        };
+        let _ = crate::error_recovery::set_batch_recovery_config(&env, config);
+
+        let program_id = String::from_str(&env, "TestProgram");
+        let recipients = soroban_sdk::vec![&env, recipient];
+        let amounts = soroban_sdk::vec![&env, 1000i128];
+
+        let batch_id = crate::error_recovery::store_batch_state(
+            &env,
+            program_id,
+            recipients,
+            amounts,
+            10000i128,
+            authorized.clone(),
+        ).unwrap();
+
+        crate::error_recovery::mark_item_success(&env, batch_id, 0).unwrap();
+
+        let result = crate::error_recovery::calculate_rollback_amount(&env, batch_id);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), crate::error_recovery::ERR_ROLLBACK_DISABLED);
+    });
+}
+
+// ─────────────────────────────────────────────────────────
+// 34. Batch Integrity Verification Tests
+// ─────────────────────────────────────────────────────────
+
+#[test]
+fn test_verify_batch_integrity_valid() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+    let recipient3 = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        let program_id = String::from_str(&env, "TestProgram");
+        let recipients = soroban_sdk::vec![&env, recipient1, recipient2, recipient3];
+        let amounts = soroban_sdk::vec![&env, 1000i128, 2000i128, 3000i128];
+
+        let batch_id = crate::error_recovery::store_batch_state(
+            &env,
+            program_id,
+            recipients,
+            amounts,
+            10000i128,
+            authorized,
+        ).unwrap();
+
+        // Mark items with different statuses
+        crate::error_recovery::mark_item_success(&env, batch_id, 0).unwrap();
+        crate::error_recovery::mark_item_failed(&env, batch_id, 1, 500).unwrap();
+        // Item 2 remains pending
+
+        // Integrity should pass
+        assert!(crate::error_recovery::verify_batch_integrity(&env, batch_id));
+    });
+}
+
+#[test]
+fn test_verify_batch_integrity_all_success() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        let program_id = String::from_str(&env, "TestProgram");
+        let recipients = soroban_sdk::vec![&env, recipient1, recipient2];
+        let amounts = soroban_sdk::vec![&env, 1000i128, 2000i128];
+
+        let batch_id = crate::error_recovery::store_batch_state(
+            &env,
+            program_id,
+            recipients,
+            amounts,
+            10000i128,
+            authorized,
+        ).unwrap();
+
+        crate::error_recovery::mark_item_success(&env, batch_id, 0).unwrap();
+        crate::error_recovery::mark_item_success(&env, batch_id, 1).unwrap();
+
+        assert!(crate::error_recovery::verify_batch_integrity(&env, batch_id));
+    });
+}
+
+#[test]
+fn test_verify_batch_integrity_nonexistent_batch() {
+    let (env, contract_id) = setup_env();
+
+    env.as_contract(&contract_id, || {
+        assert!(!crate::error_recovery::verify_batch_integrity(&env, 99999));
+    });
+}
+
+// ─────────────────────────────────────────────────────────
+// 35. Recovery Expiration Tests
+// ─────────────────────────────────────────────────────────
+
+#[test]
+fn test_is_recovery_expired_not_expired() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        let program_id = String::from_str(&env, "TestProgram");
+        let recipients = soroban_sdk::vec![&env, recipient];
+        let amounts = soroban_sdk::vec![&env, 1000i128];
+
+        let batch_id = crate::error_recovery::store_batch_state(
+            &env,
+            program_id,
+            recipients,
+            amounts,
+            10000i128,
+            authorized,
+        ).unwrap();
+
+        // Should not be expired immediately after creation
+        assert!(!crate::error_recovery::is_recovery_expired(&env, batch_id));
+    });
+}
+
+#[test]
+fn test_is_recovery_expired_after_timeout() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        // Set a very short timeout
+        let config = crate::error_recovery::BatchRecoveryConfig {
+            recovery_timeout_secs: 3600, // 1 hour
+            ..crate::error_recovery::BatchRecoveryConfig::default()
+        };
+        let _ = crate::error_recovery::set_batch_recovery_config(&env, config);
+
+        let program_id = String::from_str(&env, "TestProgram");
+        let recipients = soroban_sdk::vec![&env, recipient];
+        let amounts = soroban_sdk::vec![&env, 1000i128];
+
+        let batch_id = crate::error_recovery::store_batch_state(
+            &env,
+            program_id,
+            recipients,
+            amounts,
+            10000i128,
+            authorized,
+        ).unwrap();
+
+        // Advance time past timeout
+        env.ledger().set_timestamp(5000); // Well past 1000 + 3600
+
+        assert!(crate::error_recovery::is_recovery_expired(&env, batch_id));
+    });
+}
+
+#[test]
+fn test_is_recovery_expired_nonexistent_batch() {
+    let (env, contract_id) = setup_env();
+
+    env.as_contract(&contract_id, || {
+        // Non-existent batches are considered expired
+        assert!(crate::error_recovery::is_recovery_expired(&env, 99999));
+    });
+}
+
+// ─────────────────────────────────────────────────────────
+// 36. Cancel Batch Recovery Tests
+// ─────────────────────────────────────────────────────────
+
+#[test]
+fn test_cancel_batch_recovery_success() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        let program_id = String::from_str(&env, "TestProgram");
+        let recipients = soroban_sdk::vec![&env, recipient];
+        let amounts = soroban_sdk::vec![&env, 1000i128];
+
+        let batch_id = crate::error_recovery::store_batch_state(
+            &env,
+            program_id,
+            recipients,
+            amounts,
+            10000i128,
+            authorized.clone(),
+        ).unwrap();
+
+        crate::error_recovery::mark_item_failed(&env, batch_id, 0, 500).unwrap();
+
+        let result = crate::error_recovery::cancel_batch_recovery(&env, batch_id, &authorized);
+        assert!(result.is_ok());
+
+        let state = crate::error_recovery::get_batch_state(&env, batch_id).unwrap();
+        assert_eq!(state.pending_recovery, false);
+        assert!(state.completed_at.is_some());
+    });
+}
+
+#[test]
+fn test_cancel_batch_recovery_unauthorized() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let impostor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        let program_id = String::from_str(&env, "TestProgram");
+        let recipients = soroban_sdk::vec![&env, recipient];
+        let amounts = soroban_sdk::vec![&env, 1000i128];
+
+        let batch_id = crate::error_recovery::store_batch_state(
+            &env,
+            program_id,
+            recipients,
+            amounts,
+            10000i128,
+            authorized,
+        ).unwrap();
+
+        let result = crate::error_recovery::cancel_batch_recovery(&env, batch_id, &impostor);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), crate::error_recovery::ERR_UNAUTHORIZED_RECOVERY);
+    });
+}
+
+#[test]
+fn test_cancel_batch_recovery_not_found() {
+    let (env, contract_id) = setup_env();
+    let caller = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        let result = crate::error_recovery::cancel_batch_recovery(&env, 99999, &caller);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), crate::error_recovery::ERR_BATCH_NOT_FOUND);
+    });
+}
+
+// ─────────────────────────────────────────────────────────
+// 37. Pending Recoveries List Tests
+// ─────────────────────────────────────────────────────────
+
+#[test]
+fn test_get_pending_recoveries_empty() {
+    let (env, contract_id) = setup_env();
+
+    env.as_contract(&contract_id, || {
+        let pending = crate::error_recovery::get_pending_recoveries(&env);
+        assert_eq!(pending.len(), 0);
+    });
+}
+
+#[test]
+fn test_get_pending_recoveries_multiple() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        let program_id = String::from_str(&env, "TestProgram");
+        let recipients = soroban_sdk::vec![&env, recipient.clone()];
+        let amounts = soroban_sdk::vec![&env, 1000i128];
+
+        let batch_id1 = crate::error_recovery::store_batch_state(
+            &env,
+            program_id.clone(),
+            recipients.clone(),
+            amounts.clone(),
+            10000i128,
+            authorized.clone(),
+        ).unwrap();
+
+        let batch_id2 = crate::error_recovery::store_batch_state(
+            &env,
+            program_id,
+            recipients,
+            amounts,
+            10000i128,
+            authorized,
+        ).unwrap();
+
+        let pending = crate::error_recovery::get_pending_recoveries(&env);
+        assert_eq!(pending.len(), 2);
+
+        // Clear one batch
+        crate::error_recovery::clear_batch_state(&env, batch_id1);
+
+        let pending = crate::error_recovery::get_pending_recoveries(&env);
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending.get(0).unwrap(), batch_id2);
+    });
+}
+
+// ─────────────────────────────────────────────────────────
+// 38. Finalize Batch Tests
+// ─────────────────────────────────────────────────────────
+
+#[test]
+fn test_finalize_batch_success() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        let program_id = String::from_str(&env, "TestProgram");
+        let recipients = soroban_sdk::vec![&env, recipient1, recipient2];
+        let amounts = soroban_sdk::vec![&env, 1000i128, 2000i128];
+
+        let batch_id = crate::error_recovery::store_batch_state(
+            &env,
+            program_id,
+            recipients,
+            amounts,
+            10000i128,
+            authorized,
+        ).unwrap();
+
+        // Mark all as success
+        crate::error_recovery::mark_item_success(&env, batch_id, 0).unwrap();
+        crate::error_recovery::mark_item_success(&env, batch_id, 1).unwrap();
+
+        let result = crate::error_recovery::finalize_batch(&env, batch_id);
+        assert!(result.is_ok());
+
+        // Batch should be cleared after finalization
+        let state = crate::error_recovery::get_batch_state(&env, batch_id);
+        assert!(state.is_none());
+
+        // Should be in history
+        let history = crate::error_recovery::get_recovery_history(&env);
+        assert!(history.len() > 0);
+    });
+}
+
+#[test]
+fn test_finalize_batch_not_found() {
+    let (env, contract_id) = setup_env();
+
+    env.as_contract(&contract_id, || {
+        let result = crate::error_recovery::finalize_batch(&env, 99999);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), crate::error_recovery::ERR_BATCH_NOT_FOUND);
+    });
+}
+
+// ─────────────────────────────────────────────────────────
+// 39. Batch Recovery Invariants Tests
+// ─────────────────────────────────────────────────────────
+
+#[test]
+fn test_verify_batch_recovery_invariants_empty() {
+    let (env, contract_id) = setup_env();
+
+    env.as_contract(&contract_id, || {
+        assert!(crate::error_recovery::verify_batch_recovery_invariants(&env));
+    });
+}
+
+#[test]
+fn test_verify_batch_recovery_invariants_valid() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        let program_id = String::from_str(&env, "TestProgram");
+        let recipients = soroban_sdk::vec![&env, recipient];
+        let amounts = soroban_sdk::vec![&env, 1000i128];
+
+        let batch_id = crate::error_recovery::store_batch_state(
+            &env,
+            program_id,
+            recipients,
+            amounts,
+            10000i128,
+            authorized,
+        ).unwrap();
+
+        crate::error_recovery::mark_item_success(&env, batch_id, 0).unwrap();
+
+        assert!(crate::error_recovery::verify_batch_recovery_invariants(&env));
+    });
+}
+
+// ─────────────────────────────────────────────────────────
+// 40. Edge Cases and Boundary Conditions
+// ─────────────────────────────────────────────────────────
+
+#[test]
+fn test_single_item_batch() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        let program_id = String::from_str(&env, "TestProgram");
+        let recipients = soroban_sdk::vec![&env, recipient];
+        let amounts = soroban_sdk::vec![&env, 1000i128];
+
+        let batch_id = crate::error_recovery::store_batch_state(
+            &env,
+            program_id,
+            recipients,
+            amounts,
+            10000i128,
+            authorized,
+        ).unwrap();
+
+        let state = crate::error_recovery::get_batch_state(&env, batch_id).unwrap();
+        assert_eq!(state.item_count, 1);
+        assert_eq!(state.total_amount, 1000);
+
+        crate::error_recovery::mark_item_success(&env, batch_id, 0).unwrap();
+
+        let failed = crate::error_recovery::get_failed_items(&env, batch_id).unwrap();
+        assert_eq!(failed.len(), 0);
+
+        let successful = crate::error_recovery::get_successful_items(&env, batch_id).unwrap();
+        assert_eq!(successful.len(), 1);
+    });
+}
+
+#[test]
+fn test_large_batch_amounts() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        let program_id = String::from_str(&env, "TestProgram");
+        let recipients = soroban_sdk::vec![&env, recipient1, recipient2];
+
+        // Large amounts near i128::MAX / 2
+        let large_amount = 1_000_000_000_000_000_000i128;
+        let amounts = soroban_sdk::vec![&env, large_amount, large_amount];
+
+        let batch_id = crate::error_recovery::store_batch_state(
+            &env,
+            program_id,
+            recipients,
+            amounts,
+            large_amount * 3,
+            authorized,
+        ).unwrap();
+
+        let state = crate::error_recovery::get_batch_state(&env, batch_id).unwrap();
+        assert_eq!(state.total_amount, large_amount * 2);
+    });
+}
+
+#[test]
+fn test_batch_item_status_transitions() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        let program_id = String::from_str(&env, "TestProgram");
+        let recipients = soroban_sdk::vec![&env, recipient];
+        let amounts = soroban_sdk::vec![&env, 1000i128];
+
+        let batch_id = crate::error_recovery::store_batch_state(
+            &env,
+            program_id,
+            recipients,
+            amounts,
+            10000i128,
+            authorized,
+        ).unwrap();
+
+        // Check initial status
+        let state = crate::error_recovery::get_batch_state(&env, batch_id).unwrap();
+        let item = state.items.get(0).unwrap();
+        assert_eq!(item.status, crate::error_recovery::BatchItemStatus::Pending);
+
+        // Transition to success
+        crate::error_recovery::mark_item_success(&env, batch_id, 0).unwrap();
+        let state = crate::error_recovery::get_batch_state(&env, batch_id).unwrap();
+        let item = state.items.get(0).unwrap();
+        assert_eq!(item.status, crate::error_recovery::BatchItemStatus::Success);
+
+        // Transition to rolled back
+        crate::error_recovery::mark_item_rolled_back(&env, batch_id, 0).unwrap();
+        let state = crate::error_recovery::get_batch_state(&env, batch_id).unwrap();
+        let item = state.items.get(0).unwrap();
+        assert_eq!(item.status, crate::error_recovery::BatchItemStatus::RolledBack);
+    });
+}
+
+#[test]
+fn test_multiple_batches_isolation() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        let program_id = String::from_str(&env, "TestProgram");
+
+        // Create first batch
+        let batch_id1 = crate::error_recovery::store_batch_state(
+            &env,
+            program_id.clone(),
+            soroban_sdk::vec![&env, recipient1.clone()],
+            soroban_sdk::vec![&env, 1000i128],
+            10000i128,
+            authorized.clone(),
+        ).unwrap();
+
+        // Create second batch
+        let batch_id2 = crate::error_recovery::store_batch_state(
+            &env,
+            program_id,
+            soroban_sdk::vec![&env, recipient2],
+            soroban_sdk::vec![&env, 2000i128],
+            10000i128,
+            authorized,
+        ).unwrap();
+
+        // Modify first batch
+        crate::error_recovery::mark_item_success(&env, batch_id1, 0).unwrap();
+
+        // Modify second batch
+        crate::error_recovery::mark_item_failed(&env, batch_id2, 0, 500).unwrap();
+
+        // Verify isolation
+        let state1 = crate::error_recovery::get_batch_state(&env, batch_id1).unwrap();
+        let state2 = crate::error_recovery::get_batch_state(&env, batch_id2).unwrap();
+
+        assert_eq!(state1.successful_amount, 1000);
+        assert_eq!(state1.pending_recovery, false);
+
+        assert_eq!(state2.successful_amount, 0);
+        assert_eq!(state2.pending_recovery, true);
+    });
+}
+
+// ─────────────────────────────────────────────────────────
+// 41. Recovery History Tests
+// ─────────────────────────────────────────────────────────
+
+#[test]
+fn test_recovery_history_archives_batches() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        let program_id = String::from_str(&env, "TestProgram");
+        let recipients = soroban_sdk::vec![&env, recipient];
+        let amounts = soroban_sdk::vec![&env, 1000i128];
+
+        let batch_id = crate::error_recovery::store_batch_state(
+            &env,
+            program_id,
+            recipients,
+            amounts,
+            10000i128,
+            authorized,
+        ).unwrap();
+
+        crate::error_recovery::mark_item_success(&env, batch_id, 0).unwrap();
+
+        // Initially history is empty
+        let history = crate::error_recovery::get_recovery_history(&env);
+        assert_eq!(history.len(), 0);
+
+        // Finalize adds to history
+        crate::error_recovery::finalize_batch(&env, batch_id).unwrap();
+
+        let history = crate::error_recovery::get_recovery_history(&env);
+        assert_eq!(history.len(), 1);
+        assert_eq!(history.get(0).unwrap().batch_id, batch_id);
+    });
+}
+
+#[test]
+fn test_recovery_history_max_size() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        let program_id = String::from_str(&env, "TestProgram");
+        let recipients = soroban_sdk::vec![&env, recipient];
+        let amounts = soroban_sdk::vec![&env, 1000i128];
+
+        // Create and finalize more than MAX_HISTORY batches
+        for _ in 0..55 {
+            let batch_id = crate::error_recovery::store_batch_state(
+                &env,
+                program_id.clone(),
+                recipients.clone(),
+                amounts.clone(),
+                10000i128,
+                authorized.clone(),
+            ).unwrap();
+
+            crate::error_recovery::mark_item_success(&env, batch_id, 0).unwrap();
+            crate::error_recovery::finalize_batch(&env, batch_id).unwrap();
+        }
+
+        // History should be capped at MAX_HISTORY (50)
+        let history = crate::error_recovery::get_recovery_history(&env);
+        assert_eq!(history.len(), 50);
+    });
+}
+
+// ─────────────────────────────────────────────────────────
+// 42. Increment Retry Count Tests
+// ─────────────────────────────────────────────────────────
+
+#[test]
+fn test_increment_retry_count_success() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        let program_id = String::from_str(&env, "TestProgram");
+        let recipients = soroban_sdk::vec![&env, recipient];
+        let amounts = soroban_sdk::vec![&env, 1000i128];
+
+        let batch_id = crate::error_recovery::store_batch_state(
+            &env,
+            program_id,
+            recipients,
+            amounts,
+            10000i128,
+            authorized,
+        ).unwrap();
+
+        crate::error_recovery::mark_item_failed(&env, batch_id, 0, 500).unwrap();
+
+        // Increment retry count
+        let result = crate::error_recovery::increment_retry_count(&env, batch_id, 0);
+        assert!(result.is_ok());
+
+        let state = crate::error_recovery::get_batch_state(&env, batch_id).unwrap();
+        let item = state.items.get(0).unwrap();
+        assert_eq!(item.retry_count, 1);
+        assert_eq!(item.status, crate::error_recovery::BatchItemStatus::Pending);
+    });
+}
+
+#[test]
+fn test_increment_retry_count_exceeds_max() {
+    let (env, contract_id) = setup_env();
+    let authorized = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    env.as_contract(&contract_id, || {
+        // Set low max retries
+        let config = crate::error_recovery::BatchRecoveryConfig {
+            max_retries: 2,
+            ..crate::error_recovery::BatchRecoveryConfig::default()
+        };
+        let _ = crate::error_recovery::set_batch_recovery_config(&env, config);
+
+        let program_id = String::from_str(&env, "TestProgram");
+        let recipients = soroban_sdk::vec![&env, recipient];
+        let amounts = soroban_sdk::vec![&env, 1000i128];
+
+        let batch_id = crate::error_recovery::store_batch_state(
+            &env,
+            program_id,
+            recipients,
+            amounts,
+            10000i128,
+            authorized,
+        ).unwrap();
+
+        crate::error_recovery::mark_item_failed(&env, batch_id, 0, 500).unwrap();
+
+        // Increment retry count twice (should succeed)
+        crate::error_recovery::increment_retry_count(&env, batch_id, 0).unwrap();
+        crate::error_recovery::increment_retry_count(&env, batch_id, 0).unwrap();
+
+        // Third increment should fail
+        let result = crate::error_recovery::increment_retry_count(&env, batch_id, 0);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), crate::error_recovery::ERR_BATCH_NOT_RECOVERABLE);
+    });
+}

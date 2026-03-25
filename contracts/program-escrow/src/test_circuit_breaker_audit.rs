@@ -3,8 +3,8 @@ mod test {
     use crate::error_recovery::{self, CircuitBreakerKey, CircuitState};
     use crate::{ProgramEscrowContract, ProgramEscrowContractClient};
     use soroban_sdk::{
-        testutils::{Address as _, Ledger},
-        Address, Env, String,
+        testutils::{Address as _, Events, Ledger},
+        symbol_short, vec, Address, Env, String,
     };
 
     fn setup_test(env: &Env) -> (ProgramEscrowContractClient, Address) {
@@ -144,5 +144,127 @@ mod test {
             // Verify check_and_allow rejects
             assert!(error_recovery::check_and_allow(&env).is_err());
         });
+    }
+
+    #[test]
+    fn test_audit_circuit_admin_change() {
+        let env = Env::default();
+        let (client, admin) = setup_test(&env);
+        let new_admin = Address::generate(&env);
+
+        client.set_circuit_admin(&new_admin, &Some(admin.clone()));
+
+        let circuit_events = env.events().all();
+        let ev = circuit_events.get(circuit_events.len() - 1).unwrap();
+        assert_eq!(ev.0, client.address);
+        assert_eq!(ev.1, (symbol_short!("circuit"), symbol_short!("cb_adm")));
+    }
+
+    #[test]
+    fn test_audit_circuit_manual_reset() {
+        let env = Env::default();
+        let (client, admin) = setup_test(&env);
+        env.ledger().set_timestamp(100);
+
+        // First open it
+        env.as_contract(&client.address, || {
+            error_recovery::open_circuit(&env);
+        });
+
+        // Now reset via client
+        client.reset_circuit_breaker(&admin);
+
+        let circuit_events = env.events().all();
+        // Check for cb_reset event
+        let mut found = false;
+        for ev in circuit_events.iter() {
+            if ev.1 == (symbol_short!("circuit"), symbol_short!("cb_reset")) {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "cb_reset event not found");
+    }
+
+    #[test]
+    fn test_audit_circuit_config_update() {
+        let env = Env::default();
+        let (client, admin) = setup_test(&env);
+
+        client.configure_circuit_breaker(&admin, &5u32, &2u32, &10u32);
+
+        let circuit_events = env.events().all();
+        let ev = circuit_events.get(circuit_events.len() - 1).unwrap();
+        assert_eq!(ev.1, (symbol_short!("circuit"), symbol_short!("cb_cfg")));
+    }
+
+    #[test]
+    fn test_audit_rate_limit_config_update() {
+        let env = Env::default();
+        let (client, admin) = setup_test(&env);
+
+        client.update_rate_limit_config(&3600u64, &50u32, &120u64);
+
+        let events = env.events().all();
+        let ev = events.get(events.len() - 1).unwrap();
+        assert_eq!(ev.1, (symbol_short!("rate_lim"), symbol_short!("update")));
+    }
+
+    #[test]
+    fn test_payout_respects_circuit_breaker() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, admin) = setup_test(&env);
+
+        let user = Address::generate(&env);
+        let token_addr = Address::generate(&env); // Mock token
+        
+        // Initialize program
+        client.init_program(
+            &String::from_str(&env, "prog1"),
+            &admin,
+            &token_addr,
+            &admin,
+            &Some(1000i128),
+            &None,
+        );
+
+        // Open circuit
+        env.as_contract(&client.address, || {
+            error_recovery::open_circuit(&env);
+        });
+
+        // Try single payout - should panic
+        let result = client.try_single_payout(&user, &100i128);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_batch_payout_respects_circuit_breaker() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, admin) = setup_test(&env);
+
+        let user1 = Address::generate(&env);
+        let user2 = Address::generate(&env);
+        let token_addr = Address::generate(&env);
+        
+        client.init_program(
+            &String::from_str(&env, "prog1"),
+            &admin,
+            &token_addr,
+            &admin,
+            &Some(1000i128),
+            &None,
+        );
+
+        // Open circuit
+        env.as_contract(&client.address, || {
+            error_recovery::open_circuit(&env);
+        });
+
+        // Try batch payout - should panic
+        let result = client.try_batch_payout(&vec![&env, user1, user2], &vec![&env, 50i128, 50i128]);
+        assert!(result.is_err());
     }
 }

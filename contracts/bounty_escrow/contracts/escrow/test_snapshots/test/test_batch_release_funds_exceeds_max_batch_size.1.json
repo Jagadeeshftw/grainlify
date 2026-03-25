@@ -121,14 +121,6 @@
                           "val": {
                             "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                           }
-                        },
-                        {
-                          "key": {
-                            "symbol": "non_transferable_rewards"
-                          },
-                          "val": {
-                            "bool": false
-                          }
                         }
                       ]
                     },
@@ -167,14 +159,6 @@
                           },
                           "val": {
                             "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "non_transferable_rewards"
-                          },
-                          "val": {
-                            "bool": false
                           }
                         }
                       ]
@@ -215,14 +199,6 @@
                           "val": {
                             "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                           }
-                        },
-                        {
-                          "key": {
-                            "symbol": "non_transferable_rewards"
-                          },
-                          "val": {
-                            "bool": false
-                          }
                         }
                       ]
                     },
@@ -261,14 +237,6 @@
                           },
                           "val": {
                             "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "non_transferable_rewards"
-                          },
-                          "val": {
-                            "bool": false
                           }
                         }
                       ]
@@ -309,14 +277,6 @@
                           "val": {
                             "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                           }
-                        },
-                        {
-                          "key": {
-                            "symbol": "non_transferable_rewards"
-                          },
-                          "val": {
-                            "bool": false
-                          }
                         }
                       ]
                     },
@@ -355,14 +315,6 @@
                           },
                           "val": {
                             "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "non_transferable_rewards"
-                          },
-                          "val": {
-                            "bool": false
                           }
                         }
                       ]
@@ -403,14 +355,6 @@
                           "val": {
                             "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                           }
-                        },
-                        {
-                          "key": {
-                            "symbol": "non_transferable_rewards"
-                          },
-                          "val": {
-                            "bool": false
-                          }
                         }
                       ]
                     },
@@ -449,14 +393,6 @@
                           },
                           "val": {
                             "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "non_transferable_rewards"
-                          },
-                          "val": {
-                            "bool": false
                           }
                         }
                       ]
@@ -497,14 +433,6 @@
                           "val": {
                             "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                           }
-                        },
-                        {
-                          "key": {
-                            "symbol": "non_transferable_rewards"
-                          },
-                          "val": {
-                            "bool": false
-                          }
                         }
                       ]
                     },
@@ -543,14 +471,6 @@
                           },
                           "val": {
                             "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "non_transferable_rewards"
-                          },
-                          "val": {
-                            "bool": false
                           }
                         }
                       ]
@@ -591,14 +511,6 @@
                           "val": {
                             "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                           }
-                        },
-                        {
-                          "key": {
-                            "symbol": "non_transferable_rewards"
-                          },
-                          "val": {
-                            "bool": false
-                          }
                         }
                       ]
                     },
@@ -637,14 +549,6 @@
                           },
                           "val": {
                             "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "non_transferable_rewards"
-                          },
-                          "val": {
-                            "bool": false
                           }
                         }
                       ]
@@ -685,14 +589,6 @@
                           "val": {
                             "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                           }
-                        },
-                        {
-                          "key": {
-                            "symbol": "non_transferable_rewards"
-                          },
-                          "val": {
-                            "bool": false
-                          }
                         }
                       ]
                     },
@@ -731,14 +627,6 @@
                           },
                           "val": {
                             "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "non_transferable_rewards"
-                          },
-                          "val": {
-                            "bool": false
                           }
                         }
                       ]
@@ -779,14 +667,6 @@
                           "val": {
                             "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                           }
-                        },
-                        {
-                          "key": {
-                            "symbol": "non_transferable_rewards"
-                          },
-                          "val": {
-                            "bool": false
-                          }
                         }
                       ]
                     },
@@ -825,14 +705,6 @@
                           },
                           "val": {
                             "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "non_transferable_rewards"
-                          },
-                          "val": {
-                            "bool": false
                           }
                         }
                       ]
@@ -873,14 +745,6 @@
                           "val": {
                             "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                           }
-                        },
-                        {
-                          "key": {
-                            "symbol": "non_transferable_rewards"
-                          },
-                          "val": {
-                            "bool": false
-                          }
                         }
                       ]
                     },
@@ -919,14 +783,6 @@
                           },
                           "val": {
                             "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "non_transferable_rewards"
-                          },
-                          "val": {
-                            "bool": false
                           }
                         }
                       ]
@@ -967,14 +823,6 @@
                           "val": {
                             "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                           }
-                        },
-                        {
-                          "key": {
-                            "symbol": "non_transferable_rewards"
-                          },
-                          "val": {
-                            "bool": false
-                          }
                         }
                       ]
                     },
@@ -1013,14 +861,6 @@
                           },
                           "val": {
                             "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "non_transferable_rewards"
-                          },
-                          "val": {
-                            "bool": false
                           }
                         }
                       ]
@@ -1665,6 +1505,112 @@
             "ext": "v0"
           },
           6311999
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "DepositorIndex"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "DepositorIndex"
+                    },
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "vec": [
+                    {
+                      "u64": 1
+                    },
+                    {
+                      "u64": 2
+                    },
+                    {
+                      "u64": 3
+                    },
+                    {
+                      "u64": 4
+                    },
+                    {
+                      "u64": 5
+                    },
+                    {
+                      "u64": 6
+                    },
+                    {
+                      "u64": 7
+                    },
+                    {
+                      "u64": 8
+                    },
+                    {
+                      "u64": 9
+                    },
+                    {
+                      "u64": 10
+                    },
+                    {
+                      "u64": 11
+                    },
+                    {
+                      "u64": 12
+                    },
+                    {
+                      "u64": 13
+                    },
+                    {
+                      "u64": 14
+                    },
+                    {
+                      "u64": 15
+                    },
+                    {
+                      "u64": 16
+                    },
+                    {
+                      "u64": 17
+                    },
+                    {
+                      "u64": 18
+                    },
+                    {
+                      "u64": 19
+                    },
+                    {
+                      "u64": 20
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4095
         ]
       ],
       [
@@ -3751,6 +3697,106 @@
         {
           "contract_data": {
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "EscrowIndex"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "EscrowIndex"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "vec": [
+                    {
+                      "u64": 1
+                    },
+                    {
+                      "u64": 2
+                    },
+                    {
+                      "u64": 3
+                    },
+                    {
+                      "u64": 4
+                    },
+                    {
+                      "u64": 5
+                    },
+                    {
+                      "u64": 6
+                    },
+                    {
+                      "u64": 7
+                    },
+                    {
+                      "u64": 8
+                    },
+                    {
+                      "u64": 9
+                    },
+                    {
+                      "u64": 10
+                    },
+                    {
+                      "u64": 11
+                    },
+                    {
+                      "u64": 12
+                    },
+                    {
+                      "u64": 13
+                    },
+                    {
+                      "u64": 14
+                    },
+                    {
+                      "u64": 15
+                    },
+                    {
+                      "u64": 16
+                    },
+                    {
+                      "u64": 17
+                    },
+                    {
+                      "u64": 18
+                    },
+                    {
+                      "u64": 19
+                    },
+                    {
+                      "u64": 20
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4095
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
             "key": "ledger_key_contract_instance",
             "durability": "persistent"
           }
@@ -4547,14 +4593,6 @@
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                       }
-                    },
-                    {
-                      "key": {
-                        "symbol": "non_transferable_rewards"
-                      },
-                      "val": {
-                        "bool": false
-                      }
                     }
                   ]
                 },
@@ -4593,14 +4631,6 @@
                       },
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "non_transferable_rewards"
-                      },
-                      "val": {
-                        "bool": false
                       }
                     }
                   ]
@@ -4641,14 +4671,6 @@
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                       }
-                    },
-                    {
-                      "key": {
-                        "symbol": "non_transferable_rewards"
-                      },
-                      "val": {
-                        "bool": false
-                      }
                     }
                   ]
                 },
@@ -4687,14 +4709,6 @@
                       },
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "non_transferable_rewards"
-                      },
-                      "val": {
-                        "bool": false
                       }
                     }
                   ]
@@ -4735,14 +4749,6 @@
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                       }
-                    },
-                    {
-                      "key": {
-                        "symbol": "non_transferable_rewards"
-                      },
-                      "val": {
-                        "bool": false
-                      }
                     }
                   ]
                 },
@@ -4781,14 +4787,6 @@
                       },
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "non_transferable_rewards"
-                      },
-                      "val": {
-                        "bool": false
                       }
                     }
                   ]
@@ -4829,14 +4827,6 @@
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                       }
-                    },
-                    {
-                      "key": {
-                        "symbol": "non_transferable_rewards"
-                      },
-                      "val": {
-                        "bool": false
-                      }
                     }
                   ]
                 },
@@ -4875,14 +4865,6 @@
                       },
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "non_transferable_rewards"
-                      },
-                      "val": {
-                        "bool": false
                       }
                     }
                   ]
@@ -4923,14 +4905,6 @@
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                       }
-                    },
-                    {
-                      "key": {
-                        "symbol": "non_transferable_rewards"
-                      },
-                      "val": {
-                        "bool": false
-                      }
                     }
                   ]
                 },
@@ -4969,14 +4943,6 @@
                       },
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "non_transferable_rewards"
-                      },
-                      "val": {
-                        "bool": false
                       }
                     }
                   ]
@@ -5017,14 +4983,6 @@
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                       }
-                    },
-                    {
-                      "key": {
-                        "symbol": "non_transferable_rewards"
-                      },
-                      "val": {
-                        "bool": false
-                      }
                     }
                   ]
                 },
@@ -5063,14 +5021,6 @@
                       },
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "non_transferable_rewards"
-                      },
-                      "val": {
-                        "bool": false
                       }
                     }
                   ]
@@ -5111,14 +5061,6 @@
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                       }
-                    },
-                    {
-                      "key": {
-                        "symbol": "non_transferable_rewards"
-                      },
-                      "val": {
-                        "bool": false
-                      }
                     }
                   ]
                 },
@@ -5157,14 +5099,6 @@
                       },
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "non_transferable_rewards"
-                      },
-                      "val": {
-                        "bool": false
                       }
                     }
                   ]
@@ -5205,14 +5139,6 @@
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                       }
-                    },
-                    {
-                      "key": {
-                        "symbol": "non_transferable_rewards"
-                      },
-                      "val": {
-                        "bool": false
-                      }
                     }
                   ]
                 },
@@ -5251,14 +5177,6 @@
                       },
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "non_transferable_rewards"
-                      },
-                      "val": {
-                        "bool": false
                       }
                     }
                   ]
@@ -5299,14 +5217,6 @@
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                       }
-                    },
-                    {
-                      "key": {
-                        "symbol": "non_transferable_rewards"
-                      },
-                      "val": {
-                        "bool": false
-                      }
                     }
                   ]
                 },
@@ -5345,14 +5255,6 @@
                       },
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "non_transferable_rewards"
-                      },
-                      "val": {
-                        "bool": false
                       }
                     }
                   ]
@@ -5393,14 +5295,6 @@
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                       }
-                    },
-                    {
-                      "key": {
-                        "symbol": "non_transferable_rewards"
-                      },
-                      "val": {
-                        "bool": false
-                      }
                     }
                   ]
                 },
@@ -5439,14 +5333,6 @@
                       },
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "non_transferable_rewards"
-                      },
-                      "val": {
-                        "bool": false
                       }
                     }
                   ]
@@ -5600,14 +5486,6 @@
                   },
                   "val": {
                     "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "non_transferable_rewards"
-                  },
-                  "val": {
-                    "bool": false
                   }
                 },
                 {
@@ -5771,14 +5649,6 @@
                 },
                 {
                   "key": {
-                    "symbol": "non_transferable_rewards"
-                  },
-                  "val": {
-                    "bool": false
-                  }
-                },
-                {
-                  "key": {
                     "symbol": "version"
                   },
                   "val": {
@@ -5934,14 +5804,6 @@
                   },
                   "val": {
                     "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "non_transferable_rewards"
-                  },
-                  "val": {
-                    "bool": false
                   }
                 },
                 {
@@ -6105,14 +5967,6 @@
                 },
                 {
                   "key": {
-                    "symbol": "non_transferable_rewards"
-                  },
-                  "val": {
-                    "bool": false
-                  }
-                },
-                {
-                  "key": {
                     "symbol": "version"
                   },
                   "val": {
@@ -6268,14 +6122,6 @@
                   },
                   "val": {
                     "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "non_transferable_rewards"
-                  },
-                  "val": {
-                    "bool": false
                   }
                 },
                 {
@@ -6439,14 +6285,6 @@
                 },
                 {
                   "key": {
-                    "symbol": "non_transferable_rewards"
-                  },
-                  "val": {
-                    "bool": false
-                  }
-                },
-                {
-                  "key": {
                     "symbol": "version"
                   },
                   "val": {
@@ -6602,14 +6440,6 @@
                   },
                   "val": {
                     "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "non_transferable_rewards"
-                  },
-                  "val": {
-                    "bool": false
                   }
                 },
                 {
@@ -6773,14 +6603,6 @@
                 },
                 {
                   "key": {
-                    "symbol": "non_transferable_rewards"
-                  },
-                  "val": {
-                    "bool": false
-                  }
-                },
-                {
-                  "key": {
                     "symbol": "version"
                   },
                   "val": {
@@ -6936,14 +6758,6 @@
                   },
                   "val": {
                     "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "non_transferable_rewards"
-                  },
-                  "val": {
-                    "bool": false
                   }
                 },
                 {
@@ -7107,14 +6921,6 @@
                 },
                 {
                   "key": {
-                    "symbol": "non_transferable_rewards"
-                  },
-                  "val": {
-                    "bool": false
-                  }
-                },
-                {
-                  "key": {
                     "symbol": "version"
                   },
                   "val": {
@@ -7270,14 +7076,6 @@
                   },
                   "val": {
                     "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "non_transferable_rewards"
-                  },
-                  "val": {
-                    "bool": false
                   }
                 },
                 {
@@ -7441,14 +7239,6 @@
                 },
                 {
                   "key": {
-                    "symbol": "non_transferable_rewards"
-                  },
-                  "val": {
-                    "bool": false
-                  }
-                },
-                {
-                  "key": {
                     "symbol": "version"
                   },
                   "val": {
@@ -7604,14 +7394,6 @@
                   },
                   "val": {
                     "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "non_transferable_rewards"
-                  },
-                  "val": {
-                    "bool": false
                   }
                 },
                 {
@@ -7775,14 +7557,6 @@
                 },
                 {
                   "key": {
-                    "symbol": "non_transferable_rewards"
-                  },
-                  "val": {
-                    "bool": false
-                  }
-                },
-                {
-                  "key": {
                     "symbol": "version"
                   },
                   "val": {
@@ -7938,14 +7712,6 @@
                   },
                   "val": {
                     "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "non_transferable_rewards"
-                  },
-                  "val": {
-                    "bool": false
                   }
                 },
                 {
@@ -8109,14 +7875,6 @@
                 },
                 {
                   "key": {
-                    "symbol": "non_transferable_rewards"
-                  },
-                  "val": {
-                    "bool": false
-                  }
-                },
-                {
-                  "key": {
                     "symbol": "version"
                   },
                   "val": {
@@ -8272,14 +8030,6 @@
                   },
                   "val": {
                     "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "non_transferable_rewards"
-                  },
-                  "val": {
-                    "bool": false
                   }
                 },
                 {
@@ -8443,14 +8193,6 @@
                 },
                 {
                   "key": {
-                    "symbol": "non_transferable_rewards"
-                  },
-                  "val": {
-                    "bool": false
-                  }
-                },
-                {
-                  "key": {
                     "symbol": "version"
                   },
                   "val": {
@@ -8610,14 +8352,6 @@
                 },
                 {
                   "key": {
-                    "symbol": "non_transferable_rewards"
-                  },
-                  "val": {
-                    "bool": false
-                  }
-                },
-                {
-                  "key": {
                     "symbol": "version"
                   },
                   "val": {
@@ -8773,14 +8507,6 @@
                   },
                   "val": {
                     "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "non_transferable_rewards"
-                  },
-                  "val": {
-                    "bool": false
                   }
                 },
                 {

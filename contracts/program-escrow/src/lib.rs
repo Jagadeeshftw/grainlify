@@ -156,6 +156,8 @@ const MAINTENANCE_MODE_CHANGED: Symbol = symbol_short!("MaintSt");
 const PROGRAM_RISK_FLAGS_UPDATED: Symbol = symbol_short!("pr_risk");
 const PROGRAM_REGISTRY: Symbol = symbol_short!("ProgReg");
 const PROGRAM_REGISTERED: Symbol = symbol_short!("ProgRgd");
+const RELEASE_SCHEDULED: Symbol = symbol_short!("RelSched");
+const SCHEDULE_RELEASED: Symbol = symbol_short!("SchRel");
 
 // Storage keys
 const PROGRAM_DATA: Symbol = symbol_short!("ProgData");
@@ -324,6 +326,29 @@ pub struct PayoutEvent {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReleaseScheduledEvent {
+    pub version: u32,
+    pub program_id: String,
+    pub schedule_id: u64,
+    pub recipient: Address,
+    pub amount: i128,
+    pub release_timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScheduleReleasedEvent {
+    pub version: u32,
+    pub program_id: String,
+    pub schedule_id: u64,
+    pub recipient: Address,
+    pub amount: i128,
+    pub released_at: u64,
+    pub released_by: Address,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProgramRiskFlagsUpdated {
     pub version: u32,
     pub program_id: String,
@@ -359,6 +384,73 @@ pub struct ProgramData {
     pub reference_hash: Option<soroban_sdk::Bytes>,
 }
 
+// ========================================================================
+// Dispute Resolution Types
+// ========================================================================
+
+/// The lifecycle state of a dispute on a program.
+///
+/// Transitions:
+/// ```text
+/// (none) ──open_dispute()──► Open ──resolve_dispute()──► Resolved
+/// ```
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DisputeState {
+    /// No active dispute; payouts proceed normally.
+    None,
+    /// Dispute is open; all payouts are blocked.
+    Open,
+    /// Dispute has been resolved; payouts are unblocked.
+    Resolved,
+}
+
+/// On-chain record of a dispute raised against a program.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeRecord {
+    /// Address that raised the dispute (must be admin).
+    pub raised_by: Address,
+    /// Human-readable reason for the dispute.
+    pub reason: String,
+    /// Ledger timestamp when the dispute was opened.
+    pub opened_at: u64,
+    /// Current lifecycle state.
+    pub state: DisputeState,
+    /// Address that resolved the dispute, if any.
+    pub resolved_by: Option<Address>,
+    /// Ledger timestamp when the dispute was resolved, if any.
+    pub resolved_at: Option<u64>,
+    /// Resolution notes provided by the resolver.
+    pub resolution_notes: Option<String>,
+}
+
+/// Event emitted when a dispute is opened.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeOpenedEvent {
+    pub version: u32,
+    pub program_id: String,
+    pub raised_by: Address,
+    pub reason: String,
+    pub opened_at: u64,
+}
+
+/// Event emitted when a dispute is resolved.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeResolvedEvent {
+    pub version: u32,
+    pub program_id: String,
+    pub resolved_by: Address,
+    pub resolution_notes: String,
+    pub resolved_at: u64,
+}
+
+// Event symbols for dispute lifecycle
+const DISPUTE_OPENED: Symbol = symbol_short!("DspOpen");
+const DISPUTE_RESOLVED: Symbol = symbol_short!("DspRslv");
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
@@ -376,6 +468,7 @@ pub enum DataKey {
     MaintenanceMode,                 // bool flag
     ProgramDependencies(String),     // program_id -> Vec<String>
     DependencyStatus(String),        // program_id -> DependencyStatus
+    Dispute,                         // DisputeRecord (single active dispute per contract)
 }
 
 #[contracttype]
@@ -576,6 +669,8 @@ mod anti_abuse {
 
 mod claim_period;
 pub use claim_period::{ClaimRecord, ClaimStatus};
+mod payout_splits;
+pub use payout_splits::{BeneficiarySplit, SplitConfig};
 #[cfg(test)]
 mod test_claim_period_expiry_cancellation;
 
@@ -1351,16 +1446,22 @@ impl ProgramEscrowContract {
     pub fn configure_circuit_breaker(
         env: Env,
         caller: Address,
-        _threshold: u32,
-        _lookback: u32,
-        _cooldown: u32,
+        failure_threshold: u32,
+        success_threshold: u32,
+        max_error_log: u32,
     ) {
         caller.require_auth();
         let admin = error_recovery::get_circuit_admin(&env).expect("Circuit admin not set");
         if caller != admin {
             panic!("Unauthorized: only circuit admin can configure");
         }
-        // Logic to update config in storage would go here
+        
+        let config = error_recovery::CircuitBreakerConfig {
+            failure_threshold,
+            success_threshold,
+            max_error_log,
+        };
+        error_recovery::set_config(&env, config);
     }
 
     pub fn update_rate_limit_config(
@@ -1381,6 +1482,12 @@ impl ProgramEscrowContract {
         env.storage()
             .instance()
             .set(&DataKey::RateLimitConfig, &config);
+
+        // Emit audit event for rate limit config update
+        env.events().publish(
+            (symbol_short!("rate_lim"), symbol_short!("update")),
+            (window_size, max_operations, cooldown_period, admin, env.ledger().timestamp()),
+        );
     }
 
     pub fn get_rate_limit_config(env: Env) -> RateLimitConfig {
@@ -1417,22 +1524,31 @@ impl ProgramEscrowContract {
     // Payout Functions
     // ========================================================================
 
-    /// Execute batch payouts to multiple recipients
+    /// Execute batch payouts to multiple winners.
+    ///
+    /// This function distributes prizes to multiple recipients in a single atomic transaction.
+    /// It enforces "all-or-nothing" semantics: if any individual transfer fails, the entire
+    /// batch operation reverts, ensuring accounting consistency.
     ///
     /// # Arguments
-    /// * `recipients` - Vector of recipient addresses
-    /// * `amounts` - Vector of amounts (must match recipients length)
+    /// * `recipients` - Vector of winner addresses.
+    /// * `amounts` - Vector of prize amounts (must match recipients length).
     ///
     /// # Returns
-    /// Updated ProgramData after payouts
+    /// The updated `ProgramData` reflecting the new balance and payout history.
+    ///
+    /// # Security
+    /// - Requires authorization from the `authorized_payout_key`.
+    /// - Protected by reentrancy guard.
+    /// - Respects circuit breaker and threshold limits.
     pub fn batch_payout(env: Env, recipients: Vec<Address>, amounts: Vec<i128>) -> ProgramData {
         // Validation precedence (deterministic ordering):
         // 1. Reentrancy guard
         // 2. Contract initialized
         // 3. Paused (operational state)
         // 4. Authorization
-        // 5. Input validation (batch size, amounts)
         // 6. Business logic (sufficient balance)
+        // 7. Circuit breaker check
 
         // 1. Reentrancy guard
         reentrancy_guard::check_not_entered(&env);
@@ -1452,6 +1568,12 @@ impl ProgramEscrowContract {
         if Self::check_paused(&env, symbol_short!("release")) {
             reentrancy_guard::clear_entered(&env);
             panic!("Funds Paused");
+        }
+
+        // 3b. Dispute guard — payouts blocked while a dispute is open
+        if Self::dispute_state(&env) == DisputeState::Open {
+            reentrancy_guard::clear_entered(&env);
+            panic!("Payout blocked: dispute open");
         }
 
         // 4. Authorization
@@ -1487,6 +1609,16 @@ impl ProgramEscrowContract {
             panic!("Insufficient balance");
         }
 
+        // 7. Circuit breaker check
+        if let Err(err_code) = error_recovery::check_and_allow_with_thresholds(&env) {
+            reentrancy_guard::clear_entered(&env);
+            if err_code == error_recovery::ERR_CIRCUIT_OPEN {
+                panic!("Circuit breaker is OPEN");
+            } else {
+                panic!("Operation rejected by circuit breaker");
+            }
+        }
+
         // Execute transfers
         let mut updated_history = program_data.payout_history.clone();
         let timestamp = env.ledger().timestamp();
@@ -1499,6 +1631,16 @@ impl ProgramEscrowContract {
 
             // Transfer funds from contract to recipient
             token_client.transfer(&contract_address, &recipient, &amount);
+            
+            // Record success for circuit breaker and threshold monitor
+            error_recovery::record_success(&env);
+            threshold_monitor::record_operation_success(&env);
+            threshold_monitor::record_outflow(&env, amount);
+
+            // Record success for circuit breaker and threshold monitor
+            error_recovery::record_success(&env);
+            threshold_monitor::record_operation_success(&env);
+            threshold_monitor::record_outflow(&env, amount);
 
             // Record payout
             let payout_record = PayoutRecord {
@@ -1535,22 +1677,27 @@ impl ProgramEscrowContract {
         updated_data
     }
 
-    /// Execute a single payout to one recipient
+    /// Execute a single payout to one winner.
     ///
     /// # Arguments
-    /// * `recipient` - Address of the recipient
-    /// * `amount` - Amount to transfer
+    /// * `recipient` - Address of the winner.
+    /// * `amount` - Amount to transfer.
     ///
     /// # Returns
-    /// Updated ProgramData after payout
+    /// The updated `ProgramData`.
+    ///
+    /// # Security
+    /// - Requires authorization from the `authorized_payout_key`.
+    /// - Protected by reentrancy guard.
+    /// - Respects circuit breaker and threshold limits.
     pub fn single_payout(env: Env, recipient: Address, amount: i128) -> ProgramData {
         // Validation precedence (deterministic ordering):
         // 1. Reentrancy guard
         // 2. Contract initialized
         // 3. Paused (operational state)
         // 4. Authorization
-        // 5. Input validation (amount)
         // 6. Business logic (sufficient balance)
+        // 7. Circuit breaker check
 
         // 1. Reentrancy guard
         reentrancy_guard::check_not_entered(&env);
@@ -1572,6 +1719,12 @@ impl ProgramEscrowContract {
             panic!("Funds Paused");
         }
 
+        // 3b. Dispute guard — payouts blocked while a dispute is open
+        if Self::dispute_state(&env) == DisputeState::Open {
+            reentrancy_guard::clear_entered(&env);
+            panic!("Payout blocked: dispute open");
+        }
+
         // 4. Authorization
         program_data.authorized_payout_key.require_auth();
 
@@ -1587,10 +1740,23 @@ impl ProgramEscrowContract {
             panic!("Insufficient balance");
         }
 
+        // 7. Circuit breaker check
+        if let Err(err_code) = error_recovery::check_and_allow_with_thresholds(&env) {
+            reentrancy_guard::clear_entered(&env);
+            if err_code == error_recovery::ERR_CIRCUIT_OPEN {
+                panic!("Circuit breaker is OPEN");
+            } else {
+                panic!("Operation rejected by circuit breaker");
+            }
+        }
+
         // Transfer funds from contract to recipient
-        let contract_address = env.current_contract_address();
-        let token_client = token::Client::new(&env, &program_data.token_address);
         token_client.transfer(&contract_address, &recipient, &amount);
+
+        // Record success for circuit breaker and threshold monitor
+        error_recovery::record_success(&env);
+        threshold_monitor::record_operation_success(&env);
+        threshold_monitor::record_outflow(&env, amount);
 
         // Record payout
         let timestamp = env.ledger().timestamp();
@@ -1655,6 +1821,14 @@ impl ProgramEscrowContract {
     }
 
     /// Create a release schedule entry that can be triggered at/after `release_timestamp`.
+    ///
+    /// # Arguments
+    /// * `recipient` - Address of the recipient
+    /// * `amount` - Amount to be released
+    /// * `release_timestamp` - Unix timestamp when the release becomes available
+    ///
+    /// # Returns
+    /// The created ProgramReleaseSchedule
     pub fn create_program_release_schedule(
         env: Env,
         recipient: Address,
@@ -1699,6 +1873,19 @@ impl ProgramEscrowContract {
         env.storage()
             .instance()
             .set(&NEXT_SCHEDULE_ID, &(schedule_id + 1));
+
+        // Emit ReleaseScheduled event
+        env.events().publish(
+            (RELEASE_SCHEDULED,),
+            ReleaseScheduledEvent {
+                version: EVENT_VERSION_V2,
+                program_id: program_data.program_id,
+                schedule_id,
+                recipient,
+                amount,
+                release_timestamp,
+            },
+        );
 
         schedule
     }
@@ -1765,11 +1952,26 @@ impl ProgramEscrowContract {
             });
             release_history.push_back(ProgramReleaseHistory {
                 schedule_id: schedule.schedule_id,
-                recipient: schedule.recipient,
+                recipient: schedule.recipient.clone(),
                 amount: schedule.amount,
                 released_at: now,
                 release_type: ReleaseType::Automatic,
             });
+
+            // Emit ScheduleReleased event
+            env.events().publish(
+                (SCHEDULE_RELEASED,),
+                ScheduleReleasedEvent {
+                    version: EVENT_VERSION_V2,
+                    program_id: program_data.program_id.clone(),
+                    schedule_id: schedule.schedule_id,
+                    recipient: schedule.recipient,
+                    amount: schedule.amount,
+                    released_at: now,
+                    released_by: contract_address.clone(),
+                },
+            );
+
             released_count += 1;
         }
 
@@ -1827,6 +2029,40 @@ impl ProgramEscrowContract {
         amounts: Vec<i128>,
     ) -> ProgramData {
         Self::batch_payout(env, recipients, amounts)
+    }
+
+    // --- Payout Splits (Ratio-based) ---
+
+    pub fn set_split_config(
+        env: Env,
+        program_id: String,
+        beneficiaries: Vec<BeneficiarySplit>,
+    ) -> SplitConfig {
+        payout_splits::set_split_config(&env, &program_id, beneficiaries)
+    }
+
+    pub fn get_split_config(env: Env, program_id: String) -> Option<SplitConfig> {
+        payout_splits::get_split_config(&env, &program_id)
+    }
+
+    pub fn disable_split_config(env: Env, program_id: String) {
+        payout_splits::disable_split_config(&env, &program_id);
+    }
+
+    pub fn execute_split_payout(
+        env: Env,
+        program_id: String,
+        total_amount: i128,
+    ) -> payout_splits::SplitPayoutResult {
+        payout_splits::execute_split_payout(&env, &program_id, total_amount)
+    }
+
+    pub fn preview_split(
+        env: Env,
+        program_id: String,
+        total_amount: i128,
+    ) -> Vec<BeneficiarySplit> {
+        payout_splits::preview_split(&env, &program_id, total_amount)
     }
 
     /// Query payout history by recipient with pagination
@@ -2348,6 +2584,138 @@ impl ProgramEscrowContract {
 
     pub fn get_claim_window(env: Env) -> u64 {
         claim_period::get_claim_window(&env)
+    }
+
+    // ========================================================================
+    // Dispute Resolution
+    // ========================================================================
+
+    /// Returns the current dispute state for this contract instance.
+    ///
+    /// `DisputeState::None` is returned when no dispute record exists.
+    fn dispute_state(env: &Env) -> DisputeState {
+        env.storage()
+            .instance()
+            .get::<DataKey, DisputeRecord>(&DataKey::Dispute)
+            .map(|r| r.state)
+            .unwrap_or(DisputeState::None)
+    }
+
+    /// Open a dispute on the program, blocking all payouts until resolved.
+    ///
+    /// # Authorization
+    /// Caller must be the contract admin.
+    ///
+    /// # Errors
+    /// Panics if:
+    /// - Contract is not initialized (no admin set).
+    /// - A dispute is already open (`DisputeState::Open`).
+    ///
+    /// # Events
+    /// Emits `DspOpen` with [`DisputeOpenedEvent`].
+    pub fn open_dispute(env: Env, reason: String) -> DisputeRecord {
+        let admin = Self::require_admin(&env);
+
+        // Only one active dispute at a time
+        if Self::dispute_state(&env) == DisputeState::Open {
+            panic!("Dispute already open");
+        }
+
+        let now = env.ledger().timestamp();
+        let program_data: ProgramData = env
+            .storage()
+            .instance()
+            .get(&PROGRAM_DATA)
+            .unwrap_or_else(|| panic!("Program not initialized"));
+
+        let record = DisputeRecord {
+            raised_by: admin.clone(),
+            reason: reason.clone(),
+            opened_at: now,
+            state: DisputeState::Open,
+            resolved_by: None,
+            resolved_at: None,
+            resolution_notes: None,
+        };
+
+        env.storage()
+            .instance()
+            .set(&DataKey::Dispute, &record);
+
+        env.events().publish(
+            (DISPUTE_OPENED,),
+            DisputeOpenedEvent {
+                version: EVENT_VERSION_V2,
+                program_id: program_data.program_id,
+                raised_by: admin,
+                reason,
+                opened_at: now,
+            },
+        );
+
+        record
+    }
+
+    /// Resolve an open dispute, unblocking payouts.
+    ///
+    /// # Authorization
+    /// Caller must be the contract admin.
+    ///
+    /// # Errors
+    /// Panics if:
+    /// - Contract is not initialized (no admin set).
+    /// - No dispute is currently open.
+    ///
+    /// # Events
+    /// Emits `DspRslv` with [`DisputeResolvedEvent`].
+    pub fn resolve_dispute(env: Env, resolution_notes: String) -> DisputeRecord {
+        let admin = Self::require_admin(&env);
+
+        let mut record: DisputeRecord = env
+            .storage()
+            .instance()
+            .get(&DataKey::Dispute)
+            .unwrap_or_else(|| panic!("No dispute found"));
+
+        if record.state != DisputeState::Open {
+            panic!("No open dispute to resolve");
+        }
+
+        let now = env.ledger().timestamp();
+        let program_data: ProgramData = env
+            .storage()
+            .instance()
+            .get(&PROGRAM_DATA)
+            .unwrap_or_else(|| panic!("Program not initialized"));
+
+        record.state = DisputeState::Resolved;
+        record.resolved_by = Some(admin.clone());
+        record.resolved_at = Some(now);
+        record.resolution_notes = Some(resolution_notes.clone());
+
+        env.storage()
+            .instance()
+            .set(&DataKey::Dispute, &record);
+
+        env.events().publish(
+            (DISPUTE_RESOLVED,),
+            DisputeResolvedEvent {
+                version: EVENT_VERSION_V2,
+                program_id: program_data.program_id,
+                resolved_by: admin,
+                resolution_notes,
+                resolved_at: now,
+            },
+        );
+
+        record
+    }
+
+    /// Return the current dispute record, if any.
+    ///
+    /// Returns `None` when no dispute has ever been opened.
+    pub fn get_dispute(env: Env) -> Option<DisputeRecord> {
+        env.storage().instance().get(&DataKey::Dispute)
     }
 }
 

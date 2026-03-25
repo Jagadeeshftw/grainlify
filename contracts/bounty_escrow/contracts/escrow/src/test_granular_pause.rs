@@ -218,7 +218,7 @@ fn test_batch_lock_blocked_when_lock_paused() {
             depositor: depositor.clone(),
             amount: 100,
             deadline,
-            }
+        }
     ];
     let result = client.try_batch_lock_funds(&items);
     assert!(result.is_err());
@@ -629,7 +629,7 @@ fn test_batch_lock_allowed_when_release_and_refund_paused() {
             depositor: depositor.clone(),
             amount: 200,
             deadline,
-            }
+        }
     ];
     let count = client.batch_lock_funds(&items);
     assert_eq!(count, 1);
@@ -915,19 +915,19 @@ fn test_batch_lock_multiple_items_succeeds_when_unpaused() {
             depositor: depositor.clone(),
             amount: 100,
             deadline,
-            },
+        },
         LockFundsItem {
             bounty_id: 21,
             depositor: depositor.clone(),
             amount: 200,
             deadline,
-            },
+        },
         LockFundsItem {
             bounty_id: 22,
             depositor: depositor.clone(),
             amount: 300,
             deadline,
-            }
+        }
     ];
     let count = client.batch_lock_funds(&items);
     assert_eq!(count, 3);
@@ -949,7 +949,7 @@ fn test_batch_lock_blocked_even_with_only_lock_paused() {
             depositor: depositor.clone(),
             amount: 100,
             deadline,
-            }
+        }
     ];
     assert!(client.try_batch_lock_funds(&items).is_err());
 }

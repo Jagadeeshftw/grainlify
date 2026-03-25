@@ -29,14 +29,14 @@ This document outlines the security measures implemented in the Bounty Escrow co
   - `authorized_payout_key.require_auth()` enforced on all payout functions.
   - Rate limiting and whitelisting protect high-frequency callers.
 - **Bounty Escrow**:
-  - Admin-only release and approval flows, depositor-guarded locking, and permissionless-but-safe refunds.
+  - Admin-only release and approval flows, depositor-guarded locking, and dual-auth refund triggers (admin and depositor).
 
 ## Known Risks and Limitations
 
-### Permissionless Refund (Bounty Escrow)
-- **Description**: The `refund` function can be called by *anyone* once the deadline has passed.
-- **Rationale**: This ensures funds are never stuck in the contract if the depositor loses their key or is unavailable. The funds are strictly sent back to the original `depositor` address stored in the escrow state (or an approved custom recipient).
-- **Risk**: Low. No funds can be stolen, only returned to the rightful owner or an explicitly-approved recipient.
+### Dual-Authorization Refund (Bounty Escrow)
+- **Description**: The `refund` function requires authenticated authorization from both the contract `admin` and the escrow `depositor`.
+- **Rationale**: This enforces explicit co-approval for automated refund execution while preserving refund safety and existing eligibility checks.
+- **Risk**: Low to medium operationally. Unauthorized third parties cannot trigger refunds, but coordination between admin and depositor is required for execution.
 
 ### Admin Privileges & Upgrades
 - **Description**:

@@ -96,14 +96,6 @@
                           "val": {
                             "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                           }
-                        },
-                        {
-                          "key": {
-                            "symbol": "non_transferable_rewards"
-                          },
-                          "val": {
-                            "bool": false
-                          }
                         }
                       ]
                     },
@@ -143,14 +135,6 @@
                           "val": {
                             "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                           }
-                        },
-                        {
-                          "key": {
-                            "symbol": "non_transferable_rewards"
-                          },
-                          "val": {
-                            "bool": false
-                          }
                         }
                       ]
                     },
@@ -189,14 +173,6 @@
                           },
                           "val": {
                             "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "non_transferable_rewards"
-                          },
-                          "val": {
-                            "bool": false
                           }
                         }
                       ]
@@ -416,6 +392,61 @@
             "ext": "v0"
           },
           6311999
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "DepositorIndex"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "DepositorIndex"
+                    },
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "vec": [
+                    {
+                      "u64": 20
+                    },
+                    {
+                      "u64": 21
+                    },
+                    {
+                      "u64": 22
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4095
         ]
       ],
       [
@@ -720,6 +751,55 @@
                           }
                         ]
                       }
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4095
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "EscrowIndex"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "EscrowIndex"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "vec": [
+                    {
+                      "u64": 20
+                    },
+                    {
+                      "u64": 21
+                    },
+                    {
+                      "u64": 22
                     }
                   ]
                 }
@@ -1441,14 +1521,6 @@
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                       }
-                    },
-                    {
-                      "key": {
-                        "symbol": "non_transferable_rewards"
-                      },
-                      "val": {
-                        "bool": false
-                      }
                     }
                   ]
                 },
@@ -1488,14 +1560,6 @@
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                       }
-                    },
-                    {
-                      "key": {
-                        "symbol": "non_transferable_rewards"
-                      },
-                      "val": {
-                        "bool": false
-                      }
                     }
                   ]
                 },
@@ -1534,14 +1598,6 @@
                       },
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "non_transferable_rewards"
-                      },
-                      "val": {
-                        "bool": false
                       }
                     }
                   ]
@@ -1695,14 +1751,6 @@
                   },
                   "val": {
                     "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "non_transferable_rewards"
-                  },
-                  "val": {
-                    "bool": false
                   }
                 },
                 {
@@ -1866,14 +1914,6 @@
                 },
                 {
                   "key": {
-                    "symbol": "non_transferable_rewards"
-                  },
-                  "val": {
-                    "bool": false
-                  }
-                },
-                {
-                  "key": {
                     "symbol": "version"
                   },
                   "val": {
@@ -2029,14 +2069,6 @@
                   },
                   "val": {
                     "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "non_transferable_rewards"
-                  },
-                  "val": {
-                    "bool": false
                   }
                 },
                 {

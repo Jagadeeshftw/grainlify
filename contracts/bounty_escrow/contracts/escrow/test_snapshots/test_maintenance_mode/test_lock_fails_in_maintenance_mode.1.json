@@ -935,7 +935,7 @@
           "v0": {
             "topics": [
               {
-                "symbol": "MaintSt"
+                "symbol": "maint"
               }
             ],
             "data": {
@@ -1047,7 +1047,7 @@
               }
             ],
             "data": {
-              "string": "start lock_funds"
+              "string": "admin ok"
             }
           }
         }
@@ -1058,16 +1058,52 @@
       "event": {
         "ext": "v0",
         "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
-        "type_": "diagnostic",
+        "type_": "contract",
         "body": {
           "v0": {
             "topics": [
               {
-                "symbol": "log"
+                "symbol": "metric"
+              },
+              {
+                "symbol": "op"
               }
             ],
             "data": {
-              "string": "rate limit ok"
+              "map": [
+                {
+                  "key": {
+                    "symbol": "caller"
+                  },
+                  "val": {
+                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "operation"
+                  },
+                  "val": {
+                    "symbol": "lock"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "success"
+                  },
+                  "val": {
+                    "bool": false
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "timestamp"
+                  },
+                  "val": {
+                    "u64": 0
+                  }
+                }
+              ]
             }
           }
         }

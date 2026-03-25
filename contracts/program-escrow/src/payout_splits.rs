@@ -35,9 +35,25 @@ use crate::{DataKey, ProgramData, PayoutRecord, PROGRAM_DATA};
 /// Total basis points that split shares must sum to (10 000 bp == 100 %).
 pub const TOTAL_BASIS_POINTS: i128 = 10_000;
 
-// Event symbols
-const SPLIT_CONFIG_SET: Symbol = symbol_short!("SplitCfg");
-const SPLIT_PAYOUT: Symbol = symbol_short!("SplitPay");
+// Event structs
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SplitConfigSetEvent {
+    pub version: u32,
+    pub program_id: String,
+    pub recipient_count: u32,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SplitPayoutEvent {
+    pub version: u32,
+    pub program_id: String,
+    pub total_amount: i128,
+    pub recipient_count: u32,
+    pub remaining_balance: i128,
+}
 
 // ---------------------------------------------------------------------------
 // Data types
@@ -151,8 +167,13 @@ pub fn set_split_config(
         .set(&split_key(program_id), &config);
 
     env.events().publish(
-        (SPLIT_CONFIG_SET,),
-        (program_id.clone(), n as u32, env.ledger().timestamp()),
+        (symbol_short!("SplitCfg"),),
+        SplitConfigSetEvent {
+            version: 2,
+            program_id: program_id.clone(),
+            recipient_count: n as u32,
+            timestamp: env.ledger().timestamp(),
+        },
     );
 
     config
@@ -282,14 +303,14 @@ pub fn execute_split_payout(
     save_program(env, &program);
 
     env.events().publish(
-        (SPLIT_PAYOUT,),
-        (
-            program_id.clone(),
+        (symbol_short!("SplitPay"),),
+        SplitPayoutEvent {
+            version: 2,
+            program_id: program_id.clone(),
             total_amount,
-            n as u32,
-            program.remaining_balance,
-            now,
-        ),
+            recipient_count: n as u32,
+            remaining_balance: program.remaining_balance,
+        },
     );
 
     SplitPayoutResult {

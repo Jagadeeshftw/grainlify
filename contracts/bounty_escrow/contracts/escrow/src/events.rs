@@ -302,6 +302,23 @@ pub fn emit_risk_flags_updated(env: &Env, event: RiskFlagsUpdated) {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NotificationPreferencesUpdated {
+    pub version: u32,
+    pub bounty_id: u64,
+    pub previous_prefs: u32,
+    pub new_prefs: u32,
+    pub actor: Address,
+    pub created: bool,
+    pub timestamp: u64,
+}
+
+pub fn emit_notification_preferences_updated(env: &Env, event: NotificationPreferencesUpdated) {
+    let topics = (symbol_short!("npref"), event.bounty_id);
+    env.events().publish(topics, event);
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TicketIssued {
     pub ticket_id: u64,
     pub bounty_id: u64,

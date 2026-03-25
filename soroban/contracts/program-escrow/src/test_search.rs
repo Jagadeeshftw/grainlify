@@ -160,6 +160,46 @@ fn test_search_filter_by_status() {
     assert_eq!(page.records.len(), 0);
 }
 
+#[test]
+fn test_search_filter_by_status_and_admin_together() {
+    setup_search!(
+        env, client, _contract_id, _admin, program_admin,
+        _token_client, token_admin, 100_000i128
+    );
+
+    let other_admin = Address::generate(&env);
+    token_admin.mint(&other_admin, &100_000);
+
+    client.register_program(
+        &1,
+        &program_admin,
+        &String::from_str(&env, "Mine Active A"),
+        &1_000,
+    );
+    client.register_program(
+        &2,
+        &other_admin,
+        &String::from_str(&env, "Other Active"),
+        &1_000,
+    );
+    client.register_program(
+        &3,
+        &program_admin,
+        &String::from_str(&env, "Mine Active B"),
+        &1_000,
+    );
+
+    let criteria = ProgramSearchCriteria {
+        status_filter: 1,
+        admin: Some(program_admin.clone()),
+    };
+
+    let page = client.get_programs(&criteria, &None, &10);
+    assert_eq!(page.records.len(), 2);
+    assert_eq!(page.records.get(0).unwrap().program_id, 1);
+    assert_eq!(page.records.get(1).unwrap().program_id, 3);
+}
+
 // ==================== FILTER BY ADMIN ====================
 
 #[test]
@@ -243,6 +283,113 @@ fn test_search_page_size_cap() {
     assert!(page.next_cursor.is_some());
 }
 
+#[test]
+fn test_search_zero_limit_defaults_to_max_page_size() {
+    setup_search!(
+        env, client, _contract_id, _admin, program_admin,
+        _token_client, _token_admin, 1_000_000i128
+    );
+
+    for id in 1..=25u64 {
+        client.register_program(
+            &id,
+            &program_admin,
+            &String::from_str(&env, "Program"),
+            &100,
+        );
+    }
+
+    let criteria = ProgramSearchCriteria {
+        status_filter: 0,
+        admin: None,
+    };
+
+    let page = client.get_programs(&criteria, &None, &0);
+    assert_eq!(page.records.len(), 20);
+    assert!(page.has_more);
+    assert_eq!(page.records.get(0).unwrap().program_id, 1);
+}
+
+#[test]
+fn test_search_unknown_cursor_returns_empty_page() {
+    setup_search!(
+        env, client, _contract_id, _admin, program_admin,
+        _token_client, _token_admin, 100_000i128
+    );
+
+    for id in 1..=3u64 {
+        client.register_program(
+            &id,
+            &program_admin,
+            &String::from_str(&env, "Program"),
+            &1_000,
+        );
+    }
+
+    let criteria = ProgramSearchCriteria {
+        status_filter: 0,
+        admin: None,
+    };
+
+    let page = client.get_programs(&criteria, &Some(999), &10);
+    assert_eq!(page.records.len(), 0);
+    assert_eq!(page.next_cursor, None);
+    assert!(!page.has_more);
+}
+
+#[test]
+fn test_search_cursor_skips_non_matching_records() {
+    setup_search!(
+        env, client, _contract_id, _admin, program_admin,
+        _token_client, token_admin, 100_000i128
+    );
+
+    let other_admin = Address::generate(&env);
+    token_admin.mint(&other_admin, &100_000);
+
+    client.register_program(
+        &1,
+        &other_admin,
+        &String::from_str(&env, "Other A"),
+        &1_000,
+    );
+    client.register_program(
+        &2,
+        &program_admin,
+        &String::from_str(&env, "Mine A"),
+        &1_000,
+    );
+    client.register_program(
+        &3,
+        &other_admin,
+        &String::from_str(&env, "Other B"),
+        &1_000,
+    );
+    client.register_program(
+        &4,
+        &program_admin,
+        &String::from_str(&env, "Mine B"),
+        &1_000,
+    );
+
+    let criteria = ProgramSearchCriteria {
+        status_filter: 0,
+        admin: Some(program_admin.clone()),
+    };
+
+    let first = client.get_programs(&criteria, &None, &1);
+    assert_eq!(first.records.len(), 1);
+    assert_eq!(first.records.get(0).unwrap().program_id, 2);
+    assert!(first.has_more);
+    assert_eq!(first.next_cursor, Some(2));
+
+    let second = client.get_programs(&criteria, &first.next_cursor, &1);
+    assert_eq!(second.records.len(), 1);
+    assert_eq!(second.records.get(0).unwrap().program_id, 4);
+    assert!(!second.has_more);
+    assert_eq!(second.next_cursor, None);
+}
+
 // ==================== BATCH REGISTRATION INDEX TRACKING ====================
 
 #[test]
@@ -286,4 +433,44 @@ fn test_search_batch_registered_programs() {
     assert_eq!(page.records.get(1).unwrap().program_id, 20);
     assert_eq!(page.records.get(2).unwrap().program_id, 30);
     assert_eq!(client.get_program_count(), 3);
+}
+
+#[test]
+fn test_search_includes_jurisdiction_enabled_programs() {
+    setup_search!(
+        env, client, _contract_id, _admin, program_admin,
+        _token_client, _token_admin, 100_000i128
+    );
+
+    let jurisdiction = ProgramJurisdictionConfig {
+        tag: Some(String::from_str(&env, "EU-only")),
+        requires_kyc: true,
+        max_funding: Some(10_000),
+        registration_paused: false,
+    };
+
+    client.register_program_juris(
+        &10,
+        &program_admin,
+        &String::from_str(&env, "Jurisdiction Program"),
+        &5_000,
+        &jurisdiction.tag.clone(),
+        &jurisdiction.requires_kyc,
+        &jurisdiction.max_funding.clone(),
+        &jurisdiction.registration_paused,
+        &OptionalJurisdiction::Some(jurisdiction.clone()),
+        &Some(true),
+    );
+
+    let criteria = ProgramSearchCriteria {
+        status_filter: 1,
+        admin: Some(program_admin.clone()),
+    };
+
+    let page = client.get_programs(&criteria, &None, &10);
+    assert_eq!(page.records.len(), 1);
+    let record = page.records.get(0).unwrap();
+    assert_eq!(record.program_id, 10);
+    assert_eq!(record.name, String::from_str(&env, "Jurisdiction Program"));
+    assert_eq!(client.get_program_jurisdiction(&10), Some(jurisdiction));
 }

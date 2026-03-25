@@ -31,8 +31,19 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "pause",
-              "args": []
+              "function_name": "set_paused",
+              "args": [
+                {
+                  "bool": true
+                },
+                {
+                  "bool": true
+                },
+                {
+                  "bool": true
+                },
+                "void"
+              ]
             }
           },
           "sub_invocations": []
@@ -137,40 +148,9 @@
           "contract_data": {
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
             "key": {
-              "symbol": "op_count"
-            },
-            "durability": "persistent"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-                "key": {
-                  "symbol": "op_count"
-                },
-                "durability": "persistent",
-                "val": {
-                  "u64": 1
-                }
-              }
-            },
-            "ext": "v0"
-          },
-          4095
-        ]
-      ],
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-            "key": {
               "vec": [
                 {
-                  "symbol": "IsPaused"
+                  "symbol": "EscrowIndex"
                 }
               ]
             },
@@ -187,173 +167,13 @@
                 "key": {
                   "vec": [
                     {
-                      "symbol": "IsPaused"
+                      "symbol": "EscrowIndex"
                     }
                   ]
                 },
                 "durability": "persistent",
                 "val": {
-                  "bool": true
-                }
-              }
-            },
-            "ext": "v0"
-          },
-          4095
-        ]
-      ],
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-            "key": {
-              "vec": [
-                {
-                  "symbol": "State"
-                },
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                }
-              ]
-            },
-            "durability": "persistent"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-                "key": {
-                  "vec": [
-                    {
-                      "symbol": "State"
-                    },
-                    {
-                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                    }
-                  ]
-                },
-                "durability": "persistent",
-                "val": {
-                  "map": [
-                    {
-                      "key": {
-                        "symbol": "last_operation_timestamp"
-                      },
-                      "val": {
-                        "u64": 0
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "operation_count"
-                      },
-                      "val": {
-                        "u32": 1
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "window_start_timestamp"
-                      },
-                      "val": {
-                        "u64": 0
-                      }
-                    }
-                  ]
-                }
-              }
-            },
-            "ext": "v0"
-          },
-          17280
-        ]
-      ],
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-            "key": {
-              "vec": [
-                {
-                  "symbol": "perf_cnt"
-                },
-                {
-                  "symbol": "init"
-                }
-              ]
-            },
-            "durability": "persistent"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-                "key": {
-                  "vec": [
-                    {
-                      "symbol": "perf_cnt"
-                    },
-                    {
-                      "symbol": "init"
-                    }
-                  ]
-                },
-                "durability": "persistent",
-                "val": {
-                  "u64": 1
-                }
-              }
-            },
-            "ext": "v0"
-          },
-          4095
-        ]
-      ],
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-            "key": {
-              "vec": [
-                {
-                  "symbol": "perf_time"
-                },
-                {
-                  "symbol": "init"
-                }
-              ]
-            },
-            "durability": "persistent"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-                "key": {
-                  "vec": [
-                    {
-                      "symbol": "perf_time"
-                    },
-                    {
-                      "symbol": "init"
-                    }
-                  ]
-                },
-                "durability": "persistent",
-                "val": {
-                  "u64": 0
+                  "vec": []
                 }
               }
             },
@@ -401,7 +221,7 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "FeeConfig"
+                              "symbol": "PauseFlags"
                             }
                           ]
                         },
@@ -409,40 +229,40 @@
                           "map": [
                             {
                               "key": {
-                                "symbol": "fee_enabled"
+                                "symbol": "lock_paused"
                               },
                               "val": {
-                                "bool": false
+                                "bool": true
                               }
                             },
                             {
                               "key": {
-                                "symbol": "fee_recipient"
+                                "symbol": "pause_reason"
+                              },
+                              "val": "void"
+                            },
+                            {
+                              "key": {
+                                "symbol": "paused_at"
                               },
                               "val": {
-                                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                                "u64": 0
                               }
                             },
                             {
                               "key": {
-                                "symbol": "lock_fee_rate"
+                                "symbol": "refund_paused"
                               },
                               "val": {
-                                "i128": {
-                                  "hi": 0,
-                                  "lo": 0
-                                }
+                                "bool": true
                               }
                             },
                             {
                               "key": {
-                                "symbol": "release_fee_rate"
+                                "symbol": "release_paused"
                               },
                               "val": {
-                                "i128": {
-                                  "hi": 0,
-                                  "lo": 0
-                                }
+                                "bool": true
                               }
                             }
                           ]
@@ -922,16 +742,15 @@
                 {
                   "bool": true
                 },
-                "void",
-                "void",
                 {
-                  "string": "emergency"
-                }
+                  "bool": true
+                },
+                {
+                  "bool": true
+                },
+                "void"
               ]
             }
-=======
-            "data": "void"
->>>>>>> upstream:contracts/bounty_escrow/contracts/escrow/test_snapshots/test_bounty_escrow/test_emergency_withdraw.1.json
           }
         }
       },
@@ -982,9 +801,131 @@
                   "key": {
                     "symbol": "reason"
                   },
+                  "val": "void"
+                },
+                {
+                  "key": {
+                    "symbol": "timestamp"
+                  },
                   "val": {
-                    "string": "emergency"
+                    "u64": 0
                   }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "pause"
+              },
+              {
+                "symbol": "release"
+              }
+            ],
+            "data": {
+              "map": [
+                {
+                  "key": {
+                    "symbol": "admin"
+                  },
+                  "val": {
+                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "operation"
+                  },
+                  "val": {
+                    "symbol": "release"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "paused"
+                  },
+                  "val": {
+                    "bool": true
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "reason"
+                  },
+                  "val": "void"
+                },
+                {
+                  "key": {
+                    "symbol": "timestamp"
+                  },
+                  "val": {
+                    "u64": 0
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "pause"
+              },
+              {
+                "symbol": "refund"
+              }
+            ],
+            "data": {
+              "map": [
+                {
+                  "key": {
+                    "symbol": "admin"
+                  },
+                  "val": {
+                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "operation"
+                  },
+                  "val": {
+                    "symbol": "refund"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "paused"
+                  },
+                  "val": {
+                    "bool": true
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "reason"
+                  },
+                  "val": "void"
                 },
                 {
                   "key": {
@@ -1040,30 +981,7 @@
                 "symbol": "get_pause_flags"
               }
             ],
-<<<<<<< HEAD:contracts/bounty_escrow/contracts/escrow/test_snapshots/test_granular_pause/test_lock_funds_blocked_when_lock_paused.1.json
-            "data": {
-              "vec": [
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
-                },
-                {
-                  "u64": 1
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 100
-                  }
-                },
-                {
-                  "u64": 1000
-                },
-                "void"
-              ]
-            }
-=======
             "data": "void"
->>>>>>> upstream:contracts/bounty_escrow/contracts/escrow/test_snapshots/test_bounty_escrow/test_emergency_withdraw.1.json
           }
         }
       },
@@ -1098,9 +1016,7 @@
                   "key": {
                     "symbol": "pause_reason"
                   },
-                  "val": {
-                    "string": "emergency"
-                  }
+                  "val": "void"
                 },
                 {
                   "key": {
@@ -1115,7 +1031,7 @@
                     "symbol": "refund_paused"
                   },
                   "val": {
-                    "bool": false
+                    "bool": true
                   }
                 },
                 {
@@ -1123,7 +1039,7 @@
                     "symbol": "release_paused"
                   },
                   "val": {
-                    "bool": false
+                    "bool": true
                   }
                 }
               ]
@@ -1247,7 +1163,7 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
               },
               {
-                "symbol": "is_paused"
+                "symbol": "get_pause_flags"
               }
             ],
             "data": "void"
@@ -1268,7 +1184,7 @@
                 "symbol": "fn_return"
               },
               {
-                "symbol": "is_paused"
+                "symbol": "get_pause_flags"
               }
             ],
             "data": {
@@ -1285,31 +1201,9 @@
                   "key": {
                     "symbol": "pause_reason"
                   },
-                  "val": {
-                    "string": "emergency"
-                  }
+                  "val": "void"
                 },
                 {
-<<<<<<< HEAD:contracts/bounty_escrow/contracts/escrow/test_snapshots/test_granular_pause/test_lock_funds_blocked_when_lock_paused.1.json
-                  "vec": [
-                    {
-                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
-                    },
-                    {
-                      "u64": 1
-                    },
-                    {
-                      "i128": {
-                        "hi": 0,
-                        "lo": 100
-                      }
-                    },
-                    {
-                      "u64": 1000
-                    },
-                    "void"
-                  ]
-=======
                   "key": {
                     "symbol": "paused_at"
                   },
@@ -1322,7 +1216,7 @@
                     "symbol": "refund_paused"
                   },
                   "val": {
-                    "bool": false
+                    "bool": true
                   }
                 },
                 {
@@ -1330,9 +1224,8 @@
                     "symbol": "release_paused"
                   },
                   "val": {
-                    "bool": false
+                    "bool": true
                   }
->>>>>>> upstream:contracts/bounty_escrow/contracts/escrow/test_snapshots/test_bounty_escrow/test_emergency_withdraw.1.json
                 }
               ]
             }

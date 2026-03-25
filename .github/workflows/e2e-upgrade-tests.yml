@@ -20,42 +20,28 @@ jobs:
   grainlify-core-e2e-tests:
     name: Grainlify Core E2E Upgrade Tests
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
+      - name: Setup Rust (with Soroban targets)
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: ${{ env.RUST_VERSION }}
-          target: wasm32-unknown-unknown
-          override: true
-          profile: minimal
+          targets: wasm32v1-none, wasm32-unknown-unknown
 
-      - name: Cache Cargo registry
-        uses: actions/cache@v3
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
         with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            contracts/grainlify-core/target/
+          key: ${{ runner.os }}-cargo-grainlify-core-${{ hashFiles('contracts/grainlify-core/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-registry-
-
-      - name: Cache Cargo index
-        uses: actions/cache@v3
-        with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-git-
-
-      - name: Cache target directory
-        uses: actions/cache@v3
-        with:
-          path: contracts/grainlify-core/target
-          key: ${{ runner.os }}-target-grainlify-core-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-target-grainlify-core-
+            ${{ runner.os }}-cargo-grainlify-core-
 
       - name: Install Stellar CLI
         run: |
@@ -71,8 +57,7 @@ jobs:
       - name: Build Grainlify Core Contract
         working-directory: contracts/grainlify-core
         run: |
-          cargo build --target wasm32-unknown-unknown --release
-          stellar contract optimize --wasm target/wasm32-unknown-unknown/release/grainlify_core.wasm
+          stellar contract build
 
       - name: Run E2E Upgrade Tests
         working-directory: contracts/grainlify-core
@@ -92,29 +77,31 @@ jobs:
   bounty-escrow-e2e-tests:
     name: Bounty Escrow E2E Upgrade Tests
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
+      - name: Setup Rust (with Soroban targets)
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: ${{ env.RUST_VERSION }}
-          target: wasm32-unknown-unknown
-          override: true
-          profile: minimal
+          targets: wasm32v1-none, wasm32-unknown-unknown
 
-      - name: Cache Cargo registry
-        uses: actions/cache@v3
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
         with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            contracts/bounty_escrow/target/
+          key: ${{ runner.os }}-cargo-bounty-escrow-${{ hashFiles('contracts/bounty_escrow/**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-registry-
+            ${{ runner.os }}-cargo-bounty-escrow-
 
       - name: Cache target directory
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: contracts/bounty_escrow/contracts/escrow/target
           key: ${{ runner.os }}-target-bounty-escrow-${{ hashFiles('**/Cargo.lock') }}
@@ -135,8 +122,7 @@ jobs:
       - name: Build Bounty Escrow Contract
         working-directory: contracts/bounty_escrow/contracts/escrow
         run: |
-          cargo build --target wasm32-unknown-unknown --release
-          stellar contract optimize --wasm ../../target/wasm32-unknown-unknown/release/bounty_escrow.wasm
+          stellar contract build
 
       - name: Run E2E Upgrade with Pause Tests
         working-directory: contracts/bounty_escrow/contracts/escrow
@@ -156,29 +142,31 @@ jobs:
   program-escrow-e2e-tests:
     name: Program Escrow E2E Tests
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
+      - name: Setup Rust (with Soroban targets)
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: ${{ env.RUST_VERSION }}
-          target: wasm32-unknown-unknown
-          override: true
-          profile: minimal
+          targets: wasm32v1-none, wasm32-unknown-unknown
 
-      - name: Cache Cargo registry
-        uses: actions/cache@v3
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
         with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            contracts/program-escrow/target/
+          key: ${{ runner.os }}-cargo-program-escrow-${{ hashFiles('contracts/program-escrow/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-registry-
+            ${{ runner.os }}-cargo-program-escrow-
 
       - name: Cache target directory
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: contracts/program-escrow/target
           key: ${{ runner.os }}-target-program-escrow-${{ hashFiles('**/Cargo.lock') }}
@@ -199,8 +187,7 @@ jobs:
       - name: Build Program Escrow Contract
         working-directory: contracts/program-escrow
         run: |
-          cargo build --target wasm32-unknown-unknown --release
-          stellar contract optimize --wasm target/wasm32-unknown-unknown/release/program_escrow.wasm
+          stellar contract build
 
       - name: Run Circuit Breaker Tests
         working-directory: contracts/program-escrow
@@ -226,13 +213,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
+      - name: Setup Rust (with Soroban targets)
+        uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ env.RUST_VERSION }}
-          target: wasm32-unknown-unknown
-          override: true
-          profile: minimal
+          targets: wasm32v1-none, wasm32-unknown-unknown
 
       - name: Install Stellar CLI
         run: |

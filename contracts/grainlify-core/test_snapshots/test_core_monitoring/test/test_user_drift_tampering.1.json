@@ -53,6 +53,41 @@
           "contract_data": {
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
             "key": {
+              "symbol": "perf_index"
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+                "key": {
+                  "symbol": "perf_index"
+                },
+                "durability": "persistent",
+                "val": {
+                  "vec": [
+                    {
+                      "symbol": "init"
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4095
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+            "key": {
               "symbol": "usr_count"
             },
             "durability": "persistent"
@@ -116,6 +151,51 @@
                 "durability": "persistent",
                 "val": {
                   "u64": 1
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4095
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "perf_last"
+                },
+                {
+                  "symbol": "init"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "perf_last"
+                    },
+                    {
+                      "symbol": "init"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "u64": 0
                 }
               }
             },
@@ -214,18 +294,6 @@
                         },
                         "val": {
                           "u32": 2
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
-                            {
-                              "symbol": "ReceiptCounter"
-                            }
-                          ]
-                        },
-                        "val": {
-                          "u64": 1
                         }
                       }
                     ]
@@ -353,78 +421,7 @@
           "v0": {
             "topics": [
               {
-<<<<<<< HEAD:contracts/program-escrow/test_snapshots/test_pause/test_set_paused_lock.1.json
-                "symbol": "PauseSt"
-              }
-            ],
-            "data": {
-              "map": [
-                {
-                  "key": {
-                    "symbol": "admin"
-                  },
-                  "val": {
-                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "operation"
-                  },
-                  "val": {
-                    "symbol": "lock"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "paused"
-                  },
-                  "val": {
-                    "bool": true
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "reason"
-                  },
-                  "val": "void"
-                },
-                {
-                  "key": {
-                    "symbol": "receipt_id"
-                  },
-                  "val": {
-                    "u64": 1
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "timestamp"
-                  },
-                  "val": {
-                    "u64": 0
-                  }
-                }
-              ]
-            }
-          }
-        }
-      },
-      "failed_call": false
-    },
-    {
-      "event": {
-        "ext": "v0",
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
-        "type_": "diagnostic",
-        "body": {
-          "v0": {
-            "topics": [
-              {
-                "symbol": "fn_return"
-=======
                 "symbol": "metric"
->>>>>>> origin/master:contracts/grainlify-core/test_snapshots/test_core_monitoring/test/test_user_drift_tampering.1.json
               },
               {
                 "symbol": "perf"

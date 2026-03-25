@@ -97,6 +97,7 @@ fn serialization_compatibility_public_types_and_events() {
                 issue_id,
                 bounty_type: bounty_type.clone(),
                 risk_flags: 0,
+                notification_prefs: 0,
                 reference_hash: None,
             }
             .into_val(&env),
@@ -190,7 +191,7 @@ fn serialization_compatibility_public_types_and_events() {
                 amount: 1234,
                 expires_at: 555,
                 claimed: false,
-            reason: DisputeReason::Other,
+                reason: DisputeReason::Other,
             }
             .into_val(&env),
         ),
@@ -419,6 +420,19 @@ fn serialization_compatibility_public_types_and_events() {
                 capability_id: 7,
                 owner: admin.clone(),
                 revoked_at: 111,
+            }
+            .into_val(&env),
+        ),
+        (
+            "NotificationPreferencesUpdated",
+            NotificationPreferencesUpdated {
+                version: EVENT_VERSION_V2,
+                bounty_id,
+                previous_prefs: 0,
+                new_prefs: 3,
+                actor: admin.clone(),
+                created: true,
+                timestamp: 555,
             }
             .into_val(&env),
         ),

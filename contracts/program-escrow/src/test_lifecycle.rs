@@ -1355,3 +1355,81 @@ fn test_drained_reactivate_triggers_pending_schedule() {
     assert_eq!(token_client.balance(&schedule_recipient), 30_000);
     assert_eq!(client.get_remaining_balance(), 20_000);
 }
+
+// ---------------------------------------------------------------------------
+// NEW: Event Verification & ID Management
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_schedule_id_incrementing() {
+    let env = Env::default();
+    let (client, _admin, _cid, _token) = setup_active_program(&env, 100_000);
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+
+    client.create_program_release_schedule(&r1, &10_000, &100);
+    client.create_program_release_schedule(&r2, &10_000, &200);
+
+    let schedules = client.get_release_schedules();
+    assert_eq!(schedules.len(), 2);
+    assert_eq!(schedules.get(0).unwrap().schedule_id, 1);
+    assert_eq!(schedules.get(1).unwrap().schedule_id, 2);
+}
+
+#[test]
+fn test_manual_release_disregards_timestamp() {
+    let env = Env::default();
+    let (client, _admin, _cid, token_client) = setup_active_program(&env, 100_000);
+    let r = Address::generate(&env);
+
+    let now = env.ledger().timestamp();
+    // Schedule for 1 hour in the future
+    let schedule = client.create_program_release_schedule(&r, &10_000, &(now + 3600));
+
+    // Manual release should work immediately
+    client.release_program_schedule_manual(&schedule.schedule_id);
+    assert_eq!(token_client.balance(&r), 10_000);
+}
+
+#[test]
+#[should_panic(expected = "Not yet due")]
+fn test_automatic_release_enforces_timestamp() {
+    let env = Env::default();
+    let (client, _admin, _cid, _token) = setup_active_program(&env, 100_000);
+    let r = Address::generate(&env);
+
+    let now = env.ledger().timestamp();
+    let schedule = client.create_program_release_schedule(&r, &10_000, &(now + 3600));
+
+    // Automatic release should fail if now < release_timestamp
+    client.release_prog_schedule_automatic(&schedule.schedule_id);
+}
+
+#[test]
+#[should_panic(expected = "Insufficient balance")]
+fn test_no_double_spend_batch_then_schedule() {
+    let env = Env::default();
+    let (client, _admin, _cid, _token) = setup_active_program(&env, 40_000);
+    let r = Address::generate(&env);
+    
+    client.create_program_release_schedule(&r, &30_000, &0);
+    // Spend most of the balance
+    client.batch_payout(&vec![&env, r.clone()], &vec![&env, 20_000i128]);
+    
+    // Only 20k left, 30k schedule should fail
+    client.trigger_program_releases();
+}
+
+#[test]
+#[should_panic(expected = "Insufficient balance")]
+fn test_no_double_spend_schedule_then_batch() {
+    let env = Env::default();
+    let (client, _admin, _cid, _token) = setup_active_program(&env, 40_000);
+    let r = Address::generate(&env);
+    
+    client.create_program_release_schedule(&r, &30_000, &0);
+    client.trigger_program_releases(); // 10k left
+    
+    // Attempting 20k payout should fail
+    client.batch_payout(&vec![&env, r], &vec![&env, 20_000i128]);
+}

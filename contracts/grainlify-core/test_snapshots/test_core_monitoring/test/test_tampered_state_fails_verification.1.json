@@ -4,7 +4,6 @@
     "nonce": 0
   },
   "auth": [
-    [],
     []
   ],
   "ledger": {
@@ -17,37 +16,6 @@
     "min_temp_entry_ttl": 16,
     "max_entry_ttl": 6312000,
     "ledger_entries": [
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-            "key": {
-              "symbol": "err_count"
-            },
-            "durability": "persistent"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-                "key": {
-                  "symbol": "err_count"
-                },
-                "durability": "persistent",
-                "val": {
-                  "u64": 5
-                }
-              }
-            },
-            "ext": "v0"
-          },
-          4095
-        ]
-      ],
       [
         {
           "contract_data": {
@@ -70,7 +38,42 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "u64": 2
+                  "u64": 1
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4095
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+            "key": {
+              "symbol": "perf_index"
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+                "key": {
+                  "symbol": "perf_index"
+                },
+                "durability": "persistent",
+                "val": {
+                  "vec": [
+                    {
+                      "symbol": "init"
+                    }
+                  ]
                 }
               }
             },
@@ -116,6 +119,51 @@
                 "durability": "persistent",
                 "val": {
                   "u64": 1
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4095
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "perf_last"
+                },
+                {
+                  "symbol": "init"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "perf_last"
+                    },
+                    {
+                      "symbol": "init"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "u64": 0
                 }
               }
             },
@@ -214,18 +262,6 @@
                         },
                         "val": {
                           "u32": 2
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
-                            {
-                              "symbol": "ReceiptCounter"
-                            }
-                          ]
-                        },
-                        "val": {
-                          "u64": 1
                         }
                       }
                     ]
@@ -363,61 +399,22 @@
               "map": [
                 {
                   "key": {
-<<<<<<< HEAD:contracts/program-escrow/test_snapshots/test_pause/test_set_paused_release.1.json
-                    "symbol": "admin"
-                  },
-                  "val": {
-                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-=======
                     "symbol": "duration"
                   },
                   "val": {
                     "u64": 0
->>>>>>> origin/master:contracts/grainlify-core/test_snapshots/test_core_monitoring/test/test_tampered_state_fails_verification.1.json
                   }
                 },
                 {
                   "key": {
-<<<<<<< HEAD:contracts/program-escrow/test_snapshots/test_pause/test_set_paused_release.1.json
-                    "symbol": "operation"
-                  },
-                  "val": {
-                    "symbol": "release"
-=======
                     "symbol": "function"
                   },
                   "val": {
                     "symbol": "init"
->>>>>>> origin/master:contracts/grainlify-core/test_snapshots/test_core_monitoring/test/test_tampered_state_fails_verification.1.json
                   }
                 },
                 {
                   "key": {
-<<<<<<< HEAD:contracts/program-escrow/test_snapshots/test_pause/test_set_paused_release.1.json
-                    "symbol": "paused"
-                  },
-                  "val": {
-                    "bool": true
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "reason"
-                  },
-                  "val": "void"
-                },
-                {
-                  "key": {
-                    "symbol": "receipt_id"
-                  },
-                  "val": {
-                    "u64": 1
-                  }
-                },
-                {
-                  "key": {
-=======
->>>>>>> origin/master:contracts/grainlify-core/test_snapshots/test_core_monitoring/test/test_tampered_state_fails_verification.1.json
                     "symbol": "timestamp"
                   },
                   "val": {
@@ -447,62 +444,6 @@
               }
             ],
             "data": "void"
-          }
-        }
-      },
-      "failed_call": false
-    },
-    {
-      "event": {
-        "ext": "v0",
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
-        "type_": "contract",
-        "body": {
-          "v0": {
-            "topics": [
-              {
-                "symbol": "metric"
-              },
-              {
-                "symbol": "op"
-              }
-            ],
-            "data": {
-              "map": [
-                {
-                  "key": {
-                    "symbol": "caller"
-                  },
-                  "val": {
-                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "operation"
-                  },
-                  "val": {
-                    "symbol": "op1"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "success"
-                  },
-                  "val": {
-                    "bool": true
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "timestamp"
-                  },
-                  "val": {
-                    "u64": 0
-                  }
-                }
-              ]
-            }
           }
         }
       },

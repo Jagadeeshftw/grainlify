@@ -51,7 +51,7 @@ fn test_lock_not_initialized_beats_paused() {
     let (env, client) = setup_uninitialized();
     let depositor = Address::generate(&env);
     let future = 99_999_999u64;
-    let result = client.try_lock_funds(&depositor, &1, &1_000, &future, &None);
+    let result = client.try_lock_funds(&depositor, &1, &1_000, &future);
     assert_eq!(result, Err(Ok(Error::NotInitialized)));
 }
 
@@ -60,7 +60,7 @@ fn test_lock_not_initialized_beats_paused() {
 fn test_lock_not_initialized_beats_business_logic() {
     let (env, client) = setup_uninitialized();
     let depositor = Address::generate(&env);
-    let result = client.try_lock_funds(&depositor, &1, &1_000, &0u64, &None);
+    let result = client.try_lock_funds(&depositor, &1, &1_000, &0u64);
     assert_eq!(result, Err(Ok(Error::NotInitialized)));
 }
 
@@ -71,11 +71,11 @@ fn test_lock_paused_beats_bounty_exists() {
     let depositor = Address::generate(&env);
     let future = 99_999_999u64;
     token_admin.mint(&depositor, &2_000);
-    client.lock_funds(&depositor, &1, &1_000, &future, &None);
+    client.lock_funds(&depositor, &1, &1_000, &future);
     // Pause lock
     client.set_paused(&Some(true), &None, &None, &None);
     // Both paused AND bounty #1 already exists — must get FundsPaused first
-    let result = client.try_lock_funds(&depositor, &1, &1_000, &future, &None);
+    let result = client.try_lock_funds(&depositor, &1, &1_000, &future);
     assert_eq!(result, Err(Ok(Error::FundsPaused)));
 }
 
@@ -88,7 +88,7 @@ fn test_lock_paused_beats_amount_below_minimum() {
     client.set_amount_policy(&admin, &1_000, &1_000_000);
     client.set_paused(&Some(true), &None, &None, &None);
     // Both paused AND amount below minimum — must get FundsPaused first
-    let result = client.try_lock_funds(&depositor, &1, &1, &future, &None);
+    let result = client.try_lock_funds(&depositor, &1, &1, &future);
     assert_eq!(result, Err(Ok(Error::FundsPaused)));
 }
 
@@ -99,9 +99,9 @@ fn test_lock_bounty_exists_after_higher_checks_pass() {
     let depositor = Address::generate(&env);
     let future = 99_999_999u64;
     token_admin.mint(&depositor, &2_000);
-    client.lock_funds(&depositor, &1, &1_000, &future, &None);
+    client.lock_funds(&depositor, &1, &1_000, &future);
     // Contract initialized, not paused — only bounty already exists
-    let result = client.try_lock_funds(&depositor, &1, &1_000, &future, &None);
+    let result = client.try_lock_funds(&depositor, &1, &1_000, &future);
     assert_eq!(result, Err(Ok(Error::BountyExists)));
 }
 
@@ -154,7 +154,7 @@ fn test_release_funds_not_locked_after_bounty_found() {
     let contributor = Address::generate(&env);
     let future = 99_999_999u64;
     token_admin.mint(&depositor, &1_000);
-    client.lock_funds(&depositor, &1, &1_000, &future, &None);
+    client.lock_funds(&depositor, &1, &1_000, &future);
     // Release once — status becomes Released
     client.release_funds(&1, &contributor);
     // Now try again — FundsNotLocked
