@@ -60,6 +60,8 @@ pub enum DataKey {
     TierLimits,
     RiskThresholds,
     ReentrancyGuard,
+    // Identity binding storage key (anti-spoofing)
+    IdentityBinding(Address),
 }
 
 #[contract]
@@ -160,6 +162,53 @@ impl EscrowContract {
         Ok(())
     }
 
+    /// Bind an address to an identity (admin only).
+    ///
+    /// Creates an on-chain binding record that ties `address` to `issuer`.
+    /// Only addresses with an active binding can submit identity claims,
+    /// preventing spoofed identities on claims.
+    ///
+    /// # Security
+    /// - Admin authorization is required.
+    /// - The issuer must be in the authorized-issuer set.
+    /// - A monotonic nonce prevents replay of stale binding payloads.
+    pub fn bind_identity(
+        env: Env,
+        address: Address,
+        issuer: Address,
+    ) -> Result<IdentityBinding, Error> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        admin.require_auth();
+
+        identity::bind_identity(&env, &address, &issuer)
+    }
+
+    /// Revoke the identity binding for `address` (admin only).
+    ///
+    /// After unbinding the address reverts to `Unverified` tier and any
+    /// stored identity data is removed.
+    pub fn unbind_identity(env: Env, address: Address) -> Result<(), Error> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        admin.require_auth();
+
+        identity::unbind_identity(&env, &address)
+    }
+
+    /// Query the identity binding for an address.
+    ///
+    /// Returns `None` if no binding has ever been created.
+    pub fn get_identity_binding(env: Env, address: Address) -> Option<IdentityBinding> {
+        identity::get_binding(&env, &address)
+    }
+
     /// Submit an identity claim for verification and storage
     pub fn submit_identity_claim(
         env: Env,
@@ -177,6 +226,9 @@ impl EscrowContract {
 
         // Validate claim format
         identity::validate_claim(&claim)?;
+
+        // Validate address binding — prevents spoofed identities
+        identity::validate_binding(&env, &claim.address, &claim.issuer)?;
 
         // Check if claim has expired
         if identity::is_claim_expired(&env, claim.expiry) {
