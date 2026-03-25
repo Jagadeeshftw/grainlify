@@ -153,7 +153,7 @@
 #![no_std]
 
 mod multisig;
-use multisig::{MultiSig, MultiSigConfig};
+use multisig::MultiSig;
 use soroban_sdk::{
     contract, contractimpl, contracttype, symbol_short, Address, BytesN, Env, String, Symbol, Vec,
 };
@@ -722,6 +722,42 @@ enum DataKey {
     /// - May be used for feature flags or behavior divergence
     /// - Persists across upgrades
     NetworkId,
+
+    /// Structured multisig upgrade metadata bound to a proposal id.
+    /// - Added after existing keys to preserve prior storage encoding
+    /// - Stores proposer identity with the submitted WASM hash
+    /// - Retained after execution for auditability and rollback review
+    UpgradeProposalState(u64),
+}
+
+/// Metadata persisted for each multisig upgrade proposal.
+///
+/// The multisig module owns approval and execution state, while this record owns
+/// the immutable upgrade payload bound to the stable `proposal_id`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct UpgradeProposalState {
+    /// Signer that submitted the proposal.
+    proposer: Address,
+    /// Hash of the candidate WASM artifact.
+    wasm_hash: BytesN<32>,
+}
+
+fn get_upgrade_proposal_state(env: &Env, proposal_id: u64) -> Option<UpgradeProposalState> {
+    env.storage()
+        .instance()
+        .get(&DataKey::UpgradeProposalState(proposal_id))
+}
+
+fn get_upgrade_wasm_hash(env: &Env, proposal_id: u64) -> BytesN<32> {
+    if let Some(state) = get_upgrade_proposal_state(env, proposal_id) {
+        return state.wasm_hash;
+    }
+
+    env.storage()
+        .instance()
+        .get(&DataKey::UpgradeProposal(proposal_id))
+        .expect("Missing upgrade proposal")
 }
 
 // ============================================================================
@@ -937,7 +973,7 @@ impl GrainlifyContract {
         monitoring::emit_performance(&env, symbol_short!("init"), duration);
     }
 
-    /// Proposes an upgrade with a new WASM hash (multisig version).
+    /// Proposes a multisig upgrade and stores immutable proposal metadata.
     ///
     /// # Arguments
     /// * `env` - The contract environment
@@ -946,17 +982,42 @@ impl GrainlifyContract {
     ///
     /// # Returns
     /// * `u64` - The proposal ID
+    ///
+    /// # Proposal Lifecycle
+    /// 1. Allocate a fresh monotonic proposal identifier
+    /// 2. Persist proposer and WASM hash under that identifier
+    /// 3. Collect signer approvals through `approve_upgrade`
+    /// 4. Execute the bound WASM via `execute_upgrade` once threshold is met
+    ///
+    /// Proposal metadata is write-once per identifier. IDs are not reused.
     pub fn propose_upgrade(env: Env, proposer: Address, wasm_hash: BytesN<32>) -> u64 {
-        let proposal_id = MultiSig::propose(&env, proposer);
+        let proposal_id = MultiSig::propose(&env, proposer.clone());
+
+        if env.storage().instance().has(&DataKey::UpgradeProposal(proposal_id))
+            || env
+                .storage()
+                .instance()
+                .has(&DataKey::UpgradeProposalState(proposal_id))
+        {
+            panic!("Upgrade proposal already exists");
+        }
+
+        let proposal_state = UpgradeProposalState {
+            proposer,
+            wasm_hash: wasm_hash.clone(),
+        };
 
         env.storage()
             .instance()
             .set(&DataKey::UpgradeProposal(proposal_id), &wasm_hash);
+        env.storage()
+            .instance()
+            .set(&DataKey::UpgradeProposalState(proposal_id), &proposal_state);
 
         proposal_id
     }
 
-    /// Approves an upgrade proposal (multisig version).
+    /// Approves an upgrade proposal without mutating its bound payload.
     ///
     /// # Arguments
     /// * `env` - The contract environment
@@ -1063,16 +1124,16 @@ impl GrainlifyContract {
     /// # Arguments
     /// * `env` - The contract environment
     /// * `proposal_id` - The ID of the upgrade proposal to execute
+    ///
+    /// # Proposal Lifecycle
+    /// Execution always loads the WASM hash already bound to `proposal_id`, so
+    /// collected approvals cannot redirect a proposal to different code.
     pub fn execute_upgrade(env: Env, proposal_id: u64) {
         if !MultiSig::can_execute(&env, proposal_id) {
             panic!("Threshold not met");
         }
 
-        let wasm_hash: BytesN<32> = env
-            .storage()
-            .instance()
-            .get(&DataKey::UpgradeProposal(proposal_id))
-            .expect("Missing upgrade proposal");
+        let wasm_hash = get_upgrade_wasm_hash(&env, proposal_id);
 
         env.deployer().update_current_contract_wasm(wasm_hash);
 

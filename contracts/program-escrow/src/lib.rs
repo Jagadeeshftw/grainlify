@@ -459,6 +459,7 @@ pub enum DataKey {
     ReleaseSchedule(String, u64),    // program_id, schedule_id -> ProgramReleaseSchedule
     ReleaseHistory(String),          // program_id -> Vec<ProgramReleaseHistory>
     NextScheduleId(String),          // program_id -> next schedule_id
+    SplitConfig(String),             // program_id -> SplitConfig
     MultisigConfig(String),          // program_id -> MultisigConfig
     PayoutApproval(String, Address), // program_id, recipient -> PayoutApproval
     PendingClaim(String, u64),       // (program_id, schedule_id) -> ClaimRecord
@@ -1750,6 +1751,9 @@ impl ProgramEscrowContract {
             }
         }
 
+        let contract_address = env.current_contract_address();
+        let token_client = token::Client::new(&env, &program_data.token_address);
+
         // Transfer funds from contract to recipient
         token_client.transfer(&contract_address, &recipient, &amount);
 
@@ -1860,7 +1864,7 @@ impl ProgramEscrowContract {
 
         let schedule = ProgramReleaseSchedule {
             schedule_id,
-            recipient,
+            recipient: recipient.clone(),
             amount,
             release_timestamp,
             released: false,

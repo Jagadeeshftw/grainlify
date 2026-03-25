@@ -306,7 +306,7 @@ pub fn record_failure(
 
     let entry = ErrorEntry {
         operation: operation.clone(),
-        program_id,
+        program_id: program_id.clone(),
         error_code,
         timestamp: now,
         failure_count_at_time: failures,

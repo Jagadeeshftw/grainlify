@@ -4,7 +4,7 @@ extern crate std;
 
 use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, Vec as SorobanVec};
 
-use crate::{GrainlifyContract, GrainlifyContractClient};
+use crate::{DataKey, GrainlifyContract, GrainlifyContractClient, UpgradeProposalState};
 
 // ============================================================================
 // Test Helpers
@@ -13,6 +13,19 @@ use crate::{GrainlifyContract, GrainlifyContractClient};
 /// Helper to return a deterministic pseudo-WASM hash for upgrade simulation tests.
 fn upload_wasm(env: &Env) -> BytesN<32> {
     BytesN::from_array(env, &[0xAB; 32])
+}
+
+fn load_upgrade_proposal_state(
+    env: &Env,
+    contract_id: &Address,
+    proposal_id: u64,
+) -> UpgradeProposalState {
+    env.as_contract(contract_id, || {
+        env.storage()
+            .instance()
+            .get(&DataKey::UpgradeProposalState(proposal_id))
+            .expect("missing upgrade proposal state")
+    })
 }
 
 // ============================================================================
@@ -92,9 +105,17 @@ fn test_multisig_upgrade_proposal() {
 
     // Propose upgrade
     let proposal_id = client.propose_upgrade(&signer1, &wasm_hash);
+    let proposal_state = load_upgrade_proposal_state(&env, &contract_id, proposal_id);
+    assert_eq!(proposal_state.proposer, signer1);
+    assert_eq!(proposal_state.wasm_hash, wasm_hash);
+
     // Approve with 2 signers
     client.approve_upgrade(&proposal_id, &signer1);
     client.approve_upgrade(&proposal_id, &signer2);
+
+    let proposal_state = load_upgrade_proposal_state(&env, &contract_id, proposal_id);
+    assert_eq!(proposal_state.proposer, signer1);
+    assert_eq!(proposal_state.wasm_hash, wasm_hash);
 
     // Skip execute_upgrade here because this test uses a simulated hash.
     // Proposal + quorum approval are the behavior under test.
@@ -134,6 +155,13 @@ fn test_multisig_rollback_proposal() {
         "Second proposal ID should be greater than first"
     );
 
+    let proposal_state_1 = load_upgrade_proposal_state(&env, &contract_id, proposal_id_1);
+    let proposal_state_2 = load_upgrade_proposal_state(&env, &contract_id, proposal_id_2);
+    assert_eq!(proposal_state_1.proposer, signer1);
+    assert_eq!(proposal_state_2.proposer, signer2);
+    assert_eq!(proposal_state_1.wasm_hash, wasm_hash);
+    assert_eq!(proposal_state_2.wasm_hash, wasm_hash);
+
     client.approve_upgrade(&proposal_id_2, &signer2);
     client.approve_upgrade(&proposal_id_2, &signer3);
     // Skip execute_upgrade because this test uses a simulated hash.
@@ -156,16 +184,59 @@ fn test_multisig_multiple_proposals() {
 
     client.init(&signers, &2);
 
-    let wasm_hash = upload_wasm(&env);
+    let wasm_hash_1 = BytesN::from_array(&env, &[1; 32]);
+    let wasm_hash_2 = BytesN::from_array(&env, &[2; 32]);
+    let wasm_hash_3 = BytesN::from_array(&env, &[3; 32]);
 
     // Create multiple proposals
-    let prop1 = client.propose_upgrade(&signer1, &wasm_hash);
-    let prop2 = client.propose_upgrade(&signer2, &wasm_hash);
-    let prop3 = client.propose_upgrade(&signer1, &wasm_hash);
+    let prop1 = client.propose_upgrade(&signer1, &wasm_hash_1);
+    let prop2 = client.propose_upgrade(&signer2, &wasm_hash_2);
+    let prop3 = client.propose_upgrade(&signer1, &wasm_hash_3);
 
     // Verify proposal IDs increment
     assert!(prop2 > prop1, "Proposal IDs should increment");
     assert!(prop3 > prop2, "Proposal IDs should increment");
+
+    let proposal_state_1 = load_upgrade_proposal_state(&env, &contract_id, prop1);
+    let proposal_state_2 = load_upgrade_proposal_state(&env, &contract_id, prop2);
+    let proposal_state_3 = load_upgrade_proposal_state(&env, &contract_id, prop3);
+    assert_eq!(proposal_state_1.proposer, signer1);
+    assert_eq!(proposal_state_1.wasm_hash, wasm_hash_1);
+    assert_eq!(proposal_state_2.proposer, signer2);
+    assert_eq!(proposal_state_2.wasm_hash, wasm_hash_2);
+    assert_eq!(proposal_state_3.proposer, signer1);
+    assert_eq!(proposal_state_3.wasm_hash, wasm_hash_3);
+}
+
+#[test]
+#[should_panic(expected = "Threshold not met")]
+fn test_multisig_execute_requires_threshold() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let signer1 = Address::generate(&env);
+    let signer2 = Address::generate(&env);
+    let signer3 = Address::generate(&env);
+
+    let mut signers = SorobanVec::new(&env);
+    signers.push_back(signer1.clone());
+    signers.push_back(signer2);
+    signers.push_back(signer3);
+
+    let contract_id = env.register_contract(None, GrainlifyContract);
+    let client = GrainlifyContractClient::new(&env, &contract_id);
+
+    client.init(&signers, &2);
+
+    let wasm_hash = upload_wasm(&env);
+    let proposal_id = client.propose_upgrade(&signer1, &wasm_hash);
+    client.approve_upgrade(&proposal_id, &signer1);
+
+    let proposal_state = load_upgrade_proposal_state(&env, &contract_id, proposal_id);
+    assert_eq!(proposal_state.proposer, signer1);
+    assert_eq!(proposal_state.wasm_hash, wasm_hash);
+
+    client.execute_upgrade(&proposal_id);
 }
 
 // ============================================================================
