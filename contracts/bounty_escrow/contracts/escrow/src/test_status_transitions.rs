@@ -253,7 +253,16 @@ fn test_refunded_to_locked_fails() {
     setup
         .escrow
         .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
-    setup.env.ledger().set_timestamp(deadline + 1);
+    setup.env.ledger().set(LedgerInfo {
+        timestamp: deadline + 1,
+        protocol_version: 20,
+        sequence_number: 0,
+        network_id: Default::default(),
+        base_reserve: 0,
+        min_temp_entry_ttl: 0,
+        min_persistent_entry_ttl: 0,
+        max_entry_ttl: 0,
+    });
     setup.escrow.refund(&bounty_id);
 
     setup
@@ -273,7 +282,16 @@ fn test_refunded_to_released_fails() {
     setup
         .escrow
         .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
-    setup.env.ledger().set_timestamp(deadline + 1);
+    setup.env.ledger().set(LedgerInfo {
+        timestamp: deadline + 1,
+        protocol_version: 20,
+        sequence_number: 0,
+        network_id: Default::default(),
+        base_reserve: 0,
+        min_temp_entry_ttl: 0,
+        min_persistent_entry_ttl: 0,
+        max_entry_ttl: 0,
+    });
     setup.escrow.refund(&bounty_id);
 
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
@@ -291,7 +309,16 @@ fn test_refunded_to_refunded_fails() {
     setup
         .escrow
         .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
-    setup.env.ledger().set_timestamp(deadline + 1);
+    setup.env.ledger().set(LedgerInfo {
+        timestamp: deadline + 1,
+        protocol_version: 20,
+        sequence_number: 0,
+        network_id: Default::default(),
+        base_reserve: 0,
+        min_temp_entry_ttl: 0,
+        min_persistent_entry_ttl: 0,
+        max_entry_ttl: 0,
+    });
     setup.escrow.refund(&bounty_id);
 
     setup.escrow.refund(&bounty_id);
@@ -309,7 +336,16 @@ fn test_refunded_to_partially_refunded_fails() {
     setup
         .escrow
         .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
-    setup.env.ledger().set_timestamp(deadline + 1);
+    setup.env.ledger().set(LedgerInfo {
+        timestamp: deadline + 1,
+        protocol_version: 20,
+        sequence_number: 0,
+        network_id: Default::default(),
+        base_reserve: 0,
+        min_temp_entry_ttl: 0,
+        min_persistent_entry_ttl: 0,
+        max_entry_ttl: 0,
+    });
     setup.escrow.refund(&bounty_id);
 
     setup

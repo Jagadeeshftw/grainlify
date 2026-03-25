@@ -14,7 +14,7 @@ fn record_call(env: &Env) {
 fn assert_enabled(env: &Env) {
     let disabled: bool = env.storage().instance().get(&INV_DISABLED).unwrap_or(false);
     if disabled {
-        return;
+        panic!("Invariant checks disabled");
     }
 }
 

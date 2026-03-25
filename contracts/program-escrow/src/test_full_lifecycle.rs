@@ -159,3 +159,56 @@ fn test_lifecycle_with_pausing_and_topup() {
     assert_eq!(client.get_remaining_balance(), 100_000);
     assert_eq!(client.get_program_info().total_funds, 150_000);
 }
+
+#[test]
+fn test_batch_and_split_payout_integration() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, contract_id) = make_client(&env);
+    let (token_client, token_id, token_sac) = create_token(&env);
+    let admin = Address::generate(&env);
+    let creator = Address::generate(&env);
+    let prog_id = String::from_str(&env, "batch-split-test");
+    client.initialize_contract(&admin);
+
+    // 1. Initial funding: 10,000 tokens
+    client.init_program(&prog_id, &admin, &token_id, &creator, &None, &None);
+    token_sac.mint(&client.address, &10_000);
+    client.lock_program_funds(&10_000);
+
+    // 2. Batch payout to winners (Individual amounts)
+    let w1 = Address::generate(&env);
+    let w2 = Address::generate(&env);
+    client.batch_payout(
+        &vec![&env, w1.clone(), w2.clone()],
+        &vec![&env, 2_000, 3_000],
+    );
+    assert_eq!(client.get_remaining_balance(), 5_000);
+    assert_eq!(token_client.balance(&w1), 2_000);
+    assert_eq!(token_client.balance(&w2), 3_000);
+
+    // 3. Configure a split for the remaining 5,000 (Ratio-based)
+    let b1 = Address::generate(&env);
+    let b2 = Address::generate(&env);
+    client.set_split_config(
+        &prog_id,
+        &vec![
+            &env,
+            BeneficiarySplit { recipient: b1.clone(), share_bps: 7_000 },
+            BeneficiarySplit { recipient: b2.clone(), share_bps: 3_000 },
+        ],
+    );
+
+    // 4. Execute split payout for half of the remainder (2,500)
+    // b1: 1,750 (70%)
+    // b2: 750 (30%)
+    client.execute_split_payout(&prog_id, &2_500);
+    assert_eq!(client.get_remaining_balance(), 2_500);
+    assert_eq!(token_client.balance(&b1), 1_750);
+    assert_eq!(token_client.balance(&b2), 750);
+
+    // 5. Verify Payout History
+    let info = client.get_program_info();
+    assert_eq!(info.payout_history.len(), 4); // w1, w2, b1, b2
+}

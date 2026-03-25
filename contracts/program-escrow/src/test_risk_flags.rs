@@ -18,7 +18,14 @@ fn setup_program(env: &Env) -> (ProgramEscrowContractClient<'static>, Address, S
         .address();
 
     let program_id = String::from_str(env, "risk-prog");
-    client.init_program(&program_id, &admin, &token_id, &admin, &None);
+    client.init_program(
+        &program_id,
+        &admin,
+        &token_id,
+        &admin,
+        &None,
+        &None,
+    );
 
     (client, admin, program_id)
 }

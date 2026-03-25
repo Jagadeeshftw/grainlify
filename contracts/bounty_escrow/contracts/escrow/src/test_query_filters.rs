@@ -225,14 +225,10 @@ fn test_query_by_deadline_range_filters_correctly() {
     let s = Setup::new();
     let base = s.env.ledger().timestamp();
 
-    s.escrow
-        .lock_funds(&s.depositor, &1, &100, &(base + 100));
-    s.escrow
-        .lock_funds(&s.depositor, &2, &200, &(base + 500));
-    s.escrow
-        .lock_funds(&s.depositor, &3, &300, &(base + 1000));
-    s.escrow
-        .lock_funds(&s.depositor, &4, &400, &(base + 9999));
+    s.escrow.lock_funds(&s.depositor, &1, &100, &(base + 100));
+    s.escrow.lock_funds(&s.depositor, &2, &200, &(base + 500));
+    s.escrow.lock_funds(&s.depositor, &3, &300, &(base + 1000));
+    s.escrow.lock_funds(&s.depositor, &4, &400, &(base + 9999));
 
     let results = s
         .escrow
@@ -249,12 +245,9 @@ fn test_query_by_deadline_exact_boundary_included() {
     let s = Setup::new();
     let base = s.env.ledger().timestamp();
 
-    s.escrow
-        .lock_funds(&s.depositor, &1, &100, &(base + 200));
-    s.escrow
-        .lock_funds(&s.depositor, &2, &200, &(base + 500));
-    s.escrow
-        .lock_funds(&s.depositor, &3, &300, &(base + 800));
+    s.escrow.lock_funds(&s.depositor, &1, &100, &(base + 200));
+    s.escrow.lock_funds(&s.depositor, &2, &200, &(base + 500));
+    s.escrow.lock_funds(&s.depositor, &3, &300, &(base + 800));
 
     let results = s
         .escrow
@@ -433,10 +426,8 @@ fn test_query_by_deadline_no_results_outside_range() {
     let s = Setup::new();
     let base = s.env.ledger().timestamp();
 
-    s.escrow
-        .lock_funds(&s.depositor, &1, &100, &(base + 100));
-    s.escrow
-        .lock_funds(&s.depositor, &2, &200, &(base + 200));
+    s.escrow.lock_funds(&s.depositor, &1, &100, &(base + 100));
+    s.escrow.lock_funds(&s.depositor, &2, &200, &(base + 200));
 
     // Query a range that none of the deadlines fall into
     let results = s

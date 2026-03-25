@@ -1,18 +1,28 @@
 #![no_std]
+//! Soroban program escrow contract with cursor-based search helpers.
+//!
+//! Search reads are backed by a persisted `ProgramIndex` list instead of
+//! scanning contract storage directly. Each successful registration appends its
+//! `program_id` once, and `get_programs` pages over that list in order.
+//!
+//! Search indexing assumptions:
+//! - registrations append stable `program_id` cursor values to `ProgramIndex`
+//! - the query path skips missing program records defensively
+//! - callers paginate with cursors rather than requesting unbounded full scans
+//! - the returned page size is clamped to `MAX_PAGE_SIZE`
+//!
+//! Security notes:
+//! - search helpers are read-only and never mutate contract state
+//! - query work is bounded by the stored index and capped page size
+//! - cursor pagination keeps results reviewable and avoids hidden full scans
+
 use soroban_sdk::{
-<<<<<<< HEAD
-    contract, contracterror, contractimpl, contracttype, symbol_short, token, Address, Env, String,
-    Vec,
-    contract, contracterror, contractimpl, contracttype, symbol_short, token, Address, Env, String,
-    Vec,
-=======
-    contract, contracterror, contractimpl, contracttype, symbol_short, symbol_short, token, Address, Env,
-    String,
-    Vec,
->>>>>>> upstream
+    contract, contracterror, contractimpl, contracttype, symbol_short, token, Address, Env,
+    String, Vec,
 };
 
 const MAX_BATCH_SIZE: u32 = 20;
+const MAX_PAGE_SIZE: u32 = 20;
 const PROGRAM_REGISTERED: soroban_sdk::Symbol = symbol_short!("prg_reg");
 
 #[contracterror]
@@ -29,9 +39,9 @@ pub enum Error {
     InvalidAmount = 8,
     InvalidName = 9,
     ContractDeprecated = 10,
-    JurisdictionKycRequired = 10,
-    JurisdictionFundingLimitExceeded = 11,
-    JurisdictionPaused = 12,
+    JurisdictionKycRequired = 11,
+    JurisdictionFundingLimitExceeded = 12,
+    JurisdictionPaused = 13,
 }
 
 #[contracttype]
@@ -44,15 +54,6 @@ pub enum ProgramStatus {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Program {
-    pub admin: Address,
-    pub name: String,
-    pub total_funding: i128,
-    pub status: ProgramStatus,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProgramJurisdictionConfig {
     pub tag: Option<String>,
     pub requires_kyc: bool,
@@ -60,13 +61,12 @@ pub struct ProgramJurisdictionConfig {
     pub registration_paused: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OptionalJurisdiction {
     None,
     Some(ProgramJurisdictionConfig),
 }
-
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -87,7 +87,6 @@ pub struct ProgramRegistrationItem {
     pub total_funding: i128,
 }
 
-/// Kill-switch state: when deprecated is true, new program registrations are blocked.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DeprecationState {
@@ -108,7 +107,7 @@ pub struct ProgramRegistrationWithJurisdictionItem {
     pub juris_registration_paused: bool,
     pub jurisdiction: OptionalJurisdiction,
     pub kyc_attested: Option<bool>,
-} 
+}
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -129,18 +128,20 @@ pub enum DataKey {
     Admin,
     Token,
     Program(u64),
-    /// Jurisdiction config stored separately (avoids Option<ContractType> XDR issue).
+    /// Jurisdiction config is stored separately from the main program record.
     ProgramJurisdiction(u64),
-    /// Persistent Vec<u64> index of all program IDs.
+    /// Stable index used by `get_programs` and `get_program_count`.
     ProgramIndex,
+    DeprecationState,
 }
 
-/// Maximum page size for paginated queries.
-const MAX_PAGE_SIZE: u32 = 20;
-
-/// Search criteria for paginated program queries.
-/// Status is a u32 code: 0=any, 1=Active, 2=Completed, 3=Cancelled.
-/// Admin is optional; `None` means "match any".
+/// Filter inputs for cursor-based program search.
+///
+/// `status_filter` values:
+/// - `0`: any status
+/// - `1`: active
+/// - `2`: completed
+/// - `3`: cancelled
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProgramSearchCriteria {
@@ -148,7 +149,7 @@ pub struct ProgramSearchCriteria {
     pub admin: Option<Address>,
 }
 
-/// A single program record in search results (flattened).
+/// One flattened program entry returned from a search page.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProgramRecord {
@@ -159,17 +160,16 @@ pub struct ProgramRecord {
     pub status: ProgramStatus,
 }
 
-/// A single page of program search results.
+/// One page of program search results.
+///
+/// When `has_more` is true, pass `next_cursor` back into `get_programs` to
+/// continue scanning from the next indexed program.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProgramPage {
-    /// Matched program records.
     pub records: Vec<ProgramRecord>,
-    /// Cursor for the next page (`None` if this is the last page).
     pub next_cursor: Option<u64>,
-    /// Whether more results exist beyond this page.
     pub has_more: bool,
-    DeprecationState,
 }
 
 #[contract]
@@ -185,6 +185,34 @@ impl ProgramEscrowContract {
             return Err(Error::InvalidName);
         }
         Ok(())
+    }
+
+    fn build_jurisdiction(
+        juris_tag: Option<String>,
+        juris_requires_kyc: bool,
+        juris_max_funding: Option<i128>,
+        juris_registration_paused: bool,
+        jurisdiction: OptionalJurisdiction,
+    ) -> OptionalJurisdiction {
+        match jurisdiction {
+            OptionalJurisdiction::Some(config) => OptionalJurisdiction::Some(config),
+            OptionalJurisdiction::None => {
+                let has_juris = juris_tag.is_some()
+                    || juris_requires_kyc
+                    || juris_max_funding.is_some()
+                    || juris_registration_paused;
+                if has_juris {
+                    OptionalJurisdiction::Some(ProgramJurisdictionConfig {
+                        tag: juris_tag,
+                        requires_kyc: juris_requires_kyc,
+                        max_funding: juris_max_funding,
+                        registration_paused: juris_registration_paused,
+                    })
+                } else {
+                    OptionalJurisdiction::None
+                }
+            }
+        }
     }
 
     fn enforce_jurisdiction_rules(
@@ -268,6 +296,66 @@ impl ProgramEscrowContract {
         ordered
     }
 
+    fn ensure_initialized(env: &Env) -> Result<(), Error> {
+        if env.storage().instance().has(&DataKey::Admin) {
+            Ok(())
+        } else {
+            Err(Error::NotInitialized)
+        }
+    }
+
+    fn ensure_not_deprecated(env: &Env) -> Result<(), Error> {
+        if Self::get_deprecation_state(env).deprecated {
+            Err(Error::ContractDeprecated)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn require_contract_admin(env: &Env) -> Address {
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+        admin
+    }
+
+    fn append_program_id(env: &Env, program_id: u64) {
+        let mut index: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::ProgramIndex)
+            .unwrap_or_else(|| Vec::new(env));
+        index.push_back(program_id);
+        env.storage().persistent().set(&DataKey::ProgramIndex, &index);
+    }
+
+    fn store_program(env: &Env, program_id: u64, program: &Program) {
+        env.storage()
+            .persistent()
+            .set(&DataKey::Program(program_id), program);
+
+        match &program.jurisdiction {
+            OptionalJurisdiction::Some(config) => env
+                .storage()
+                .persistent()
+                .set(&DataKey::ProgramJurisdiction(program_id), config),
+            OptionalJurisdiction::None => {
+                env.storage()
+                    .persistent()
+                    .remove(&DataKey::ProgramJurisdiction(program_id));
+            }
+        }
+    }
+
+    fn get_deprecation_state(env: &Env) -> DeprecationState {
+        env.storage()
+            .instance()
+            .get(&DataKey::DeprecationState)
+            .unwrap_or(DeprecationState {
+                deprecated: false,
+                migration_target: None,
+            })
+    }
+
     /// Initialize the contract with an admin and token address. Call once.
     pub fn init(env: Env, admin: Address, token: Address) -> Result<(), Error> {
         if env.storage().instance().has(&DataKey::Admin) {
@@ -278,7 +366,7 @@ impl ProgramEscrowContract {
         Ok(())
     }
 
-    /// Register a single program. Fails with ContractDeprecated when the contract has been deprecated.
+    /// Register a single program.
     pub fn register_program(
         env: Env,
         program_id: u64,
@@ -287,7 +375,6 @@ impl ProgramEscrowContract {
         total_funding: i128,
     ) -> Result<(), Error> {
         Self::register_program_juris(
-        Self::register_prog_w_juris(
             env,
             program_id,
             admin,
@@ -304,6 +391,60 @@ impl ProgramEscrowContract {
 
     /// Register a single program with optional jurisdiction controls.
     pub fn register_program_juris(
+        env: Env,
+        program_id: u64,
+        admin: Address,
+        name: String,
+        total_funding: i128,
+        juris_tag: Option<String>,
+        juris_requires_kyc: bool,
+        juris_max_funding: Option<i128>,
+        juris_registration_paused: bool,
+        jurisdiction: OptionalJurisdiction,
+        kyc_attested: Option<bool>,
+    ) -> Result<(), Error> {
+        Self::ensure_initialized(&env)?;
+        Self::ensure_not_deprecated(&env)?;
+        Self::require_contract_admin(&env);
+
+        if env
+            .storage()
+            .persistent()
+            .has(&DataKey::Program(program_id))
+        {
+            return Err(Error::ProgramExists);
+        }
+
+        Self::validate_program_input(&name, total_funding)?;
+
+        let jurisdiction = Self::build_jurisdiction(
+            juris_tag,
+            juris_requires_kyc,
+            juris_max_funding,
+            juris_registration_paused,
+            jurisdiction,
+        );
+        Self::enforce_jurisdiction_rules(&jurisdiction, total_funding, kyc_attested)?;
+
+        let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
+        let token_client = token::Client::new(&env, &token_addr);
+        admin.require_auth();
+        token_client.transfer(&admin, &env.current_contract_address(), &total_funding);
+
+        let program = Program {
+            admin: admin.clone(),
+            name,
+            total_funding,
+            status: ProgramStatus::Active,
+            jurisdiction: jurisdiction.clone(),
+        };
+        Self::store_program(&env, program_id, &program);
+        Self::append_program_id(&env, program_id);
+        Self::emit_program_registered(&env, program_id, admin, total_funding, &jurisdiction);
+        Ok(())
+    }
+
+    /// Backward-compatible alias.
     pub fn register_prog_w_juris(
         env: Env,
         program_id: u64,
@@ -317,93 +458,22 @@ impl ProgramEscrowContract {
         jurisdiction: OptionalJurisdiction,
         kyc_attested: Option<bool>,
     ) -> Result<(), Error> {
-        if !env.storage().instance().has(&DataKey::Admin) {
-            return Err(Error::NotInitialized);
-        }
-        if Self::get_deprecation_state(&env).deprecated {
-            return Err(Error::ContractDeprecated);
-        }
-        let contract_admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
-        contract_admin.require_auth();
-
-        if env
-            .storage()
-            .persistent()
-            .has(&DataKey::Program(program_id))
-        {
-            return Err(Error::ProgramExists);
-        }
-
-        Self::validate_program_input(&name, total_funding)?;
-        
-        let has_juris = juris_tag.is_some() || juris_requires_kyc || juris_max_funding.is_some() || juris_registration_paused;
-        let jurisdiction = if has_juris {
-            Some(ProgramJurisdictionConfig {
-                tag: juris_tag.clone(),
-                requires_kyc: juris_requires_kyc,
-                max_funding: juris_max_funding.clone(),
-                registration_paused: juris_registration_paused,
-            })
-        } else {
-            None
-        };
-        
-        Self::enforce_jurisdiction_rules(&jurisdiction, total_funding, kyc_attested)?;
-
-        // Transfer funding from the program admin to the contract
-        let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
-        let token_client = token::Client::new(&env, &token_addr);
-        admin.require_auth();
-        token_client.transfer(&admin, &env.current_contract_address(), &total_funding);
-
-        let program = Program {
-            admin: admin.clone(),
+        Self::register_program_juris(
+            env,
+            program_id,
+            admin,
             name,
             total_funding,
-            status: ProgramStatus::Active,
-        };
-        env.storage()
-            .persistent()
-            .set(&DataKey::Program(program_id), &program);
-
-        // Store jurisdiction config separately
-        if let Some(ref juris) = jurisdiction {
-            env.storage()
-                .persistent()
-                .set(&DataKey::ProgramJurisdiction(program_id), juris);
-        }
-
-        // Append program_id to the global index for paginated queries
-        let mut index: Vec<u64> = env
-            .storage()
-            .persistent()
-            .get(&DataKey::ProgramIndex)
-            .unwrap_or_else(|| Vec::new(&env));
-        index.push_back(program_id);
-        env.storage()
-            .persistent()
-            .set(&DataKey::ProgramIndex, &index);
-
-        Self::emit_program_registered(&env, program_id, admin, total_funding, &jurisdiction);
-        Ok(())
+            juris_tag,
+            juris_requires_kyc,
+            juris_max_funding,
+            juris_registration_paused,
+            jurisdiction,
+            kyc_attested,
+        )
     }
 
     /// Batch register multiple programs in a single transaction.
-    ///
-    /// This operation is atomic — if any item fails validation, the entire
-    /// batch is rejected and no programs are registered.
-    ///
-    /// # Errors
-    /// * `InvalidBatchSize` — batch is empty or exceeds `MAX_BATCH_SIZE`
-    /// * `ProgramExists` — a program_id already exists in storage
-    /// * `DuplicateProgramId` — duplicate program_ids within the batch
-    /// * `InvalidAmount` — zero or negative funding amount
-    /// * `InvalidName` — empty program name
-    /// * `NotInitialized` — contract has not been initialized
-    ///
-    /// # Ordering Guarantee
-    /// Registrations are processed in ascending `program_id` order,
-    /// independent of caller-provided item order.
     pub fn batch_register_programs(
         env: Env,
         items: Vec<ProgramRegistrationItem>,
@@ -413,22 +483,15 @@ impl ProgramEscrowContract {
             return Err(Error::InvalidBatchSize);
         }
 
-        if !env.storage().instance().has(&DataKey::Admin) {
-            return Err(Error::NotInitialized);
-        }
-        if Self::get_deprecation_state(&env).deprecated {
-            return Err(Error::ContractDeprecated);
-        }
-        let contract_admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
-        contract_admin.require_auth();
+        Self::ensure_initialized(&env)?;
+        Self::ensure_not_deprecated(&env)?;
+        Self::require_contract_admin(&env);
 
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
         let token_client = token::Client::new(&env, &token_addr);
         let contract_address = env.current_contract_address();
-
         let ordered_items = Self::order_batch_registration_items(&env, &items);
 
-        // --- Validation pass (all-or-nothing) ---
         for item in ordered_items.iter() {
             if env
                 .storage()
@@ -439,7 +502,6 @@ impl ProgramEscrowContract {
             }
             Self::validate_program_input(&item.name, item.total_funding)?;
 
-            // Detect duplicate program_ids within the batch
             let mut count = 0u32;
             for other in ordered_items.iter() {
                 if other.program_id == item.program_id {
@@ -451,7 +513,6 @@ impl ProgramEscrowContract {
             }
         }
 
-        // Collect unique admins and require auth once per admin
         let mut seen_admins: Vec<Address> = Vec::new(&env);
         for item in ordered_items.iter() {
             let mut found = false;
@@ -467,7 +528,6 @@ impl ProgramEscrowContract {
             }
         }
 
-        // --- Processing pass (atomic) ---
         let mut registered_count = 0u32;
         for item in ordered_items.iter() {
             token_client.transfer(&item.admin, &contract_address, &item.total_funding);
@@ -479,21 +539,8 @@ impl ProgramEscrowContract {
                 status: ProgramStatus::Active,
                 jurisdiction: OptionalJurisdiction::None,
             };
-            env.storage()
-                .persistent()
-                .set(&DataKey::Program(item.program_id), &program);
-
-            // Append to the global index
-            let mut index: Vec<u64> = env
-                .storage()
-                .persistent()
-                .get(&DataKey::ProgramIndex)
-                .unwrap_or_else(|| Vec::new(&env));
-            index.push_back(item.program_id);
-            env.storage()
-                .persistent()
-                .set(&DataKey::ProgramIndex, &index);
-
+            Self::store_program(&env, item.program_id, &program);
+            Self::append_program_id(&env, item.program_id);
             Self::emit_program_registered(
                 &env,
                 item.program_id,
@@ -509,7 +556,6 @@ impl ProgramEscrowContract {
 
     /// Batch register programs with optional jurisdiction controls.
     pub fn batch_register_juris(
-    pub fn batch_reg_progs_w_juris(
         env: Env,
         items: Vec<ProgramRegistrationWithJurisdictionItem>,
     ) -> Result<u32, Error> {
@@ -518,11 +564,9 @@ impl ProgramEscrowContract {
             return Err(Error::InvalidBatchSize);
         }
 
-        if !env.storage().instance().has(&DataKey::Admin) {
-            return Err(Error::NotInitialized);
-        }
-        let contract_admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
-        contract_admin.require_auth();
+        Self::ensure_initialized(&env)?;
+        Self::ensure_not_deprecated(&env)?;
+        Self::require_contract_admin(&env);
 
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
         let token_client = token::Client::new(&env, &token_addr);
@@ -537,23 +581,16 @@ impl ProgramEscrowContract {
                 return Err(Error::ProgramExists);
             }
             Self::validate_program_input(&item.name, item.total_funding)?;
-            let has_juris = item.juris_tag.is_some()
-                || item.juris_requires_kyc
-                || item.juris_max_funding.is_some()
-                || item.juris_registration_paused;
-            let item_jurisdiction = if has_juris {
-                Some(ProgramJurisdictionConfig {
-                    tag: item.juris_tag.clone(),
-                    requires_kyc: item.juris_requires_kyc,
-                    max_funding: item.juris_max_funding.clone(),
-                    registration_paused: item.juris_registration_paused,
-                })
-            } else {
-                None
-            };
-            
+
+            let jurisdiction = Self::build_jurisdiction(
+                item.juris_tag.clone(),
+                item.juris_requires_kyc,
+                item.juris_max_funding,
+                item.juris_registration_paused,
+                item.jurisdiction.clone(),
+            );
             Self::enforce_jurisdiction_rules(
-                &item_jurisdiction,
+                &jurisdiction,
                 item.total_funding,
                 item.kyc_attested,
             )?;
@@ -588,60 +625,41 @@ impl ProgramEscrowContract {
         for item in items.iter() {
             token_client.transfer(&item.admin, &contract_address, &item.total_funding);
 
+            let jurisdiction = Self::build_jurisdiction(
+                item.juris_tag.clone(),
+                item.juris_requires_kyc,
+                item.juris_max_funding,
+                item.juris_registration_paused,
+                item.jurisdiction.clone(),
+            );
             let program = Program {
                 admin: item.admin.clone(),
                 name: item.name.clone(),
                 total_funding: item.total_funding,
                 status: ProgramStatus::Active,
+                jurisdiction: jurisdiction.clone(),
             };
-            env.storage()
-                .persistent()
-                .set(&DataKey::Program(item.program_id), &program);
-
-            let has_juris = item.juris_tag.is_some()
-                || item.juris_requires_kyc
-                || item.juris_max_funding.is_some()
-                || item.juris_registration_paused;
-            let item_jurisdiction = if has_juris {
-                Some(ProgramJurisdictionConfig {
-                    tag: item.juris_tag.clone(),
-                    requires_kyc: item.juris_requires_kyc,
-                    max_funding: item.juris_max_funding.clone(),
-                    registration_paused: item.juris_registration_paused,
-                })
-            } else {
-                None
-            };
-
-            if let Some(ref juris) = item_jurisdiction {
-                env.storage()
-                    .persistent()
-                    .set(&DataKey::ProgramJurisdiction(item.program_id), juris);
-            }
-
-            // Append to the global index
-            let mut idx: Vec<u64> = env
-                .storage()
-                .persistent()
-                .get(&DataKey::ProgramIndex)
-                .unwrap_or_else(|| Vec::new(&env));
-            idx.push_back(item.program_id);
-            env.storage()
-                .persistent()
-                .set(&DataKey::ProgramIndex, &idx);
-
+            Self::store_program(&env, item.program_id, &program);
+            Self::append_program_id(&env, item.program_id);
             Self::emit_program_registered(
                 &env,
                 item.program_id,
                 item.admin.clone(),
                 item.total_funding,
-                &item_jurisdiction,
+                &jurisdiction,
             );
-
             registered_count += 1;
         }
 
         Ok(registered_count)
+    }
+
+    /// Backward-compatible alias.
+    pub fn batch_reg_progs_w_juris(
+        env: Env,
+        items: Vec<ProgramRegistrationWithJurisdictionItem>,
+    ) -> Result<u32, Error> {
+        Self::batch_register_juris(env, items)
     }
 
     /// Read a program's state.
@@ -652,36 +670,22 @@ impl ProgramEscrowContract {
             .ok_or(Error::ProgramNotFound)
     }
 
-    fn get_deprecation_state(env: &Env) -> DeprecationState {
-        env.storage()
-            .instance()
-            .get(&DataKey::DeprecationState)
-            .unwrap_or(DeprecationState {
-                deprecated: false,
-                migration_target: None,
-            })
-    }
-
-    /// Set deprecation (kill switch) and optional migration target. Admin only.
-    /// When deprecated is true, new register_program and batch_register_programs are blocked.
+    /// Set deprecation and optional migration target.
+    ///
+    /// Deprecation blocks new registrations while preserving read/query access.
     pub fn set_deprecated(
         env: Env,
         deprecated: bool,
         migration_target: Option<Address>,
     ) -> Result<(), Error> {
-        if !env.storage().instance().has(&DataKey::Admin) {
-            return Err(Error::NotInitialized);
-        }
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
-        admin.require_auth();
+        Self::ensure_initialized(&env)?;
+        let admin = Self::require_contract_admin(&env);
 
         let state = DeprecationState {
             deprecated,
             migration_target: migration_target.clone(),
         };
-        env.storage()
-            .instance()
-            .set(&DataKey::DeprecationState, &state);
+        env.storage().instance().set(&DataKey::DeprecationState, &state);
         env.events().publish(
             (symbol_short!("deprec"),),
             (
@@ -694,12 +698,11 @@ impl ProgramEscrowContract {
         Ok(())
     }
 
-    /// View: returns whether the contract is deprecated and the optional migration target.
     pub fn get_deprecation_status(env: Env) -> DeprecationState {
         Self::get_deprecation_state(&env)
     }
 
-    /// Read jurisdiction configuration for a program.
+    /// Read the stored jurisdiction config for a program.
     pub fn get_program_jurisdiction(
         env: Env,
         program_id: u64,
@@ -713,7 +716,7 @@ impl ProgramEscrowContract {
             .get(&DataKey::ProgramJurisdiction(program_id)))
     }
 
-    /// Return the total number of programs tracked in the index.
+    /// Return the total number of program ids tracked in the search index.
     pub fn get_program_count(env: Env) -> u32 {
         let index: Vec<u64> = env
             .storage()
@@ -723,16 +726,16 @@ impl ProgramEscrowContract {
         index.len()
     }
 
-    /// Paginated search over programs.
+    /// Paginated search over programs using the persisted `ProgramIndex`.
     ///
-    /// * `criteria` – `status_filter`: 0=any, 1=Active, 2=Completed, 3=Cancelled.
-    ///                `admin`: optional address filter.
-    /// * `cursor`   – pass the `next_cursor` from a previous `ProgramPage` to continue;
-    ///                `None` starts from the beginning.
-    /// * `limit`    – max results per page (capped at `MAX_PAGE_SIZE`).
+    /// Cursor semantics:
+    /// - `None` starts from the beginning of the index
+    /// - `Some(program_id)` resumes after that indexed id
+    /// - an unknown cursor returns an empty page rather than falling back to a full scan
     ///
-    /// Returns a `ProgramPage` with matching records, the next cursor, and a
-    /// `has_more` flag.
+    /// Limit semantics:
+    /// - `0` is treated as `MAX_PAGE_SIZE`
+    /// - values above `MAX_PAGE_SIZE` are clamped
     pub fn get_programs(
         env: Env,
         criteria: ProgramSearchCriteria,
@@ -745,12 +748,11 @@ impl ProgramEscrowContract {
             limit
         };
 
-        // Convert u32 status code to ProgramStatus for matching
         let status_match = match criteria.status_filter {
             1 => Some(ProgramStatus::Active),
             2 => Some(ProgramStatus::Completed),
             3 => Some(ProgramStatus::Cancelled),
-            _ => None, // 0 or anything else = match any
+            _ => None,
         };
 
         let index: Vec<u64> = env
@@ -760,46 +762,40 @@ impl ProgramEscrowContract {
             .unwrap_or_else(|| Vec::new(&env));
 
         let mut records: Vec<ProgramRecord> = Vec::new(&env);
-        let mut past_cursor = cursor.is_none();
+        let mut collecting = cursor.is_none();
         let mut next_cursor: Option<u64> = None;
         let mut has_more = false;
 
         for i in 0..index.len() {
             let id = index.get(i).unwrap();
 
-            // Skip until we pass the cursor
-            if !past_cursor {
+            if !collecting {
                 if Some(id) == cursor {
-                    past_cursor = true;
+                    collecting = true;
                 }
                 continue;
             }
 
-            // Fetch the program record
-            let program_opt: Option<Program> = env
+            let Some(program) = env
                 .storage()
                 .persistent()
-                .get(&DataKey::Program(id));
-            if program_opt.is_none() {
+                .get::<_, Program>(&DataKey::Program(id))
+            else {
                 continue;
-            }
-            let program = program_opt.unwrap();
+            };
 
-            // Apply status filter
             if let Some(ref status) = status_match {
                 if program.status != *status {
                     continue;
                 }
             }
 
-            // Apply admin filter
             if let Some(ref admin) = criteria.admin {
                 if program.admin != *admin {
                     continue;
                 }
             }
 
-            // Check if we already have enough results
             if records.len() >= effective_limit {
                 has_more = true;
                 break;
@@ -824,11 +820,10 @@ impl ProgramEscrowContract {
             next_cursor,
             has_more,
         }
-    ) -> Result<OptionalJurisdiction, Error> {
-        let program = Self::get_program(env, program_id)?;
-        Ok(program.jurisdiction)
     }
 }
 
+#[cfg(test)]
 mod test;
+#[cfg(test)]
 mod test_search;

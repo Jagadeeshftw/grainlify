@@ -3904,6 +3904,106 @@
         {
           "contract_data": {
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "ProgramIndex"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "ProgramIndex"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "vec": [
+                    {
+                      "u64": "1"
+                    },
+                    {
+                      "u64": "2"
+                    },
+                    {
+                      "u64": "3"
+                    },
+                    {
+                      "u64": "4"
+                    },
+                    {
+                      "u64": "5"
+                    },
+                    {
+                      "u64": "6"
+                    },
+                    {
+                      "u64": "7"
+                    },
+                    {
+                      "u64": "8"
+                    },
+                    {
+                      "u64": "9"
+                    },
+                    {
+                      "u64": "10"
+                    },
+                    {
+                      "u64": "11"
+                    },
+                    {
+                      "u64": "12"
+                    },
+                    {
+                      "u64": "13"
+                    },
+                    {
+                      "u64": "14"
+                    },
+                    {
+                      "u64": "15"
+                    },
+                    {
+                      "u64": "16"
+                    },
+                    {
+                      "u64": "17"
+                    },
+                    {
+                      "u64": "18"
+                    },
+                    {
+                      "u64": "19"
+                    },
+                    {
+                      "u64": "20"
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4095
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
             "key": "ledger_key_contract_instance",
             "durability": "persistent"
           }

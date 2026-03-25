@@ -205,6 +205,28 @@ fn test_list_and_count_contracts() {
 
     let all = facade.list_contracts();
     assert_eq!(all.len(), 2);
+    assert_eq!(all.get(0).unwrap().address, c1);
+    assert_eq!(all.get(0).unwrap().kind, ContractKind::BountyEscrow);
+    assert_eq!(all.get(1).unwrap().address, c2);
+    assert_eq!(all.get(1).unwrap().kind, ContractKind::ProgramEscrow);
+}
+
+/// If duplicate addresses are registered, `get_contract` returns the first match.
+#[test]
+fn test_get_contract_returns_first_match_for_duplicate_addresses() {
+    let (env, facade, admin) = setup();
+    let duplicate = Address::generate(&env);
+
+    facade.init(&admin);
+    facade.register(&duplicate, &ContractKind::BountyEscrow, &1);
+    facade.register(&duplicate, &ContractKind::ProgramEscrow, &2);
+
+    let all = facade.list_contracts();
+    assert_eq!(all.len(), 2);
+
+    let entry = facade.get_contract(&duplicate).unwrap();
+    assert_eq!(entry.kind, ContractKind::BountyEscrow);
+    assert_eq!(entry.version, 1);
 }
 
 // ---------------------------------------------------------------------------

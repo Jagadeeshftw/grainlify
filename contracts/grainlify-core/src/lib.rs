@@ -173,7 +173,7 @@ pub use governance::{
 /// to call against empty or partially initialized state.
 mod monitoring {
     use super::DataKey;
-    use soroban_sdk::{contracttype, symbol_short, Address, Env, String, Symbol};
+    use soroban_sdk::{contracttype, symbol_short, Address, Env, String, Symbol, Vec};
 
     // Storage keys
     const OPERATION_COUNT: &str = "op_count";
@@ -272,6 +272,11 @@ mod monitoring {
     }
 
     /// Aggregate performance statistics for a single function.
+    /// Aggregated performance statistics for a tracked contract function.
+    ///
+    /// Counters are maintained in persistent storage by [`emit_performance`] and
+    /// read back by [`get_performance_stats`].  The storage footprint is bounded
+    /// by [`MAX_TRACKED_FUNCTIONS`] — see the eviction policy below.
     #[contracttype]
     #[derive(Clone, Debug)]
     pub struct PerformanceStats {
@@ -357,9 +362,72 @@ mod monitoring {
     }
 
     /// Emits a performance metric sample and updates aggregate timing counters.
+    /// Maximum number of distinct function names whose performance counters
+    /// are retained in persistent storage.  When a new (previously unseen)
+    /// function is tracked and the index already contains this many entries,
+    /// the **oldest** entry (first element of the `perf_index` vector) is
+    /// evicted — its three storage keys (`perf_cnt`, `perf_time`, `perf_last`)
+    /// are removed before the new entry is appended.
+    ///
+    /// This caps total storage at `MAX_TRACKED_FUNCTIONS * 3 + 1` persistent
+    /// entries (counters + the index itself), preventing unbounded growth.
+    pub const MAX_TRACKED_FUNCTIONS: u32 = 50;
+
+    /// Records a single invocation of `function` with the given `duration`.
+    ///
+    /// Increments `perf_cnt`, accumulates `perf_time`, and writes
+    /// `perf_last` (ledger timestamp) so that [`get_performance_stats`] can
+    /// reconstruct the full [`PerformanceStats`] for any tracked function.
+    ///
+    /// **Note on timestamp granularity:** Within a single ledger close,
+    /// `env.ledger().timestamp()` does not advance, so `duration` may be
+    /// zero when both start and end are sampled in the same ledger.
     pub fn emit_performance(env: &Env, function: Symbol, duration: u64) {
+        // --- eviction bookkeeping -------------------------------------------
+        let index_key = Symbol::new(env, "perf_index");
+        let mut index: Vec<Symbol> = env
+            .storage()
+            .persistent()
+            .get(&index_key)
+            .unwrap_or(Vec::new(env));
+
+        // Check whether `function` is already tracked.
+        let mut already_tracked = false;
+        for i in 0..index.len() {
+            if index.get(i).unwrap() == function {
+                already_tracked = true;
+                break;
+            }
+        }
+
+        if !already_tracked {
+            // Evict the oldest entry when the cap is reached.
+            if index.len() >= MAX_TRACKED_FUNCTIONS {
+                let oldest = index.get(0).unwrap();
+                env.storage()
+                    .persistent()
+                    .remove(&(Symbol::new(env, "perf_cnt"), oldest.clone()));
+                env.storage()
+                    .persistent()
+                    .remove(&(Symbol::new(env, "perf_time"), oldest.clone()));
+                env.storage()
+                    .persistent()
+                    .remove(&(Symbol::new(env, "perf_last"), oldest.clone()));
+
+                let mut trimmed = Vec::new(env);
+                for i in 1..index.len() {
+                    trimmed.push_back(index.get(i).unwrap());
+                }
+                index = trimmed;
+            }
+            index.push_back(function.clone());
+            env.storage().persistent().set(&index_key, &index);
+        }
+
+        // --- update counters ------------------------------------------------
         let count_key = (Symbol::new(env, "perf_cnt"), function.clone());
         let time_key = (Symbol::new(env, "perf_time"), function.clone());
+        let last_key = (Symbol::new(env, "perf_last"), function.clone());
 
         let count: u64 = env.storage().persistent().get(&count_key).unwrap_or(0);
         let total: u64 = env.storage().persistent().get(&time_key).unwrap_or(0);
@@ -368,6 +436,9 @@ mod monitoring {
         env.storage()
             .persistent()
             .set(&time_key, &(total + duration));
+        env.storage()
+            .persistent()
+            .set(&last_key, &env.ledger().timestamp());
 
         env.events().publish(
             (symbol_short!("metric"), symbol_short!("perf")),
@@ -432,6 +503,10 @@ mod monitoring {
 
     /// Returns aggregate performance statistics for a single monitored function.
     #[allow(dead_code)]
+    /// Returns aggregated [`PerformanceStats`] for `function_name`.
+    ///
+    /// All counters default to `0` when the function has never been tracked,
+    /// so this call is always safe (no panics, no zero-division).
     pub fn get_performance_stats(env: &Env, function_name: Symbol) -> PerformanceStats {
         let count_key = (Symbol::new(env, "perf_cnt"), function_name.clone());
         let time_key = (Symbol::new(env, "perf_time"), function_name.clone());
@@ -537,6 +612,8 @@ mod monitoring {
 #[cfg(test)]
 mod test_core_monitoring;
 #[cfg(test)]
+mod test_performance_stats;
+#[cfg(test)]
 mod test_serialization_compatibility;
 
 // ==================== END MONITORING MODULE ====================
@@ -558,46 +635,92 @@ pub struct GrainlifyContract;
 /// # Keys
 /// * `Admin` - Stores the administrator address (set once at initialization)
 /// * `Version` - Stores the current contract version number
+/// * `MigrationState` - Migration state tracking to prevent double migration
+/// * `PreviousVersion` - Tracks previous version for rollback support
 /// * `ChainId` - Stores the chain identifier for cross-network protection
 /// * `NetworkId` - Stores the network identifier for environment-specific behavior
 ///
 /// # Storage Type
-/// Instance storage - Persists across contract upgrades
+/// Instance storage - Persists across contract upgrades. This is critical for maintaining
+/// state continuity when upgrading contract WASM.
 ///
-/// # Security Note
-/// These keys use instance storage to ensure data survives WASM upgrades.
-/// The admin address is immutable after initialization.
+/// # Storage Key Stability
+///
+/// **IMPORTANT**: Storage keys must NEVER change between contract versions, as changing
+/// keys will cause loss of access to existing data during upgrades. All keys are stable:
+///
+/// - `Admin` (0): Immutable identifier, safe for all future versions
+/// - `Version` (1): Immutable identifier, safe for all future versions
+/// - `MigrationState` (3): Immutable identifier, safe for all future versions
+/// - `PreviousVersion` (4): May be extended but never renamed
+/// - Keys added in future versions should use sequential enum indices
+///
+/// Any breaking changes to data structures require a migration function in the new WASM.
+///
+/// # Security Notes
+/// - Instance storage persists across WASM upgrades automatically
+/// - Admin address (Admin key) is immutable after initialization
+/// - Migration state prevents replayed or duplicated migrations
+/// - All storage operations are admin-only or derived from admin authorization
 #[contracttype]
 #[derive(Clone)]
 enum DataKey {
     /// Administrator address with upgrade authority
+    /// - Immutable after initialization via init_admin()
+    /// - Required for all admin operations (upgrade, migrate, set_version)
+    /// - Persists across all WASM upgrades
     Admin,
 
     /// Current version number (increments with upgrades)
+    /// - Updated by migrate() and set_version()
+    /// - Used to determine which migration functions to execute
+    /// - Persists across all WASM upgrades
     Version,
 
-    // NEW: store wasm hash per proposal
+    /// WASM hash stored per proposal (for multisig upgrades)
     UpgradeProposal(u64),
 
     /// Migration state tracking - prevents double migration
+    /// - Set after successful migrate() call
+    /// - Records from_version, to_version, timestamp, and migration_hash
+    /// - Checked for idempotency in migrate() function
+    /// - Persists across all WASM upgrades
     MigrationState,
 
     /// Previous version before migration (for rollback support)
+    /// - Updated by upgrade() function
+    /// - Allows comparison before and after WASM upgrade
+    /// - Useful for debugging rollback scenarios
     PreviousVersion,
 
     /// Configuration snapshot data by snapshot id
+    /// - Stores point-in-time snapshots of admin/version/multisig config
+    /// - Used for recovery and audit trails
+    /// - Persists across upgrades
     ConfigSnapshot(u64),
 
     /// Ordered list of retained snapshot ids
+    /// - Maintains order for historical queries
+    /// - Limited to CONFIG_SNAPSHOT_LIMIT entries
+    /// - Automatically rotates to prevent unbounded storage growth
     SnapshotIndex,
 
     /// Monotonic snapshot id counter
+    /// - Increments with each create_config_snapshot() call
+    /// - Ensures snapshot IDs are unique and ordered
+    /// - Never decrements, safe for all future versions
     SnapshotCounter,
 
     /// Chain identifier for cross-network protection
+    /// - Set during initialization
+    /// - Prevents contract state replay across networks
+    /// - Must match network context during execution
     ChainId,
 
-    /// Network identifier
+    /// Network identifier for environment-specific behavior
+    /// - Distinguishes mainnet from testnet contracts
+    /// - May be used for feature flags or behavior divergence
+    /// - Persists across upgrades
     NetworkId,
 }
 
@@ -638,7 +761,29 @@ pub struct CoreConfigSnapshot {
 // Migration System
 // ============================================================================
 
-/// Migration state tracking to prevent double migration
+/// Migration state tracking to prevent double migration and maintain audit trail.
+///
+/// # Fields
+/// - `from_version`: Version before migration (starting point)
+/// - `to_version`: Version after migration (target point)
+/// - `migrated_at`: Ledger timestamp when migration completed
+/// - `migration_hash`: SHA256 hash of migration data for verification
+///
+/// # Storage
+/// Stored in `DataKey::MigrationState` as instance storage, persists across
+/// all WASM upgrades. This is critical for preventing replayed migrations.
+///
+/// # Idempotency
+/// When migrate() is called again with the same target_version, this state
+/// is checked first. If to_version == target_version, the call returns early
+/// (no-op) to ensure migrations execute exactly once per version boundary.
+///
+/// # Usage
+/// Access via get_migration_state() contract function to verify:
+/// - Migration completed successfully
+/// - Exact version boundaries involved
+/// - Timestamp for audit trail
+/// - Hash for verification against external records
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MigrationState {
@@ -646,21 +791,44 @@ pub struct MigrationState {
     pub from_version: u32,
     /// Version that was migrated to
     pub to_version: u32,
-    /// Timestamp when migration completed
+    /// Timestamp when migration completed (from env.ledger().timestamp())
     pub migrated_at: u64,
-    /// Migration hash for verification
+    /// Migration hash for verification and audit trail
     pub migration_hash: BytesN<32>,
 }
 
-/// Migration event data
+/// Migration event data emitted for off-chain indexing and audit trail.
+///
+/// # Events
+/// Emitted for every migrate() call, whether successful or failed:
+/// - Topic: symbol_short!("migration")
+/// - Data: MigrationEvent struct
+///
+/// # Fields
+/// - `from_version`: Starting version before migration
+/// - `to_version`: Target version for migration
+/// - `timestamp`: Ledger timestamp of migration
+/// - `migration_hash`: Verification hash from the call
+/// - `success`: Whether migration completed successfully
+/// - `error_message`: If success=false, contains error reason
+///
+/// # Audit Trail
+/// All migrations are recorded as events for off-chain monitoring.
+/// Failed migrations are also recorded for debugging and security purposes.
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct MigrationEvent {
+    /// Version before migration started
     pub from_version: u32,
+    /// Target version for migration
     pub to_version: u32,
+    /// Ledger timestamp of migration attempt/completion
     pub timestamp: u64,
+    /// Migration data hash for verification
     pub migration_hash: BytesN<32>,
+    /// True if migration succeeded, false if failed
     pub success: bool,
+    /// Error message if migration failed (None if success=true)
     pub error_message: Option<String>,
 }
 
@@ -1313,7 +1481,10 @@ impl GrainlifyContract {
         monitoring::get_state_snapshot(&env)
     }
 
-    /// Get performance stats for a function
+    /// Returns aggregated performance statistics for `function_name`.
+    ///
+    /// Counters default to zero when no data has been recorded, so this
+    /// endpoint is always safe to call for any symbol.
     pub fn get_performance_stats(env: Env, function_name: Symbol) -> monitoring::PerformanceStats {
         monitoring::get_performance_stats(&env, function_name)
     }
@@ -1336,36 +1507,84 @@ impl GrainlifyContract {
     ///
     /// # Arguments
     /// * `env` - The contract environment
-    /// * `target_version` - Version to migrate to
-    /// * `migration_hash` - Hash of migration data for verification
+    /// * `target_version` - Version to migrate to (must be > current version)
+    /// * `migration_hash` - Hash of migration data for verification (32 bytes)
     ///
     /// # Authorization
-    /// - Only admin can call this function
-    /// - Admin must sign the transaction
+    /// - REQUIRED: Only admin (set via init_admin) can call this function
+    /// - REQUIRED: Admin must sign the transaction (enforce_auth)
+    /// - EFFECT: Panics if caller is not the admin
     ///
-    /// # State Changes
-    /// - Migrates contract state from current version to target version
-    /// - Updates version number
-    /// - Records migration state to prevent double migration
-    /// - Emits migration event
+    /// # State Changes (Idempotent)
+    /// - **First call**: Executes version-specific migration functions
+    /// - **First call**: Updates `DataKey::Version` to target_version
+    /// - **First call**: Stores migration state in `DataKey::MigrationState`
+    /// - **First call**: Emits successful migration event
+    /// - **Retry with same target**: Returns immediately (no-op, no events)
+    /// - **Retry with different target**: Panics (prevents confusion)
     ///
-    /// # Migration Process
-    /// 1. Validates current version and target version
-    /// 2. Checks if migration already completed
-    /// 3. Executes version-specific migration functions
-    /// 4. Updates version number
-    /// 5. Records migration state
-    /// 6. Emits migration event
+    /// # Storage Keys Involved
+    /// - `DataKey::Admin`: Retrieved for authorization check
+    /// - `DataKey::Version`: Read for current version, updated with target
+    /// - `DataKey::MigrationState`: Checked for idempotency, set after migration
+    /// - `DataKey::PreviousVersion`: May be updated by migration functions
     ///
-    /// # Example
+    /// # Migration Chain Logic
+    /// If target_version > current_version + 1, executes intermediate migrations:
+    /// - v1 → v2 calls migrate_v1_to_v2()
+    /// - v2 → v3 calls migrate_v2_to_v3()
+    /// - v1 → v3 calls both in sequence
+    ///
+    /// # Version Control
+    /// - Returns error if target_version <= current_version
+    /// - Returns error if no migration path exists for version jump
+    /// - Ensures monotonically increasing version numbers
+    ///
+    /// # Audit Trail
+    /// - Emits MigrationEvent with from_version, to_version, timestamp, success flag
+    /// - Calls monitoring::track_operation for operation tracking
+    /// - Calls monitoring::emit_performance for gas accounting
+    ///
+    /// # Idempotency Guarantee
+    ///
     /// ```rust
-    /// // After upgrading WASM to v2
-    /// contract.upgrade(&env, &new_wasm_hash);
+    /// // Safe to retry: second call is a no-op
+    /// client.migrate(&3, &hash1);
+    /// client.migrate(&3, &hash1);  // Returns early, no events emitted
     ///
-    /// // Migrate state from v1 to v2
-    /// let migration_hash = BytesN::from_array(&env, &[...]);
-    /// contract.migrate(&env, &2, &migration_hash);
+    /// // Different hash for same target: still returns early
+    /// client.migrate(&3, &hash2);  // Returns early, preserves original hash
+    ///
+    /// // Different target: panics with version check error
+    /// client.migrate(&3, &hash1);
+    /// client.migrate(&2, &hash1);  // Panics: "Target version must be greater"
     /// ```
+    ///
+    /// # Security Considerations
+    /// 1. **Replay Protection**: Migration hash is stored and verified offline
+    /// 2. **Admin Control**: Only admin can trigger migrations
+    /// 3. **Version Monotonicity**: Cannot downgrade, forward-only migrations
+    /// 4. **State Isolation**: Old keys preserved (no key mutations except version)
+    /// 5. **Pre-WASM Upgrade**: Call migrate() AFTER uploading new WASM to update state
+    ///
+    /// # Storage Stability
+    /// This function does NOT modify the DataKey enum or rename keys.
+    /// Storage keys remain stable across all past and future versions:
+    /// - DataKey::Admin (0)
+    /// - DataKey::Version (1)
+    /// - DataKey::MigrationState (3)
+    /// - All other keys retain their enum variants
+    ///
+    /// # Failure Modes
+    /// - Panics if admin is not set (contract not initialized)
+    /// - Panics if caller is not admin (admin.require_auth fails)
+    /// - Panics if target_version <= current_version
+    /// - Panics if no migration path exists (e.g., v3 → v4 with no migrate_v3_to_v4)
+    ///
+    /// # Performance
+    /// - Gas: Proportional to migrations executed (typically 1-3 per call)
+    /// - Storage: Constant (same keys updated each call)
+    /// - Can be safely called multiple times with same arguments
     pub fn migrate(env: Env, target_version: u32, migration_hash: BytesN<32>) {
         let start = env.ledger().timestamp();
 
@@ -1551,30 +1770,99 @@ impl traits::UpgradeInterface for GrainlifyContract {
 // Migration Functions
 // ============================================================================
 
-/// Emits a migration event for audit trail
+/// Emits a migration event for audit trail and off-chain indexing.
+///
+/// # Arguments
+/// * `env` - The contract environment
+/// * `event` - MigrationEvent struct containing migration details
+///
+/// # Event Topic
+/// Published with topic: symbol_short!("migration")
+///
+/// # Off-Chain Integration
+/// Indexers should listen for events with topic "migration" to maintain
+/// an audit trail of all migration attempts (both successful and failed).
 fn emit_migration_event(env: &Env, event: MigrationEvent) {
     env.events().publish((symbol_short!("migration"),), event);
 }
 
-/// Migration from version 1 to version 2
-/// This is a placeholder migration - add actual data transformation logic here
+/// Migration from version 1 to version 2 - Storage transformation handler.
+///
+/// # Purpose
+/// This function is called when migrating from v1 to v2. It handles any
+/// data structure transformations or state reorganization needed.
+///
+/// # Current Implementation
+/// This is a placeholder with no-op implementation. When v2 breaking changes
+/// are defined, implement the following pattern:
+///
+/// ```rust
+/// // 1. Read old data format from storage
+/// let old_data: OldStructure = env.storage().instance().get(&DataKey::OldKey)?;
+///
+/// // 2. Transform to new format
+/// let new_data = transform_to_new_format(old_data);
+///
+/// // 3. Write new format
+/// env.storage().instance().set(&DataKey::NewKey, &new_data);
+///
+/// // 4. Optionally clean up old keys
+/// env.storage().instance().remove(&DataKey::OldKey);
+/// ```
+///
+/// # Important Notes
+/// - NEVER rename or remove DataKey enum variants (breaks storage stability)
+/// - Use new enum variants for new storage keys in future migrations
+/// - Document all data transformations with examples
+/// - Test migrations thoroughly on testnet before mainnet deployment
+/// - Store migration data on-chain for audit trail verification
+///
+/// # Security Considerations
+/// - Storage keys must remain stable across all versions
+/// - Data transformations must be idempotent (can replay without issues)
+/// - Invalid data should be explicitly handled (panic or default)
+/// - Admin authorization is already verified by the migrate() function
 fn migrate_v1_to_v2(_env: &Env) {
-    // Example: Transform old data structures to new ones
-    // This is where you would:
-    // 1. Read old data format
-    // 2. Transform to new format
-    // 3. Write new data format
-    // 4. Clean up old data if needed
-
-    // For now, this is a no-op migration
-    // Add actual migration logic based on your data structure changes
+    // Placeholder migration - add actual data structure transformations here
+    // when v2 includes breaking changes to contract state.
+    //
+    // Current implementation effect: No-op (v1 storage layout compatible with v2)
+    //
+    // Future implementations should follow this pattern:
+    // - Read old entities
+    // - Transform schemas
+    // - Write new entities
+    // - Clean up old keys (optional, to save storage)
 }
 
-/// Migration from version 2 to version 3
-/// Placeholder for future migrations
+/// Migration from version 2 to version 3 - Storage transformation handler.
+///
+/// # Purpose
+/// This function is called when migrating from v2 to v3. It handles any
+/// data structure transformations or state reorganization needed.
+///
+/// # Current Implementation
+/// This is a placeholder with no-op implementation. When v3 breaking changes
+/// are defined, implement similar to migrate_v1_to_v2().
+///
+/// # Storage Key Guarantee
+/// All existing storage keys from v1 and v2 remain valid:
+/// - DataKey::Admin (unchanged, immutable)
+/// - DataKey::Version (unchanged, managed by migrate())
+/// - DataKey::MigrationState (unchanged, tracks migration history)
+/// - All user-defined keys (backward compatible)
+///
+/// # Adding New Features in v3+
+/// If v3 introduces new contract functionality:
+/// 1. Define new DataKey variants (new enum indices don't conflict)
+/// 2. Initialize new storage in migrate_v2_to_v3() if needed
+/// 3. Use get().unwrap_or(default) for missing keys in existing code
+/// 4. Document new keys in DataKey enum comments
 fn migrate_v2_to_v3(_env: &Env) {
-    // Future migration logic here
-    // This will be implemented when v3 is released
+    // Placeholder migration - add actual data structure transformations here
+    // when v3 includes breaking changes to contract state.
+    //
+    // Current implementation effect: No-op (v2 storage layout compatible with v3)
 }
 
 // ============================================================================
@@ -1594,8 +1882,7 @@ mod test {
     pub mod upgrade_rollback_tests;
 
     // WASM for testing
-    pub const WASM: &[u8] =
-        include_bytes!("../target/wasm32-unknown-unknown/release/grainlify_core.wasm");
+    pub const WASM: &[u8] = include_bytes!("../target/wasm32v1-none/release/grainlify_core.wasm");
 
     #[test]
     fn multisig_init_works() {
@@ -2137,14 +2424,4 @@ mod test {
         assert_eq!(state.from_version, v_before);
         assert_eq!(state.to_version, 3);
     }
-
-    // Export WASM for testing upgrade/rollback scenarios.
-    //
-    // These tests are optional because the compiled WASM artifact isn't always
-    // available in CI/local `cargo test` flows.
-    #[cfg(all(test, feature = "upgrade_rollback_tests"))]
-    pub const WASM: &[u8] = include_bytes!("../target/wasm32v1-none/release/grainlify_core.wasm");
-
-    #[cfg(all(test, feature = "upgrade_rollback_tests"))]
-    mod upgrade_rollback_tests;
 }

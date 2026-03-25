@@ -45,12 +45,12 @@ fn test_maintenance_mode_toggles_and_blocks_lock() {
     let emitted = events.iter().last().unwrap();
     let topics = emitted.1;
     let topic_0: Symbol = topics.get(0).unwrap().into_val(&env);
-    assert_eq!(topic_0, Symbol::new(&env, "MaintSt"));
+    assert_eq!(topic_0, Symbol::new(&env, "maint"));
 
-    let data: (bool, Address, u64) = emitted.2.try_into_val(&env).unwrap();
-    assert_eq!(data.0, true);
-    assert_eq!(data.1, admin);
-    assert_eq!(data.2, 555);
+    let data: crate::events::MaintenanceModeChanged = emitted.2.try_into_val(&env).unwrap();
+    assert_eq!(data.enabled, true);
+    assert_eq!(data.admin, admin);
+    assert_eq!(data.timestamp, 555);
 
     contract.set_maintenance_mode(&false);
     assert_eq!(contract.is_maintenance_mode(), false);

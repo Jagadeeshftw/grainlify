@@ -5,41 +5,6 @@
   },
   "auth": [
     [],
-<<<<<<< HEAD:contracts/bounty_escrow/contracts/escrow/test_snapshots/test_metadata/test_metadata_storage_and_query.1.json
-    [
-      [
-        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
-        {
-          "function": {
-            "contract_fn": {
-              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "update_metadata",
-              "args": [
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                },
-                {
-                  "u64": 1
-                },
-                {
-                  "u64": 12345
-                },
-                {
-                  "u64": 67890
-                },
-                {
-                  "string": "bounty"
-                },
-                "void"
-              ]
-            }
-          },
-          "sub_invocations": []
-        }
-      ]
-    ],
-=======
->>>>>>> origin/master:contracts/grainlify-core/test_snapshots/test_core_monitoring/test/test_healthy_state_passes_verification.1.json
     []
   ],
   "ledger": {
@@ -75,6 +40,41 @@
                 "durability": "persistent",
                 "val": {
                   "u64": 3
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4095
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+            "key": {
+              "symbol": "perf_index"
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+                "key": {
+                  "symbol": "perf_index"
+                },
+                "durability": "persistent",
+                "val": {
+                  "vec": [
+                    {
+                      "symbol": "init"
+                    }
+                  ]
                 }
               }
             },
@@ -135,6 +135,51 @@
             "key": {
               "vec": [
                 {
+                  "symbol": "perf_last"
+                },
+                {
+                  "symbol": "init"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "perf_last"
+                    },
+                    {
+                      "symbol": "init"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "u64": 0
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4095
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+            "key": {
+              "vec": [
+                {
                   "symbol": "perf_time"
                 },
                 {
@@ -158,30 +203,7 @@
                       "symbol": "perf_time"
                     },
                     {
-<<<<<<< HEAD:contracts/bounty_escrow/contracts/escrow/test_snapshots/test_metadata/test_metadata_storage_and_query.1.json
-                      "key": {
-                        "symbol": "issue_id"
-                      },
-                      "val": {
-                        "u64": 67890
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "reference_hash"
-                      },
-                      "val": "void"
-                    },
-                    {
-                      "key": {
-                        "symbol": "repo_id"
-                      },
-                      "val": {
-                        "u64": 12345
-                      }
-=======
                       "symbol": "init"
->>>>>>> origin/master:contracts/grainlify-core/test_snapshots/test_core_monitoring/test/test_healthy_state_passes_verification.1.json
                     }
                   ]
                 },
@@ -431,122 +453,6 @@
     {
       "event": {
         "ext": "v0",
-<<<<<<< HEAD:contracts/bounty_escrow/contracts/escrow/test_snapshots/test_metadata/test_metadata_storage_and_query.1.json
-        "contract_id": null,
-        "type_": "diagnostic",
-        "body": {
-          "v0": {
-            "topics": [
-              {
-                "symbol": "fn_call"
-              },
-              {
-                "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
-              },
-              {
-                "symbol": "update_metadata"
-              }
-            ],
-            "data": {
-              "vec": [
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                },
-                {
-                  "u64": 1
-                },
-                {
-                  "u64": 12345
-                },
-                {
-                  "u64": 67890
-                },
-                {
-                  "string": "bounty"
-                },
-                "void"
-              ]
-            }
-          }
-        }
-      },
-      "failed_call": false
-    },
-    {
-      "event": {
-        "ext": "v0",
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
-        "type_": "contract",
-        "body": {
-          "v0": {
-            "topics": [
-              {
-                "symbol": "meta_upd"
-              },
-              {
-                "u64": 1
-              }
-            ],
-            "data": {
-              "map": [
-                {
-                  "key": {
-                    "symbol": "bounty_id"
-                  },
-                  "val": {
-                    "u64": 1
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "bounty_type"
-                  },
-                  "val": {
-                    "string": "bounty"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "issue_id"
-                  },
-                  "val": {
-                    "u64": 67890
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "reference_hash"
-                  },
-                  "val": "void"
-                },
-                {
-                  "key": {
-                    "symbol": "repo_id"
-                  },
-                  "val": {
-                    "u64": 12345
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "timestamp"
-                  },
-                  "val": {
-                    "u64": 0
-                  }
-                }
-              ]
-            }
-          }
-        }
-      },
-      "failed_call": false
-    },
-    {
-      "event": {
-        "ext": "v0",
-=======
->>>>>>> origin/master:contracts/grainlify-core/test_snapshots/test_core_monitoring/test/test_healthy_state_passes_verification.1.json
         "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
         "type_": "contract",
         "body": {
@@ -579,17 +485,7 @@
                 },
                 {
                   "key": {
-<<<<<<< HEAD:contracts/bounty_escrow/contracts/escrow/test_snapshots/test_metadata/test_metadata_storage_and_query.1.json
-                    "symbol": "reference_hash"
-                  },
-                  "val": "void"
-                },
-                {
-                  "key": {
-                    "symbol": "repo_id"
-=======
                     "symbol": "success"
->>>>>>> origin/master:contracts/grainlify-core/test_snapshots/test_core_monitoring/test/test_healthy_state_passes_verification.1.json
                   },
                   "val": {
                     "bool": true

@@ -9,6 +9,21 @@
 //! can discover and interrogate them through a single endpoint, without coupling to a
 //! specific contract type or requiring knowledge of individual deployment addresses.
 //!
+//! ## Query Notes
+//!
+//! - `list_contracts` returns entries in registration order.
+//! - `contract_count` mirrors the current registry length.
+//! - `get_contract` performs an `O(n)` scan and returns the first matching
+//!   entry for the requested address.
+//! - `O(n)` scans are acceptable for the intended small registry size, but
+//!   callers should avoid treating this facade as an unbounded index.
+//!
+//! ## Query Flow
+//!
+//! 1. Call `contract_count` to size the expected dashboard result.
+//! 2. Call `list_contracts` to render the full registry in registration order.
+//! 3. Call `get_contract` when the UI needs to refresh a single known address.
+//!
 //! ## Security Model
 //!
 //! - **No fund custody**: this contract holds no tokens and transfers no funds.
@@ -346,6 +361,9 @@ impl ViewFacade {
     /// # Returns
     /// * `Some(entry)` — if the address is in the registry.
     /// * `None`        — if the address has not been registered.
+    ///
+    /// # Performance
+    /// Performs an `O(n)` scan over the registry.
     ///
     /// # Note
     /// This is a pure read — no authorization required.

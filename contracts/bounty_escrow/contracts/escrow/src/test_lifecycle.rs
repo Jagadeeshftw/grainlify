@@ -75,14 +75,7 @@ fn test_full_bounty_lifecycle_with_refund() {
         invoke: &MockAuthInvoke {
             contract: &escrow_client.address,
             fn_name: "lock_funds",
-            args: (
-                depositor.clone(),
-                bounty_id,
-                initial_amount,
-                deadline,
-                Option::<bool>::None,
-            )
-                .into_val(&env),
+            args: (depositor.clone(), bounty_id, initial_amount, deadline).into_val(&env),
             sub_invokes: &[MockAuthInvoke {
                 contract: &token_client.address,
                 fn_name: "transfer",

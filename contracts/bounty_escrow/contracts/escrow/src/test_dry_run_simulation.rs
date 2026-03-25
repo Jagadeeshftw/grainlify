@@ -134,9 +134,7 @@ fn test_dry_run_lock_duplicate_bounty() {
 
     s.escrow.lock_funds(&s.depositor, &1_u64, &1_000, &deadline);
 
-    let result = s
-        .escrow
-        .dry_run_lock(&s.depositor, &1_u64, &500, &deadline);
+    let result = s.escrow.dry_run_lock(&s.depositor, &1_u64, &500, &deadline);
 
     assert!(!result.success);
     assert_eq!(result.error_code, Error::BountyExists as u32);
