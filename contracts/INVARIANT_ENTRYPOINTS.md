@@ -27,11 +27,28 @@ Checks include:
   - `operation_count`, `unique_users`, `error_count`, `violation_count`
 - `verify_invariants() -> bool`
   - Lightweight boolean verdict suitable for high-frequency polling.
+- `health_check() -> HealthStatus`
+  - Bounded operator-facing summary with:
+  - `is_healthy`: mirrors the invariant verdict and returns `false` before initialization.
+  - `last_operation`: timestamp of the most recent tracked operation, or `0` on empty state.
+  - `total_operations`: current aggregate operation count.
+  - `contract_version`: semantic version string derived from the stored numeric version.
+- `get_analytics() -> Analytics`
+  - Bounded aggregate counters with:
+  - `operation_count`: total monitored operations.
+  - `unique_users`: distinct callers observed through monitoring.
+  - `error_count`: monitored failed operations.
+  - `error_rate`: failure rate in basis points, or `0` when no operations were recorded.
 
 Checks include:
 - Metrics consistency: `error_count <= operation_count`, `unique_users <= operation_count`.
 - Zero-activity consistency: if operations are zero then users/errors must also be zero.
 - Config sanity: admin/version presence, valid version, previous-version ordering, chain/network pair consistency.
+
+Monitoring view notes:
+- `health_check` and `get_analytics` are read-only and safe to poll against empty state.
+- Empty state is explicit rather than exceptional: counters return `0`, and health reflects the invariant/config verdict.
+- `error_rate` is intentionally coarse; use emitted events for higher-fidelity off-chain analytics.
 
 ## Integrator Guidance
 

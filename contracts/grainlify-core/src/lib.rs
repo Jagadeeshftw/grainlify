@@ -167,6 +167,10 @@ pub use governance::{
 };
 
 // ==================== MONITORING MODULE ====================
+/// Monitoring helpers and read-only views for operators.
+///
+/// All public view functions in this module are designed to be bounded and safe
+/// to call against empty or partially initialized state.
 mod monitoring {
     use super::DataKey;
     use soroban_sdk::{contracttype, symbol_short, Address, Env, String, Symbol};
@@ -175,93 +179,170 @@ mod monitoring {
     const OPERATION_COUNT: &str = "op_count";
     const USER_COUNT: &str = "usr_count";
     const ERROR_COUNT: &str = "err_count";
+    const LAST_OPERATION_TS: &str = "op_last";
+    const USER_SEEN_PREFIX: &str = "usr_seen";
 
-    // Event: Operation metric
+    fn read_counter(env: &Env, key: &str) -> u64 {
+        env.storage()
+            .persistent()
+            .get(&Symbol::new(env, key))
+            .unwrap_or(0)
+    }
+
+    fn version_semver_string(env: &Env) -> String {
+        let raw: u32 = env.storage().instance().get(&DataKey::Version).unwrap_or(0);
+        let version = match raw {
+            0 => "0.0.0",
+            1 | 10000 => "1.0.0",
+            2 | 20000 => "2.0.0",
+            10100 => "1.1.0",
+            10001 => "1.0.1",
+            _ => "unknown",
+        };
+
+        String::from_str(env, version)
+    }
+
+    /// Event payload emitted for each tracked operation.
     #[contracttype]
     #[derive(Clone, Debug)]
     pub struct OperationMetric {
+        /// Short identifier for the monitored operation.
         pub operation: Symbol,
+        /// Caller associated with the operation.
         pub caller: Address,
+        /// Ledger timestamp when the operation was recorded.
         pub timestamp: u64,
+        /// Whether the operation completed successfully.
         pub success: bool,
     }
 
-    // Event: Performance metric
+    /// Event payload emitted for each tracked performance sample.
     #[contracttype]
     #[derive(Clone, Debug)]
     pub struct PerformanceMetric {
+        /// Function name associated with the metric.
         pub function: Symbol,
+        /// Duration captured by the caller, in contract-defined units.
         pub duration: u64,
+        /// Ledger timestamp when the sample was recorded.
         pub timestamp: u64,
     }
 
-    // Data: Health status
+    /// Read-only health summary for operator liveness checks.
     #[contracttype]
     #[derive(Clone, Debug)]
     pub struct HealthStatus {
+        /// True when configuration and metrics invariants are currently satisfied.
         pub is_healthy: bool,
+        /// Ledger timestamp of the most recently tracked operation, or `0` if none were recorded.
         pub last_operation: u64,
+        /// Total number of monitored operations recorded by the contract.
         pub total_operations: u64,
+        /// Semantic version string derived from the stored contract version.
         pub contract_version: String,
     }
 
-    // Data: Analytics
+    /// Aggregate usage analytics for operator dashboards.
     #[contracttype]
     #[derive(Clone, Debug)]
     pub struct Analytics {
+        /// Count of all tracked operations.
         pub operation_count: u64,
+        /// Count of distinct callers observed through tracked operations.
         pub unique_users: u64,
+        /// Count of tracked failed operations.
         pub error_count: u64,
+        /// Failure rate in basis points, or `0` when no operations were recorded.
         pub error_rate: u32,
     }
 
-    // Data: State snapshot
+    /// Point-in-time snapshot of aggregate monitoring counters.
     #[contracttype]
     #[derive(Clone, Debug)]
     pub struct StateSnapshot {
+        /// Ledger timestamp when the snapshot was produced.
         pub timestamp: u64,
+        /// Operation counter value at snapshot time.
         pub total_operations: u64,
+        /// Unique-user counter value at snapshot time.
         pub total_users: u64,
+        /// Error counter value at snapshot time.
         pub total_errors: u64,
     }
 
-    // Data: Performance stats
+    /// Aggregate performance statistics for a single function.
     #[contracttype]
     #[derive(Clone, Debug)]
     pub struct PerformanceStats {
+        /// Function name associated with the statistics.
         pub function_name: Symbol,
+        /// Number of recorded performance samples.
         pub call_count: u64,
+        /// Sum of all recorded durations.
         pub total_time: u64,
+        /// Integer average duration, or `0` when no samples exist.
         pub avg_time: u64,
+        /// Timestamp of the latest sample, or `0` when none exist.
         pub last_called: u64,
     }
 
-    // Data: Invariant report for external auditors/monitors
+    /// Detailed invariant report for external auditors and monitoring services.
     #[contracttype]
     #[derive(Clone, Debug, Eq, PartialEq)]
     pub struct InvariantReport {
+        /// Overall contract health verdict.
         pub healthy: bool,
+        /// Whether configuration state is present and internally consistent.
         pub config_sane: bool,
+        /// Whether monitoring counters satisfy expected relationships.
         pub metrics_sane: bool,
+        /// Whether an admin address is configured.
         pub admin_set: bool,
+        /// Whether a version value is configured.
         pub version_set: bool,
+        /// Stored numeric contract version.
         pub version: u32,
+        /// Total tracked operations.
         pub operation_count: u64,
+        /// Total distinct tracked callers.
         pub unique_users: u64,
+        /// Total tracked failures.
         pub error_count: u64,
+        /// Number of violated invariant categories detected in the report.
         pub violation_count: u32,
     }
 
-    // Track operation
+    /// Records a monitored operation and updates aggregate counters.
     pub fn track_operation(env: &Env, operation: Symbol, caller: Address, success: bool) {
         let key = Symbol::new(env, OPERATION_COUNT);
-        let count: u64 = env.storage().persistent().get(&key).unwrap_or(0);
-        env.storage().persistent().set(&key, &(count + 1));
+        let count = read_counter(env, OPERATION_COUNT);
+        env.storage()
+            .persistent()
+            .set(&key, &count.saturating_add(1));
+
+        let user_seen_key = (Symbol::new(env, USER_SEEN_PREFIX), caller.clone());
+        if !env.storage().persistent().has(&user_seen_key) {
+            let user_key = Symbol::new(env, USER_COUNT);
+            let user_count = read_counter(env, USER_COUNT);
+
+            env.storage()
+                .persistent()
+                .set(&user_key, &user_count.saturating_add(1));
+            env.storage().persistent().set(&user_seen_key, &true);
+        }
+
+        let last_operation_key = Symbol::new(env, LAST_OPERATION_TS);
+        env.storage()
+            .persistent()
+            .set(&last_operation_key, &env.ledger().timestamp());
 
         if !success {
             let err_key = Symbol::new(env, ERROR_COUNT);
-            let err_count: u64 = env.storage().persistent().get(&err_key).unwrap_or(0);
-            env.storage().persistent().set(&err_key, &(err_count + 1));
+            let err_count = read_counter(env, ERROR_COUNT);
+            env.storage()
+                .persistent()
+                .set(&err_key, &err_count.saturating_add(1));
         }
 
         env.events().publish(
@@ -275,7 +356,7 @@ mod monitoring {
         );
     }
 
-    // Track performance
+    /// Emits a performance metric sample and updates aggregate timing counters.
     pub fn emit_performance(env: &Env, function: Symbol, duration: u64) {
         let count_key = (Symbol::new(env, "perf_cnt"), function.clone());
         let time_key = (Symbol::new(env, "perf_time"), function.clone());
@@ -298,31 +379,31 @@ mod monitoring {
         );
     }
 
-    // Health check
+    /// Returns the current monitoring health summary.
     pub fn health_check(env: &Env) -> HealthStatus {
-        let key = Symbol::new(env, OPERATION_COUNT);
-        let ops: u64 = env.storage().persistent().get(&key).unwrap_or(0);
+        let ops = read_counter(env, OPERATION_COUNT);
+        let last_operation: u64 = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(env, LAST_OPERATION_TS))
+            .unwrap_or(0);
 
         HealthStatus {
-            is_healthy: true,
-            last_operation: env.ledger().timestamp(),
+            is_healthy: check_invariants(env).healthy,
+            last_operation,
             total_operations: ops,
-            contract_version: String::from_str(env, "1.0.0"),
+            contract_version: version_semver_string(env),
         }
     }
 
-    // Get analytics
+    /// Returns bounded aggregate analytics for operator dashboards.
     pub fn get_analytics(env: &Env) -> Analytics {
-        let op_key = Symbol::new(env, OPERATION_COUNT);
-        let usr_key = Symbol::new(env, USER_COUNT);
-        let err_key = Symbol::new(env, ERROR_COUNT);
-
-        let ops: u64 = env.storage().persistent().get(&op_key).unwrap_or(0);
-        let users: u64 = env.storage().persistent().get(&usr_key).unwrap_or(0);
-        let errors: u64 = env.storage().persistent().get(&err_key).unwrap_or(0);
+        let ops = read_counter(env, OPERATION_COUNT);
+        let users = read_counter(env, USER_COUNT);
+        let errors = read_counter(env, ERROR_COUNT);
 
         let error_rate = if ops > 0 {
-            ((errors as u128 * 10000) / ops as u128) as u32
+            (((errors as u128).saturating_mul(10_000)) / ops as u128).min(u32::MAX as u128) as u32
         } else {
             0
         };
@@ -335,7 +416,7 @@ mod monitoring {
         }
     }
 
-    // Get state snapshot
+    /// Returns a point-in-time snapshot of aggregate monitoring counters.
     pub fn get_state_snapshot(env: &Env) -> StateSnapshot {
         let op_key = Symbol::new(env, OPERATION_COUNT);
         let usr_key = Symbol::new(env, USER_COUNT);
@@ -349,7 +430,7 @@ mod monitoring {
         }
     }
 
-    // Get performance stats (e.g. for off-chain analytics)
+    /// Returns aggregate performance statistics for a single monitored function.
     #[allow(dead_code)]
     pub fn get_performance_stats(env: &Env, function_name: Symbol) -> PerformanceStats {
         let count_key = (Symbol::new(env, "perf_cnt"), function_name.clone());
@@ -1207,12 +1288,22 @@ impl GrainlifyContract {
     // Monitoring & Analytics Functions
     // ========================================================================
 
-    /// Health check - returns contract health status
+    /// Returns a bounded, panic-free health summary for operator polling.
+    ///
+    /// Field semantics:
+    /// - `is_healthy` mirrors the current invariant verdict.
+    /// - `last_operation` is `0` until the first tracked operation is recorded.
+    /// - `contract_version` follows the same semantic-version mapping as `get_version_semver_string`.
     pub fn health_check(env: Env) -> monitoring::HealthStatus {
         monitoring::health_check(&env)
     }
 
-    /// Get analytics - returns usage analytics
+    /// Returns bounded aggregate analytics for operator dashboards.
+    ///
+    /// Field semantics:
+    /// - `unique_users` counts distinct tracked callers.
+    /// - `error_rate` is returned in basis points.
+    /// - Empty state returns zero for all counters and rates.
     pub fn get_analytics(env: Env) -> monitoring::Analytics {
         monitoring::get_analytics(&env)
     }
