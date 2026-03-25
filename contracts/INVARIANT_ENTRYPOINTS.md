@@ -13,6 +13,7 @@ This repository exposes explicit on-chain invariant checks so auditors and monit
   - Lightweight boolean verdict suitable for high-frequency polling.
 
 Checks include:
+
 - Balance consistency: sum of active escrow balances equals contract token balance.
 - Per-escrow sanity: non-negative amounts, remaining <= amount, status/remaining consistency.
 - Index consistency: every indexed escrow id has a backing escrow record.
@@ -41,11 +42,13 @@ Checks include:
   - `error_rate`: failure rate in basis points, or `0` when no operations were recorded.
 
 Checks include:
+
 - Metrics consistency: `error_count <= operation_count`, `unique_users <= operation_count`.
 - Zero-activity consistency: if operations are zero then users/errors must also be zero.
 - Config sanity: admin/version presence, valid version, previous-version ordering, chain/network pair consistency.
 
 Monitoring view notes:
+
 - `health_check` and `get_analytics` are read-only and safe to poll against empty state.
 - Empty state is explicit rather than exceptional: counters return `0`, and health reflects the invariant/config verdict.
 - `error_rate` is intentionally coarse; use emitted events for higher-fidelity off-chain analytics.
