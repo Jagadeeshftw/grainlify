@@ -6,7 +6,7 @@
 #![no_std]
 
 mod multisig;
-use multisig::{MultiSig, MultiSigConfig};
+use multisig::{ConfigPayload, MultiSig};
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, Address, BytesN, Env,
     String, Symbol, Vec,
@@ -425,6 +425,8 @@ mod monitoring {
 #[cfg(test)]
 mod test_core_monitoring;
 #[cfg(test)]
+mod test_multisig_config;
+#[cfg(test)]
 mod test_performance_stats;
 #[cfg(test)]
 mod test_serialization_compatibility;
@@ -495,6 +497,9 @@ enum DataKey {
     /// WASM hash stored per proposal (for multisig upgrades)
     UpgradeProposal(u64),
 
+    /// Configuration change payload stored per proposal
+    ConfigProposal(u64),
+
     /// Migration state tracking - prevents double migration
     /// - Set after successful migrate() call
     /// - Records from_version, to_version, timestamp, and migration_hash
@@ -537,6 +542,13 @@ enum DataKey {
     /// - May be used for feature flags or behavior divergence
     /// - Persists across upgrades
     NetworkId,
+
+    /// Global fee rate in basis points
+    GlobalFeeRate,
+    /// Global treasury address
+    GlobalTreasuryAddress,
+    /// Global pause state
+    GlobalPaused,
 }
 
 // ============================================================================
@@ -742,15 +754,17 @@ impl GrainlifyContract {
             panic!("Already initialized");
         }
 
+        // Get representative address for tracking
+        let caller = signers.get(0).expect("Signers cannot be empty");
+
         // Initialize multisig configuration
         MultiSig::init(&env, signers, threshold);
-        
+
         // Set initial version to mark contract as initialized
         env.storage().instance().set(&DataKey::Version, &VERSION);
 
         // Track successful operation
-        let caller = Address::generate(&env);
-        monitoring::track_operation(&env, symbol_short!("init"), caller.clone(), true);
+        monitoring::track_operation(&env, symbol_short!("init"), caller, true);
 
         // Track performance
         let duration = env.ledger().timestamp().saturating_sub(start);
@@ -952,13 +966,68 @@ impl GrainlifyContract {
     }
 
     /// Approves an upgrade proposal (multisig version).
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `proposal_id` - The ID of the proposal to approve
-    /// * `signer` - Address approving the proposal
     pub fn approve_upgrade(env: Env, proposal_id: u64, signer: Address) {
         MultiSig::approve(&env, proposal_id, signer);
+    }
+
+    /// Proposes a configuration change (multisig version).
+    pub fn propose_config_change(env: Env, proposer: Address, payload: ConfigPayload) -> u64 {
+        let proposal_id = MultiSig::propose(&env, proposer);
+        env.storage()
+            .instance()
+            .set(&DataKey::ConfigProposal(proposal_id), &payload);
+        proposal_id
+    }
+
+    /// Approves a configuration change proposal (multisig version).
+    pub fn approve_config_change(env: Env, proposal_id: u64, signer: Address) {
+        MultiSig::approve(&env, proposal_id, signer);
+
+        if MultiSig::can_execute(&env, proposal_id) {
+            let payload: ConfigPayload = env
+                .storage()
+                .instance()
+                .get(&DataKey::ConfigProposal(proposal_id))
+                .unwrap();
+            Self::execute_config_change(&env, payload);
+            MultiSig::mark_executed(&env, proposal_id);
+
+            // Emit execution event
+            env.events().publish(
+                (symbol_short!("cfg_exec"),),
+                (proposal_id, env.ledger().timestamp()),
+            );
+        }
+    }
+
+    /// Cancels a configuration change proposal (multisig version).
+    pub fn cancel_config_change(env: Env, proposal_id: u64, canceller: Address) {
+        MultiSig::cancel(&env, proposal_id, canceller);
+    }
+
+    fn execute_config_change(env: &Env, payload: ConfigPayload) {
+        match payload {
+            ConfigPayload::LockFeeRate(rate) => {
+                env.storage().instance().set(&DataKey::GlobalFeeRate, &rate);
+            }
+            ConfigPayload::PayoutFeeRate(_rate) => {
+                // Not implemented globally, but could be
+            }
+            ConfigPayload::FeeRecipient(recipient) => {
+                env.storage()
+                    .instance()
+                    .set(&DataKey::GlobalTreasuryAddress, &recipient);
+            }
+            ConfigPayload::FeesEnabled(_enabled) => {
+                // Not implemented globally
+            }
+            ConfigPayload::Admin(admin) => {
+                env.storage().instance().set(&DataKey::Admin, &admin);
+            }
+            ConfigPayload::Pause(lock, _release, _refund) => {
+                env.storage().instance().set(&DataKey::GlobalPaused, &lock);
+            }
+        }
     }
 
     /// Upgrades the contract to new WASM code.
