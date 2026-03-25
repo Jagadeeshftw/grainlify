@@ -268,12 +268,18 @@ impl ViewFacade {
             .unwrap_or(Vec::new(&env));
 
         registry.push_back(RegisteredContract {
-            address,
-            kind,
+            address: address.clone(),
+            kind: kind.clone(),
             version,
         });
 
         env.storage().instance().set(&DataKey::Registry, &registry);
+
+        // Emit register event for off-chain indexers
+        env.events().publish(
+            (symbol_short!("facade"), symbol_short!("register")),
+            (address, kind, version),
+        );
 
         Ok(())
     }
@@ -315,6 +321,12 @@ impl ViewFacade {
         }
 
         env.storage().instance().set(&DataKey::Registry, &updated);
+
+        // Emit deregister event for off-chain indexers
+        env.events().publish(
+            (symbol_short!("facade"), symbol_short!("deregstr")),
+            address,
+        );
 
         Ok(())
     }

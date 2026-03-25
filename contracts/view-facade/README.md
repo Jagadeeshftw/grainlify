@@ -92,6 +92,28 @@ Emitted once when `init` succeeds.
 
 **Topic:** `("facade", "init")`
 
+### `Register`
+
+Emitted when a contract is added to the registry via `register`.
+
+| Field | Type | Description |
+|---|---|---|
+| `address` | `Address` | On-chain address of the registered contract |
+| `kind` | `ContractKind` | Role of the contract |
+| `version` | `u32` | Version number at registration time |
+
+**Topic:** `("facade", "register")`
+
+### `Deregister`
+
+Emitted when a contract is removed from the registry via `deregister`.
+
+| Field | Type | Description |
+|---|---|---|
+| `address` | `Address` | On-chain address of the removed contract |
+
+**Topic:** `("facade", "deregstr")`
+
 ## Error Codes
 
 | Code | Value | Meaning |
@@ -117,10 +139,11 @@ cargo test
 Expected output:
 
 ```
-running 14 tests
+running 17 tests
 test test::test_contract_count_initially_zero ... ok
 test test::test_deregister_before_init_rejected ... ok
 test test::test_deregister_contract ... ok
+test test::test_deregister_emits_event ... ok
 test test::test_deregister_nonexistent_is_noop ... ok
 test test::test_double_init_rejected ... ok
 test test::test_get_admin_before_init_returns_none ... ok
@@ -132,8 +155,10 @@ test test::test_list_and_count_contracts ... ok
 test test::test_register_all_contract_kinds ... ok
 test test::test_register_and_lookup_contract ... ok
 test test::test_register_before_init_rejected ... ok
+test test::test_register_deregister_stability ... ok
+test test::test_register_emits_event ... ok
 
-test result: ok. 14 passed; 0 failed; 0 ignored
+test result: ok. 17 passed; 0 failed; 0 ignored
 ```
 
 ## Building

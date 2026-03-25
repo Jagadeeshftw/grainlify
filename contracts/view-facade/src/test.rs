@@ -275,3 +275,106 @@ fn test_deregister_before_init_rejected() {
     let result = facade.try_deregister(&addr);
     assert_eq!(result, Err(Ok(FacadeError::NotInitialized)));
 }
+
+// ---------------------------------------------------------------------------
+// Registry — events
+// ---------------------------------------------------------------------------
+
+/// `register` emits a `("facade", "register")` event with (address, kind, version).
+#[test]
+fn test_register_emits_event() {
+    use soroban_sdk::{symbol_short, testutils::Events as _, vec, IntoVal};
+
+    let (env, facade, admin) = setup();
+    let contract = Address::generate(&env);
+
+    facade.init(&admin);
+    facade.register(&contract, &ContractKind::BountyEscrow, &1u32);
+
+    let facade_id = facade.address.clone();
+    let events = env.events().all();
+
+    let found = events.iter().any(|(cid, topics, _data)| {
+        if cid != facade_id {
+            return false;
+        }
+        let expected = vec![
+            &env,
+            symbol_short!("facade").into_val(&env),
+            symbol_short!("register").into_val(&env),
+        ];
+        topics == expected
+    });
+
+    assert!(found, "register event must be emitted");
+}
+
+/// `deregister` emits a `("facade", "deregstr")` event with the removed address.
+#[test]
+fn test_deregister_emits_event() {
+    use soroban_sdk::{symbol_short, testutils::Events as _, vec, IntoVal};
+
+    let (env, facade, admin) = setup();
+    let contract = Address::generate(&env);
+
+    facade.init(&admin);
+    facade.register(&contract, &ContractKind::SorobanEscrow, &2u32);
+    facade.deregister(&contract);
+
+    let facade_id = facade.address.clone();
+    let events = env.events().all();
+
+    let found = events.iter().any(|(cid, topics, _data)| {
+        if cid != facade_id {
+            return false;
+        }
+        let expected = vec![
+            &env,
+            symbol_short!("facade").into_val(&env),
+            symbol_short!("deregstr").into_val(&env),
+        ];
+        topics == expected
+    });
+
+    assert!(found, "deregister event must be emitted");
+}
+
+// ---------------------------------------------------------------------------
+// Registry — stability
+// ---------------------------------------------------------------------------
+
+/// Registering and deregistering multiple contracts leaves the registry in
+/// a consistent state — only the expected entries remain.
+#[test]
+fn test_register_deregister_stability() {
+    let (env, facade, admin) = setup();
+
+    facade.init(&admin);
+
+    let c1 = Address::generate(&env);
+    let c2 = Address::generate(&env);
+    let c3 = Address::generate(&env);
+
+    facade.register(&c1, &ContractKind::BountyEscrow, &1);
+    facade.register(&c2, &ContractKind::ProgramEscrow, &2);
+    facade.register(&c3, &ContractKind::GrainlifyCore, &3);
+    assert_eq!(facade.contract_count(), 3);
+
+    // Remove the middle one
+    facade.deregister(&c2);
+    assert_eq!(facade.contract_count(), 2);
+
+    // c1 and c3 should remain in order
+    let list = facade.list_contracts();
+    assert_eq!(list.get(0).unwrap().address, c1);
+    assert_eq!(list.get(1).unwrap().address, c3);
+
+    // c2 should be gone
+    assert_eq!(facade.get_contract(&c2), None);
+
+    // Re-register c2 — should appear at end
+    facade.register(&c2, &ContractKind::ProgramEscrow, &4);
+    assert_eq!(facade.contract_count(), 3);
+    assert_eq!(facade.list_contracts().get(2).unwrap().address, c2);
+    assert_eq!(facade.list_contracts().get(2).unwrap().version, 4);
+}
