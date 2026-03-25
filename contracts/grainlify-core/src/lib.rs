@@ -271,6 +271,7 @@ mod monitoring {
         pub total_errors: u64,
     }
 
+    /// Aggregate performance statistics for a single function.
     /// Aggregated performance statistics for a tracked contract function.
     ///
     /// Counters are maintained in persistent storage by [`emit_performance`] and
@@ -360,6 +361,7 @@ mod monitoring {
         );
     }
 
+    /// Emits a performance metric sample and updates aggregate timing counters.
     /// Maximum number of distinct function names whose performance counters
     /// are retained in persistent storage.  When a new (previously unseen)
     /// function is tracked and the index already contains this many entries,
@@ -499,6 +501,8 @@ mod monitoring {
         }
     }
 
+    /// Returns aggregate performance statistics for a single monitored function.
+    #[allow(dead_code)]
     /// Returns aggregated [`PerformanceStats`] for `function_name`.
     ///
     /// All counters default to `0` when the function has never been tracked,
