@@ -469,9 +469,8 @@ pub enum DataKey {
     MaintenanceMode,                 // bool flag
     ProgramDependencies(String),     // program_id -> Vec<String>
     DependencyStatus(String),        // program_id -> DependencyStatus
-    SplitConfig(String),             // program_id -> SplitConfig (payout splits)
     Dispute,                         // DisputeRecord (single active dispute per contract)
-    SplitConfig(String),             // program_id -> SplitConfig
+    ConfigProposal(u64),             // proposal_id -> ConfigPayload
 }
 
 #[contracttype]
@@ -673,11 +672,12 @@ mod anti_abuse {
 mod claim_period;
 pub use claim_period::{ClaimRecord, ClaimStatus};
 mod payout_splits;
-pub use payout_splits::{BeneficiarySplit, SplitConfig};
+pub use payout_splits::{BeneficiarySplit, SplitConfig, SplitPayoutResult};
 #[cfg(test)]
 mod test_claim_period_expiry_cancellation;
 
 mod error_recovery;
+mod multisig;
 mod reentrancy_guard;
 #[cfg(test)]
 mod test_token_math;
@@ -688,14 +688,12 @@ mod test_circuit_breaker_audit;
 #[cfg(test)]
 mod error_recovery_tests;
 
-mod payout_splits;
 #[cfg(any())]
 mod reentrancy_tests;
 #[cfg(test)]
 mod test_dispute_resolution;
 mod threshold_monitor;
 mod token_math;
-pub use payout_splits::{BeneficiarySplit, SplitConfig, SplitPayoutResult};
 
 #[cfg(test)]
 mod reentrancy_guard_standalone_test;
@@ -731,6 +729,8 @@ mod test_payout_splits;
 // ========================================================================
 // Contract Implementation
 // ========================================================================
+
+use multisig::{ConfigPayload, MultiSig, MultiSigProposalStatus};
 
 #[contract]
 pub struct ProgramEscrowContract;
@@ -1173,7 +1173,7 @@ impl ProgramEscrowContract {
 
         // Get fee configuration
         let fee_config = Self::get_fee_config_internal(&env);
-        
+
         // Calculate fees if enabled
         let (fee_amount, net_amount) = if fee_config.fee_enabled && fee_config.lock_fee_rate > 0 {
             let (fee, net) = token_math::split_amount(amount, fee_config.lock_fee_rate);
@@ -1194,7 +1194,7 @@ impl ProgramEscrowContract {
             .total_funds
             .checked_add(amount)
             .unwrap_or_else(|| panic!("Total funds overflow"));
-        
+
         program_data.remaining_balance = program_data
             .remaining_balance
             .checked_add(net_amount)
@@ -2713,42 +2713,6 @@ impl ProgramEscrowContract {
     }
 
     // ========================================================================
-    // Payout Splits
-    // ========================================================================
-
-    pub fn set_split_config(
-        env: Env,
-        program_id: String,
-        beneficiaries: soroban_sdk::Vec<BeneficiarySplit>,
-    ) -> SplitConfig {
-        payout_splits::set_split_config(&env, &program_id, beneficiaries)
-    }
-
-    pub fn get_split_config(env: Env, program_id: String) -> Option<SplitConfig> {
-        payout_splits::get_split_config(&env, &program_id)
-    }
-
-    pub fn disable_split_config(env: Env, program_id: String) {
-        payout_splits::disable_split_config(&env, &program_id)
-    }
-
-    pub fn execute_split_payout(
-        env: Env,
-        program_id: String,
-        total_amount: i128,
-    ) -> SplitPayoutResult {
-        payout_splits::execute_split_payout(&env, &program_id, total_amount)
-    }
-
-    pub fn preview_split(
-        env: Env,
-        program_id: String,
-        total_amount: i128,
-    ) -> soroban_sdk::Vec<BeneficiarySplit> {
-        payout_splits::preview_split(&env, &program_id, total_amount)
-    }
-
-    // ========================================================================
     // Dispute Resolution
     // ========================================================================
     // Dispute Resolution
@@ -2876,6 +2840,103 @@ impl ProgramEscrowContract {
     /// Returns `None` when no dispute has ever been opened.
     pub fn get_dispute(env: Env) -> Option<DisputeRecord> {
         env.storage().instance().get(&DataKey::Dispute)
+    }
+
+    // ========================================================================
+    // Multisig Configuration Governance
+    // ========================================================================
+
+    /// Initialize global multisig configuration (admin-only).
+    pub fn init_multisig(env: Env, signers: Vec<Address>, threshold: u32) {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .unwrap_or_else(|| panic!("Not initialized"));
+        admin.require_auth();
+        MultiSig::init(&env, signers, threshold);
+    }
+
+    /// Propose a configuration change (multisig governed).
+    pub fn propose_config_change(env: Env, proposer: Address, payload: ConfigPayload) -> u64 {
+        let proposal_id = MultiSig::propose(&env, proposer);
+        env.storage()
+            .instance()
+            .set(&DataKey::ConfigProposal(proposal_id), &payload);
+        proposal_id
+    }
+
+    /// Approve and atomically execute a configuration change when threshold is met.
+    pub fn approve_config_change(env: Env, proposal_id: u64, signer: Address) {
+        MultiSig::approve(&env, proposal_id, signer);
+
+        if MultiSig::can_execute(&env, proposal_id) {
+            let payload: ConfigPayload = env
+                .storage()
+                .instance()
+                .get(&DataKey::ConfigProposal(proposal_id))
+                .unwrap();
+            Self::execute_config_change_internal(&env, payload);
+            MultiSig::mark_executed(&env, proposal_id);
+
+            env.events().publish(
+                (symbol_short!("cfg_exec"),),
+                (proposal_id, env.ledger().timestamp()),
+            );
+        }
+    }
+
+    /// Cancel a pending configuration change proposal.
+    pub fn cancel_config_change(env: Env, proposal_id: u64, canceller: Address) {
+        MultiSig::cancel(&env, proposal_id, canceller);
+    }
+
+    fn execute_config_change_internal(env: &Env, payload: ConfigPayload) {
+        match payload {
+            ConfigPayload::LockFeeRate(rate) => {
+                let mut config = Self::get_fee_config_internal(env);
+                config.lock_fee_rate = rate;
+                env.storage().instance().set(&FEE_CONFIG, &config);
+            }
+            ConfigPayload::PayoutFeeRate(rate) => {
+                let mut config = Self::get_fee_config_internal(env);
+                config.payout_fee_rate = rate;
+                env.storage().instance().set(&FEE_CONFIG, &config);
+            }
+            ConfigPayload::FeeRecipient(recipient) => {
+                let mut config = Self::get_fee_config_internal(env);
+                config.fee_recipient = recipient;
+                env.storage().instance().set(&FEE_CONFIG, &config);
+            }
+            ConfigPayload::FeesEnabled(enabled) => {
+                let mut config = Self::get_fee_config_internal(env);
+                config.fee_enabled = enabled;
+                env.storage().instance().set(&FEE_CONFIG, &config);
+            }
+            ConfigPayload::Admin(admin) => {
+                env.storage().instance().set(&DataKey::Admin, &admin);
+            }
+            ConfigPayload::Pause(lock, release, refund) => {
+                let mut pause_flags: PauseFlags = env
+                    .storage()
+                    .instance()
+                    .get(&DataKey::PauseFlags)
+                    .unwrap_or(PauseFlags {
+                        lock_paused: false,
+                        release_paused: false,
+                        refund_paused: false,
+                        pause_reason: None,
+                        paused_at: 0,
+                    });
+                pause_flags.lock_paused = lock;
+                pause_flags.release_paused = release;
+                pause_flags.refund_paused = refund;
+                pause_flags.paused_at = env.ledger().timestamp();
+                env.storage()
+                    .instance()
+                    .set(&DataKey::PauseFlags, &pause_flags);
+            }
+        }
     }
 }
 

@@ -109,6 +109,14 @@
                             },
                             {
                               "key": {
+                                "symbol": "risk_flags"
+                              },
+                              "val": {
+                                "u32": 0
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "token_address"
                               },
                               "val": {
@@ -155,6 +163,25 @@
                         },
                         "val": {
                           "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "DependencyStatus"
+                            },
+                            {
+                              "string": "hack-2026"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "symbol": "Pending"
+                            }
+                          ]
                         }
                       },
                       {
@@ -218,6 +245,116 @@
                               }
                             }
                           ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "Program"
+                            },
+                            {
+                              "string": "hack-2026"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "map": [
+                            {
+                              "key": {
+                                "symbol": "authorized_payout_key"
+                              },
+                              "val": {
+                                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "initial_liquidity"
+                              },
+                              "val": {
+                                "i128": {
+                                  "hi": 0,
+                                  "lo": 0
+                                }
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "payout_history"
+                              },
+                              "val": {
+                                "vec": []
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "program_id"
+                              },
+                              "val": {
+                                "string": "hack-2026"
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "reference_hash"
+                              },
+                              "val": "void"
+                            },
+                            {
+                              "key": {
+                                "symbol": "remaining_balance"
+                              },
+                              "val": {
+                                "i128": {
+                                  "hi": 0,
+                                  "lo": 0
+                                }
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "risk_flags"
+                              },
+                              "val": {
+                                "u32": 0
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "token_address"
+                              },
+                              "val": {
+                                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "total_funds"
+                              },
+                              "val": {
+                                "i128": {
+                                  "hi": 0,
+                                  "lo": 0
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "ProgramDependencies"
+                            },
+                            {
+                              "string": "hack-2026"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "vec": []
                         }
                       }
                     ]
@@ -477,6 +614,14 @@
                 },
                 {
                   "key": {
+                    "symbol": "risk_flags"
+                  },
+                  "val": {
+                    "u32": 0
+                  }
+                },
+                {
+                  "key": {
                     "symbol": "token_address"
                   },
                   "val": {
@@ -545,7 +690,7 @@
             "data": {
               "vec": [
                 {
-                  "string": "caught panic 'Amount must be greater than zero' from contract function 'Symbol(obj#133)'"
+                  "string": "caught panic 'Amount must be greater than zero' from contract function 'Symbol(obj#171)'"
                 },
                 {
                   "i128": {
