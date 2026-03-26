@@ -166,8 +166,8 @@ pub fn calculate_effective_limit(
     if identity.risk_score >= risk_thresholds.high_risk_threshold {
         // Reduce limit by risk multiplier percentage
         let multiplier = risk_thresholds.high_risk_multiplier as i128;
-        let risk_adjusted_limit = (tier_limit * multiplier) / 100;
-        risk_adjusted_limit
+        
+        (tier_limit * multiplier) / 100
     } else {
         tier_limit
     }

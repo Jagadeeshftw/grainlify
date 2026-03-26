@@ -17,13 +17,12 @@
 //! - cursor pagination keeps results reviewable and avoids hidden full scans
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, token, Address, Env,
+    contract, contracterror, contractevent, contractimpl, contracttype, token, Address, Env,
     String, Vec,
 };
 
 const MAX_BATCH_SIZE: u32 = 20;
 const MAX_PAGE_SIZE: u32 = 20;
-const PROGRAM_REGISTERED: soroban_sdk::Symbol = symbol_short!("prg_reg");
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -109,17 +108,27 @@ pub struct ProgramRegistrationWithJurisdictionItem {
     pub kyc_attested: Option<bool>,
 }
 
-#[contracttype]
+#[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProgramRegisteredEvent {
-    pub version: u32,
+    #[topic]
     pub program_id: u64,
+    pub version: u32,
     pub admin: Address,
     pub total_funding: i128,
     pub jurisdiction_tag: Option<String>,
     pub requires_kyc: bool,
     pub max_funding: Option<i128>,
     pub registration_paused: bool,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ContractDeprecatedEvent {
+    pub deprecated: bool,
+    pub migration_target: Option<Address>,
+    pub admin: Address,
     pub timestamp: u64,
 }
 
@@ -181,7 +190,7 @@ impl ProgramEscrowContract {
         if total_funding <= 0 {
             return Err(Error::InvalidAmount);
         }
-        if name.len() == 0 {
+        if name.is_empty() {
             return Err(Error::InvalidName);
         }
         Ok(())
@@ -257,20 +266,18 @@ impl ProgramEscrowContract {
                 (None, false, None, false)
             };
 
-        env.events().publish(
-            (PROGRAM_REGISTERED, program_id),
-            ProgramRegisteredEvent {
-                version: 2,
-                program_id,
-                admin,
-                total_funding,
-                jurisdiction_tag,
-                requires_kyc,
-                max_funding,
-                registration_paused,
-                timestamp: env.ledger().timestamp(),
-            },
-        );
+        ProgramRegisteredEvent {
+            version: 2,
+            program_id,
+            admin,
+            total_funding,
+            jurisdiction_tag,
+            requires_kyc,
+            max_funding,
+            registration_paused,
+            timestamp: env.ledger().timestamp(),
+        }
+        .publish(env);
     }
 
     fn order_batch_registration_items(
@@ -325,7 +332,9 @@ impl ProgramEscrowContract {
             .get(&DataKey::ProgramIndex)
             .unwrap_or_else(|| Vec::new(env));
         index.push_back(program_id);
-        env.storage().persistent().set(&DataKey::ProgramIndex, &index);
+        env.storage()
+            .persistent()
+            .set(&DataKey::ProgramIndex, &index);
     }
 
     fn store_program(env: &Env, program_id: u64, program: &Program) {
@@ -429,7 +438,7 @@ impl ProgramEscrowContract {
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
         let token_client = token::Client::new(&env, &token_addr);
         admin.require_auth();
-        token_client.transfer(&admin, &env.current_contract_address(), &total_funding);
+        token_client.transfer(&admin, env.current_contract_address(), &total_funding);
 
         let program = Program {
             admin: admin.clone(),
@@ -478,7 +487,7 @@ impl ProgramEscrowContract {
         env: Env,
         items: Vec<ProgramRegistrationItem>,
     ) -> Result<u32, Error> {
-        let batch_size = items.len() as u32;
+        let batch_size = items.len();
         if batch_size == 0 || batch_size > MAX_BATCH_SIZE {
             return Err(Error::InvalidBatchSize);
         }
@@ -559,7 +568,7 @@ impl ProgramEscrowContract {
         env: Env,
         items: Vec<ProgramRegistrationWithJurisdictionItem>,
     ) -> Result<u32, Error> {
-        let batch_size = items.len() as u32;
+        let batch_size = items.len();
         if batch_size == 0 || batch_size > MAX_BATCH_SIZE {
             return Err(Error::InvalidBatchSize);
         }
@@ -589,11 +598,7 @@ impl ProgramEscrowContract {
                 item.juris_registration_paused,
                 item.jurisdiction.clone(),
             );
-            Self::enforce_jurisdiction_rules(
-                &jurisdiction,
-                item.total_funding,
-                item.kyc_attested,
-            )?;
+            Self::enforce_jurisdiction_rules(&jurisdiction, item.total_funding, item.kyc_attested)?;
 
             let mut count = 0u32;
             for other in items.iter() {
@@ -685,16 +690,16 @@ impl ProgramEscrowContract {
             deprecated,
             migration_target: migration_target.clone(),
         };
-        env.storage().instance().set(&DataKey::DeprecationState, &state);
-        env.events().publish(
-            (symbol_short!("deprec"),),
-            (
-                state.deprecated,
-                state.migration_target,
-                admin,
-                env.ledger().timestamp(),
-            ),
-        );
+        env.storage()
+            .instance()
+            .set(&DataKey::DeprecationState, &state);
+        ContractDeprecatedEvent {
+            deprecated,
+            migration_target: migration_target.clone(),
+            admin,
+            timestamp: env.ledger().timestamp(),
+        }
+        .publish(&env);
         Ok(())
     }
 
@@ -707,7 +712,11 @@ impl ProgramEscrowContract {
         env: Env,
         program_id: u64,
     ) -> Result<Option<ProgramJurisdictionConfig>, Error> {
-        if !env.storage().persistent().has(&DataKey::Program(program_id)) {
+        if !env
+            .storage()
+            .persistent()
+            .has(&DataKey::Program(program_id))
+        {
             return Err(Error::ProgramNotFound);
         }
         Ok(env
