@@ -9,6 +9,7 @@ edition = "2021"
 # via a dedicated contract crate or: cargo build -p grainlify-core --target wasm32-unknown-unknown
 # with cdylib added back if needed for deployment.
 crate-type = ["rlib"]
+doctest = false
 
 [features]
 default = ["contract"]
