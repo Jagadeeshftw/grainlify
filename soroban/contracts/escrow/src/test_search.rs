@@ -2,7 +2,7 @@
 //! Pagination and criteria-filtering tests for `get_escrows`.
 
 use super::*;
-use soroban_sdk::testutils::{Address as _, Ledger};
+use soroban_sdk::testutils::Address as _;
 use soroban_sdk::{token, Address, Env};
 
 fn create_token<'a>(
@@ -39,7 +39,14 @@ fn setup_search<'a>(
     client.init(&admin, &token_addr);
     token_admin.mint(&depositor, &initial_balance);
 
-    (client, contract_id, admin, depositor, contributor, token_client)
+    (
+        client,
+        contract_id,
+        admin,
+        depositor,
+        contributor,
+        token_client,
+    )
 }
 
 // ==================== EMPTY STATE ====================
