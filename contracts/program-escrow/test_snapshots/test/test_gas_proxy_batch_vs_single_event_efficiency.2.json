@@ -376,6 +376,178 @@
         {
           "contract_data": {
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "CurrentMetrics"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "CurrentMetrics"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "map": [
+                    {
+                      "key": {
+                        "symbol": "breach_count"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "failure_count"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "max_single_outflow"
+                      },
+                      "val": {
+                        "i128": {
+                          "hi": 0,
+                          "lo": 1000
+                        }
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "success_count"
+                      },
+                      "val": {
+                        "u32": 10
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "total_outflow"
+                      },
+                      "val": {
+                        "i128": {
+                          "hi": 0,
+                          "lo": 10000
+                        }
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "window_start"
+                      },
+                      "val": {
+                        "u64": 0
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4095
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "FailureCount"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "FailureCount"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "u32": 0
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4095
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "SuccessCount"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "SuccessCount"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "u32": 0
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4095
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
             "key": "ledger_key_contract_instance",
             "durability": "persistent"
           }
@@ -774,6 +946,14 @@
                             },
                             {
                               "key": {
+                                "symbol": "risk_flags"
+                              },
+                              "val": {
+                                "u32": 0
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "token_address"
                               },
                               "val": {
@@ -828,6 +1008,25 @@
                         },
                         "val": {
                           "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "DependencyStatus"
+                            },
+                            {
+                              "string": "hack-2026"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "vec": [
+                            {
+                              "symbol": "Pending"
+                            }
+                          ]
                         }
                       },
                       {
@@ -891,6 +1090,116 @@
                               }
                             }
                           ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "Program"
+                            },
+                            {
+                              "string": "hack-2026"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "map": [
+                            {
+                              "key": {
+                                "symbol": "authorized_payout_key"
+                              },
+                              "val": {
+                                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "initial_liquidity"
+                              },
+                              "val": {
+                                "i128": {
+                                  "hi": 0,
+                                  "lo": 0
+                                }
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "payout_history"
+                              },
+                              "val": {
+                                "vec": []
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "program_id"
+                              },
+                              "val": {
+                                "string": "hack-2026"
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "reference_hash"
+                              },
+                              "val": "void"
+                            },
+                            {
+                              "key": {
+                                "symbol": "remaining_balance"
+                              },
+                              "val": {
+                                "i128": {
+                                  "hi": 0,
+                                  "lo": 0
+                                }
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "risk_flags"
+                              },
+                              "val": {
+                                "u32": 0
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "token_address"
+                              },
+                              "val": {
+                                "address": "CCABDO7UZXYE4W6GVSEGSNNZTKSLFQGKXXQTH6OX7M7GKZ4Z6CUJNGZN"
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "total_funds"
+                              },
+                              "val": {
+                                "i128": {
+                                  "hi": 0,
+                                  "lo": 0
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "ProgramDependencies"
+                            },
+                            {
+                              "string": "hack-2026"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "vec": []
                         }
                       }
                     ]
@@ -2501,6 +2810,14 @@
                 },
                 {
                   "key": {
+                    "symbol": "risk_flags"
+                  },
+                  "val": {
+                    "u32": 0
+                  }
+                },
+                {
+                  "key": {
                     "symbol": "token_address"
                   },
                   "val": {
@@ -2769,6 +3086,14 @@
                       "hi": 0,
                       "lo": 200000
                     }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "risk_flags"
+                  },
+                  "val": {
+                    "u32": 0
                   }
                 },
                 {
@@ -3091,6 +3416,14 @@
                       "hi": 0,
                       "lo": 199000
                     }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "risk_flags"
+                  },
+                  "val": {
+                    "u32": 0
                   }
                 },
                 {
@@ -3444,6 +3777,14 @@
                       "hi": 0,
                       "lo": 198000
                     }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "risk_flags"
+                  },
+                  "val": {
+                    "u32": 0
                   }
                 },
                 {
@@ -3828,6 +4169,14 @@
                       "hi": 0,
                       "lo": 197000
                     }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "risk_flags"
+                  },
+                  "val": {
+                    "u32": 0
                   }
                 },
                 {
@@ -4243,6 +4592,14 @@
                       "hi": 0,
                       "lo": 196000
                     }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "risk_flags"
+                  },
+                  "val": {
+                    "u32": 0
                   }
                 },
                 {
@@ -4689,6 +5046,14 @@
                       "hi": 0,
                       "lo": 195000
                     }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "risk_flags"
+                  },
+                  "val": {
+                    "u32": 0
                   }
                 },
                 {
@@ -5166,6 +5531,14 @@
                       "hi": 0,
                       "lo": 194000
                     }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "risk_flags"
+                  },
+                  "val": {
+                    "u32": 0
                   }
                 },
                 {
@@ -5674,6 +6047,14 @@
                       "hi": 0,
                       "lo": 193000
                     }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "risk_flags"
+                  },
+                  "val": {
+                    "u32": 0
                   }
                 },
                 {
@@ -6213,6 +6594,14 @@
                       "hi": 0,
                       "lo": 192000
                     }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "risk_flags"
+                  },
+                  "val": {
+                    "u32": 0
                   }
                 },
                 {
@@ -6783,6 +7172,14 @@
                       "hi": 0,
                       "lo": 191000
                     }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "risk_flags"
+                  },
+                  "val": {
+                    "u32": 0
                   }
                 },
                 {
@@ -7384,6 +7781,14 @@
                       "hi": 0,
                       "lo": 190000
                     }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "risk_flags"
+                  },
+                  "val": {
+                    "u32": 0
                   }
                 },
                 {

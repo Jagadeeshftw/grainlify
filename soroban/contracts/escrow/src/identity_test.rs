@@ -2,8 +2,8 @@
 //! Tests for identity-aware limits functionality
 
 use super::*;
-use soroban_sdk::testutils::{Address as _, Ledger};
-use soroban_sdk::{token, Address, BytesN, Env};
+use soroban_sdk::testutils::Address as _;
+use soroban_sdk::{token, Address, Env};
 
 fn setup_with_identity<'a>(
     env: &'a Env,
@@ -169,7 +169,7 @@ fn test_lock_funds_respects_limits() {
 fn test_lock_funds_within_limits() {
     let env = Env::default();
     let amount = 50_0000000; // 50 tokens, within unverified limit
-    let (client, _contract_id, _admin, depositor, _contributor, _issuer, token_client) =
+    let (client, _contract_id, _admin, depositor, _contributor, _issuer, _token_client) =
         setup_with_identity(&env, 10_000_0000000);
 
     let bounty_id = 1u64;
