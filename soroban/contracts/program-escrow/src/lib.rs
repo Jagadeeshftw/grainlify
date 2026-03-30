@@ -32,22 +32,128 @@ const LABEL_CONFIG_UPDATED: soroban_sdk::Symbol = symbol_short!("lbl_cfg");
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
+/// Canonical error enum for program-escrow public API.
+///
+/// All public entrypoints return `Result<T, Error>` to provide stable,
+/// machine-readable error codes for clients, indexers, and integrators.
+/// Error codes are stable across contract versions and should be used
+/// for programmatic error handling.
+///
+/// # Security Notes
+///
+/// - Error messages never expose sensitive data (keys, balances, internal state)
+/// - Error codes are deterministic and stable for client-side discrimination
+/// - All errors are safe to log and display to end users
 pub enum Error {
+    /// Contract has already been initialized.
+    ///
+    /// **When raised:** Attempting to call `init()` on an already-initialized contract.
+    /// **Client action:** None required; contract is ready for use.
     AlreadyInitialized = 1,
+
+    /// Contract has not been initialized.
+    ///
+    /// **When raised:** Calling any mutating function before `init()` is called.
+    /// **Client action:** Call `init()` with admin and token addresses first.
     NotInitialized = 2,
+
+    /// Program with this ID already exists.
+    ///
+    /// **When raised:** Attempting to register a program with a `program_id`
+    /// that is already in use.
+    /// **Client action:** Use a different `program_id` or query existing programs
+    /// to find available IDs.
     ProgramExists = 3,
+
+    /// Program with this ID does not exist.
+    ///
+    /// **When raised:** Attempting to read, update, or query a program that
+    /// has not been registered.
+    /// **Client action:** Verify the `program_id` is correct and that the
+    /// program has been registered.
     ProgramNotFound = 4,
+
+    /// Caller is not authorized to perform this action.
+    ///
+    /// **When raised:** Attempting to perform an admin-only action without
+    /// proper authorization, or updating a program without being the contract
+    /// admin or program admin.
+    /// **Client action:** Ensure the correct address is signing the transaction.
     Unauthorized = 5,
+
+    /// Invalid batch size.
+    ///
+    /// **When raised:** Batch registration with 0 items or exceeding `MAX_BATCH_SIZE`.
+    /// **Client action:** Ensure batch contains 1-20 items (inclusive).
     InvalidBatchSize = 6,
+
+    /// Duplicate program ID within a single batch.
+    ///
+    /// **When raised:** Multiple items in a batch registration have the same
+    /// `program_id`.
+    /// **Client action:** Ensure all `program_id` values in the batch are unique.
     DuplicateProgramId = 7,
+
+    /// Invalid funding amount.
+    ///
+    /// **When raised:** `total_funding` is zero or negative.
+    /// **Client action:** Provide a positive funding amount.
     InvalidAmount = 8,
+
+    /// Invalid program name.
+    ///
+    /// **When raised:** Program name is empty (zero length).
+    /// **Client action:** Provide a non-empty program name.
     InvalidName = 9,
+
+    /// Contract is deprecated and no longer accepts new registrations.
+    ///
+    /// **When raised:** Attempting to register a program after deprecation
+    /// has been enabled.
+    /// **Client action:** Check deprecation status before registration;
+    /// migrate to the target contract if one is specified.
     ContractDeprecated = 10,
+
+    /// KYC attestation required by jurisdiction.
+    ///
+    /// **When raised:** Program jurisdiction requires KYC but `kyc_attested`
+    /// is `None` or `false`.
+    /// **Client action:** Provide valid KYC attestation before registration.
     JurisdictionKycRequired = 11,
+
+    /// Funding exceeds jurisdiction limit.
+    ///
+    /// **When raised:** `total_funding` exceeds the `max_funding` configured
+    /// for the program's jurisdiction.
+    /// **Client action:** Reduce funding amount or update jurisdiction limits.
     JurisdictionFundingLimitExceeded = 12,
+
+    /// Registration paused for this jurisdiction.
+    ///
+    /// **When raised:** Program jurisdiction has `registration_paused` set to `true`.
+    /// **Client action:** Wait for jurisdiction to resume registration or use
+    /// a different jurisdiction.
     JurisdictionPaused = 13,
+
+    /// Invalid label format.
+    ///
+    /// **When raised:** Label is empty or exceeds `MAX_LABEL_LENGTH` (32 chars).
+    /// **Client action:** Ensure labels are 1-32 characters in length.
     InvalidLabel = 14,
+
+    /// Too many labels.
+    ///
+    /// **When raised:** Attempting to add more than `MAX_LABELS` (10) labels
+    /// to a program.
+    /// **Client action:** Reduce the number of labels to 10 or fewer.
     TooManyLabels = 15,
+
+    /// Label not in allowed list.
+    ///
+    /// **When raised:** Label configuration is restricted and the provided
+    /// label is not in the `allowed_labels` list.
+    /// **Client action:** Use an allowed label or request admin to update
+    /// the label configuration.
     LabelNotAllowed = 16,
 }
 
