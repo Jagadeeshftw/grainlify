@@ -404,7 +404,7 @@ fn test_full_lifecycle_multi_program_batch_payouts() {
         &None,
         &None,
     );
-    client_a.publish_program();
+    client_a.publish_program(&String::from_str(&env, "hackathon-alpha"));
     assert_eq!(prog_a.total_funds, 0);
     assert_eq!(prog_a.remaining_balance, 0);
 
@@ -421,7 +421,7 @@ fn test_full_lifecycle_multi_program_batch_payouts() {
         &None,
         &None,
     );
-    client_b.publish_program();
+    client_b.publish_program(&String::from_str(&env, "hackathon-beta"));
     assert_eq!(prog_b.total_funds, 0);
 
     // ── Phase 1: Lock funds in multiple steps ───────────────────────────
@@ -599,7 +599,7 @@ fn test_multi_token_balance_accounting_isolated_across_program_instances() {
         &None,
         &None,
     );
-    client_a.publish_program();
+    client_a.publish_program(&String::from_str(&env, "multi-token-a"));
     client_b.init_program(
         &String::from_str(&env, "multi-token-b"),
         &payout_key_b,
@@ -608,7 +608,7 @@ fn test_multi_token_balance_accounting_isolated_across_program_instances() {
         &None,
         &None,
     );
-    client_b.publish_program();
+    client_b.publish_program(&String::from_str(&env, "multi-token-b"));
 
     token_admin_client_a.mint(&client_a.address, &500_000);
     token_admin_client_b.mint(&client_b.address, &300_000);
@@ -1310,7 +1310,7 @@ fn test_multi_tenant_no_cross_program_balance_or_analytics() {
         &None,
         &None,
     );
-    client_a.publish_program();
+    client_a.publish_program(&String::from_str(&env, "prog-isolation-a"));
     client_b.init_program(
         &String::from_str(&env, "prog-isolation-b"),
         &admin_b,
@@ -1319,7 +1319,7 @@ fn test_multi_tenant_no_cross_program_balance_or_analytics() {
         &None,
         &None,
     );
-    client_b.publish_program();
+    client_b.publish_program(&String::from_str(&env, "prog-isolation-b"));
 
     token_sac.mint(&client_a.address, &500_000);
     token_sac.mint(&client_b.address, &300_000);

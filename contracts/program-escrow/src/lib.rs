@@ -683,6 +683,26 @@ pub struct SpendLimitSchemaVersionSet {
     pub timestamp: u64,
 }
 
+/// Emitted once during contract initialization to record the history pagination
+/// config storage schema version for upgrade-safety tracking.
+///
+/// ### Topics
+/// `(PAGINATION_SCHEMA,)`
+///
+/// ### Security notes
+/// - Written only on first init; subsequent inits are no-ops for this marker.
+/// - Indexers can detect schema mismatches by comparing `schema_version` against
+///   the expected `PAGINATION_SCHEMA_VERSION_V1`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PaginationSchemaVersionSet {
+    pub version: u32,
+    /// Schema version written to instance storage.
+    pub schema_version: u32,
+    /// Ledger timestamp.
+    pub timestamp: u64,
+}
+
 // ========================================================================
 // Idempotency Key Types
 // ========================================================================
@@ -787,6 +807,8 @@ const SPEND_LIMIT_EXCEEDED: Symbol = symbol_short!("SpLimExc");
 const SPEND_LIMIT_SCHEMA: Symbol = symbol_short!("SpLimSch");
 const IDEMPOTENCY_SCHEMA: Symbol = symbol_short!("IdempSch");
 const IDEMPOTENCY_KEY_USED: Symbol = symbol_short!("IdempUsed");
+/// Event symbol for pagination config schema version written on init.
+const PAGINATION_SCHEMA: Symbol = symbol_short!("PagSch");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TOKEN ALLOWLIST TYPES & EVENTS
@@ -887,6 +909,9 @@ pub enum DataKey {
     /// Upgrade-safe schema version marker for pause flags storage.
     /// Written on init; increment when `PauseFlags` layout changes.
     PauseSchemaVersion,
+    /// Upgrade-safe schema version marker for history pagination config storage.
+    /// Written on init; increment when `HistoryPaginationConfig` layout changes.
+    PaginationSchemaVersion,
     /// Token allowlist: Vec<Address> of permitted token contract addresses.
     /// When the list is non-empty, only listed tokens may be used in
     /// `init_program` / `initialize_program`. An empty list means
@@ -1188,6 +1213,13 @@ pub const SPEND_LIMIT_SCHEMA_VERSION_V1: u32 = 1;
 /// Written to instance storage during `init` so upgrade safety checks can
 /// detect schema mismatches on legacy deployments.
 pub const PAUSE_SCHEMA_VERSION_V1: u32 = 1;
+
+/// Current history pagination config storage schema version.
+///
+/// Increment whenever `HistoryPaginationConfig` layout changes in a breaking way.
+/// Written to instance storage during `init` so upgrade safety checks can
+/// detect schema mismatches on legacy deployments.
+pub const PAGINATION_SCHEMA_VERSION_V1: u32 = 1;
 
 /// Current release schedule storage schema version.
 ///
@@ -1789,6 +1821,26 @@ impl ProgramEscrowContract {
             );
         }
 
+        // Write upgrade-safe history pagination config schema version marker.
+        if !env
+            .storage()
+            .instance()
+            .has(&DataKey::PaginationSchemaVersion)
+        {
+            env.storage().instance().set(
+                &DataKey::PaginationSchemaVersion,
+                &PAGINATION_SCHEMA_VERSION_V1,
+            );
+            env.events().publish(
+                (PAGINATION_SCHEMA,),
+                PaginationSchemaVersionSet {
+                    version: EVENT_VERSION_V2,
+                    schema_version: PAGINATION_SCHEMA_VERSION_V1,
+                    timestamp: env.ledger().timestamp(),
+                },
+            );
+        }
+
         // Write upgrade-safe token-allowlist schema version marker.
         if !env
             .storage()
@@ -1833,11 +1885,17 @@ impl ProgramEscrowContract {
     }
 
     pub fn publish_program(env: Env) -> ProgramData {
-        if !env.storage().instance().has(&PROGRAM_DATA) {
+    pub fn publish_program(env: Env, program_id: String) -> ProgramData {
+        // Look up by per-program key first, fall back to global PROGRAM_DATA.
+        let program_key = DataKey::Program(program_id.clone());
+        let mut program_data: ProgramData = if env.storage().instance().has(&program_key) {
+            env.storage().instance().get(&program_key).unwrap()
+        } else if env.storage().instance().has(&PROGRAM_DATA) {
+            env.storage().instance().get(&PROGRAM_DATA).unwrap()
+        } else {
             panic!("Program not initialized");
-        }
-        let mut program_data: ProgramData =
-            env.storage().instance().get(&PROGRAM_DATA).unwrap();
+        };
+
         program_data.authorized_payout_key.require_auth();
 
         if program_data.status != ProgramStatus::Draft {
@@ -1845,7 +1903,7 @@ impl ProgramEscrowContract {
         }
 
         program_data.status = ProgramStatus::Active;
-        env.storage().instance().set(&PROGRAM_DATA, &program_data);
+        Self::store_program_data(&env, &program_id, &program_data);
 
         // Emit ProgramPublished event
         env.events().publish(
@@ -3044,6 +3102,53 @@ impl ProgramEscrowContract {
             .instance()
             .get(&DataKey::IdempotencySchemaVersion)
             .unwrap_or(0)
+    }
+
+    /// Returns the pagination config schema version written during initialization.
+    /// Returns `PAGINATION_SCHEMA_VERSION_V1` (1) for contracts initialized after
+    /// this upgrade. Returns `0` for legacy contracts that predate the schema
+    /// version marker — callers should treat `0` as "unknown / pre-v1".
+    pub fn get_pagination_schema_version(env: Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&DataKey::PaginationSchemaVersion)
+            .unwrap_or(0)
+    }
+
+    /// Returns the current history pagination configuration.
+    ///
+    /// Returns the default config (`max_limit = 200`) when no explicit config
+    /// has been set. No authorization required — pure view.
+    pub fn get_history_pagination_config(env: Env) -> HistoryPaginationConfig {
+        Self::get_history_pagination_config(&env)
+    }
+
+    /// Update the history pagination configuration (admin only).
+    ///
+    /// # Arguments
+    /// * `max_limit` — Maximum number of records per page. Must be in `[1, 1000]`.
+    ///
+    /// # Authorization
+    /// Caller must be the contract admin.
+    ///
+    /// # Deterministic behavior
+    /// Validation runs before storage write so a rejected call never mutates state.
+    pub fn set_history_pagination_config(env: Env, max_limit: u32) {
+        let admin = Self::require_admin(&env);
+        if max_limit == 0 {
+            panic!("max_limit must be greater than zero");
+        }
+        if max_limit > 1_000 {
+            panic!("max_limit cannot exceed 1000");
+        }
+        let cfg = HistoryPaginationConfig { max_limit };
+        env.storage()
+            .instance()
+            .set(&DataKey::HistoryPaginationConfig, &cfg);
+        env.events().publish(
+            (symbol_short!("PagCfgSet"),),
+            (max_limit, admin, env.ledger().timestamp()),
+        );
     }
 
     /// Check if an operation is paused
