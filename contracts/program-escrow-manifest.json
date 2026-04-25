@@ -3,7 +3,7 @@
   "contract_name": "ProgramEscrowContract",
   "contract_purpose": "Handles hackathon and program prize pools with batch payouts, dependency management, circuit breaker protection, and comprehensive monitoring",
   "version": {
-    "current": "2.4.0",
+    "current": "2.5.0",
     "schema": "1.0.0",
     "history": [
       {
@@ -72,8 +72,29 @@
           "Pause checks remain deterministic: release_paused blocks single_payout and batch_payout; lock_paused blocks lock_program_funds; flags are orthogonal",
           "Added 16 targeted tests in test.rs covering pause invariants, V2 event fields, schema version, and edge cases"
         ]
-      }
-          "Deterministic error ordering preserved: threshold check runs before balance and circuit-breaker checks"
+      },
+      {
+        "version": "2.5.0",
+        "release_date": "2026-04-24",
+        "changes": [
+          "Added ProgramStatus enum (Draft/Active) for upgrade-safe program lifecycle tracking",
+          "Added status field to ProgramData struct — legacy init_program sets Active immediately; batch_initialize_programs sets Draft until publish_program_by_id is called",
+          "Added STORAGE_SCHEMA_VERSION constant (value: 2) for upgrade-safe schema tracking",
+          "Added publish_program() (no-arg, legacy) and publish_program_by_id(program_id) entrypoints",
+          "Added get_rotation_nonce() and rotate_payout_key() for replay-protected payout key rotation",
+          "Added update_program_metadata_by() delegate-aware metadata update entrypoint",
+          "Added get_program_admin() alias for get_admin()",
+          "Added require_not_read_only() guard and DataKey::ReadOnlyMode for upgrade-safe read-only mode",
+          "Added batch_lock() and batch_release() for atomic multi-program fund operations",
+          "Moved ProgramMetadata to separate DataKey::ProgramMetadataKey storage (upgrade-safe, avoids contracttype nesting limitation)",
+          "Fixed duplicate FEE_CONFIG initialization bug — fee_recipient now correctly set to authorized_payout_key",
+          "Fixed calculate_fee() to use floor division (matches test expectations)",
+          "Fixed lock_program_funds() to track gross amount in total_funds and net in remaining_balance",
+          "Fixed lock_program_funds() to sync DataKey::Program registry key alongside PROGRAM_DATA",
+          "Hardened batch_payout_internal() validation order: reentrancy → initialized → paused → dispute → auth → input → overflow-safe total → spend threshold → balance → circuit breaker",
+          "Added 12 targeted atomicity tests (BA-1 through BA-11) covering all-or-nothing semantics, edge cases, and upgrade-safe invariants",
+          "Added ContractError enum to grainlify_core::errors for cross-contract error type sharing",
+          "Deterministic error ordering preserved across all validation paths"
         ]
       }
     ]

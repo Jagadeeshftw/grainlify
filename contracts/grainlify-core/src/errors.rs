@@ -87,3 +87,33 @@ pub const DUPLICATE_SCHEDULE_ID: u32 = 408;
 
 // 1000+: Circuit Breaker
 pub const CIRCUIT_OPEN: u32 = 1001;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared ContractError enum
+//
+// Used by program-escrow tests that assert on `grainlify_core::errors::ContractError`.
+// Variants map 1-to-1 to the constants above so error codes are stable.
+// ─────────────────────────────────────────────────────────────────────────────
+use soroban_sdk::contracterror;
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum ContractError {
+    // General
+    Unauthorized        = 3,
+    InvalidAmount       = 4,
+    InvalidBatchSize    = 206,
+    DuplicateEntry      = 208,
+    // Program Escrow
+    ProgramAlreadyExists       = 401,
+    DuplicateProgramId         = 402,
+    InvalidBatchSizeProgram    = 403,
+    ProgramNotFound            = 404,
+    ScheduleNotFound           = 405,
+    AlreadyReleased            = 406,
+    FundsPaused                = 407,
+    DuplicateScheduleId        = 408,
+    // Circuit Breaker
+    CircuitOpen         = 1001,
+}

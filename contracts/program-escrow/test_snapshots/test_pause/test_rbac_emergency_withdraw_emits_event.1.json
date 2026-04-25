@@ -80,7 +80,7 @@
     ],
     [
       [
-        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
         {
           "function": {
             "contract_fn": {
@@ -276,7 +276,7 @@
       [
         {
           "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
             "key": {
               "ledger_key_nonce": {
                 "nonce": 4837995959683129791
@@ -291,7 +291,7 @@
             "data": {
               "contract_data": {
                 "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
                 "key": {
                   "ledger_key_nonce": {
                     "nonce": 4837995959683129791
@@ -343,134 +343,6 @@
         {
           "contract_data": {
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
-            "key": {
-              "vec": [
-                {
-                  "symbol": "TwaBucket"
-                },
-                {
-                  "u64": 0
-                }
-              ]
-            },
-            "durability": "persistent"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
-                "key": {
-                  "vec": [
-                    {
-                      "symbol": "TwaBucket"
-                    },
-                    {
-                      "u64": 0
-                    }
-                  ]
-                },
-                "durability": "persistent",
-                "val": {
-                  "map": [
-                    {
-                      "key": {
-                        "symbol": "lock_count"
-                      },
-                      "val": {
-                        "u64": 1
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "period_id"
-                      },
-                      "val": {
-                        "u64": 0
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "settlement_count"
-                      },
-                      "val": {
-                        "u64": 0
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "sum_lock_amount"
-                      },
-                      "val": {
-                        "i128": {
-                          "hi": 0,
-                          "lo": 500
-                        }
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "sum_settlement_time"
-                      },
-                      "val": {
-                        "u64": 0
-                      }
-                    }
-                  ]
-                }
-              }
-            },
-            "ext": "v0"
-          },
-          4095
-        ]
-      ],
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
-            "key": {
-              "vec": [
-                {
-                  "symbol": "TwaLastLock"
-                }
-              ]
-            },
-            "durability": "persistent"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
-                "key": {
-                  "vec": [
-                    {
-                      "symbol": "TwaLastLock"
-                    }
-                  ]
-                },
-                "durability": "persistent",
-                "val": {
-                  "u64": 0
-                }
-              }
-            },
-            "ext": "v0"
-          },
-          4095
-        ]
-      ],
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
             "key": "ledger_key_contract_instance",
             "durability": "persistent"
           }
@@ -509,7 +381,7 @@
                                 "symbol": "fee_recipient"
                               },
                               "val": {
-                                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                               }
                             },
                             {
@@ -618,61 +490,6 @@
                                   "hi": 0,
                                   "lo": 0
                                 }
-                              }
-                            },
-                            {
-                              "key": {
-                                "symbol": "metadata"
-                              },
-                              "val": {
-                                "map": [
-                                  {
-                                    "key": {
-                                      "symbol": "custom_fields"
-                                    },
-                                    "val": {
-                                      "vec": []
-                                    }
-                                  },
-                                  {
-                                    "key": {
-                                      "symbol": "ecosystem"
-                                    },
-                                    "val": "void"
-                                  },
-                                  {
-                                    "key": {
-                                      "symbol": "end_date"
-                                    },
-                                    "val": "void"
-                                  },
-                                  {
-                                    "key": {
-                                      "symbol": "program_name"
-                                    },
-                                    "val": "void"
-                                  },
-                                  {
-                                    "key": {
-                                      "symbol": "program_type"
-                                    },
-                                    "val": "void"
-                                  },
-                                  {
-                                    "key": {
-                                      "symbol": "start_date"
-                                    },
-                                    "val": "void"
-                                  },
-                                  {
-                                    "key": {
-                                      "symbol": "tags"
-                                    },
-                                    "val": {
-                                      "vec": []
-                                    }
-                                  }
-                                ]
                               }
                             },
                             {
@@ -821,6 +638,27 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "HistoryPaginationConfig"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "map": [
+                            {
+                              "key": {
+                                "symbol": "max_limit"
+                              },
+                              "val": {
+                                "u32": 200
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "MaintenanceMode"
                             }
                           ]
@@ -878,6 +716,18 @@
                               }
                             }
                           ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "PauseSchemaVersion"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u32": 1
                         }
                       },
                       {
@@ -942,61 +792,6 @@
                             },
                             {
                               "key": {
-                                "symbol": "metadata"
-                              },
-                              "val": {
-                                "map": [
-                                  {
-                                    "key": {
-                                      "symbol": "custom_fields"
-                                    },
-                                    "val": {
-                                      "vec": []
-                                    }
-                                  },
-                                  {
-                                    "key": {
-                                      "symbol": "ecosystem"
-                                    },
-                                    "val": "void"
-                                  },
-                                  {
-                                    "key": {
-                                      "symbol": "end_date"
-                                    },
-                                    "val": "void"
-                                  },
-                                  {
-                                    "key": {
-                                      "symbol": "program_name"
-                                    },
-                                    "val": "void"
-                                  },
-                                  {
-                                    "key": {
-                                      "symbol": "program_type"
-                                    },
-                                    "val": "void"
-                                  },
-                                  {
-                                    "key": {
-                                      "symbol": "start_date"
-                                    },
-                                    "val": "void"
-                                  },
-                                  {
-                                    "key": {
-                                      "symbol": "tags"
-                                    },
-                                    "val": {
-                                      "vec": []
-                                    }
-                                  }
-                                ]
-                              }
-                            },
-                            {
-                              "key": {
                                 "symbol": "payout_history"
                               },
                               "val": {
@@ -1024,7 +819,7 @@
                               "val": {
                                 "i128": {
                                   "hi": 0,
-                                  "lo": 0
+                                  "lo": 500
                                 }
                               }
                             },
@@ -1043,7 +838,7 @@
                               "val": {
                                 "vec": [
                                   {
-                                    "symbol": "Draft"
+                                    "symbol": "Active"
                                   }
                                 ]
                               }
@@ -1063,7 +858,7 @@
                               "val": {
                                 "i128": {
                                   "hi": 0,
-                                  "lo": 0
+                                  "lo": 500
                                 }
                               }
                             }
@@ -1089,12 +884,12 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "ReadOnlyMode"
+                              "symbol": "SpendLimitSchemaVersion"
                             }
                           ]
                         },
                         "val": {
-                          "bool": false
+                          "u32": 1
                         }
                       }
                     ]
@@ -1712,6 +1507,51 @@
           "v0": {
             "topics": [
               {
+                "symbol": "SpLimSch"
+              }
+            ],
+            "data": {
+              "map": [
+                {
+                  "key": {
+                    "symbol": "schema_version"
+                  },
+                  "val": {
+                    "u32": 1
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "timestamp"
+                  },
+                  "val": {
+                    "u64": 0
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000004",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
                 "symbol": "PrgInit"
               }
             ],
@@ -1833,61 +1673,6 @@
                 },
                 {
                   "key": {
-                    "symbol": "metadata"
-                  },
-                  "val": {
-                    "map": [
-                      {
-                        "key": {
-                          "symbol": "custom_fields"
-                        },
-                        "val": {
-                          "vec": []
-                        }
-                      },
-                      {
-                        "key": {
-                          "symbol": "ecosystem"
-                        },
-                        "val": "void"
-                      },
-                      {
-                        "key": {
-                          "symbol": "end_date"
-                        },
-                        "val": "void"
-                      },
-                      {
-                        "key": {
-                          "symbol": "program_name"
-                        },
-                        "val": "void"
-                      },
-                      {
-                        "key": {
-                          "symbol": "program_type"
-                        },
-                        "val": "void"
-                      },
-                      {
-                        "key": {
-                          "symbol": "start_date"
-                        },
-                        "val": "void"
-                      },
-                      {
-                        "key": {
-                          "symbol": "tags"
-                        },
-                        "val": {
-                          "vec": []
-                        }
-                      }
-                    ]
-                  }
-                },
-                {
-                  "key": {
                     "symbol": "payout_history"
                   },
                   "val": {
@@ -1934,7 +1719,7 @@
                   "val": {
                     "vec": [
                       {
-                        "symbol": "Draft"
+                        "symbol": "Active"
                       }
                     ]
                   }
@@ -2236,61 +2021,6 @@
                 },
                 {
                   "key": {
-                    "symbol": "metadata"
-                  },
-                  "val": {
-                    "map": [
-                      {
-                        "key": {
-                          "symbol": "custom_fields"
-                        },
-                        "val": {
-                          "vec": []
-                        }
-                      },
-                      {
-                        "key": {
-                          "symbol": "ecosystem"
-                        },
-                        "val": "void"
-                      },
-                      {
-                        "key": {
-                          "symbol": "end_date"
-                        },
-                        "val": "void"
-                      },
-                      {
-                        "key": {
-                          "symbol": "program_name"
-                        },
-                        "val": "void"
-                      },
-                      {
-                        "key": {
-                          "symbol": "program_type"
-                        },
-                        "val": "void"
-                      },
-                      {
-                        "key": {
-                          "symbol": "start_date"
-                        },
-                        "val": "void"
-                      },
-                      {
-                        "key": {
-                          "symbol": "tags"
-                        },
-                        "val": {
-                          "vec": []
-                        }
-                      }
-                    ]
-                  }
-                },
-                {
-                  "key": {
                     "symbol": "payout_history"
                   },
                   "val": {
@@ -2522,61 +2252,6 @@
                 },
                 {
                   "key": {
-                    "symbol": "metadata"
-                  },
-                  "val": {
-                    "map": [
-                      {
-                        "key": {
-                          "symbol": "custom_fields"
-                        },
-                        "val": {
-                          "vec": []
-                        }
-                      },
-                      {
-                        "key": {
-                          "symbol": "ecosystem"
-                        },
-                        "val": "void"
-                      },
-                      {
-                        "key": {
-                          "symbol": "end_date"
-                        },
-                        "val": "void"
-                      },
-                      {
-                        "key": {
-                          "symbol": "program_name"
-                        },
-                        "val": "void"
-                      },
-                      {
-                        "key": {
-                          "symbol": "program_type"
-                        },
-                        "val": "void"
-                      },
-                      {
-                        "key": {
-                          "symbol": "start_date"
-                        },
-                        "val": "void"
-                      },
-                      {
-                        "key": {
-                          "symbol": "tags"
-                        },
-                        "val": {
-                          "vec": []
-                        }
-                      }
-                    ]
-                  }
-                },
-                {
-                  "key": {
                     "symbol": "payout_history"
                   },
                   "val": {
@@ -2745,6 +2420,92 @@
                   },
                   "val": {
                     "u64": 54321
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000004",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "PauseStV2"
+              },
+              {
+                "symbol": "lock"
+              }
+            ],
+            "data": {
+              "map": [
+                {
+                  "key": {
+                    "symbol": "admin"
+                  },
+                  "val": {
+                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "operation"
+                  },
+                  "val": {
+                    "symbol": "lock"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "paused"
+                  },
+                  "val": {
+                    "bool": true
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "previous_paused"
+                  },
+                  "val": {
+                    "bool": false
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "reason"
+                  },
+                  "val": "void"
+                },
+                {
+                  "key": {
+                    "symbol": "receipt_id"
+                  },
+                  "val": {
+                    "u64": 1
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "timestamp"
+                  },
+                  "val": {
+                    "u64": 54321
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 2
                   }
                 }
               ]

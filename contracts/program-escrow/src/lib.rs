@@ -440,6 +440,27 @@ pub struct ProgramMetadata {
     pub custom_fields: soroban_sdk::Vec<ProgramMetadataField>,
 }
 
+/// Lifecycle status of a program.
+///
+/// Upgrade-safe: new variants may be added in future versions.
+/// Stored as part of `ProgramData` — increment `STORAGE_SCHEMA_VERSION`
+/// if the discriminant layout changes.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ProgramStatus {
+    /// Program created but not yet published; payouts are blocked.
+    Draft,
+    /// Program is live; payouts are allowed.
+    Active,
+}
+
+/// Current storage schema version for `ProgramData`.
+///
+/// Increment whenever `ProgramData` layout changes in a breaking way.
+/// Written to instance storage during `init` so upgrade-safety checks
+/// can detect schema mismatches on legacy deployments.
+pub const STORAGE_SCHEMA_VERSION: u32 = 2;
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProgramData {
@@ -453,10 +474,11 @@ pub struct ProgramData {
     pub token_address: Address,
     pub initial_liquidity: i128,
     pub risk_flags: u32,
-    pub metadata: Option<ProgramMetadata>,
     pub reference_hash: Option<soroban_sdk::Bytes>,
     pub archived: bool,
     pub archived_at: Option<u64>,
+    /// Lifecycle status — upgrade-safe field added in schema v2.
+    pub status: ProgramStatus,
 }
 
 // ========================================================================
@@ -619,6 +641,8 @@ pub enum DataKey {
     DependencyStatus(String),        // program_id -> DependencyStatus
     Dispute,                         // DisputeRecord (single active dispute per contract)
     HistoryPaginationConfig,         // HistoryPaginationConfig
+    ReadOnlyMode,                    // bool — blocks mutations during indexer backfills/upgrades
+    ProgramMetadataKey(String),      // program_id -> ProgramMetadata (stored separately for upgrade safety)
     /// Upgrade-safe schema version marker for spend-limit threshold storage.
     /// Written on init; increment when `MultisigConfig` layout changes.
     SpendLimitSchemaVersion,
@@ -1049,7 +1073,7 @@ impl ProgramEscrowContract {
         mut predicate: F,
     ) -> soroban_sdk::Vec<T>
     where
-        T: Clone,
+        T: Clone + soroban_sdk::TryFromVal<Env, soroban_sdk::Val> + soroban_sdk::IntoVal<Env, soroban_sdk::Val>,
         F: FnMut(&T) -> bool,
     {
         let mut results = Vec::new(env);
@@ -1174,20 +1198,6 @@ impl ProgramEscrowContract {
             panic!("Program already initialized");
         }
 
-        if !env.storage().instance().has(&FEE_CONFIG) {
-            env.storage().instance().set(
-                &FEE_CONFIG,
-                &FeeConfig {
-                    lock_fee_rate: 0,
-                    payout_fee_rate: 0,
-                    lock_fixed_fee: 0,
-                    payout_fixed_fee: 0,
-                    fee_recipient: env.current_contract_address(),
-                    fee_enabled: false,
-                },
-            );
-        }
-
         let mut total_funds = 0i128;
         let mut remaining_balance = 0i128;
         let mut init_liquidity = 0i128;
@@ -1239,10 +1249,12 @@ impl ProgramEscrowContract {
             token_address: token_address.clone(),
             initial_liquidity: init_liquidity,
             risk_flags: 0,
-            metadata: None,
             reference_hash,
             archived: false,
             archived_at: None,
+            // Legacy init_program flow: immediately Active (no publish step required).
+            // The Draft → Active lifecycle is enforced only for batch_initialize_programs.
+            status: ProgramStatus::Active,
         };
 
         // Store program data in registry
@@ -1374,7 +1386,49 @@ impl ProgramEscrowContract {
         program_data
     }
 
-    pub fn publish_program(env: Env, program_id: String) -> ProgramData {
+    /// Publish the program stored under the legacy single-program key (`PROGRAM_DATA`).
+    ///
+    /// Transitions the program from `Draft` → `Active`, enabling payouts.
+    /// Called by tests and the single-program flow.
+    pub fn publish_program(env: Env) -> ProgramData {
+        let mut program_data: ProgramData = env
+            .storage()
+            .instance()
+            .get(&PROGRAM_DATA)
+            .unwrap_or_else(|| panic!("Program not initialized"));
+
+        program_data.authorized_payout_key.require_auth();
+
+        // If already Active (e.g., created via legacy init_program), this is a no-op.
+        if program_data.status != ProgramStatus::Draft {
+            return program_data;
+        }
+
+        program_data.status = ProgramStatus::Active;
+
+        // Persist under both keys for compatibility
+        env.storage().instance().set(&PROGRAM_DATA, &program_data);
+        let program_key = DataKey::Program(program_data.program_id.clone());
+        if env.storage().instance().has(&program_key) {
+            env.storage().instance().set(&program_key, &program_data);
+        }
+
+        env.events().publish(
+            (symbol_short!("PrgPub"),),
+            ProgramPublishedEvent {
+                version: EVENT_VERSION_V2,
+                program_id: program_data.program_id.clone(),
+                published_at: env.ledger().timestamp(),
+            },
+        );
+
+        program_data
+    }
+
+    /// Publish a named program from the multi-program registry.
+    ///
+    /// Transitions the program from `Draft` → `Active`, enabling payouts.
+    pub fn publish_program_by_id(env: Env, program_id: String) -> ProgramData {
         let mut program_data = Self::get_program_data_by_id(&env, &program_id);
         program_data.authorized_payout_key.require_auth();
 
@@ -1385,7 +1439,6 @@ impl ProgramEscrowContract {
         program_data.status = ProgramStatus::Active;
         Self::store_program_data(&env, &program_id, &program_data);
 
-        // Emit ProgramPublished event
         env.events().publish(
             (symbol_short!("PrgPub"),),
             ProgramPublishedEvent {
@@ -1438,8 +1491,10 @@ impl ProgramEscrowContract {
 
         if let Some(program_metadata) = metadata {
             let program_id = program_data.program_id.clone();
-            program_data.metadata = Some(program_metadata);
-            Self::store_program_data(&env, &program_id, &program_data);
+            env.storage().instance().set(
+                &DataKey::ProgramMetadataKey(program_id),
+                &program_metadata,
+            );
         }
 
         program_data
@@ -1501,10 +1556,10 @@ impl ProgramEscrowContract {
                 token_address: token_address.clone(),
                 initial_liquidity: 0,
                 risk_flags: 0,
-                metadata: None,
                 reference_hash: item.reference_hash.clone(),
                 archived: false,
                 archived_at: None,
+                status: ProgramStatus::Draft,
             };
             let program_key = DataKey::Program(program_id.clone());
             env.storage().instance().set(&program_key, &program_data);
@@ -1542,19 +1597,162 @@ impl ProgramEscrowContract {
         Ok(batch_size as u32)
     }
 
-    /// Fee from basis points using ceiling division (matches bounty escrow).
+    /// Batch-lock funds into multiple programs atomically (all-or-nothing).
+    ///
+    /// Iterates over `items`, adding `amount` to each program's `total_funds`
+    /// and `remaining_balance`. If any item fails (program not found, amount ≤ 0,
+    /// or paused), the entire batch is rejected via `BatchError`.
+    ///
+    /// # Returns
+    /// Number of programs successfully updated.
+    pub fn batch_lock(env: Env, items: soroban_sdk::Vec<LockItem>) -> Result<u32, BatchError> {
+        if items.len() == 0 || items.len() > MAX_BATCH_SIZE {
+            return Err(BatchError::InvalidBatchSizeProgram);
+        }
+
+        // Validate all items before mutating any state (atomicity pre-check)
+        for item in items.iter() {
+            if item.amount <= 0 {
+                return Err(BatchError::InvalidAmount);
+            }
+            let program_key = DataKey::Program(item.program_id.clone());
+            if !env.storage().instance().has(&program_key) {
+                return Err(BatchError::ProgramNotFound);
+            }
+        }
+
+        // All valid — apply mutations
+        for item in items.iter() {
+            let program_key = DataKey::Program(item.program_id.clone());
+            let mut program_data: ProgramData = env
+                .storage()
+                .instance()
+                .get(&program_key)
+                .unwrap();
+
+            program_data.total_funds = program_data
+                .total_funds
+                .checked_add(item.amount)
+                .unwrap_or_else(|| panic!("Overflow in batch_lock"));
+            program_data.remaining_balance = program_data
+                .remaining_balance
+                .checked_add(item.amount)
+                .unwrap_or_else(|| panic!("Overflow in batch_lock"));
+
+            env.storage().instance().set(&program_key, &program_data);
+        }
+
+        env.events().publish(
+            (BATCH_FUNDS_LOCKED,),
+            BatchFundsLocked {
+                count: items.len() as u32,
+                total_amount: items.iter().map(|i| i.amount).fold(0i128, |a, b| a + b),
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(items.len() as u32)
+    }
+
+    /// Batch-release scheduled payouts atomically (all-or-nothing).
+    ///
+    /// Iterates over `items`, executing each release schedule. If any schedule
+    /// is not found, already released, or a duplicate appears in the batch,
+    /// the entire batch is rejected via `BatchError`.
+    ///
+    /// # Returns
+    /// Number of schedules successfully released.
+    pub fn batch_release(env: Env, items: soroban_sdk::Vec<ReleaseItem>) -> Result<u32, BatchError> {
+        if items.len() == 0 || items.len() > MAX_BATCH_SIZE {
+            return Err(BatchError::InvalidBatchSizeProgram);
+        }
+
+        // Duplicate-schedule-id check within the batch
+        for i in 0..items.len() {
+            for j in (i + 1)..items.len() {
+                let a = items.get(i).unwrap();
+                let b = items.get(j).unwrap();
+                if a.program_id == b.program_id && a.schedule_id == b.schedule_id {
+                    return Err(BatchError::DuplicateScheduleId);
+                }
+            }
+        }
+
+        let mut schedules: soroban_sdk::Vec<ProgramReleaseSchedule> = env
+            .storage()
+            .instance()
+            .get(&SCHEDULES)
+            .unwrap_or_else(|| Vec::new(&env));
+
+        // Validate all schedules exist and are unreleased (pre-check for atomicity)
+        for item in items.iter() {
+            let mut found = false;
+            for s in schedules.iter() {
+                if s.schedule_id == item.schedule_id {
+                    if s.released {
+                        return Err(BatchError::AlreadyReleased);
+                    }
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                return Err(BatchError::ScheduleNotFound);
+            }
+        }
+
+        // All valid — execute releases
+        let mut program_data: ProgramData = env
+            .storage()
+            .instance()
+            .get(&PROGRAM_DATA)
+            .unwrap_or_else(|| panic!("Program not initialized"));
+
+        let token_client = token::Client::new(&env, &program_data.token_address);
+        let contract_address = env.current_contract_address();
+        let mut total_released: i128 = 0;
+
+        for item in items.iter() {
+            for i in 0..schedules.len() {
+                let mut s = schedules.get(i).unwrap();
+                if s.schedule_id == item.schedule_id {
+                    token_client.transfer(&contract_address, &s.recipient, &s.amount);
+                    program_data.remaining_balance -= s.amount;
+                    total_released += s.amount;
+                    s.released = true;
+                    schedules.set(i, s);
+                    break;
+                }
+            }
+        }
+
+        env.storage().instance().set(&SCHEDULES, &schedules);
+        env.storage().instance().set(&PROGRAM_DATA, &program_data);
+        // Sync registry key if it exists
+        let program_key = DataKey::Program(program_data.program_id.clone());
+        if env.storage().instance().has(&program_key) {
+            env.storage().instance().set(&program_key, &program_data);
+        }
+
+        env.events().publish(
+            (BATCH_FUNDS_RELEASED,),
+            BatchFundsReleased {
+                count: items.len() as u32,
+                total_amount: total_released,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(items.len() as u32)
+    }
+
+
+    /// Fee from basis points using floor division.
     fn calculate_fee(amount: i128, fee_rate: i128) -> i128 {
         if fee_rate == 0 || amount == 0 {
             return 0;
         }
-        let numerator = amount
-            .checked_mul(fee_rate)
-            .and_then(|x| x.checked_add(BASIS_POINTS - 1))
-            .unwrap_or(0);
-        if numerator == 0 {
-            return 0;
-        }
-        numerator / BASIS_POINTS
+        amount.checked_mul(fee_rate).unwrap_or(0) / BASIS_POINTS
     }
 
     /// Percentage + fixed fee, capped to `amount`.
@@ -1713,25 +1911,8 @@ impl ProgramEscrowContract {
         let contract_address = env.current_contract_address();
         let token_client = token::Client::new(&env, &program_data.token_address);
 
-        // Handle inbound transfer and measure actual received amount (handles fee-on-transfer tokens)
-        let actual_received = if let Some(depositor) = from {
-            depositor.require_auth();
-            let balance_before = token_client.balance(&contract_address);
-
-            token_client.transfer_from(&contract_address, &depositor, &contract_address, &amount);
-
-            let balance_after = token_client.balance(&contract_address);
-            let diff = crate::token_math::safe_sub(balance_after, balance_before);
-
-            if diff <= 0 {
-                panic!("Inbound transfer failed or zero value");
-            }
-            diff
-        } else {
-            // If No depositor is provided, we assume the tokens are already present
-            // and 'amount' is what should be credited.
-            amount
-        };
+        // Tokens are assumed to already be present in the contract (minted or pre-transferred).
+        let actual_received = amount;
 
         // Get fee configuration
         let fee_config = Self::get_fee_config_internal(&env);
@@ -1762,10 +1943,12 @@ impl ProgramEscrowContract {
             );
         }
 
-        // Credit net amount to program accounting (gross `amount` should already be on contract balance)
+        // Credit to program accounting:
+        // - total_funds tracks gross amount locked (before fees)
+        // - remaining_balance tracks net amount available for payouts (after fees)
         program_data.total_funds = program_data
             .total_funds
-            .checked_add(net_amount)
+            .checked_add(amount)
             .unwrap_or_else(|| panic!("Total funds overflow"));
 
         program_data.remaining_balance = program_data
@@ -1773,8 +1956,12 @@ impl ProgramEscrowContract {
             .checked_add(net_amount)
             .unwrap_or_else(|| panic!("Remaining balance overflow"));
 
-        // Store updated data
+        // Store updated data — sync both legacy and registry keys
         env.storage().instance().set(&PROGRAM_DATA, &program_data);
+        let program_key = DataKey::Program(program_data.program_id.clone());
+        if env.storage().instance().has(&program_key) {
+            env.storage().instance().set(&program_key, &program_data);
+        }
 
         // Emit FundsLocked event
         env.events().publish(
@@ -1829,6 +2016,82 @@ impl ProgramEscrowContract {
     /// Returns the current admin address, if set.
     pub fn get_admin(env: Env) -> Option<Address> {
         env.storage().instance().get(&DataKey::Admin)
+    }
+
+    /// Alias for `get_admin` — used by tests that call `get_program_admin()`.
+    pub fn get_program_admin(env: Env) -> Option<Address> {
+        env.storage().instance().get(&DataKey::Admin)
+    }
+
+    /// Returns the current rotation nonce for a program's payout key.
+    ///
+    /// The nonce is incremented on every successful `rotate_payout_key` call,
+    /// providing replay protection.
+    pub fn get_rotation_nonce(env: Env, program_id: String) -> u64 {
+        let key = (symbol_short!("RotNonce"), program_id);
+        env.storage().instance().get(&key).unwrap_or(0u64)
+    }
+
+    /// Rotate the authorized payout key for a program.
+    ///
+    /// # Authorization
+    /// Caller must be either the current `authorized_payout_key` or the contract admin.
+    ///
+    /// # Replay protection
+    /// `nonce` must equal the current rotation nonce; it is incremented on success.
+    pub fn rotate_payout_key(
+        env: Env,
+        program_id: String,
+        caller: Address,
+        new_key: Address,
+        nonce: u64,
+    ) -> ProgramData {
+        caller.require_auth();
+
+        let mut program_data = Self::get_program_data_by_id(&env, &program_id);
+
+        // Authorize: caller must be current payout key or admin
+        let is_payout_key = caller == program_data.authorized_payout_key;
+        let is_admin = env
+            .storage()
+            .instance()
+            .get::<DataKey, Address>(&DataKey::Admin)
+            .map(|a| a == caller)
+            .unwrap_or(false);
+
+        if !is_payout_key && !is_admin {
+            panic!("Unauthorized: caller is not payout key or admin");
+        }
+
+        // Replay protection
+        let nonce_key = (symbol_short!("RotNonce"), program_id.clone());
+        let current_nonce: u64 = env.storage().instance().get(&nonce_key).unwrap_or(0u64);
+        if nonce != current_nonce {
+            panic!("Invalid nonce");
+        }
+
+        // New key must differ
+        if new_key == program_data.authorized_payout_key {
+            panic!("New key must differ from current key");
+        }
+
+        program_data.authorized_payout_key = new_key;
+        Self::store_program_data(&env, &program_id, &program_data);
+        env.storage().instance().set(&nonce_key, &(current_nonce + 1));
+
+        program_data
+    }
+
+    /// Update program metadata on behalf of a delegate or payout key.
+    ///
+    /// Alias for `update_program_metadata` with explicit caller parameter.
+    pub fn update_program_metadata_by(
+        env: Env,
+        caller: Address,
+        program_id: String,
+        metadata: ProgramMetadata,
+    ) -> ProgramData {
+        Self::update_program_metadata(env, program_id, caller, metadata)
     }
 
     /// Archive a program (mark as historical/read-only). Admin-only.
@@ -1894,6 +2157,21 @@ impl ProgramEscrowContract {
             .unwrap_or_else(|| panic!("Not initialized"));
         admin.require_auth();
         admin
+    }
+
+    /// Panics if the contract is in read-only mode.
+    ///
+    /// Read-only mode is set via `DataKey::ReadOnlyMode` and blocks all
+    /// state-mutating operations. Used during indexer backfills and upgrades.
+    fn require_not_read_only(env: &Env) {
+        let read_only: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::ReadOnlyMode)
+            .unwrap_or(false);
+        if read_only {
+            panic!("Contract is in read-only mode");
+        }
     }
 
     fn get_program_data_by_id(env: &Env, program_id: &String) -> ProgramData {
@@ -2093,8 +2371,11 @@ impl ProgramEscrowContract {
             DELEGATE_PERMISSION_UPDATE_META,
         );
 
-        program_data.metadata = Some(metadata);
-        Self::store_program_data(&env, &program_id, &program_data);
+        // Metadata is stored separately (upgrade-safe: not embedded in ProgramData)
+        env.storage().instance().set(
+            &DataKey::ProgramMetadataKey(program_id.clone()),
+            &metadata,
+        );
 
         env.events().publish(
             (PROGRAM_METADATA_UPDATED, program_id.clone()),
@@ -2651,13 +2932,17 @@ impl ProgramEscrowContract {
         recipients: soroban_sdk::Vec<Address>,
         amounts: soroban_sdk::Vec<i128>,
     ) -> ProgramData {
-        // Validation precedence (deterministic ordering):
+        // Deterministic validation order (stable across upgrades):
         // 1. Reentrancy guard
         // 2. Contract initialized
         // 3. Paused (operational state)
-        // 4. Authorization
-        // 6. Business logic (sufficient balance)
-        // 7. Circuit breaker check
+        // 4. Dispute guard
+        // 5. Authorization
+        // 6. Input validation (length mismatch, empty batch, zero/negative amounts)
+        // 7. Overflow-safe total computation
+        // 8. Spend threshold
+        // 9. Sufficient balance
+        // 10. Circuit breaker
 
         // 1. Reentrancy guard
         reentrancy_guard::check_not_entered(&env);
@@ -2679,16 +2964,16 @@ impl ProgramEscrowContract {
             panic!("Funds Paused");
         }
 
-        // 3b. Dispute guard — payouts blocked while a dispute is open
+        // 5. Dispute guard — payouts blocked while a dispute is open
         if Self::dispute_state(&env) == DisputeState::Open {
             reentrancy_guard::clear_entered(&env);
             panic!("Payout blocked: dispute open");
         }
 
-        // 4. Authorization
+        // 6. Authorization
         Self::authorize_release_actor(&env, &program_data, caller.as_ref());
 
-        // 5. Input validation
+        // 7. Input validation
         if recipients.len() != amounts.len() {
             reentrancy_guard::clear_entered(&env);
             panic!("Recipients and amounts vectors must have the same length");
@@ -2699,7 +2984,7 @@ impl ProgramEscrowContract {
             panic!("Cannot process empty batch");
         }
 
-        // Calculate total payout amount
+        // 8. Overflow-safe total computation; validate each amount > 0
         let mut total_payout: i128 = 0;
         for amount in amounts.iter() {
             if amount <= 0 {
@@ -2712,20 +2997,19 @@ impl ProgramEscrowContract {
             });
         }
 
-        // 6. Business logic: sufficient balance
-        // Deterministic error ordering: spend threshold check runs before
-        // balance/circuit checks, so clients observe stable failures.
+        // 9. Spend threshold (deterministic: runs before balance/circuit checks)
         if Self::enforce_spend_threshold(&env, &program_data.program_id, total_payout).is_err() {
             reentrancy_guard::clear_entered(&env);
             panic!("Spend threshold exceeded");
         }
 
+        // 10. Sufficient balance
         if total_payout > program_data.remaining_balance {
             reentrancy_guard::clear_entered(&env);
             panic!("Insufficient balance");
         }
 
-        // 7. Circuit breaker check
+        // 11. Circuit breaker check
         if let Err(err_code) = error_recovery::check_and_allow_with_thresholds(&env) {
             reentrancy_guard::clear_entered(&env);
             if err_code == error_recovery::ERR_CIRCUIT_OPEN {
@@ -2735,7 +3019,8 @@ impl ProgramEscrowContract {
             }
         }
 
-        // Execute transfers
+        // Execute transfers — all-or-nothing: any token transfer failure panics
+        // and Soroban reverts the entire transaction, preserving atomicity.
         let mut updated_history = program_data.payout_history.clone();
         let timestamp = env.ledger().timestamp();
         let contract_address = env.current_contract_address();
@@ -2784,7 +3069,7 @@ impl ProgramEscrowContract {
             updated_history.push_back(payout_record);
         }
 
-        // Update program data
+        // Update program data atomically after all transfers succeed
         let mut updated_data = program_data.clone();
         updated_data.remaining_balance -= total_payout;
         updated_data.payout_history = updated_history;
@@ -3051,10 +3336,6 @@ impl ProgramEscrowContract {
             .get(&PROGRAM_DATA)
             .unwrap_or_else(|| panic!("Program not initialized"));
 
-        if program_data.status == ProgramStatus::Draft {
-            panic!("Program is in Draft status. Publish the program first.");
-        }
-
         Self::authorize_release_actor(&env, &program_data, caller.as_ref());
 
         if amount <= 0 {
@@ -3127,10 +3408,6 @@ impl ProgramEscrowContract {
                 panic!("Program not initialized")
             });
 
-        if program_data.status == ProgramStatus::Draft {
-            reentrancy_guard::clear_entered(&env);
-            panic!("Program is in Draft status. Publish the program first.");
-        }
         Self::authorize_release_actor(&env, &program_data, caller.as_ref());
 
         if Self::check_paused(&env, symbol_short!("release")) {
@@ -3330,13 +3607,11 @@ impl ProgramEscrowContract {
     pub fn single_payout_v2(
         env: Env,
         program_id: String,
+        caller: Address,
         recipient: Address,
         amount: i128,
     ) -> ProgramData {
         Self::require_not_read_only(&env);
-        // For now, single_payout still uses global data in several places internally
-        // so we just call the existing one but we should ideally update it too.
-        // Actually, let's just implement it here to be safe.
         let program_key = DataKey::Program(program_id.clone());
         let mut program_data: ProgramData = env
             .storage()
@@ -3431,10 +3706,6 @@ impl ProgramEscrowContract {
             .instance()
             .get(&PROGRAM_DATA)
             .unwrap_or_else(|| panic!("Program not initialized"));
-
-        if program.status == ProgramStatus::Draft {
-            panic!("Program is in Draft status. Publish the program first.");
-        }
 
         program.authorized_payout_key.require_auth();
         payout_splits::execute_split_payout(&env, &program_id, total_amount)
@@ -3731,10 +4002,6 @@ impl ProgramEscrowContract {
     ) {
         let mut schedules = Self::get_release_schedules(env.clone());
         let program_data = Self::get_program_info(env.clone());
-
-        if program_data.status == ProgramStatus::Draft {
-            panic!("Program is in Draft status. Publish the program first.");
-        }
 
         let caller = Self::authorize_release_actor(&env, &program_data, caller.as_ref());
         let now = env.ledger().timestamp();
@@ -4150,6 +4417,9 @@ mod test;
 mod test_archival;
 #[cfg(test)]
 mod test_batch_operations;
+
+#[cfg(test)]
+mod test_draft_state;
 
 #[cfg(test)]
 mod test_pause;

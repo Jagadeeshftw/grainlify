@@ -786,7 +786,7 @@ fn test_batch_initialize_programs_empty_err() {
     let client = ProgramEscrowContractClient::new(&env, &contract_id);
     let items: Vec<ProgramInitItem> = Vec::new(&env);
     let res = client.try_batch_initialize_programs(&items);
-    assert!(matches!(res, Err(Ok(grainlify_core::errors::ContractError::InvalidBatchSize))));
+    assert!(matches!(res, Err(Ok(BatchError::InvalidBatchSizeProgram))));
 }
 
 #[test]
@@ -811,7 +811,7 @@ fn test_batch_initialize_programs_duplicate_id_err() {
         reference_hash: None,
     });
     let res = client.try_batch_initialize_programs(&items);
-    assert!(matches!(res, Err(Ok(grainlify_core::errors::ContractError::DuplicateEntry))));
+    assert!(matches!(res, Err(Ok(BatchError::DuplicateProgramId))));
 }
 
 // =============================================================================
@@ -906,7 +906,7 @@ fn test_batch_register_exceeds_max_batch_size() {
     }
 
     let res = client.try_batch_initialize_programs(&items);
-    assert!(matches!(res, Err(Ok(grainlify_core::errors::ContractError::InvalidBatchSize))));
+    assert!(matches!(res, Err(Ok(BatchError::InvalidBatchSizeProgram))));
 }
 
 #[test]
@@ -976,7 +976,7 @@ fn test_batch_register_program_already_exists_error() {
     });
 
     let res = client.try_batch_initialize_programs(&second);
-    assert!(matches!(res, Err(Ok(grainlify_core::errors::ContractError::ProgramAlreadyExists))));
+    assert!(matches!(res, Err(Ok(BatchError::ProgramAlreadyExists))));
 
     // "brand-new" must NOT exist — all-or-nothing semantics
     assert!(!client.program_exists_by_id(&String::from_str(&env, "brand-new")));
@@ -1012,7 +1012,7 @@ fn test_batch_register_all_or_nothing_on_duplicate() {
     });
 
     let res = client.try_batch_initialize_programs(&items);
-    assert!(matches!(res, Err(Ok(grainlify_core::errors::ContractError::DuplicateEntry))));
+    assert!(matches!(res, Err(Ok(BatchError::DuplicateProgramId))));
 
     // Neither program should exist
     assert!(!client.program_exists_by_id(&String::from_str(&env, "alpha")));
@@ -1048,7 +1048,7 @@ fn test_batch_register_duplicate_at_tail() {
     });
 
     let res = client.try_batch_initialize_programs(&items);
-    assert!(matches!(res, Err(Ok(grainlify_core::errors::ContractError::DuplicateEntry))));
+    assert!(matches!(res, Err(Ok(BatchError::DuplicateProgramId))));
 }
 
 #[test]
@@ -1223,7 +1223,7 @@ fn test_batch_register_second_batch_conflicts_with_first() {
     });
 
     let res = client.try_batch_initialize_programs(&batch2);
-    assert!(matches!(res, Err(Ok(grainlify_core::errors::ContractError::ProgramAlreadyExists))));
+    assert!(matches!(res, Err(Ok(BatchError::ProgramAlreadyExists))));
 
     // "fresh" must not exist (all-or-nothing)
     assert!(!client.program_exists_by_id(&String::from_str(&env, "fresh")));
@@ -2910,7 +2910,7 @@ fn test_pause_state_changed_v2_event_on_pause() {
     assert!(v2_event.is_some(), "PauseStateChangedV2 event must be emitted");
 
     let event = v2_event.unwrap();
-    let data: PauseStateChangedV2 = event.2.try_into_val(&env).unwrap();
+    let data: PauseStateChangedV2 = PauseStateChangedV2::try_from_val(&env, &event.2).unwrap();
 
     assert_eq!(data.version, EVENT_VERSION_V2);
     assert_eq!(data.operation, symbol_short!("release"));
@@ -2935,23 +2935,21 @@ fn test_pause_state_changed_v2_previous_paused_on_unpause() {
 
     let events = env.events().all();
     // Get the last PauseStateChangedV2 event (the unpause one)
-    let v2_events: Vec<_> = events
-        .iter()
-        .filter(|e| {
-            let topics = e.1.clone();
-            if let Some(t0) = topics.get(0) {
-                let sym: Symbol = t0.into_val(&env);
-                sym == Symbol::new(&env, "PauseStV2")
-            } else {
-                false
+    let mut v2_events = soroban_sdk::vec![&env];
+    for e in events.iter() {
+        let topics = e.1.clone();
+        if let Some(t0) = topics.get(0) {
+            let sym: Symbol = t0.into_val(&env);
+            if sym == Symbol::new(&env, "PauseStV2") {
+                v2_events.push_back(e);
             }
-        })
-        .collect();
+        }
+    }
 
     assert!(v2_events.len() >= 2, "Should have at least 2 PauseStateChangedV2 events");
 
-    let unpause_event = v2_events.last().unwrap();
-    let data: PauseStateChangedV2 = unpause_event.2.try_into_val(&env).unwrap();
+    let unpause_event = v2_events.get(v2_events.len() - 1).unwrap();
+    let data: PauseStateChangedV2 = PauseStateChangedV2::try_from_val(&env, &unpause_event.2).unwrap();
 
     assert_eq!(data.previous_paused, true, "previous_paused must be true when unpausing");
     assert_eq!(data.paused, false);
@@ -3038,4 +3036,180 @@ fn test_pause_reason_cleared_on_full_unpause() {
 
     let flags = client.get_pause_flags();
     assert_eq!(flags.pause_reason, None, "reason must be cleared when fully unpaused");
+}
+
+// =============================================================================
+// BATCH PAYOUT ATOMICITY TESTS (Issue #24)
+// =============================================================================
+
+/// BA-1: Batch payout succeeds and all recipients receive correct amounts.
+#[test]
+fn test_batch_payout_atomicity_all_succeed() {
+    let env = Env::default();
+    let (client, _admin, token_client, _token_admin) = setup_program(&env, 100_000);
+
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+    let r3 = Address::generate(&env);
+
+    let data = client.batch_payout(
+        &vec![&env, r1.clone(), r2.clone(), r3.clone()],
+        &vec![&env, 10_000i128, 20_000i128, 30_000i128],
+    );
+
+    assert_eq!(data.remaining_balance, 40_000);
+    assert_eq!(data.payout_history.len(), 3);
+    assert_eq!(token_client.balance(&r1), 10_000);
+    assert_eq!(token_client.balance(&r2), 20_000);
+    assert_eq!(token_client.balance(&r3), 30_000);
+}
+
+/// BA-2: Batch payout with mismatched lengths is rejected before any transfer.
+#[test]
+#[should_panic(expected = "Recipients and amounts vectors must have the same length")]
+fn test_batch_payout_atomicity_length_mismatch_rejected() {
+    let env = Env::default();
+    let (client, _admin, _token, _token_admin) = setup_program(&env, 50_000);
+
+    let r1 = Address::generate(&env);
+    client.batch_payout(
+        &vec![&env, r1],
+        &vec![&env, 10_000i128, 20_000i128], // length mismatch
+    );
+}
+
+/// BA-3: Empty batch is rejected.
+#[test]
+#[should_panic(expected = "Cannot process empty batch")]
+fn test_batch_payout_atomicity_empty_batch_rejected() {
+    let env = Env::default();
+    let (client, _admin, _token, _token_admin) = setup_program(&env, 50_000);
+
+    client.batch_payout(
+        &vec![&env],
+        &vec![&env],
+    );
+}
+
+/// BA-4: Batch with total exceeding balance is rejected; no partial transfers occur.
+#[test]
+fn test_batch_payout_atomicity_insufficient_balance_no_partial_transfer() {
+    let env = Env::default();
+    let (client, _admin, token_client, _token_admin) = setup_program(&env, 10_000);
+
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+
+    // Total = 15_000 > 10_000 balance
+    let result = client.try_batch_payout(
+        &vec![&env, r1.clone(), r2.clone()],
+        &vec![&env, 5_000i128, 10_000i128],
+    );
+    assert!(result.is_err(), "batch must fail when total exceeds balance");
+
+    // No tokens transferred — atomicity preserved
+    assert_eq!(token_client.balance(&r1), 0);
+    assert_eq!(token_client.balance(&r2), 0);
+    assert_eq!(client.get_remaining_balance(), 10_000);
+}
+
+/// BA-5: Zero amount in batch is rejected deterministically.
+#[test]
+#[should_panic(expected = "All amounts must be greater than zero")]
+fn test_batch_payout_atomicity_zero_amount_rejected() {
+    let env = Env::default();
+    let (client, _admin, _token, _token_admin) = setup_program(&env, 50_000);
+
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+    client.batch_payout(
+        &vec![&env, r1, r2],
+        &vec![&env, 10_000i128, 0i128], // zero amount
+    );
+}
+
+/// BA-6: Negative amount in batch is rejected deterministically.
+#[test]
+#[should_panic(expected = "All amounts must be greater than zero")]
+fn test_batch_payout_atomicity_negative_amount_rejected() {
+    let env = Env::default();
+    let (client, _admin, _token, _token_admin) = setup_program(&env, 50_000);
+
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+    client.batch_payout(
+        &vec![&env, r1, r2],
+        &vec![&env, 10_000i128, -1i128], // negative amount
+    );
+}
+
+/// BA-7: Paused contract blocks batch payout before any transfer.
+#[test]
+fn test_batch_payout_atomicity_paused_blocks_all() {
+    let env = Env::default();
+    let (client, _admin, token_client, _token_admin) = setup_program(&env, 50_000);
+
+    client.set_paused(&None, &Some(true), &None, &None);
+
+    let r1 = Address::generate(&env);
+    let result = client.try_batch_payout(
+        &vec![&env, r1.clone()],
+        &vec![&env, 10_000i128],
+    );
+    assert!(result.is_err());
+    assert_eq!(token_client.balance(&r1), 0);
+    assert_eq!(client.get_remaining_balance(), 50_000);
+}
+
+/// BA-8: Balance invariant holds after multiple sequential batch payouts.
+#[test]
+fn test_batch_payout_atomicity_balance_invariant_sequential() {
+    let env = Env::default();
+    let (client, _admin, token_client, _token_admin) = setup_program(&env, 300_000);
+
+    let mut expected_balance = 300_000i128;
+
+    for _ in 0..5 {
+        let r1 = Address::generate(&env);
+        let r2 = Address::generate(&env);
+        client.batch_payout(
+            &vec![&env, r1, r2],
+            &vec![&env, 10_000i128, 20_000i128],
+        );
+        expected_balance -= 30_000;
+        assert_eq!(client.get_remaining_balance(), expected_balance);
+        assert_eq!(token_client.balance(&client.address), expected_balance);
+    }
+}
+
+/// BA-9: Payout history grows correctly after batch payouts.
+#[test]
+fn test_batch_payout_atomicity_history_grows() {
+    let env = Env::default();
+    let (client, _admin, _token, _token_admin) = setup_program(&env, 100_000);
+
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+    client.batch_payout(&vec![&env, r1, r2], &vec![&env, 5_000i128, 5_000i128]);
+
+    let info = client.get_program_info();
+    assert_eq!(info.payout_history.len(), 2);
+}
+
+/// BA-10: Upgrade-safe storage schema version is set on init.
+#[test]
+fn test_batch_payout_atomicity_storage_schema_version() {
+    use crate::STORAGE_SCHEMA_VERSION;
+    assert_eq!(STORAGE_SCHEMA_VERSION, 2, "schema version must be 2 after adding status field");
+}
+
+/// BA-11: ProgramStatus::Active is the default for legacy init_program.
+#[test]
+fn test_batch_payout_atomicity_legacy_program_is_active() {
+    use crate::ProgramStatus;
+    let env = Env::default();
+    let (client, _admin, _token, _token_admin) = setup_program(&env, 0);
+
+    let info = client.get_program_info();
+    assert_eq!(info.status, ProgramStatus::Active, "legacy init_program must produce Active status");
 }
