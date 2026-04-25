@@ -53,7 +53,7 @@ pub fn init_program(ctx: &Ctx, program_id: &str, amount: i128) {
         &Some(amount),
         &None,
     );
-    ctx.client.publish_program();
+    ctx.client.publish_program(&String::from_str(&ctx.env, program_id));
 }
 
 #[test]

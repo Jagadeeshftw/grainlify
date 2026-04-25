@@ -1,9 +1,9 @@
 {
   "$schema": "./contract-manifest-schema.json",
   "contract_name": "BountyEscrowContract",
-  "contract_purpose": "Manages bounty escrow with multi-token support, capability-based authorization, two-step admin rotation with timelock, refund-eligibility views, fee configuration, participant filter pagination with audit events, and comprehensive security features including reentrancy protection and rate limiting",
+  "contract_purpose": "Manages bounty escrow with multi-token support, capability-based authorization, two-step admin rotation with timelock, refund-eligibility views, fee configuration, participant filter pagination with audit events, high-value release timelock queue, and comprehensive security features including reentrancy protection and rate limiting",
   "version": {
-    "current": "2.4.0",
+    "current": "2.5.0",
     "schema": "1.0.0",
     "history": [
       {
@@ -65,6 +65,21 @@
           "Added ParticipantFilterQueried audit event emitted on every query_whitelist/query_blocklist call for off-chain audit trails",
           "Limit argument silently capped at MAX_PARTICIPANT_FILTER_PAGE_SIZE (50) to bound per-call ledger cost",
           "Added ParticipantListSchemaVersion storage key initialized on contract init for upgrade-safe storage versioning"
+        ]
+      },
+      {
+        "version": "2.5.0",
+        "release_date": "2026-04-24",
+        "changes": [
+          "Added high-value release timelock queue: releases at or above a configurable threshold are queued with a mandatory delay before execution",
+          "Added set_high_value_config (admin) to configure threshold and duration",
+          "Added get_high_value_config view to read current configuration",
+          "Added get_queued_release view to inspect a pending queued release",
+          "Added execute_queued_release (permissionless after delay) to finalize a queued release",
+          "Added cancel_queued_release (admin) to cancel a pending queued release",
+          "Added DataKey::HighValueConfig and DataKey::QueuedRelease(u64) storage keys",
+          "Added HighValueConfigUpdated, ReleaseQueued, QueuedReleaseExecuted, ReleaseQueueCancelled audit events",
+          "Added TimelockNotElapsed (53) and ReleaseAlreadyQueued (54) error codes"
         ]
       }
     ]
@@ -487,6 +502,36 @@
         "gas_estimate": "low"
       },
       {
+        "name": "get_high_value_config",
+        "description": "Get the current high-value release timelock configuration, or None if not set.",
+        "parameters": [],
+        "returns": {
+          "type": "Option<HighValueConfig>",
+          "description": "Timelock threshold and duration, or None."
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "get_queued_release",
+        "description": "Get the pending queued release for a bounty, or None if no release is queued.",
+        "parameters": [
+          {
+            "name": "bounty_id",
+            "type": "u64",
+            "description": "Bounty identifier"
+          }
+        ],
+        "returns": {
+          "type": "Option<QueuedRelease>",
+          "description": "Queued release entry (contributor, amount, executable_at), or None."
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
         "name": "get_multisig_config",
         "description": "Get multisig configuration",
         "parameters": [],
@@ -891,7 +936,133 @@
           {
             "name": "new_flags",
             "type": "u32",
-            "description": "New bitmask of risk flags"
+            "description": "New bitmask of risk flags (bits outside RISK_FLAG_MASK_ALL are rejected)"
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success"
+        },
+        "authorization": "admin",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "set_escrow_risk_flags",
+        "description": "OR flag_bits onto stored risk flags for a bounty (admin only). Returns updated EscrowMetadata.",
+        "parameters": [
+          {
+            "name": "bounty_id",
+            "type": "u64",
+            "description": "Bounty identifier (metadata created with zero defaults if absent)"
+          },
+          {
+            "name": "flag_bits",
+            "type": "u32",
+            "description": "Bits to set; rejected if outside RISK_FLAG_MASK_ALL"
+          }
+        ],
+        "returns": {
+          "type": "EscrowMetadata",
+          "description": "Updated metadata reflecting new flag state"
+        },
+        "authorization": "admin",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "clear_escrow_risk_flags",
+        "description": "AND-NOT flag_bits from stored risk flags for a bounty (admin only). Returns updated EscrowMetadata.",
+        "parameters": [
+          {
+            "name": "bounty_id",
+            "type": "u64",
+            "description": "Bounty identifier"
+          },
+          {
+            "name": "flag_bits",
+            "type": "u32",
+            "description": "Bits to clear; rejected if outside RISK_FLAG_MASK_ALL"
+          }
+        ],
+        "returns": {
+          "type": "EscrowMetadata",
+          "description": "Updated metadata reflecting new flag state"
+        },
+        "authorization": "admin",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "update_metadata",
+        "description": "Write repo_id, issue_id, bounty_type, and reference_hash for a bounty. Caller must be admin or a registered governor. Preserves risk_flags and notification_prefs.",
+        "parameters": [
+          {
+            "name": "caller",
+            "type": "Address",
+            "description": "Address performing the update; must be admin or governor"
+          },
+          {
+            "name": "bounty_id",
+            "type": "u64",
+            "description": "Bounty identifier"
+          },
+          {
+            "name": "repo_id",
+            "type": "u64",
+            "description": "Repository identifier"
+          },
+          {
+            "name": "issue_id",
+            "type": "u64",
+            "description": "Issue identifier"
+          },
+          {
+            "name": "bounty_type",
+            "type": "String",
+            "description": "Bounty type tag (max 50 chars)"
+          },
+          {
+            "name": "reference_hash",
+            "type": "Option<Bytes>",
+            "description": "Optional content-addressed reference hash",
+            "optional": true
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success"
+        },
+        "authorization": "admin-or-governor",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "get_metadata",
+        "description": "Returns full EscrowMetadata for a bounty; zeroed defaults when absent",
+        "parameters": [
+          {
+            "name": "bounty_id",
+            "type": "u64",
+            "description": "Bounty identifier"
+          }
+        ],
+        "returns": {
+          "type": "EscrowMetadata",
+          "description": "Full metadata record"
+        },
+        "authorization": "none",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "add_risk_governor",
+        "description": "Adds an address to the risk-flag governor list (admin only, max 16 entries)",
+        "parameters": [
+          {
+            "name": "governor",
+            "type": "Address",
+            "description": "Address to authorize for risk-flag mutations"
           }
         ],
         "returns": {
@@ -1047,6 +1218,56 @@
         "authorization": "admin",
         "pausable": false,
         "gas_estimate": "low"
+      },
+      {
+        "name": "set_high_value_config",
+        "description": "Configure the high-value release timelock. Releases at or above threshold are queued for duration seconds before execution. Emits HighValueConfigUpdated.",
+        "parameters": [
+          {
+            "name": "threshold",
+            "type": "i128",
+            "description": "Minimum amount (inclusive) that triggers the timelock queue. Must be > 0."
+          },
+          {
+            "name": "duration",
+            "type": "u64",
+            "description": "Delay in seconds before a queued release becomes executable."
+          }
+        ],
+        "returns": { "type": "()", "description": "Empty on success" },
+        "authorization": "admin",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "cancel_queued_release",
+        "description": "Cancel a pending queued high-value release. The escrow remains Locked. Emits ReleaseQueueCancelled.",
+        "parameters": [
+          {
+            "name": "bounty_id",
+            "type": "u64",
+            "description": "Bounty whose queued release should be cancelled."
+          }
+        ],
+        "returns": { "type": "()", "description": "Empty on success" },
+        "authorization": "admin",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "execute_queued_release",
+        "description": "Execute a queued high-value release once its timelock has elapsed. Permissionless — anyone may call after executable_at. Emits QueuedReleaseExecuted.",
+        "parameters": [
+          {
+            "name": "bounty_id",
+            "type": "u64",
+            "description": "Bounty whose queued release should be executed."
+          }
+        ],
+        "returns": { "type": "()", "description": "Empty on success" },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "medium"
       }
     ]
   },
@@ -1254,6 +1475,18 @@
         "type": "instance",
         "description": "Upgrade-safe marker for participant list (whitelist/blocklist) storage semantics. Initialized to 1 during init().",
         "data_structure": "u32"
+      },
+      {
+        "name": "HighValueConfig",
+        "type": "instance",
+        "description": "High-value release timelock configuration (threshold and duration). When set, releases at or above threshold are queued.",
+        "data_structure": "HighValueConfig"
+      },
+      {
+        "name": "QueuedRelease",
+        "type": "persistent",
+        "description": "Per-bounty queued release entry awaiting timelock expiry. Keyed by bounty_id.",
+        "data_structure": "QueuedRelease"
       }
     ]
   },

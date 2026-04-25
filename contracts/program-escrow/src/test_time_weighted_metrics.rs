@@ -27,7 +27,7 @@ fn setup(
     let token_asset = token::StellarAssetClient::new(env, &token_id);
     let program_id = String::from_str(env, "hack-2026");
     client.init_program(&program_id, &admin, &token_id, &admin, &None, &None);
-    client.publish_program();
+    client.publish_program(&program_id);
     if initial_lock > 0 {
         token_asset.mint(&client.address, &initial_lock);
         client.lock_program_funds(&initial_lock);

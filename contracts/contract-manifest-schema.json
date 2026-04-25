@@ -6,6 +6,26 @@
   "type": "object",
   "required": ["contract_name", "contract_purpose", "version", "entrypoints", "configuration", "behaviors"],
   "properties": {
+    "error_registry": {
+      "type": "object",
+      "description": "Error code registry for this contract. Enables cross-manifest uniqueness validation and SDK generation.",
+      "properties": {
+        "codes": {
+          "type": "array",
+          "description": "All error codes defined in this contract's error enum, in ascending order.",
+          "items": {
+            "$ref": "#/$defs/error_registry_entry"
+          }
+        },
+        "ranges": {
+          "type": "array",
+          "description": "Reserved numeric ranges for this contract's error codes.",
+          "items": {
+            "$ref": "#/$defs/error_code_range"
+          }
+        }
+      }
+    },
     "contract_name": {
       "type": "string",
       "description": "Human-readable name of the smart contract",
@@ -249,6 +269,40 @@
           "items": {
             "type": "string"
           }
+        }
+      }
+    },
+    "registry": {
+      "type": "object",
+      "description": "Deployed contract registry metadata",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether the contract maintains a registry of deployed addresses"
+        },
+        "max_entries": {
+          "type": "integer",
+          "description": "Maximum number of contracts that can be registered"
+        },
+        "entrypoint_register": {
+          "type": "string",
+          "description": "Entrypoint name for registering a contract"
+        },
+        "entrypoint_deregister": {
+          "type": "string",
+          "description": "Entrypoint name for deregistering a contract"
+        },
+        "entrypoint_list": {
+          "type": "string",
+          "description": "Entrypoint name for listing registered contracts"
+        },
+        "entrypoint_get": {
+          "type": "string",
+          "description": "Entrypoint name for getting a single registered contract"
+        },
+        "entrypoint_count": {
+          "type": "string",
+          "description": "Entrypoint name for getting the registry count"
         }
       }
     },
@@ -615,6 +669,61 @@
           "items": {
             "type": "string"
           }
+        }
+      }
+    },
+    "error_registry_entry": {
+      "type": "object",
+      "description": "A single error code entry in the registry.",
+      "required": ["code", "name"],
+      "properties": {
+        "code": {
+          "type": "integer",
+          "description": "Numeric discriminant used in the #[contracterror] enum.",
+          "minimum": 1
+        },
+        "name": {
+          "type": "string",
+          "description": "Rust variant name (e.g. 'AlreadyInitialized').",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable explanation of when this error is raised."
+        },
+        "range": {
+          "type": "string",
+          "description": "Logical range this code belongs to (e.g. 'common', 'governance', 'escrow')."
+        },
+        "added_in": {
+          "type": "string",
+          "description": "Contract version when this code was introduced.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        }
+      }
+    },
+    "error_code_range": {
+      "type": "object",
+      "description": "A reserved numeric range for error codes in this contract.",
+      "required": ["name", "min", "max"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Logical name of the range (e.g. 'common', 'governance').",
+          "minLength": 1
+        },
+        "min": {
+          "type": "integer",
+          "description": "Inclusive lower bound.",
+          "minimum": 1
+        },
+        "max": {
+          "type": "integer",
+          "description": "Inclusive upper bound."
+        },
+        "description": {
+          "type": "string",
+          "description": "What kinds of errors live in this range."
         }
       }
     }

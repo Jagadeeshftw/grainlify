@@ -22,7 +22,7 @@ use crate::{
         set_split_config, BeneficiarySplit, SplitConfig, SplitConfigSetEvent, SplitPayoutEvent,
         SplitPayoutResult, TOTAL_BASIS_POINTS,
     },
-    DataKey, ProgramData, ProgramMetadata, PROGRAM_DATA, STORAGE_SCHEMA_VERSION,
+    DataKey, ProgramData, ProgramMetadata, ProgramStatus, PROGRAM_DATA, STORAGE_SCHEMA_VERSION,
 };
 
 // ===========================================================================
@@ -85,11 +85,10 @@ impl SplitTestEnv {
             token_address: self.token.clone(),
             initial_liquidity: 0,
             risk_flags: 0,
-            metadata: crate::ProgramMetadata::empty(&self.env),
             reference_hash: None,
             archived: false,
             archived_at: None,
-            schema_version: STORAGE_SCHEMA_VERSION,
+            status: ProgramStatus::Active,
         };
         self.env
             .storage()
@@ -711,7 +710,7 @@ mod security {
 
     /// Security: Overflow in calculation must not cause silent wrap-around.
     #[test]
-    #[should_panic(expected = "SplitPayout: arithmetic overflow")]
+    #[should_panic(expected = "Token math overflow: multiplication")]
     fn test_overflow_in_share_calculation() {
         let setup = SplitTestEnv::new();
         let max_i128 = i128::MAX;

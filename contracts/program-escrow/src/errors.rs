@@ -644,6 +644,69 @@ pub enum ContractError {
     TokenNotInAllowlist = 1102,
 }
 
+/// Explicit error enum for all batch payout failure modes.
+///
+/// Used as the `Err` variant of `batch_payout` / `batch_payout_by` so callers
+/// receive a typed, stable error code instead of an opaque panic string.
+///
+/// ## Error Code Ranges
+/// Codes 3100–3199 are reserved for batch-payout errors.
+///
+/// ## Upgrade Safety
+/// Codes are stable. New variants may be added; existing codes will not change.
+#[soroban_sdk::contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum BatchPayoutError {
+    /// Program storage has not been initialized.
+    NotInitialized = 3100,
+    /// Release operations are paused.
+    Paused = 3101,
+    /// A dispute is open; payouts are blocked.
+    DisputeOpen = 3102,
+    /// Caller is not the authorized payout key, admin, or a permitted delegate.
+    Unauthorized = 3103,
+    /// `recipients` and `amounts` vectors have different lengths.
+    LengthMismatch = 3104,
+    /// Batch contains zero entries.
+    EmptyBatch = 3105,
+    /// At least one amount is zero or negative.
+    ZeroAmount = 3106,
+    /// Summing amounts would overflow `i128`.
+    AmountOverflow = 3107,
+    /// Batch total exceeds the per-program spend threshold.
+    SpendLimitExceeded = 3108,
+    /// Batch total exceeds the program's remaining balance.
+    InsufficientBalance = 3109,
+    /// Circuit breaker is open.
+    CircuitBreakerOpen = 3110,
+    /// Batch contains duplicate recipient addresses.
+    DuplicateRecipient = 3111,
+    /// A payout fee would consume an entire individual payout.
+    FeeConsumesAmount = 3112,
+}
+
+impl BatchPayoutError {
+    /// Returns a stable, human-readable description (no sensitive data).
+    pub fn description(self) -> &'static str {
+        match self {
+            BatchPayoutError::NotInitialized => "Program not initialized",
+            BatchPayoutError::Paused => "Funds Paused",
+            BatchPayoutError::DisputeOpen => "Payout blocked: dispute open",
+            BatchPayoutError::Unauthorized => "Unauthorized",
+            BatchPayoutError::LengthMismatch => "Recipients and amounts vectors must have the same length",
+            BatchPayoutError::EmptyBatch => "Cannot process empty batch",
+            BatchPayoutError::ZeroAmount => "All amounts must be greater than zero",
+            BatchPayoutError::AmountOverflow => "Payout amount overflow",
+            BatchPayoutError::SpendLimitExceeded => "Spend threshold exceeded",
+            BatchPayoutError::InsufficientBalance => "Insufficient balance",
+            BatchPayoutError::CircuitBreakerOpen => "Circuit breaker is OPEN",
+            BatchPayoutError::DuplicateRecipient => "Duplicate recipient in batch",
+            BatchPayoutError::FeeConsumesAmount => "Payout fee consumes entire payout",
+        }
+    }
+}
+
 impl ContractError {
     /// Returns a human-readable description of the error.
     ///

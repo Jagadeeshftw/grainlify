@@ -3,7 +3,7 @@
   "contract_name": "ProgramEscrowContract",
   "contract_purpose": "Handles hackathon and program prize pools with batch payouts, dependency management, circuit breaker protection, and comprehensive monitoring",
   "version": {
-    "current": "2.6.0",
+    "current": "2.7.0",
     "schema": "1.0.0",
     "history": [
       {
@@ -82,6 +82,19 @@
         ]
       },
       {
+        "version": "2.7.0",
+        "release_date": "2026-04-24",
+        "changes": [
+          "Circuit breaker enforcement moved to step 3c — before authorization and all business logic — in both single_payout_internal and batch_payout_internal",
+          "Deterministic rejection: an open circuit now blocks payouts before balance, spend-threshold, or spending-window checks, producing stable client-observable failures",
+          "Added get_circuit_breaker_status view entrypoint returning CircuitBreakerStatus snapshot from persistent storage",
+          "Upgrade-safe: get_circuit_breaker_status returns safe defaults for legacy deployments with no circuit breaker state",
+          "Added ContractError::CircuitBreakerOpen (code 800) as the canonical error for circuit-open rejections",
+          "Removed duplicate step-7 circuit breaker block from batch_payout_internal",
+          "Updated validation-precedence comments in both payout internals to reflect new ordering"
+        ]
+      },
+      {
         "version": "2.6.0",
         "release_date": "2026-04-24",
         "changes": [
@@ -91,7 +104,12 @@
           "Added query_schedules_by_recipient: paginated release schedules filtered by recipient",
           "Added query_schedules_by_status: paginated release schedules filtered by status",
           "Added query_releases_by_recipient: paginated release history filtered by recipient",
-          "Pagination enforces limit 1\u2013200 via HistoryPaginationConfig with upgrade-safe storage"
+          "Pagination enforces limit 1\u2013200 via HistoryPaginationConfig with upgrade-safe storage",
+          "Implemented batch_lock and batch_release with full atomicity and deterministic ordering",
+          "Hardened batch operations with explicit error handling and reentrancy protection",
+          "Fixed syntax errors in BatchError definition",
+          "Added BatchFundsLocked and BatchFundsReleased audit events",
+          "Enhanced test coverage for batch edge cases"
         ]
       }
     ]
@@ -232,6 +250,29 @@
         "returns": {
           "type": "Vec<PayoutRecord>",
           "description": "Array of payout records"
+        },
+        "authorization": "admin",
+        "pausable": true,
+        "gas_estimate": "high"
+      },
+      {
+        "name": "try_batch_payout",
+        "description": "Typed batch payout — returns Result<ProgramData, BatchPayoutError> instead of panicking. All pre-validation (zero amounts, duplicates, overflow) runs before any token transfer.",
+        "parameters": [
+          {
+            "name": "recipients",
+            "type": "Vec<Address>",
+            "description": "Array of recipient addresses (must be unique)"
+          },
+          {
+            "name": "amounts",
+            "type": "Vec<i128>",
+            "description": "Corresponding payout amounts (all must be > 0)"
+          }
+        ],
+        "returns": {
+          "type": "Result<ProgramData, BatchPayoutError>",
+          "description": "Updated program data on success, typed error on failure"
         },
         "authorization": "admin",
         "pausable": true,
@@ -1077,6 +1118,18 @@
         "gas_estimate": "low"
       },
       {
+        "name": "get_circuit_breaker_status",
+        "description": "Return a full snapshot of the circuit breaker state. Returns safe defaults for legacy deployments that have never written circuit breaker state.",
+        "parameters": [],
+        "returns": {
+          "type": "CircuitBreakerStatus",
+          "description": "Snapshot of state, failure_count, success_count, opened_at, and configured thresholds"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
         "name": "reset_circuit_breaker",
         "description": "Reset circuit breaker to closed state",
         "parameters": [
@@ -1129,11 +1182,11 @@
       },
       {
         "name": "get_circuit_status",
-        "description": "Get circuit breaker status",
+        "description": "Return a full snapshot of the circuit breaker state including failure/success counts, timestamps, and configured thresholds",
         "parameters": [],
         "returns": {
           "type": "CircuitBreakerStatus",
-          "description": "Circuit breaker status"
+          "description": "Circuit breaker status snapshot"
         },
         "authorization": "any",
         "pausable": false,
@@ -1141,7 +1194,7 @@
       },
       {
         "name": "get_circuit_error_log",
-        "description": "Get circuit breaker error log",
+        "description": "Return the last N circuit breaker error log entries",
         "parameters": [],
         "returns": {
           "type": "Vec<ErrorEntry>",
@@ -1153,7 +1206,7 @@
       },
       {
         "name": "emergency_open_circuit",
-        "description": "Emergency open circuit (admin only)",
+        "description": "Immediately open the circuit breaker (circuit admin only). Blocks all payouts until reset.",
         "parameters": [
           {
             "name": "admin",
@@ -1166,6 +1219,42 @@
           "description": "Empty on success"
         },
         "authorization": "admin",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "init_threshold_monitoring",
+        "description": "Initialize threshold monitoring with default configuration. Idempotent.",
+        "parameters": [],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "get_threshold_config",
+        "description": "Return the current threshold monitoring configuration",
+        "parameters": [],
+        "returns": {
+          "type": "ThresholdConfig",
+          "description": "Threshold monitoring configuration"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "get_circuit_breaker_schema_version",
+        "description": "Return the circuit-breaker storage schema version written during init. Returns 0 on legacy deployments.",
+        "parameters": [],
+        "returns": {
+          "type": "u32",
+          "description": "Schema version (1 = current; 0 = legacy pre-v2.4)"
+        },
+        "authorization": "any",
         "pausable": false,
         "gas_estimate": "low"
       }
@@ -1272,6 +1361,12 @@
         "name": "DataKey::SpendLimitSchemaVersion",
         "type": "instance",
         "description": "Upgrade-safe version marker for spend-limit threshold storage layout. Increment when MultisigConfig schema changes.",
+        "data_structure": "u32"
+      },
+      {
+        "name": "DataKey::BatchPayoutSchemaVersion",
+        "type": "instance",
+        "description": "Upgrade-safe version marker for batch payout logic. Written at init with value BATCH_PAYOUT_SCHEMA_VERSION_V1=1. Returns 0 on legacy pre-v1 contracts.",
         "data_structure": "u32"
       },
       {

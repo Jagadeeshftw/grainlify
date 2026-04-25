@@ -86,7 +86,7 @@ fn setup_active_program(
     let admin = Address::generate(env);
     let program_id = String::from_str(env, "hack-2026");
     client.init_program(&program_id, &admin, &token_id, &admin, &None, &None);
-    client.publish_program();
+    client.publish_program(&program_id);
     if amount > 0 {
         client.lock_program_funds(&amount);
     }
@@ -305,14 +305,18 @@ fn test_metadata_only_delegate_cannot_execute_release() {
         tags: vec![&env, String::from_str(&env, "delegate")],
         start_date: Some(1),
         end_date: Some(2),
-        custom_fields: vec![&env, ProgramMetadataField {
-            key: String::from_str(&env, "track"),
-            value: String::from_str(&env, "infra"),
-        }],
+        custom_fields: vec![
+            &env,
+            ProgramMetadataField {
+                key: String::from_str(&env, "track"),
+                value: String::from_str(&env, "infra"),
+            },
+        ],
     };
 
-    let updated = client.update_program_metadata_by(&delegate, &program_id, &metadata);
-    assert_eq!(updated.metadata, metadata);
+    client.update_program_metadata_by(&program_id, &delegate, &metadata);
+    let stored_meta = client.get_program_metadata(&program_id);
+    assert_eq!(stored_meta, Some(metadata));
 
     assert!(client
         .try_single_payout_by(&delegate, &recipient, &100)
@@ -1032,7 +1036,7 @@ fn test_drained_double_init_still_rejected() {
     // Re-init must fail — program data still exists
     let new_admin = Address::generate(&env);
     let new_token = Address::generate(&env);
-    let program_id = String::from_str(&env, "hack-2026-v2");
+    let program_id = String::from_str(&env, "hack-2026");
     client.init_program(
         &program_id,
         &new_admin,
@@ -1060,6 +1064,7 @@ fn test_paused_release_allows_schedule_creation() {
     client.initialize_contract(&admin);
     let program_id = String::from_str(&env, "hack-2026");
     client.init_program(&program_id, &admin, &token_id, &admin, &None, &None);
+    client.publish_program(&program_id);
     client.lock_program_funds(&100_000);
     client.set_paused(&None, &Some(true), &None, &None::<soroban_sdk::String>);
 
@@ -1261,6 +1266,7 @@ fn test_aggregate_stats_across_lifecycle() {
     let admin = Address::generate(&env);
     let program_id = String::from_str(&env, "hack-2026");
     client.init_program(&program_id, &admin, &token_id, &admin, &None, &None);
+    client.publish_program(&program_id);
 
     // Initialized: stats reflect empty program
     let stats = client.get_program_aggregate_stats();
@@ -1313,6 +1319,7 @@ fn test_initialized_schedule_creation_allowed() {
     let token_id = Address::generate(&env);
     let program_id = String::from_str(&env, "hack-2026");
     client.init_program(&program_id, &admin, &token_id, &admin, &None, &None);
+    client.publish_program(&program_id);
 
     let recipient = Address::generate(&env);
     let now = env.ledger().timestamp();
@@ -1401,6 +1408,7 @@ fn test_drained_reactivate_triggers_pending_schedule() {
     let admin = Address::generate(&env);
     let program_id = String::from_str(&env, "hack-2026");
     client.init_program(&program_id, &admin, &token_id, &admin, &None, &None);
+    client.publish_program(&program_id);
     client.lock_program_funds(&100_000);
 
     // Create a future schedule then drain via payout
@@ -1677,7 +1685,15 @@ fn setup_rotation_program(
     let payout_key = Address::generate(env);
     let program_id = String::from_str(env, "rot-prog");
     client.initialize_contract(&admin);
-    client.init_program(&program_id, &payout_key, &token_id, &payout_key, &None, &None);
+    client.init_program(
+        &program_id,
+        &payout_key,
+        &token_id,
+        &payout_key,
+        &None,
+        &None,
+    );
+    client.publish_program(&program_id);
     (client, program_id, payout_key, admin)
 }
 
@@ -1685,13 +1701,13 @@ fn setup_rotation_program(
 #[test]
 fn test_rotation_by_current_payout_key_succeeds() {
     let env = Env::default();
-    let (client, program_id, _old_key, _admin) = setup_rotation_program(&env);
+    let (client, program_id, old_key, _admin) = setup_rotation_program(&env);
     let new_key = Address::generate(&env);
 
     let nonce = client.get_rotation_nonce(&program_id);
     assert_eq!(nonce, 0);
 
-    let data = client.rotate_payout_key(&program_id, &_old_key, &new_key, &nonce);
+    let data = client.rotate_payout_key(&program_id, &old_key, &new_key, &nonce);
     assert_eq!(data.authorized_payout_key, new_key);
 
     // Nonce must have incremented.
@@ -1724,6 +1740,7 @@ fn test_new_key_can_payout_after_rotation() {
     let program_id = String::from_str(&env, "rot-prog");
     client.initialize_contract(&admin);
     client.init_program(&program_id, &old_key, &token_id, &old_key, &None, &None);
+    client.publish_program(&program_id);
     client.lock_program_funds(&50_000);
 
     let nonce = client.get_rotation_nonce(&program_id);
@@ -1731,7 +1748,7 @@ fn test_new_key_can_payout_after_rotation() {
 
     // New key should be able to trigger a payout via the v2 entrypoint.
     let recipient = Address::generate(&env);
-    let data = client.single_payout_v2(&program_id, &new_key, &recipient, &1_000);
+    let data = client.single_payout_v2(&program_id, &recipient, &1_000);
     assert_eq!(data.remaining_balance, 49_000);
 }
 
@@ -1745,10 +1762,10 @@ fn test_rotation_replay_rejected() {
     let new_key2 = Address::generate(&env);
 
     let nonce = client.get_rotation_nonce(&program_id); // 0
-    client.rotate_payout_key(&program_id, &old_key, &new_key1, &nonce);
+    client.rotate_payout_key(&program_id, &old_key, &new_key1, &nonce); // nonce=0 is valid, increments to 1
 
-    // Attempt replay with stale nonce=0 — must panic.
-    client.rotate_payout_key(&program_id, &new_key1, &new_key2, &nonce);
+    // Attempt replay with stale nonce=0 — must panic with "Invalid nonce".
+    client.rotate_payout_key(&program_id, &new_key1, &new_key2, &nonce); // nonce=0 is now stale
 }
 
 /// Two sequential rotations on the same ledger are allowed (different nonces).
@@ -1760,10 +1777,10 @@ fn test_rotate_twice_same_ledger_with_correct_nonces() {
     let key3 = Address::generate(&env);
 
     let nonce0 = client.get_rotation_nonce(&program_id);
-    client.rotate_payout_key(&program_id, &old_key, &key2, &nonce0);
+    client.rotate_payout_key(&program_id, &old_key, &key2, &nonce0); // nonce=0 → 1
 
     let nonce1 = client.get_rotation_nonce(&program_id);
-    let data = client.rotate_payout_key(&program_id, &key2, &key3, &nonce1);
+    let data = client.rotate_payout_key(&program_id, &key2, &key3, &nonce1); // nonce=1 → 2
     assert_eq!(data.authorized_payout_key, key3);
     assert_eq!(client.get_rotation_nonce(&program_id), 2);
 }
@@ -1775,7 +1792,7 @@ fn test_rotate_to_self_rejected() {
     let env = Env::default();
     let (client, program_id, payout_key, _admin) = setup_rotation_program(&env);
     let nonce = client.get_rotation_nonce(&program_id);
-    // Attempt to rotate to the same key.
+    // Attempt to rotate to the same key — must panic before nonce check.
     client.rotate_payout_key(&program_id, &payout_key, &payout_key, &nonce);
 }
 

@@ -44,7 +44,7 @@ fn setup_active_program(
     let admin = Address::generate(env);
     let program_id = String::from_str(env, "rep-test");
     client.init_program(&program_id, &admin, &token_id, &admin, &None, &None);
-    client.publish_program();
+    client.publish_program(&program_id);
     if amount > 0 {
         client.lock_program_funds(&amount);
     }

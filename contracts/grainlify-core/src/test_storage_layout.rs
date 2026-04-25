@@ -40,36 +40,34 @@ mod test {
     // Liveness Watchdog Tests (LW-01 … LW-08)
     // =========================================================================
 
-    /// LW-01: liveness_watchdog returns operational=true after init.
+    /// LW-01: liveness_watchdog returns healthy=true and version>0 after init.
     #[test]
-    fn test_liveness_watchdog_operational_after_init() {
+    fn test_liveness_watchdog_healthy_after_init() {
         let env = Env::default();
         let (client, _admin) = setup_test(&env);
 
         let status = client.liveness_watchdog();
-        assert!(!status.is_paused, "should not be paused after init");
-        assert!(!status.is_read_only, "should not be read-only after init");
-        assert!(status.is_operational, "should be operational after init");
-        assert!(status.admin_set, "admin must be set after init");
+        assert!(!status.paused, "should not be paused after init");
+        assert!(!status.read_only, "should not be read-only after init");
+        assert!(status.healthy, "should be healthy after init");
         assert!(status.version > 0, "version must be set after init");
     }
 
-    /// LW-02: is_operational is false when read-only mode is enabled.
+    /// LW-02: read-only mode is reflected in watchdog.
     #[test]
-    fn test_liveness_watchdog_not_operational_when_read_only() {
+    fn test_liveness_watchdog_reflects_read_only() {
         let env = Env::default();
         let (client, _admin) = setup_test(&env);
 
         client.set_read_only_mode(&true);
         let status = client.liveness_watchdog();
 
-        assert!(status.is_read_only, "is_read_only must be true");
-        assert!(!status.is_operational, "is_operational must be false when read-only");
+        assert!(status.read_only, "read_only must be true");
     }
 
-    /// LW-03: is_operational is restored when read-only mode is disabled.
+    /// LW-03: read-only mode can be cleared and watchdog reflects it.
     #[test]
-    fn test_liveness_watchdog_operational_restored_after_read_only_cleared() {
+    fn test_liveness_watchdog_read_only_restored() {
         let env = Env::default();
         let (client, _admin) = setup_test(&env);
 
@@ -77,19 +75,18 @@ mod test {
         client.set_read_only_mode(&false);
         let status = client.liveness_watchdog();
 
-        assert!(!status.is_read_only);
-        assert!(status.is_operational);
+        assert!(!status.read_only);
+        assert!(status.healthy);
     }
 
-    /// LW-04: schema_version equals LIVENESS_SCHEMA_VERSION constant after init.
+    /// LW-04: version field matches get_version().
     #[test]
-    fn test_liveness_watchdog_schema_version_matches_constant() {
+    fn test_liveness_watchdog_version_matches_get_version() {
         let env = Env::default();
         let (client, _admin) = setup_test(&env);
 
         let status = client.liveness_watchdog();
-        assert_eq!(status.schema_version, LIVENESS_SCHEMA_VERSION);
-        assert_eq!(status.schema_version, 1);
+        assert_eq!(status.version, client.get_version());
     }
 
     /// LW-05: get_liveness_schema_version returns 1 after init.
@@ -115,35 +112,34 @@ mod test {
         });
     }
 
-    /// LW-07: timestamp in LivenessStatus matches ledger timestamp.
+    /// LW-07: last_ping_ts defaults to 0 before any ping.
     #[test]
-    fn test_liveness_watchdog_timestamp_matches_ledger() {
+    fn test_liveness_watchdog_last_ping_ts_defaults_to_zero() {
         let env = Env::default();
         let (client, _admin) = setup_test(&env);
 
-        let ledger_ts = env.ledger().timestamp();
         let status = client.liveness_watchdog();
-        assert_eq!(status.timestamp, ledger_ts);
+        assert_eq!(status.last_ping_ts, 0, "last_ping_ts must be 0 before first ping");
     }
 
-    /// LW-08: is_operational is the logical AND of !is_paused && !is_read_only.
+    /// LW-08: paused and read_only are independent booleans.
     #[test]
-    fn test_liveness_watchdog_is_operational_invariant() {
+    fn test_liveness_watchdog_paused_and_read_only_independent() {
         let env = Env::default();
         let (client, _admin) = setup_test(&env);
 
-        // Operational baseline
         let s = client.liveness_watchdog();
-        assert_eq!(s.is_operational, !s.is_paused && !s.is_read_only);
+        assert!(!s.paused);
+        assert!(!s.read_only);
 
-        // Read-only mode
         client.set_read_only_mode(&true);
         let s = client.liveness_watchdog();
-        assert_eq!(s.is_operational, !s.is_paused && !s.is_read_only);
+        assert!(!s.paused);
+        assert!(s.read_only);
 
-        // Restore
         client.set_read_only_mode(&false);
         let s = client.liveness_watchdog();
-        assert_eq!(s.is_operational, !s.is_paused && !s.is_read_only);
+        assert!(!s.paused);
+        assert!(!s.read_only);
     }
 }

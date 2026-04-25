@@ -46,7 +46,7 @@ fn setup_program_with_admin<'a>(
         &None,
         &None,
     );
-    client.publish_program();
+    client.publish_program(&program_id);
     (client, admin, payout_key, token_client)
 }
 
@@ -233,7 +233,19 @@ fn test_set_paused_emits_events() {
     contract.set_paused(&Some(true), &None, &None, &None);
 
     let events = env.events().all();
-    let emitted = events.iter().last().unwrap();
+    // Find the PauseStateChanged (v1) event specifically — the contract also emits
+    // a PauseStateChangedV2 event after it, so we must not rely on .last().
+    let emitted = events
+        .iter()
+        .find(|e| {
+            if let Some(t0) = e.1.get(0) {
+                let sym: Symbol = t0.into_val(&env);
+                sym == Symbol::new(&env, "PauseSt")
+            } else {
+                false
+            }
+        })
+        .expect("PauseStateChanged (PauseSt) event must be emitted");
 
     let topics = emitted.1;
     let topic_0: Symbol = topics.get(0).unwrap().into_val(&env);
@@ -357,7 +369,7 @@ fn setup_rbac_program_env_strict<'a>(
     let depositor = Address::generate(env);
     token_admin_client.mint(&depositor, &1000);
     token_client.transfer(&depositor, &contract_client.address, &500);
-    contract_client.publish_program();
+    contract_client.publish_program(&program_id);
     contract_client.lock_program_funds(&500);
 
     // Now reset auths - subsequent operations need proper auth
@@ -400,7 +412,7 @@ fn setup_rbac_program_env<'a>(
     let depositor = Address::generate(env);
     token_admin_client.mint(&depositor, &1000);
     token_client.transfer(&depositor, &contract_client.address, &500);
-    contract_client.publish_program();
+    contract_client.publish_program(&program_id);
     contract_client.lock_program_funds(&500);
 
     (admin, operator, token_client, contract_client)
@@ -589,7 +601,7 @@ fn test_rbac_emergency_withdraw_drains_all_funds() {
         &None,
         &None,
     );
-    contract_client.publish_program();
+    contract_client.publish_program(&program_id_1);
 
     // let program_id_2 = String::from_str(&env, "prog-2");
     // contract_client.init_program(&program_id_2, &operator, &token_address, &admin, &None, &None);

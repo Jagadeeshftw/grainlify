@@ -150,6 +150,7 @@ mod test {
     #[test]
     fn test_audit_circuit_admin_change() {
         let env = Env::default();
+        env.mock_all_auths();
         let (client, admin) = setup_test(&env);
         let new_admin = Address::generate(&env);
 
@@ -171,6 +172,7 @@ mod test {
     #[test]
     fn test_audit_circuit_manual_reset() {
         let env = Env::default();
+        env.mock_all_auths();
         let (client, admin) = setup_test(&env);
         env.ledger().set_timestamp(100);
 
@@ -201,6 +203,7 @@ mod test {
     #[test]
     fn test_audit_circuit_config_update() {
         let env = Env::default();
+        env.mock_all_auths();
         let (client, admin) = setup_test(&env);
 
         client.configure_circuit_breaker(&admin, &5u32, &2u32, &10u32);
@@ -220,6 +223,7 @@ mod test {
     #[test]
     fn test_audit_rate_limit_config_update() {
         let env = Env::default();
+        env.mock_all_auths();
         let (client, _admin) = setup_test(&env);
 
         client.update_rate_limit_config(&3600u64, &50u32, &120u64);
@@ -246,15 +250,9 @@ mod test {
         let token_addr = Address::generate(&env); // Mock token
 
         // Initialize program
-        client.init_program(
-            &String::from_str(&env, "prog1"),
-            &admin,
-            &token_addr,
-            &admin,
-            &Some(1000i128),
-            &None,
-        );
-        client.publish_program();
+        let program_id = String::from_str(&env, "prog1");
+        client.init_program(&program_id, &admin, &token_addr, &admin, &None, &None);
+        client.publish_program(&program_id);
 
         // Open circuit
         env.as_contract(&client.address, || {
@@ -276,15 +274,9 @@ mod test {
         let user2 = Address::generate(&env);
         let token_addr = Address::generate(&env);
 
-        client.init_program(
-            &String::from_str(&env, "prog1"),
-            &admin,
-            &token_addr,
-            &admin,
-            &Some(1000i128),
-            &None,
-        );
-        client.publish_program();
+        let program_id = String::from_str(&env, "prog1");
+        client.init_program(&program_id, &admin, &token_addr, &admin, &None, &None);
+        client.publish_program(&program_id);
 
         // Open circuit
         env.as_contract(&client.address, || {

@@ -52,7 +52,7 @@ fn setup<'a>() -> TestSetup<'a> {
         &None,
         &None,
     );
-    client.publish_program();
+    client.publish_program(&program_id);
 
     // lock funds
     client.lock_program_funds(&500_000_i128);

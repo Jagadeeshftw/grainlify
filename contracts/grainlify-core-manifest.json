@@ -3,7 +3,7 @@
   "contract_name": "GrainlifyContract",
   "contract_purpose": "Provides secure contract upgrade mechanism with version tracking, migration support, multisig governance, and comprehensive monitoring capabilities",
   "version": {
-    "current": "2.1.0",
+    "current": "2.2.0",
     "schema": "1.0.0",
     "history": [
       {
@@ -28,6 +28,21 @@
         ]
       },
       {
+        "version": "2.2.0",
+        "release_date": "2026-04-24",
+        "changes": [
+          "feat(contracts): snapshot/rollback guardrails (#1075)",
+          "create_config_snapshot and restore_config_snapshot now blocked in read-only mode",
+          "confirm_admin_restore now blocked in read-only mode",
+          "Removed duplicate liveness_watchdog returning undefined LivenessStatus type",
+          "Added WatchdogLastPing to DataKey enum (was missing, caused compile error)",
+          "init_admin now writes LivenessSchemaVersion=1 marker",
+          "Added get_liveness_schema_version view entrypoint",
+          "Added snapshot_rollback_guardrails_tests.rs with 15 guardrail test cases",
+          "validate_seed_file.py: added snapshot guardrail manifest check"
+        ]
+      },
+      {
         "version": "2.1.0",
         "release_date": "2026-04-24",
         "changes": [
@@ -35,6 +50,17 @@
           "Added ping_watchdog admin fn: records liveness ping timestamp for off-chain monitors",
           "Added WatchdogLastPing storage key (instance)",
           "Added WatchdogStatus contracttype struct"
+        ]
+      },
+      {
+        "version": "2.2.0",
+        "release_date": "2026-04-24",
+        "changes": [
+          "Added deployed contract registry with admin-only register/deregister",
+          "Added registry views: list_deployed_contracts, get_deployed_contract, deployed_contract_count",
+          "Added ContractKind and DeployedContract contracttype structs",
+          "Added DeployedContractRegistry storage key (instance)",
+          "Registry events: (registry, reg) and (registry, unreg)"
         ]
       }
     ]
@@ -102,30 +128,35 @@
       },
       {
         "name": "propose_upgrade",
-        "description": "Propose an upgrade with multisig approval",
+        "description": "Propose a WASM upgrade via multisig. Returns the stable proposal ID. Blocked when contract is paused.",
         "parameters": [
           {
             "name": "proposer",
             "type": "Address",
-            "description": "Address proposing the upgrade"
+            "description": "Address proposing the upgrade (must be a registered multisig signer)"
           },
           {
             "name": "wasm_hash",
             "type": "BytesN<32>",
-            "description": "Hash of the new WASM code"
+            "description": "Hash of the new WASM code to install"
+          },
+          {
+            "name": "expiry",
+            "type": "u64",
+            "description": "Ledger timestamp after which proposal expires (0 = no expiry)"
           }
         ],
         "returns": {
           "type": "u64",
-          "description": "Proposal ID"
+          "description": "Stable proposal ID for subsequent approve/cancel/execute calls"
         },
         "authorization": "signer",
-        "pausable": false,
+        "pausable": true,
         "gas_estimate": "medium"
       },
       {
         "name": "approve_upgrade",
-        "description": "Approve an upgrade proposal",
+        "description": "Approve a pending upgrade proposal. Automatically starts the timelock when the multisig threshold is met. Blocked when contract is paused.",
         "parameters": [
           {
             "name": "proposal_id",
@@ -135,7 +166,30 @@
           {
             "name": "signer",
             "type": "Address",
-            "description": "Address approving the proposal"
+            "description": "Signer address approving the proposal"
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success"
+        },
+        "authorization": "signer",
+        "pausable": true,
+        "gas_estimate": "medium"
+      },
+      {
+        "name": "cancel_upgrade",
+        "description": "Cancel a pending upgrade proposal. Any registered multisig signer may cancel. Clears the associated timelock.",
+        "parameters": [
+          {
+            "name": "proposal_id",
+            "type": "u64",
+            "description": "Proposal ID to cancel"
+          },
+          {
+            "name": "canceller",
+            "type": "Address",
+            "description": "Signer address cancelling the proposal"
           }
         ],
         "returns": {
@@ -144,11 +198,11 @@
         },
         "authorization": "signer",
         "pausable": false,
-        "gas_estimate": "medium"
+        "gas_estimate": "low"
       },
       {
         "name": "execute_upgrade",
-        "description": "Execute an approved upgrade proposal",
+        "description": "Execute an approved upgrade proposal after the timelock delay has elapsed. Panics if timelock has not started or delay has not passed.",
         "parameters": [
           {
             "name": "proposal_id",
@@ -163,6 +217,65 @@
         "authorization": "multisig",
         "pausable": false,
         "gas_estimate": "high"
+      },
+      {
+        "name": "pause",
+        "description": "Emergency pause: blocks propose_upgrade and approve_upgrade. Any registered multisig signer may pause.",
+        "parameters": [
+          {
+            "name": "signer",
+            "type": "Address",
+            "description": "Signer address triggering the pause"
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success"
+        },
+        "authorization": "signer",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "unpause",
+        "description": "Resume normal operation after emergency pause. Any registered multisig signer may unpause.",
+        "parameters": [
+          {
+            "name": "signer",
+            "type": "Address",
+            "description": "Signer address lifting the pause"
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success"
+        },
+        "authorization": "signer",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "commit_migration",
+        "description": "Pre-authorize a migration hash for replay protection. Must be called before migrate() with the same target_version and hash.",
+        "parameters": [
+          {
+            "name": "target_version",
+            "type": "u32",
+            "description": "Target version this commitment authorizes"
+          },
+          {
+            "name": "hash",
+            "type": "BytesN<32>",
+            "description": "Hash to commit — must match hash passed to migrate()"
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success"
+        },
+        "authorization": "admin",
+        "pausable": false,
+        "gas_estimate": "low"
       }
     ],
     "view": [
@@ -309,6 +422,61 @@
         "authorization": "any",
         "pausable": false,
         "gas_estimate": "low"
+      },
+      {
+        "name": "list_deployed_contracts",
+        "description": "Return paginated deployed contracts from the registry",
+        "parameters": [
+          {
+            "name": "offset",
+            "type": "Option<u32>",
+            "description": "Number of entries to skip (default: 0)",
+            "optional": true
+          },
+          {
+            "name": "limit",
+            "type": "Option<u32>",
+            "description": "Maximum entries to return (default: all)",
+            "optional": true
+          }
+        ],
+        "returns": {
+          "type": "Vec<DeployedContract>",
+          "description": "Paginated list of deployed contracts"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "get_deployed_contract",
+        "description": "Look up a registered contract by its on-chain address",
+        "parameters": [
+          {
+            "name": "address",
+            "type": "Address",
+            "description": "Contract address to search for"
+          }
+        ],
+        "returns": {
+          "type": "Option<DeployedContract>",
+          "description": "Registry entry if found, None otherwise"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "deployed_contract_count",
+        "description": "Return the total number of registered deployed contracts",
+        "parameters": [],
+        "returns": {
+          "type": "u32",
+          "description": "Total registry size"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low"
       }
     ],
     "admin": [
@@ -387,6 +555,54 @@
         "authorization": "admin",
         "pausable": true,
         "gas_estimate": "low"
+      },
+      {
+        "name": "create_config_snapshot",
+        "description": "Captures a point-in-time snapshot of admin, version, previous_version, and multisig config. Blocked in read-only mode. Returns the new snapshot ID.",
+        "parameters": [],
+        "returns": {
+          "type": "u64",
+          "description": "Monotonically increasing snapshot ID"
+        },
+        "authorization": "admin",
+        "pausable": false,
+        "gas_estimate": "medium"
+      },
+      {
+        "name": "restore_config_snapshot",
+        "description": "Restores contract config from a snapshot. Blocked in read-only mode. If the snapshot admin differs from the current admin, creates a PendingAdminRestore requiring two-step confirmation.",
+        "parameters": [
+          {
+            "name": "snapshot_id",
+            "type": "u64",
+            "description": "ID of the snapshot to restore"
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success; panics if snapshot is pruned or read-only mode is active"
+        },
+        "authorization": "admin",
+        "pausable": false,
+        "gas_estimate": "medium"
+      },
+      {
+        "name": "confirm_admin_restore",
+        "description": "Finalises a pending two-step admin restore. Must be called by the proposed new admin address. Blocked in read-only mode. Panics if the pending restore has expired.",
+        "parameters": [
+          {
+            "name": "snapshot_id",
+            "type": "u64",
+            "description": "Snapshot ID matching the pending restore"
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success"
+        },
+        "authorization": "admin",
+        "pausable": false,
+        "gas_estimate": "medium"
       }
     ]
   },
@@ -415,6 +631,22 @@
         "description": "List of authorized multisig signers",
         "constraints": "non-empty list",
         "admin_only": true
+      },
+      {
+        "name": "timelock_delay",
+        "type": "u64",
+        "default_value": "86400",
+        "description": "Seconds to wait after threshold is met before execute_upgrade is allowed",
+        "constraints": "3600 <= value <= 2592000 (1 hour to 30 days)",
+        "admin_only": true
+      },
+      {
+        "name": "paused",
+        "type": "bool",
+        "default_value": "false",
+        "description": "Emergency pause flag; blocks propose_upgrade and approve_upgrade when true",
+        "constraints": "toggled by any registered multisig signer",
+        "admin_only": false
       }
     ],
     "storage_keys": [
@@ -431,16 +663,34 @@
         "data_structure": "u32"
       },
       {
-        "name": "UpgradeProposal",
+        "name": "UpgradeProposal(u64)",
         "type": "instance",
-        "description": "Upgrade proposals by ID",
+        "description": "WASM hash stored per upgrade proposal ID",
         "data_structure": "BytesN<32>"
+      },
+      {
+        "name": "UpgradeTimelock(u64)",
+        "type": "instance",
+        "description": "Ledger timestamp when timelock started for a given proposal ID",
+        "data_structure": "u64"
+      },
+      {
+        "name": "TimelockDelay",
+        "type": "instance",
+        "description": "Configured timelock delay in seconds (default 86400)",
+        "data_structure": "u64"
       },
       {
         "name": "MigrationState",
         "type": "instance",
-        "description": "Migration state tracking",
+        "description": "Migration state tracking (from/to version, hash, timestamp)",
         "data_structure": "MigrationState"
+      },
+      {
+        "name": "MigrationCommitment(u32)",
+        "type": "instance",
+        "description": "Pre-committed migration hash keyed by target_version; consumed after migrate()",
+        "data_structure": "MigrationCommitment"
       },
       {
         "name": "PreviousVersion",
@@ -453,6 +703,12 @@
         "type": "instance",
         "description": "Ledger timestamp of the last successful ping_watchdog call. 0 / absent means never pinged.",
         "data_structure": "u64"
+      },
+      {
+        "name": "DeployedContractRegistry",
+        "type": "instance",
+        "description": "Ordered list of deployed contract addresses tracked by this core contract for discoverability and cross-contract coordination.",
+        "data_structure": "Vec<DeployedContract>"
       }
     ]
   },
@@ -460,14 +716,27 @@
     "security_features": [
       "Immutable admin after initialization",
       "Multisig support for critical operations",
+      "Timelocked upgrade execution (default 24h, min 1h, max 30d)",
+      "Emergency pause/unpause via any multisig signer",
+      "Timelock starts automatically when multisig threshold is met",
+      "Paused contract blocks new upgrade proposals and approvals",
+      "Commit-reveal replay protection for migrations",
+      "Migration commitment consumed after use (no replay)",
       "Version tracking and audit trail",
       "State migration with rollback support",
+      "Read-only mode blocks all mutations during incidents",
+      "Two-step admin restore for snapshot-based admin changes",
+      "Proposal expiry prevents stale approvals",
+      "Explicit proposal cancellation by any signer",
       "Comprehensive monitoring and analytics",
       "Performance tracking",
       "Health check capabilities",
       "Invariant verification",
       "Liveness watchdog view: consolidated pause/read-only/health/ping/version snapshot (no auth, never panics)",
-      "Watchdog ping: admin-only liveness proof with read-only mode guard"
+      "Watchdog ping: admin-only liveness proof with read-only mode guard",
+      "Snapshot/rollback guardrails: create_config_snapshot and restore_config_snapshot are blocked in read-only mode — prevents state mutation during incidents",
+      "Two-step admin restore: restoring a snapshot that changes the admin address requires confirmation from the new admin address, preventing silent admin takeover",
+      "Pending admin restore expiry: unconfirmed admin restores expire after DEFAULT_TIMELOCK_DELAY (24h) to prevent dangling restore requests"
     ],
     "access_control": [
       {
@@ -488,9 +757,29 @@
         "mitigation": "Choose admin carefully, use multisig for additional security"
       },
       {
+        "behavior": "Timelocked upgrade execution",
+        "impact": "Approved upgrades cannot execute until the timelock delay elapses (default 24h)",
+        "mitigation": "Monitor timelock status; cancel proposal if upgrade is no longer desired"
+      },
+      {
+        "behavior": "Timelock auto-start on threshold",
+        "impact": "Timelock begins automatically when the last required approval is recorded",
+        "mitigation": "Signers should coordinate timing; use expiry to bound proposal lifetime"
+      },
+      {
+        "behavior": "Emergency pause blocks new proposals",
+        "impact": "When paused, propose_upgrade and approve_upgrade revert; execute_upgrade is unaffected",
+        "mitigation": "Unpause via any registered multisig signer once the incident is resolved"
+      },
+      {
+        "behavior": "Commit-reveal migration replay protection",
+        "impact": "migrate() requires a prior commit_migration() call with the same hash; commitment is consumed on use",
+        "mitigation": "Always call commit_migration before migrate; store commitment hash securely"
+      },
+      {
         "behavior": "WASM upgrade",
         "impact": "Contract code can be completely replaced",
-        "mitigation": "Require admin authorization and optionally multisig approval"
+        "mitigation": "Require admin authorization and optionally multisig approval with timelock"
       },
       {
         "behavior": "State preservation",
@@ -585,53 +874,71 @@
         "name": "ContractUpgraded",
         "description": "Contract successfully upgraded",
         "data": [
-          {
-            "name": "old_version",
-            "type": "u32",
-            "description": "Previous version"
-          },
-          {
-            "name": "new_version",
-            "type": "u32",
-            "description": "New version"
-          },
-          {
-            "name": "wasm_hash",
-            "type": "BytesN<32>",
-            "description": "New WASM hash"
-          },
-          {
-            "name": "timestamp",
-            "type": "u64",
-            "description": "Upgrade timestamp"
-          }
+          {"name": "new_wasm_hash", "type": "BytesN<32>", "description": "New WASM hash installed"},
+          {"name": "previous_version", "type": "u32", "description": "Version before upgrade"},
+          {"name": "timestamp", "type": "u64", "description": "Upgrade timestamp"}
         ],
-        "trigger": "Successful upgrade operation"
+        "trigger": "Successful upgrade() or execute_upgrade()"
       },
       {
-        "name": "MigrationCompleted",
+        "name": "timelock/started",
+        "description": "Timelock started after multisig threshold was met",
+        "data": [
+          {"name": "proposal_id", "type": "u64", "description": "Proposal that triggered the timelock"},
+          {"name": "timestamp", "type": "u64", "description": "Ledger timestamp when timelock started"}
+        ],
+        "trigger": "approve_upgrade() when threshold is first met"
+      },
+      {
+        "name": "timelock/dly_chg",
+        "description": "Timelock delay configuration changed",
+        "data": [
+          {"name": "old_delay", "type": "u64", "description": "Previous delay in seconds"},
+          {"name": "new_delay", "type": "u64", "description": "New delay in seconds"}
+        ],
+        "trigger": "set_timelock_delay()"
+      },
+      {
+        "name": "paused",
+        "description": "Contract emergency pause activated",
+        "data": [
+          {"name": "signer", "type": "Address", "description": "Signer who triggered the pause"}
+        ],
+        "trigger": "pause()"
+      },
+      {
+        "name": "unpause",
+        "description": "Contract emergency pause lifted",
+        "data": [
+          {"name": "signer", "type": "Address", "description": "Signer who lifted the pause"}
+        ],
+        "trigger": "unpause()"
+      },
+      {
+        "name": "migrate/commit",
+        "description": "Migration hash pre-committed",
+        "data": [
+          {"name": "target_version", "type": "u32", "description": "Target version authorized"},
+          {"name": "timestamp", "type": "u64", "description": "Commitment timestamp"}
+        ],
+        "trigger": "commit_migration()"
+      },
+      {
+        "name": "migrate/done",
         "description": "State migration completed",
         "data": [
-          {
-            "name": "from_version",
-            "type": "u32",
-            "description": "Source version"
-          },
-          {
-            "name": "to_version",
-            "type": "u32",
-            "description": "Target version"
-          },
-          {
-            "name": "migration_hash",
-            "type": "BytesN<32>",
-            "description": "Migration data hash"
-          },
-          {
-            "name": "timestamp",
-            "type": "u64",
-            "description": "Migration timestamp"
-          }
+          {"name": "from_version", "type": "u32", "description": "Source version"},
+          {"name": "to_version", "type": "u32", "description": "Target version"},
+          {"name": "timestamp", "type": "u64", "description": "Migration timestamp"}
+        ],
+        "trigger": "migrate()"
+      },
+      {
+        "name": "cancelled",
+        "description": "Upgrade proposal cancelled",
+        "data": [
+          {"name": "proposal_id", "type": "u64", "description": "Cancelled proposal ID"},
+          {"name": "canceller", "type": "Address", "description": "Signer who cancelled"}
         ],
         "trigger": "Successful migration"
       },
@@ -651,6 +958,45 @@
           }
         ],
         "trigger": "Successful ping_watchdog call"
+      },
+      {
+        "name": "ContractRegistered",
+        "description": "A deployed contract address was registered or updated in the registry",
+        "data": [
+          {
+            "name": "address",
+            "type": "Address",
+            "description": "Registered contract address"
+          },
+          {
+            "name": "name",
+            "type": "String",
+            "description": "Human-readable name"
+          },
+          {
+            "name": "kind",
+            "type": "ContractKind",
+            "description": "Contract role/type"
+          },
+          {
+            "name": "version",
+            "type": "u32",
+            "description": "Version at registration"
+          }
+        ],
+        "trigger": "Successful register_deployed_contract call"
+      },
+      {
+        "name": "ContractDeregistered",
+        "description": "A deployed contract address was removed from the registry",
+        "data": [
+          {
+            "name": "address",
+            "type": "Address",
+            "description": "Deregistered contract address"
+          }
+        ],
+        "trigger": "Successful deregister_deployed_contract call"
       }
     ]
   },
@@ -757,7 +1103,8 @@
         "test_core_monitoring.rs",
         "upgrade_rollback_tests.rs",
         "migration_hook_tests.rs",
-        "test_liveness_watchdog.rs"
+        "test_liveness_watchdog.rs",
+        "test_contract_registry.rs"
       ]
     },
     "test_scenarios": [
@@ -778,8 +1125,26 @@
       "ping_watchdog updates last_ping_ts to ledger timestamp",
       "ping_watchdog multiple pings update timestamp monotonically",
       "ping_watchdog blocked in read-only mode",
-      "ping_watchdog requires admin auth"
+      "ping_watchdog requires admin auth",
+      "register_deployed_contract adds entry to registry",
+      "register_deployed_contract updates existing entry (no duplicates)",
+      "deregister_deployed_contract removes entry",
+      "deregister_deployed_contract is no-op for unknown address",
+      "list_deployed_contracts supports pagination",
+      "deployed_contract_count reflects registry size",
+      "get_deployed_contract returns None for unregistered address",
+      "registry mutations blocked in read-only mode",
+      "registry enforces max size limit"
     ]
+  },
+  "registry": {
+    "enabled": true,
+    "max_entries": 200,
+    "entrypoint_register": "register_deployed_contract",
+    "entrypoint_deregister": "deregister_deployed_contract",
+    "entrypoint_list": "list_deployed_contracts",
+    "entrypoint_get": "get_deployed_contract",
+    "entrypoint_count": "deployed_contract_count"
   },
   "documentation": {
     "readme": "README.md",

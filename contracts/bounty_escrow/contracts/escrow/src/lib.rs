@@ -23,6 +23,8 @@ mod test_filter_pagination;
 mod test_frozen_balance;
 #[cfg(test)]
 mod test_reentrancy_guard;
+#[cfg(test)]
+mod test_admin_rotation;
 
 use crate::events::{
     emit_admin_rotation_accepted, emit_admin_rotation_cancelled, emit_admin_rotation_proposed,
@@ -380,29 +382,7 @@ mod anti_abuse {
         env.storage().instance().set(&AntiAbuseKey::Admin, &admin);
     }
 
-    fn get_admin(e: &Env) -> Address {
-    e.storage().instance().get(&DataKey::Admin).unwrap()
-}
 
-fn set_admin(e: &Env, admin: &Address) {
-    e.storage().instance().set(&DataKey::Admin, admin);
-}
-
-fn get_pending_admin(e: &Env) -> Option<Address> {
-    e.storage().instance().get(&DataKey::PendingAdmin)
-}
-
-fn set_pending_admin(e: &Env, admin: &Address) {
-    e.storage().instance().set(&DataKey::PendingAdmin, admin);
-}
-
-fn set_admin_transfer_time(e: &Env, ts: u64) {
-    e.storage().instance().set(&DataKey::AdminTransferTimestamp, &ts);
-}
-
-fn get_admin_transfer_time(e: &Env) -> Option<u64> {
-    e.storage().instance().get(&DataKey::AdminTransferTimestamp)
-}
 
 
     pub fn check_rate_limit(env: &Env, address: Address) {
@@ -673,6 +653,15 @@ pub const RISK_FLAG_RESTRICTED: u32 = 1 << 2;
 /// Bit flag: aligned with soft-deprecation signaling; distinct from contract-level deprecation.
 pub const RISK_FLAG_DEPRECATED: u32 = 1 << 3;
 
+/// Mask covering all currently defined public risk flag bits (0–3).
+/// Bits outside this mask are reserved; passing them to `update_risk_flags` or
+/// `set_escrow_risk_flags` returns `Error::InvalidRiskFlagBits`.
+pub const RISK_FLAG_MASK_ALL: u32 =
+    RISK_FLAG_HIGH_RISK | RISK_FLAG_UNDER_REVIEW | RISK_FLAG_RESTRICTED | RISK_FLAG_DEPRECATED;
+
+/// Maximum number of addresses that may appear in the risk-flag governor list.
+const MAX_RISK_GOVERNORS: u32 = 16;
+
 /// Notification preference flags (bitfield).
 pub const NOTIFY_ON_LOCK: u32 = 1 << 0;
 pub const NOTIFY_ON_RELEASE: u32 = 1 << 1;
@@ -835,6 +824,23 @@ pub struct FreezeRecord {
     pub frozen_by: Address,
 }
 
+/// Pending two-step admin rotation proposal.
+///
+/// Created by `propose_admin_rotation`; consumed by `accept_admin_rotation`.
+/// Cancelled by `cancel_admin_rotation` (current admin only).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingAdminRotation {
+    /// The proposed new admin address.
+    pub proposed_admin: Address,
+    /// Ledger timestamp when the proposal was created.
+    pub proposed_at: u64,
+    /// Earliest ledger timestamp at which `accept_admin_rotation` may be called.
+    pub executable_after: u64,
+    /// Current admin that created the proposal.
+    pub proposed_by: Address,
+}
+
 #[contracttype]
 pub enum DataKey {
     Admin,
@@ -909,6 +915,14 @@ pub enum DataKey {
     /// Upgrade-safe marker for participant list storage semantics.
     /// Increment when `WhitelistIndex` / `BlocklistIndex` layout changes.
     ParticipantListSchemaVersion,
+    /// Pending admin address for two-step admin rotation.
+    PendingAdmin,
+    /// Timestamp when the admin rotation was proposed (for timelock enforcement).
+    AdminTransferTimestamp,
+    /// Global high-value release timelock configuration (threshold + duration).
+    HighValueConfig,
+    /// Per-bounty queued release entry awaiting timelock expiry.
+    QueuedRelease(u64),
 }
 
 #[contracttype]
@@ -946,6 +960,49 @@ pub struct PauseStateChanged {
     pub paused: bool,
     pub admin: Address,
     pub reason: Option<soroban_sdk::String>,
+    pub timestamp: u64,
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ADMIN ROTATION TYPES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Status of a pending admin rotation.
+///
+/// This struct provides comprehensive information about an in-progress admin rotation,
+/// enabling frontends and indexers to display rotation progress and countdown timers.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminRotationStatus {
+    /// The current active admin (still has authority until rotation completes).
+    pub current_admin: Address,
+    /// The pending admin waiting to accept the rotation.
+    pub pending_admin: Address,
+    /// Unix timestamp after which the rotation can be executed.
+    pub execute_after: u64,
+    /// Whether the timelock has elapsed and the rotation is ready for acceptance.
+    pub is_executable: bool,
+    /// Seconds remaining until the timelock expires (0 if already executable).
+    pub remaining_seconds: u64,
+    /// Current ledger timestamp when this status was queried.
+    pub timestamp: u64,
+}
+
+/// Configuration parameters for admin rotation.
+///
+/// Provides the bounds and current state of the admin rotation timelock system.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminRotationConfig {
+    /// Current timelock duration in seconds for new admin rotations.
+    pub timelock_duration: u64,
+    /// Minimum allowed timelock duration (1 hour = 3,600 seconds).
+    pub min_timelock: u64,
+    /// Maximum allowed timelock duration (30 days = 2,592,000 seconds).
+    pub max_timelock: u64,
+    /// Whether there is currently a pending admin rotation in progress.
+    pub has_pending_rotation: bool,
+    /// Current ledger timestamp when this config was queried.
     pub timestamp: u64,
 }
 
@@ -1089,6 +1146,18 @@ const ADMIN_TIMELOCK: u64 = 60 * 60 * 24; // 24 hours
 /// during `init` (and should be migrated during upgrades) so that upgrade
 /// safety checks can detect schema mismatches.
 const FEE_ROUTING_SCHEMA_VERSION_V1: u32 = 1;
+
+/// Current risk-flags governance storage schema version.
+///
+/// Increment whenever the `EscrowMetadata::risk_flags` layout changes in a
+/// breaking way. Written to instance storage during `init` so upgrade safety
+/// checks can detect schema mismatches on legacy deployments.
+const RISK_FLAGS_SCHEMA_VERSION_V1: u32 = 1;
+
+/// Bitmask of all valid public risk flag bits.
+/// Any bits outside this mask are reserved and must be zero.
+pub const RISK_FLAGS_VALID_MASK: u32 =
+    RISK_FLAG_HIGH_RISK | RISK_FLAG_UNDER_REVIEW | RISK_FLAG_RESTRICTED | RISK_FLAG_DEPRECATED;
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1581,12 +1650,6 @@ impl BountyEscrowContract {
 
     /// Returns the effective runtime cap for `batch_lock_funds`.
     ///
-    /// Falls back to the compile-time `MAX_BATCH_SIZE` when no admin-configured
-    /// cap has been stored, ensuring the contract is safe out-of-the-box.
-    fn get_max_batch_size(env: Env) -> u32 {
-        Self::get_batch_size_caps_internal(&env).lock_cap
-    }
-
     /// Returns the effective runtime cap for `batch_release_funds`.
     fn get_max_release_batch_size(env: Env) -> u32 {
         Self::get_batch_size_caps_internal(&env).release_cap
@@ -2489,6 +2552,10 @@ impl BountyEscrowContract {
         }
 
         let flags = Self::get_pause_flags(env);
+        // Maintenance mode blocks ALL operations (lock, release, refund).
+        if Self::is_maintenance_mode(env.clone()) {
+            return true;
+        }
         if operation == symbol_short!("lock") {
             return flags.lock_paused;
         } else if operation == symbol_short!("release") {
@@ -2639,6 +2706,14 @@ impl BountyEscrowContract {
 
     /// Check if the contract is in maintenance mode
     pub fn is_maintenance_mode(env: Env) -> bool {
+        // Check structured record first (v2.5+), fall back to legacy bare bool.
+        if let Some(record) = env
+            .storage()
+            .instance()
+            .get::<DataKey, MaintenanceModeRecord>(&DataKey::MaintenanceModeInfo)
+        {
+            return record.enabled;
+        }
         env.storage()
             .instance()
             .get(&DataKey::MaintenanceMode)
@@ -2702,7 +2777,7 @@ impl BountyEscrowContract {
                 enabled,
                 reason,
                 admin: admin.clone(),
-                timestamp: env.ledger().timestamp(),
+                timestamp: now,
             },
         );
         Ok(())
@@ -2872,6 +2947,45 @@ impl BountyEscrowContract {
     /// Returns the acceptance timestamp for the current pending admin rotation.
     pub fn get_admin_rotation_timelock(env: Env) -> Option<u64> {
         env.storage().instance().get(&DataKey::AdminTimelock)
+    }
+
+    /// Returns comprehensive admin rotation state for indexing and UI display.
+    ///
+    /// # Returns
+    /// - `Some(AdminRotationStatus)` if a rotation is pending
+    /// - `None` if no rotation is in progress
+    pub fn get_admin_rotation_status(env: Env) -> Option<AdminRotationStatus> {
+        let pending_admin: Address = env.storage().instance().get(&DataKey::PendingAdmin)?;
+        let execute_after: u64 = env.storage().instance().get(&DataKey::AdminTimelock)?;
+        let current_admin: Address = env.storage().instance().get(&DataKey::Admin)?;
+        let now = env.ledger().timestamp();
+
+        Some(AdminRotationStatus {
+            current_admin,
+            pending_admin,
+            execute_after,
+            is_executable: now >= execute_after,
+            remaining_seconds: if now < execute_after {
+                execute_after.saturating_sub(now)
+            } else {
+                0
+            },
+            timestamp: now,
+        })
+    }
+
+    /// Returns the full admin rotation configuration.
+    pub fn get_admin_rotation_config(env: Env) -> AdminRotationConfig {
+        let duration = Self::get_rotation_timelock_duration(env.clone());
+        let has_pending = env.storage().instance().has(&DataKey::PendingAdmin);
+
+        AdminRotationConfig {
+            timelock_duration: duration,
+            min_timelock: MIN_ADMIN_ROTATION_TIMELOCK,
+            max_timelock: MAX_ADMIN_ROTATION_TIMELOCK,
+            has_pending_rotation: has_pending,
+            timestamp: env.ledger().timestamp(),
+        }
     }
 
     pub fn set_whitelist(env: Env, address: Address, whitelisted: bool) -> Result<(), Error> {
@@ -5188,8 +5302,211 @@ impl BountyEscrowContract {
     }
 
     /// New typed refund-eligibility view with explicit semantics.
+    /// Implements issue #1040: Add refund eligibility view with clear semantics.
     pub fn get_refund_eligibility_view(env: Env, bounty_id: u64) -> RefundEligibilityView {
         Self::compute_refund_eligibility(&env, bounty_id)
+    }
+
+    // =========================================================================
+    // RISK FLAGS GOVERNANCE
+    // =========================================================================
+
+    /// Set (OR-in) risk flag bits on a bounty's metadata (admin only).
+    ///
+    /// # Invariants
+    /// - Only bits within [`RISK_FLAGS_VALID_MASK`] are accepted; any reserved
+    ///   bits cause `InvalidRiskFlags`.
+    /// - Emits [`RiskFlagsUpdated`] after the new value is persisted (CEI).
+    /// - Metadata is created with all-zero flags if it does not yet exist.
+    ///
+    /// # Security
+    /// - Admin-only; `require_auth` is called on the stored admin address.
+    /// - Flags are informational on-chain; enforcement belongs to off-chain services.
+    pub fn set_escrow_risk_flags(
+        env: Env,
+        bounty_id: u64,
+        flags: u32,
+    ) -> Result<EscrowMetadata, Error> {
+        if !env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::NotInitialized);
+        }
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        // Reject reserved bits.
+        if flags & !RISK_FLAGS_VALID_MASK != 0 {
+            return Err(Error::InvalidRiskFlags);
+        }
+
+        let mut meta: EscrowMetadata = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Metadata(bounty_id))
+            .unwrap_or(EscrowMetadata {
+                repo_id: 0,
+                issue_id: 0,
+                bounty_type: soroban_sdk::String::from_str(&env, ""),
+                risk_flags: 0,
+                notification_prefs: 0,
+                reference_hash: None,
+            });
+
+        let previous_flags = meta.risk_flags;
+        meta.risk_flags |= flags;
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Metadata(bounty_id), &meta);
+
+        // Emit audit event after storage write (CEI ordering).
+        emit_risk_flags_updated(
+            &env,
+            RiskFlagsUpdated {
+                version: EVENT_VERSION_V2,
+                bounty_id,
+                previous_flags,
+                new_flags: meta.risk_flags,
+                admin,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(meta)
+    }
+
+    /// Clear (AND-NOT) risk flag bits on a bounty's metadata (admin only).
+    ///
+    /// # Invariants
+    /// - Only bits within [`RISK_FLAGS_VALID_MASK`] are accepted; any reserved
+    ///   bits cause `InvalidRiskFlags`.
+    /// - Emits [`RiskFlagsUpdated`] after the new value is persisted (CEI).
+    /// - Idempotent: clearing already-cleared bits is a no-op (no error).
+    ///
+    /// # Security
+    /// - Admin-only; `require_auth` is called on the stored admin address.
+    pub fn clear_escrow_risk_flags(
+        env: Env,
+        bounty_id: u64,
+        flags: u32,
+    ) -> Result<EscrowMetadata, Error> {
+        if !env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::NotInitialized);
+        }
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        // Reject reserved bits.
+        if flags & !RISK_FLAGS_VALID_MASK != 0 {
+            return Err(Error::InvalidRiskFlags);
+        }
+
+        let mut meta: EscrowMetadata = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Metadata(bounty_id))
+            .unwrap_or(EscrowMetadata {
+                repo_id: 0,
+                issue_id: 0,
+                bounty_type: soroban_sdk::String::from_str(&env, ""),
+                risk_flags: 0,
+                notification_prefs: 0,
+                reference_hash: None,
+            });
+
+        let previous_flags = meta.risk_flags;
+        meta.risk_flags &= !flags;
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Metadata(bounty_id), &meta);
+
+        // Emit audit event after storage write (CEI ordering).
+        emit_risk_flags_updated(
+            &env,
+            RiskFlagsUpdated {
+                version: EVENT_VERSION_V2,
+                bounty_id,
+                previous_flags,
+                new_flags: meta.risk_flags,
+                admin,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(meta)
+    }
+
+    /// Get the metadata for a bounty. Returns a default (all-zero) record if
+    /// no metadata has been written yet.
+    pub fn get_metadata(env: Env, bounty_id: u64) -> EscrowMetadata {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Metadata(bounty_id))
+            .unwrap_or(EscrowMetadata {
+                repo_id: 0,
+                issue_id: 0,
+                bounty_type: soroban_sdk::String::from_str(&env, ""),
+                risk_flags: 0,
+                notification_prefs: 0,
+                reference_hash: None,
+            })
+    }
+
+    /// Update the metadata fields for a bounty (admin only).
+    ///
+    /// Risk flags are preserved from the existing record; use
+    /// `set_escrow_risk_flags` / `clear_escrow_risk_flags` to modify them.
+    pub fn update_metadata(
+        env: Env,
+        _admin: Address,
+        bounty_id: u64,
+        repo_id: u64,
+        issue_id: u64,
+        bounty_type: soroban_sdk::String,
+        reference_hash: Option<soroban_sdk::Bytes>,
+    ) -> Result<EscrowMetadata, Error> {
+        if !env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::NotInitialized);
+        }
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        let existing: EscrowMetadata = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Metadata(bounty_id))
+            .unwrap_or(EscrowMetadata {
+                repo_id: 0,
+                issue_id: 0,
+                bounty_type: soroban_sdk::String::from_str(&env, ""),
+                risk_flags: 0,
+                notification_prefs: 0,
+                reference_hash: None,
+            });
+
+        let updated = EscrowMetadata {
+            repo_id,
+            issue_id,
+            bounty_type,
+            risk_flags: existing.risk_flags, // preserve flags
+            notification_prefs: existing.notification_prefs,
+            reference_hash,
+        };
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Metadata(bounty_id), &updated);
+
+        Ok(updated)
+    }
+
+    /// Return the risk-flags governance storage schema version written during `init`.
+    /// Returns `0` on legacy deployments where the marker was never written.
+    pub fn get_risk_flags_schema_version(env: Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&DataKey::RiskFlagsSchemaVersion)
+            .unwrap_or(0u32)
     }
 
     /// Approve a refund before deadline (admin only).
@@ -6633,6 +6950,10 @@ impl BountyEscrowContract {
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         admin.require_auth();
 
+        if new_flags & !RISK_FLAG_MASK_ALL != 0 {
+            return Err(Error::InvalidRiskFlagBits);
+        }
+
         if !env.storage().persistent().has(&DataKey::Escrow(bounty_id))
             && !env.storage().persistent().has(&DataKey::EscrowAnon(bounty_id))
         {
@@ -6894,6 +7215,326 @@ impl BountyEscrowContract {
             });
 
         Ok(metadata)
+    }
+
+    // ============================================================================
+    // RISK FLAG GOVERNANCE — MULTI-GOVERNOR SUPPORT
+    // ============================================================================
+
+    /// Returns the stored risk-flag schema version, or `None` if not yet initialized.
+    pub fn get_risk_flag_schema_version(env: Env) -> Option<u32> {
+        env.storage()
+            .instance()
+            .get(&DataKey::RiskFlagSchemaVersion)
+    }
+
+    /// Adds an address to the risk-flag governor list (admin only).
+    ///
+    /// Governors may call `set_escrow_risk_flags` and `clear_escrow_risk_flags`
+    /// without being the contract admin, enabling delegated risk management.
+    /// The list is capped at `MAX_RISK_GOVERNORS` (16) to bound iteration cost.
+    pub fn add_risk_governor(env: Env, governor: Address) -> Result<(), Error> {
+        let admin = rbac::require_admin(&env);
+        admin.require_auth();
+
+        let mut governors: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&DataKey::RiskFlagGovernors)
+            .unwrap_or(Vec::new(&env));
+
+        for g in governors.iter() {
+            if g == governor {
+                return Err(Error::RiskGovernorAlreadyRegistered);
+            }
+        }
+        if governors.len() >= MAX_RISK_GOVERNORS {
+            return Err(Error::RiskGovernorLimitReached);
+        }
+
+        governors.push_back(governor.clone());
+        env.storage()
+            .instance()
+            .set(&DataKey::RiskFlagGovernors, &governors);
+
+        emit_risk_governor_added(
+            &env,
+            events::RiskGovernorAdded {
+                version: events::EVENT_VERSION_V2,
+                governor,
+                added_by: admin,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Removes an address from the risk-flag governor list (admin only).
+    pub fn remove_risk_governor(env: Env, governor: Address) -> Result<(), Error> {
+        let admin = rbac::require_admin(&env);
+        admin.require_auth();
+
+        let governors: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&DataKey::RiskFlagGovernors)
+            .unwrap_or(Vec::new(&env));
+
+        let mut found = false;
+        let mut updated: Vec<Address> = Vec::new(&env);
+        for g in governors.iter() {
+            if g == governor {
+                found = true;
+            } else {
+                updated.push_back(g);
+            }
+        }
+
+        if !found {
+            return Err(Error::RiskGovernorNotFound);
+        }
+
+        env.storage()
+            .instance()
+            .set(&DataKey::RiskFlagGovernors, &updated);
+
+        emit_risk_governor_removed(
+            &env,
+            events::RiskGovernorRemoved {
+                version: events::EVENT_VERSION_V2,
+                governor,
+                removed_by: admin,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Returns the current risk-flag governor list.
+    pub fn get_risk_governors(env: Env) -> Vec<Address> {
+        env.storage()
+            .instance()
+            .get(&DataKey::RiskFlagGovernors)
+            .unwrap_or(Vec::new(&env))
+    }
+
+    /// Returns `true` if `addr` is in the risk-flag governor list.
+    pub fn is_risk_governor(env: Env, addr: Address) -> bool {
+        let governors: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&DataKey::RiskFlagGovernors)
+            .unwrap_or(Vec::new(&env));
+        for g in governors.iter() {
+            if g == addr {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Ors `flag_bits` onto the stored risk flags for `bounty_id` (admin only).
+    ///
+    /// Unlike `update_risk_flags` (absolute replace), this is an additive
+    /// set-bit operation: existing flags are preserved and only `flag_bits` are
+    /// added.  The operation is idempotent.
+    ///
+    /// Returns the updated `EscrowMetadata` so callers can read back the final state
+    /// in a single call.
+    pub fn set_escrow_risk_flags(
+        env: Env,
+        bounty_id: u64,
+        flag_bits: u32,
+    ) -> Result<EscrowMetadata, Error> {
+        if !env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::NotInitialized);
+        }
+
+        if flag_bits & !RISK_FLAG_MASK_ALL != 0 {
+            return Err(Error::InvalidRiskFlagBits);
+        }
+
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        let mut metadata: EscrowMetadata = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Metadata(bounty_id))
+            .unwrap_or(EscrowMetadata {
+                repo_id: 0,
+                issue_id: 0,
+                bounty_type: soroban_sdk::String::from_str(&env, ""),
+                risk_flags: 0,
+                notification_prefs: 0,
+                reference_hash: None,
+            });
+
+        let previous_flags = metadata.risk_flags;
+        metadata.risk_flags |= flag_bits;
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Metadata(bounty_id), &metadata);
+
+        events::emit_risk_flags_updated(
+            &env,
+            events::RiskFlagsUpdated {
+                version: events::EVENT_VERSION_V2,
+                bounty_id,
+                previous_flags,
+                new_flags: metadata.risk_flags,
+                admin,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(metadata)
+    }
+
+    /// Clears `flag_bits` from the stored risk flags for `bounty_id` (admin only).
+    ///
+    /// Selective AND-NOT clear: only the bits in `flag_bits` are cleared; all
+    /// other flags are left unchanged.  The operation is idempotent.
+    ///
+    /// Returns the updated `EscrowMetadata`.
+    pub fn clear_escrow_risk_flags(
+        env: Env,
+        bounty_id: u64,
+        flag_bits: u32,
+    ) -> Result<EscrowMetadata, Error> {
+        if !env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::NotInitialized);
+        }
+
+        if flag_bits & !RISK_FLAG_MASK_ALL != 0 {
+            return Err(Error::InvalidRiskFlagBits);
+        }
+
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        let mut metadata: EscrowMetadata = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Metadata(bounty_id))
+            .unwrap_or(EscrowMetadata {
+                repo_id: 0,
+                issue_id: 0,
+                bounty_type: soroban_sdk::String::from_str(&env, ""),
+                risk_flags: 0,
+                notification_prefs: 0,
+                reference_hash: None,
+            });
+
+        let previous_flags = metadata.risk_flags;
+        metadata.risk_flags &= !flag_bits;
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Metadata(bounty_id), &metadata);
+
+        events::emit_risk_flags_updated(
+            &env,
+            events::RiskFlagsUpdated {
+                version: events::EVENT_VERSION_V2,
+                bounty_id,
+                previous_flags,
+                new_flags: metadata.risk_flags,
+                admin,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(metadata)
+    }
+
+    /// Writes all mutable metadata fields for a bounty (admin or governor).
+    ///
+    /// Preserves `risk_flags` and `notification_prefs` — use
+    /// `set_escrow_risk_flags` / `clear_escrow_risk_flags` to change those.
+    pub fn update_metadata(
+        env: Env,
+        caller: Address,
+        bounty_id: u64,
+        repo_id: u64,
+        issue_id: u64,
+        bounty_type: soroban_sdk::String,
+        reference_hash: Option<soroban_sdk::Bytes>,
+    ) -> Result<(), Error> {
+        if !env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::NotInitialized);
+        }
+
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        let governors: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&DataKey::RiskFlagGovernors)
+            .unwrap_or(Vec::new(&env));
+
+        let mut authorized = caller == admin;
+        if !authorized {
+            for g in governors.iter() {
+                if g == caller {
+                    authorized = true;
+                    break;
+                }
+            }
+        }
+        if !authorized {
+            return Err(Error::UnauthorizedRiskGovernor);
+        }
+        caller.require_auth();
+
+        validation::validate_tag(&env, &bounty_type, "bounty_type");
+
+        let existing: EscrowMetadata = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Metadata(bounty_id))
+            .unwrap_or(EscrowMetadata {
+                repo_id: 0,
+                issue_id: 0,
+                bounty_type: soroban_sdk::String::from_str(&env, ""),
+                risk_flags: 0,
+                notification_prefs: 0,
+                reference_hash: None,
+            });
+
+        let updated = EscrowMetadata {
+            repo_id,
+            issue_id,
+            bounty_type,
+            risk_flags: existing.risk_flags,
+            notification_prefs: existing.notification_prefs,
+            reference_hash,
+        };
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Metadata(bounty_id), &updated);
+
+        Ok(())
+    }
+
+    /// Returns the full metadata record for a bounty.
+    ///
+    /// Returns a zeroed `EscrowMetadata` when no metadata has been written yet.
+    pub fn get_metadata(env: Env, bounty_id: u64) -> EscrowMetadata {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Metadata(bounty_id))
+            .unwrap_or(EscrowMetadata {
+                repo_id: 0,
+                issue_id: 0,
+                bounty_type: soroban_sdk::String::from_str(&env, ""),
+                risk_flags: 0,
+                notification_prefs: 0,
+                reference_hash: None,
+            })
     }
 
     // ============================================================================

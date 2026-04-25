@@ -1889,7 +1889,7 @@ pub fn emit_release_queue_cancelled(env: &Env, event: ReleaseQueueCancelled) {
 /// ### Topics
 /// | Index | Value |
 /// |-------|-------|
-/// | 0 | `"clm_win"` |
+/// | 0 | `"clm_set"` |
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClaimWindowSet {
@@ -1903,7 +1903,7 @@ pub struct ClaimWindowSet {
 }
 
 pub fn emit_claim_window_set(env: &Env, event: ClaimWindowSet) {
-    let topics = (symbol_short!("clm_win"),);
+    let topics = (symbol_short!("clm_set"),);
     env.events().publish(topics, event);
 }
 

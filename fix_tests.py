@@ -1,64 +1,80 @@
 import os
 import re
-import sys
 
-def fix_test_file(path):
-    if not os.path.exists(path):
-        print(f"File not found: {path}")
-        return
-        
-    with open(path, 'r') as f:
+def fix_publish_program(file_path):
+    with open(file_path, 'r') as f:
         content = f.read()
 
-    # Fix ProgramInitItem initializations missing fields
-    def fix_init_item(match):
-        inner = match.group(1)
-        if 'creator:' not in inner:
-            inner = inner.rstrip()
-            if inner and not inner.endswith(','):
-                inner += ','
-            inner += "\n            creator: admin.clone(),"
-        if 'initial_liquidity:' not in inner:
-            inner = inner.rstrip()
-            if inner and not inner.endswith(','):
-                inner += ','
-            inner += "\n            initial_liquidity: None,"
-        return f"ProgramInitItem {{{inner}\n        }}"
-
-    content = re.sub(r'ProgramInitItem\s*\{([^}]*)\}', fix_init_item, content)
-
-    # Fix init_program calls (handling 3, 4, 5, 6-arg variants to make them all 6-arg for CLIENT)
-    # The client signature is (program_id, authorized_payout_key, token_address, creator, initial_liquidity, reference_hash)
+    # Pattern: client.init_program(program_id_expr, ...)
+    # and we want to find the following .publish_program()
     
-    # 3 args -> 6 args
-    # Pattern: .init_program(&a, &b, &c)
-    content = re.sub(r'(\.init_program\([^,)]+,[^,)]+,[^,)]+)\)', r'\1, &admin.clone(), &None, &None)', content)
+    # We'll do a line-by-line pass with a state machine for each file.
+    lines = content.split('\n')
+    new_lines = []
     
-    # 4 args -> 6 args (rare but just in case)
-    content = re.sub(r'(\.init_program\([^,)]+,[^,)]+,[^,)]+,[^,)]+)\)', r'\1, &None, &None)', content)
+    # We'll track the last seen program_id expression for each client variable
+    last_program_ids = {} # {client_var: id_expr}
+    
+    for i, line in enumerate(lines):
+        # Match init_program call: client.init_program(ID, ...)
+        init_match = re.search(r'(\w+)\.init_program\(\s*&?([^,]+),', line)
+        if init_match:
+            client_var = init_match.group(1)
+            id_expr = init_match.group(2).strip()
+            last_program_ids[client_var] = id_expr
+            
+        # Also match init_program_with_metadata, etc.
+        init_match_v2 = re.search(r'(\w+)\.init_program_with_metadata\(\s*&?([^,]+),', line)
+        if init_match_v2:
+            client_var = init_match_v2.group(1)
+            id_expr = init_match_v2.group(2).strip()
+            last_program_ids[client_var] = id_expr
 
-    # 5 args -> 6 args
-    content = re.sub(r'(\.init_program\([^,)]+,[^,)]+,[^,)]+,[^,)]+,[^,)]+)\)', r'\1, &None)', content)
+        # Match publish_program() call
+        publish_match = re.search(r'(\w+)\.(?:try_)?publish_program\(\)', line)
+        if publish_match:
+            client_var = publish_match.group(1)
+            id_expr = last_program_ids.get(client_var)
+            
+            # Special case for helpers where program_id is a parameter
+            if not id_expr and "program_id" in content:
+                # Check if we are inside a function that has program_id as parameter
+                # This is a bit heuristic
+                if "program_id" in content: id_expr = "program_id"
 
-    with open(path, 'w') as f:
-        f.write(content)
+            if id_expr:
+                # If id_expr starts with & and we are passing to publish_program which takes String, 
+                # we might need to be careful, but Soroban clients usually take &String.
+                line = line.replace('.publish_program()', f'.publish_program(&{id_expr})')
+                line = line.replace('.try_publish_program()', f'.try_publish_program(&{id_expr})')
+        
+        new_lines.append(line)
+        
+    new_content = '\n'.join(new_lines)
+    if new_content != content:
+        with open(file_path, 'w') as f:
+            f.write(new_content)
+        return True
+    return False
 
-# List of files to fix
-files = [
+test_files = [
     'contracts/program-escrow/src/test.rs',
     'contracts/program-escrow/src/test_pause.rs',
-    'contracts/program-escrow/src/test_circuit_breaker_audit.rs',
-    'contracts/program-escrow/src/test_full_lifecycle.rs',
+    'contracts/program-escrow/src/test_allowance.rs',
+    'contracts/program-escrow/src/test_batch_operations.rs',
     'contracts/program-escrow/src/test_granular_pause.rs',
-    'contracts/program-escrow/src/reentrancy_tests.rs',
-    'contracts/program-escrow/src/test_reputation.rs',
-    'contracts/program-escrow/src/test_time_weighted_metrics.rs',
-    'contracts/program-escrow/src/rbac_tests.rs',
     'contracts/program-escrow/src/test_lifecycle.rs',
-    'contracts/program-escrow/src/test_metadata_tagging.rs',
+    'contracts/program-escrow/src/test_maintenance_mode.rs',
+    'contracts/program-escrow/src/test_deterministic_error_ordering.rs',
+    'contracts/program-escrow/src/test_dispute_resolution.rs',
+    'contracts/program-escrow/src/test_reputation.rs',
+    'contracts/program-escrow/src/test_read_only_mode.rs',
     'contracts/program-escrow/src/test_claim_period_expiry_cancellation.rs',
-    'contracts/program-escrow/src/test_payouts_splits.rs',
+    'contracts/program-escrow/src/test_time_weighted_metrics.rs',
+    'contracts/program-escrow/src/test_circuit_breaker_audit.rs'
 ]
 
-for f in files:
-    fix_test_file(f)
+for f in test_files:
+    if os.path.exists(f):
+        changed = fix_publish_program(f)
+        print(f"{f}: {'Changed' if changed else 'No change'}")
