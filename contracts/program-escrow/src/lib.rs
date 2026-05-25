@@ -84,6 +84,13 @@
 //! 5. **Complete Audit Trail**: Full payout history tracking
 //! 6. **Overflow Protection**: Safe arithmetic for all calculations
 //!
+//! ## External Audit Preparation
+//!
+//! The public entrypoint inventory, access-control matrix, error-code registry,
+//! threat model, and remediation tracker live in
+//! `docs/security/external-audit-checklist.md`. Keep that checklist in sync with
+//! any new state-mutating entrypoint, new authorization branch, or new error code.
+//!
 //! ## Usage Example
 //!
 //! ```rust

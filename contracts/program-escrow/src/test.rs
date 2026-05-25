@@ -999,6 +999,14 @@ fn test_invalid_role_proposal() {
     // Try to propose same admin - should fail
     client.propose_admin(&admin);
 }
+
+/// Test rate-limit configuration requires admin authorization.
+#[test]
+#[should_panic]
+fn test_update_rate_limit_config_requires_admin() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
     let non_admin = Address::generate(&env);
 
@@ -4792,4 +4800,29 @@ fn test_batch_payout_schema_version_set_on_init() {
     let (client, _admin, _token_client, _token_admin) = setup_program(&env, 0);
     // Version 0 means not yet written (legacy) — any value is acceptable.
     let _v = client.get_batch_payout_schema_version();
+}
+
+#[test]
+fn test_external_audit_checklist_covers_required_scope() {
+    const CHECKLIST: &str = include_str!("../../../docs/security/external-audit-checklist.md");
+
+    for required in [
+        "contracts/program-escrow/",
+        "contracts/bounty_escrow/",
+        "contracts/grainlify-core/",
+        "Reentrancy",
+        "Oracle Manipulation",
+        "Fee Drain",
+        "Draft state incomplete",
+        "Missing test imports",
+        "Unauthorized(1)",
+        "ClaimNotFound(500)",
+        "CIRCUIT_OPEN(1001)",
+        "cargo test -p program-escrow",
+    ] {
+        assert!(
+            CHECKLIST.contains(required),
+            "audit checklist must include required item: {required}"
+        );
+    }
 }
