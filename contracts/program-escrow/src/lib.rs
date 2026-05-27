@@ -931,6 +931,37 @@ pub struct ProgramSpendingState {
 // TOKEN ALLOWLIST TYPES & EVENTS
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// An entry in the token allowlist that stores both the token address and its
+/// decimal precision.
+///
+/// Storing decimals at allowlist-add time avoids a cross-contract call on every
+/// payout and ensures the normalization factor is admin-controlled and auditable.
+///
+/// # Decimal Normalization
+///
+/// All payout `amount` parameters are expressed in **base units** (the smallest
+/// indivisible unit of the token, e.g. 1 = 0.000001 USDC for a 6-decimal token).
+/// The contract does **not** re-scale amounts — callers must supply amounts
+/// already denominated in the token's own base units.
+///
+/// The `decimals` field is stored for off-chain tooling and event emission so
+/// that indexers can display human-readable values without additional RPC calls.
+///
+/// # Upgrade Safety
+///
+/// Stored under `DataKey::TokenAllowlistV2`. Legacy entries under
+/// `DataKey::TokenAllowlist` (plain `Vec<Address>`) are still readable via
+/// `get_allowed_tokens()` for backward compatibility.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AllowedTokenEntry {
+    /// Token contract address.
+    pub token: Address,
+    /// Number of decimal places for this token (e.g. 6 for USDC, 7 for XLM).
+    /// Range: 0–18.
+    pub decimals: u32,
+}
+
 /// Event emitted when the token allowlist is updated (token added or removed).
 ///
 /// ### Topics
@@ -952,6 +983,8 @@ pub struct TokenAllowlistUpdatedEvent {
     pub updated_by: Address,
     /// Ledger timestamp.
     pub timestamp: u64,
+    /// Decimal precision stored for this token (0 when `added = false`).
+    pub decimals: u32,
 }
 
 /// Event emitted when a program initialization is rejected because the
@@ -1000,6 +1033,12 @@ const TOKEN_ALLOWLIST_SCHEMA: Symbol = symbol_short!("TkAlSch");
 /// Increment whenever the allowlist storage layout changes in a breaking way.
 pub const TOKEN_ALLOWLIST_SCHEMA_VERSION_V1: u32 = 1;
 
+/// Maximum allowed token decimal places.
+///
+/// Tokens with more than 18 decimals are rejected at allowlist-add time.
+/// This prevents overflow in normalization arithmetic.
+pub const MAX_TOKEN_DECIMALS: u32 = 18;
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
@@ -1033,6 +1072,19 @@ pub enum DataKey {
     /// `init_program` / `initialize_program`. An empty list means
     /// enforcement is disabled (any token is accepted).
     TokenAllowlist,
+    /// V2 token allowlist: stores `Vec<AllowedTokenEntry>` (address + decimals).
+    ///
+    /// Introduced alongside decimal normalization (issue #1295).
+    /// When this key is present it takes precedence over `TokenAllowlist`.
+    /// Legacy deployments that only have `TokenAllowlist` continue to work
+    /// via the backward-compatible read path in `get_token_allowlist_v2_internal`.
+    TokenAllowlistV2,
+    /// Per-token decimal cache: `DataKey::TokenDecimals(token_address) → u32`.
+    ///
+    /// Written by `add_allowed_token_with_decimals` and read by the payout
+    /// normalization helpers. Stored separately so the decimals can be queried
+    /// in O(1) without scanning the full allowlist.
+    TokenDecimals(Address),
     /// Upgrade-safe schema version marker for token-allowlist storage.
     /// Written on init; increment when the allowlist storage layout changes.
     TokenAllowlistSchemaVersion,
@@ -4397,10 +4449,10 @@ impl ProgramEscrowContract {
     }
 
     // ========================================================================
-    // Token Allowlist
+    // Token Allowlist  (issue #1295 — decimal normalization)
     // ========================================================================
 
-    /// Internal helper: read the current allowlist (empty Vec = enforcement off).
+    /// Internal: read the legacy V1 allowlist (plain `Vec<Address>`).
     fn get_token_allowlist_internal(env: &Env) -> soroban_sdk::Vec<Address> {
         env.storage()
             .instance()
@@ -4408,25 +4460,39 @@ impl ProgramEscrowContract {
             .unwrap_or(Vec::new(env))
     }
 
-    /// Internal helper: enforce the token allowlist.
+    /// Internal: read the V2 allowlist (`Vec<AllowedTokenEntry>`).
     ///
-    /// When the allowlist is **non-empty**, `token_address` must be present.
-    /// When the allowlist is **empty**, any token is accepted (enforcement off).
-    ///
-    /// Emits [`TokenRejectedEvent`] and panics on rejection so the event is
-    /// always visible on-chain before any state mutation.
-    fn enforce_token_allowlist(env: &Env, token_address: &Address, program_id: &String) {
-        let allowlist = Self::get_token_allowlist_internal(env);
-        if allowlist.is_empty() {
-            // Allowlist is empty → enforcement disabled, accept any token.
-            return;
+    /// Falls back to the V1 list (addresses only, decimals = 0) when no V2
+    /// entry exists so legacy deployments continue to work unchanged.
+    fn get_token_allowlist_v2_internal(env: &Env) -> soroban_sdk::Vec<AllowedTokenEntry> {
+        if let Some(v2) = env
+            .storage()
+            .instance()
+            .get::<DataKey, soroban_sdk::Vec<AllowedTokenEntry>>(&DataKey::TokenAllowlistV2)
+        {
+            return v2;
         }
-        for allowed in allowlist.iter() {
-            if allowed == *token_address {
-                return; // Token is permitted.
+        // Upgrade path: promote V1 entries with decimals = 0.
+        let v1 = Self::get_token_allowlist_internal(env);
+        let mut out: soroban_sdk::Vec<AllowedTokenEntry> = Vec::new(env);
+        for addr in v1.iter() {
+            out.push_back(AllowedTokenEntry { token: addr, decimals: 0 });
+        }
+        out
+    }
+
+    /// Internal: enforce the token allowlist.
+    fn enforce_token_allowlist(env: &Env, token_address: &Address, program_id: &String) {
+        // Check V2 first; fall back to V1.
+        let v2 = Self::get_token_allowlist_v2_internal(env);
+        if v2.is_empty() {
+            return; // Enforcement disabled.
+        }
+        for entry in v2.iter() {
+            if entry.token == *token_address {
+                return; // Permitted.
             }
         }
-        // Token not found — emit rejection event then panic.
         env.events().publish(
             (TOKEN_REJECTED,),
             TokenRejectedEvent {
@@ -4439,32 +4505,67 @@ impl ProgramEscrowContract {
         panic!("Token not on allowlist");
     }
 
-    /// Add a token contract address to the allowlist (admin only).
+    /// Internal: look up stored decimals for a token (0 if not found).
     ///
-    /// Once at least one token is on the allowlist, `init_program` /
-    /// `initialize_program` will reject any token not present in the list.
-    /// Adding the first token implicitly enables enforcement.
+    /// Returns the value stored by `add_allowed_token_with_decimals`.
+    /// Returns `0` for tokens added via the legacy `add_allowed_token` path.
+    fn get_token_decimals_internal(env: &Env, token: &Address) -> u32 {
+        env.storage()
+            .instance()
+            .get(&DataKey::TokenDecimals(token.clone()))
+            .unwrap_or(0u32)
+    }
+
+    /// Add a token to the allowlist **with its decimal precision** (admin only).
+    ///
+    /// This is the preferred entrypoint for new deployments.  Storing decimals
+    /// at add-time means payout callers can supply amounts in the token's own
+    /// base units and the contract records the precision for off-chain tooling.
+    ///
+    /// # Parameters
+    /// - `token`    — token contract address
+    /// - `decimals` — number of decimal places (0–18)
     ///
     /// # Errors
-    /// Panics with `"Token already on allowlist"` if the token is already present.
+    /// - Panics `"Token already on allowlist"` if already present.
+    /// - Panics `"Decimals exceed maximum (18)"` if `decimals > 18`.
     ///
     /// # Events
-    /// Emits [`TokenAllowlistUpdatedEvent`] with `added = true`.
-    pub fn add_allowed_token(env: Env, token: Address) {
+    /// Emits [`TokenAllowlistUpdatedEvent`] with `added = true` and the stored
+    /// `decimals` value.
+    pub fn add_allowed_token_with_decimals(env: Env, token: Address, decimals: u32) {
         let admin = Self::require_admin(&env);
-        let mut allowlist = Self::get_token_allowlist_internal(&env);
 
-        // Idempotency guard: reject duplicates explicitly.
-        for existing in allowlist.iter() {
-            if existing == token {
+        if decimals > MAX_TOKEN_DECIMALS {
+            panic!("Decimals exceed maximum (18)");
+        }
+
+        let mut v2 = Self::get_token_allowlist_v2_internal(&env);
+
+        for entry in v2.iter() {
+            if entry.token == token {
                 panic!("Token already on allowlist");
             }
         }
 
-        allowlist.push_back(token.clone());
+        v2.push_back(AllowedTokenEntry { token: token.clone(), decimals });
+
+        // Write V2 list.
         env.storage()
             .instance()
-            .set(&DataKey::TokenAllowlist, &allowlist);
+            .set(&DataKey::TokenAllowlistV2, &v2);
+
+        // Also write the per-token decimal cache for O(1) lookup.
+        env.storage()
+            .instance()
+            .set(&DataKey::TokenDecimals(token.clone()), &decimals);
+
+        // Keep V1 list in sync for backward-compatible readers.
+        let mut v1 = Self::get_token_allowlist_internal(&env);
+        v1.push_back(token.clone());
+        env.storage()
+            .instance()
+            .set(&DataKey::TokenAllowlist, &v1);
 
         env.events().publish(
             (TOKEN_ALLOWLIST_UPDATED,),
@@ -4474,42 +4575,63 @@ impl ProgramEscrowContract {
                 added: true,
                 updated_by: admin,
                 timestamp: env.ledger().timestamp(),
+                decimals,
             },
         );
     }
 
-    /// Remove a token contract address from the allowlist (admin only).
+    /// Add a token to the allowlist without specifying decimals (admin only).
     ///
-    /// If removing the last token, the allowlist becomes empty and enforcement
-    /// is disabled — all tokens are accepted again.
+    /// Decimals default to `0`.  Prefer `add_allowed_token_with_decimals` for
+    /// new programs that need accurate decimal metadata.
     ///
     /// # Errors
-    /// Panics with `"Token not in allowlist"` if the token is not present.
+    /// Panics `"Token already on allowlist"` if already present.
+    pub fn add_allowed_token(env: Env, token: Address) {
+        // Delegate to the decimals variant with decimals = 0.
+        Self::add_allowed_token_with_decimals(env, token, 0);
+    }
+
+    /// Remove a token from the allowlist (admin only).
     ///
-    /// # Events
-    /// Emits [`TokenAllowlistUpdatedEvent`] with `added = false`.
+    /// Removes from both V2 and V1 lists and clears the decimal cache.
     pub fn remove_allowed_token(env: Env, token: Address) {
         let admin = Self::require_admin(&env);
-        let allowlist = Self::get_token_allowlist_internal(&env);
 
-        let mut new_list: soroban_sdk::Vec<Address> = Vec::new(&env);
+        // Remove from V2.
+        let v2 = Self::get_token_allowlist_v2_internal(&env);
+        let mut new_v2: soroban_sdk::Vec<AllowedTokenEntry> = Vec::new(&env);
         let mut found = false;
-        for existing in allowlist.iter() {
-            if existing == token {
+        for entry in v2.iter() {
+            if entry.token == token {
                 found = true;
-                // Skip — effectively removes it.
             } else {
-                new_list.push_back(existing);
+                new_v2.push_back(entry);
             }
         }
-
         if !found {
             panic!("Token not in allowlist");
         }
-
         env.storage()
             .instance()
-            .set(&DataKey::TokenAllowlist, &new_list);
+            .set(&DataKey::TokenAllowlistV2, &new_v2);
+
+        // Remove from V1.
+        let v1 = Self::get_token_allowlist_internal(&env);
+        let mut new_v1: soroban_sdk::Vec<Address> = Vec::new(&env);
+        for addr in v1.iter() {
+            if addr != token {
+                new_v1.push_back(addr);
+            }
+        }
+        env.storage()
+            .instance()
+            .set(&DataKey::TokenAllowlist, &new_v1);
+
+        // Clear decimal cache.
+        env.storage()
+            .instance()
+            .remove(&DataKey::TokenDecimals(token.clone()));
 
         env.events().publish(
             (TOKEN_ALLOWLIST_UPDATED,),
@@ -4519,32 +4641,38 @@ impl ProgramEscrowContract {
                 added: false,
                 updated_by: admin,
                 timestamp: env.ledger().timestamp(),
+                decimals: 0,
             },
         );
     }
 
-    /// Returns `true` if `token` is on the allowlist **or** the allowlist is
-    /// empty (enforcement disabled).
-    ///
-    /// This is a pure view — no auth required.
+    /// Returns `true` if `token` is on the allowlist or the list is empty.
     pub fn is_token_allowed(env: Env, token: Address) -> bool {
-        let allowlist = Self::get_token_allowlist_internal(&env);
-        if allowlist.is_empty() {
-            return true; // Enforcement off.
+        let v2 = Self::get_token_allowlist_v2_internal(&env);
+        if v2.is_empty() {
+            return true;
         }
-        for existing in allowlist.iter() {
-            if existing == token {
+        for entry in v2.iter() {
+            if entry.token == token {
                 return true;
             }
         }
         false
     }
 
-    /// Returns the full token allowlist.
-    ///
-    /// An empty Vec means enforcement is disabled (any token is accepted).
+    /// Returns the full token allowlist as plain addresses (V1-compatible).
     pub fn get_allowed_tokens(env: Env) -> soroban_sdk::Vec<Address> {
         Self::get_token_allowlist_internal(&env)
+    }
+
+    /// Returns the full token allowlist with decimal metadata (V2).
+    pub fn get_allowed_tokens_with_decimals(env: Env) -> soroban_sdk::Vec<AllowedTokenEntry> {
+        Self::get_token_allowlist_v2_internal(&env)
+    }
+
+    /// Returns the stored decimal precision for `token`, or `0` if not found.
+    pub fn get_token_decimals(env: Env, token: Address) -> u32 {
+        Self::get_token_decimals_internal(&env, &token)
     }
 
     /// Returns the token-allowlist storage schema version written during init.
