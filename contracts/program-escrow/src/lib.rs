@@ -1597,6 +1597,41 @@ impl ProgramEscrowContract {
         Ok(results)
     }
 
+    /// Admin-only immediate circuit breaker reset.
+    ///
+    /// Resets the circuit breaker to the `Closed` state and clears the
+    /// failure counters. This is an immediate/hard reset intended for use
+    /// by the contract admin after an incident has been resolved.
+    ///
+    /// Security: caller must be the contract admin (reads `DataKey::Admin` and
+    /// requires that address to sign the transaction). Emits an audit event
+    /// `(circuit, admin_reset)` with `(program_id, admin, timestamp)`.
+    pub fn reset_circuit_breaker(env: Env, program_id: String) -> Result<(), Error> {
+        // Read admin from instance storage and require its auth
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .map_err(|_| Error::Unauthorized)?;
+        admin.require_auth();
+
+        // Close circuit and clear counters (close_circuit resets counts and opened_at)
+        crate::error_recovery::close_circuit(&env);
+
+        // Ensure failure count is cleared as well (defensive)
+        env.storage()
+            .persistent()
+            .set(&crate::error_recovery::CircuitBreakerKey::FailureCount, &0u32);
+
+        // Emit admin reset audit event with program context
+        env.events().publish(
+            (symbol_short!("circuit"), symbol_short!("admin_reset")),
+            (program_id, admin, env.ledger().timestamp()),
+        );
+
+        Ok(())
+    }
+
     fn order_batch_lock_items(env: &Env, items: &Vec<LockItem>) -> soroban_sdk::Vec<LockItem> {
         let mut ordered: soroban_sdk::Vec<LockItem> = Vec::new(env);
         for item in items.iter() {
