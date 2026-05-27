@@ -220,6 +220,13 @@ pub enum ContractError {
     /// that has pending claims or scheduled releases.
     CannotArchiveWithPendingOps = 106,
     
+    /// Program is not in Active status.
+    ///
+    /// This error occurs when attempting to perform operations
+    /// that require the program to be in Active status (e.g., refunds).
+    /// Programs must be published via publish_program() before these operations.
+    ProgramNotActive = 107,
+    
     // =========================================================================
     // Fund Operation Errors (200-299)
     // =========================================================================

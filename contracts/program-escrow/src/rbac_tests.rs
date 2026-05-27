@@ -145,7 +145,7 @@ fn test_pauser_can_reset_and_configure_circuit_breaker() {
 
     setup
         .client
-        .configure_circuit_breaker(&setup.pauser, &5, &2, &20);
+        .configure_circuit_breaker(&setup.pauser, &5, &2, &20, &300);
 }
 
 #[test]
