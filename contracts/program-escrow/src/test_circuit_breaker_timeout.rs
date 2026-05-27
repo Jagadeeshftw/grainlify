@@ -62,7 +62,7 @@ mod test {
             token_client,
         }
     }
-}
+
     fn open_circuit_at_time(setup: &TimeoutTestSetup, timestamp: u64) {
         setup.env.ledger().set_timestamp(timestamp);
         setup.env.as_contract(&setup.client.address, || {
@@ -107,7 +107,10 @@ mod test {
         // After recovery window - should transition to HalfOpen on next operation
         setup.env.ledger().set_timestamp(1350); // 350 seconds later (past 300s window)
         let result = setup.client.try_single_payout(&winner, &100i128, &None);
-        assert!(result.is_ok(), "Payout should succeed - circuit now HalfOpen");
+        assert!(
+            result.is_ok(),
+            "Payout should succeed - circuit now HalfOpen"
+        );
         assert_eq!(get_circuit_state(&setup), CircuitState::HalfOpen);
     }
 
@@ -121,10 +124,13 @@ mod test {
         setup.env.ledger().set_timestamp(1350); // Past recovery window
 
         let winner = Address::generate(&setup.env);
-        
+
         // First operation transitions to HalfOpen
         let result = setup.client.try_single_payout(&winner, &100i128, &None);
-        assert!(result.is_ok(), "First payout should succeed and transition to HalfOpen");
+        assert!(
+            result.is_ok(),
+            "First payout should succeed and transition to HalfOpen"
+        );
         assert_eq!(get_circuit_state(&setup), CircuitState::HalfOpen);
 
         // Second successful operation should close the circuit
@@ -144,7 +150,10 @@ mod test {
         // Any operation should immediately transition to HalfOpen
         let winner = Address::generate(&setup.env);
         let result = setup.client.try_single_payout(&winner, &100i128, &None);
-        assert!(result.is_ok(), "Should succeed immediately with zero recovery window");
+        assert!(
+            result.is_ok(),
+            "Should succeed immediately with zero recovery window"
+        );
         assert_eq!(get_circuit_state(&setup), CircuitState::HalfOpen);
     }
 
@@ -154,9 +163,12 @@ mod test {
         let setup = setup_with_timeout_config(1000, 500);
 
         let status = setup.client.get_circuit_breaker_status();
-        assert_eq!(status.recovery_window, 500, "Status should reflect configured recovery window");
+        assert_eq!(
+            status.recovery_window, 500,
+            "Status should reflect configured recovery window"
+        );
         assert_eq!(status.state, CircuitState::Closed);
-        
+
         open_circuit_at_time(&setup, 1000);
         let status = setup.client.get_circuit_breaker_status();
         assert_eq!(status.state, CircuitState::Open);

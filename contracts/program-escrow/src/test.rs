@@ -3291,6 +3291,27 @@ fn test_idempotency_key_edge_case_empty_string() {
 }
 
 #[test]
+fn test_idempotency_key_invalid_characters() {
+    let env = Env::default();
+    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 10_000);
+
+    let recipient = Address::generate(&env);
+    let invalid_key = String::from_str(&env, "bad key!");
+
+    let result = std::panic::catch_unwind(|| {
+        client.single_payout_idempotent(&recipient, &1000, &Some(invalid_key.clone()));
+    });
+    assert!(result.is_err(), "Should reject idempotency keys with invalid characters");
+}
+
+#[test]
+fn test_validate_idempotency_key_helper_invalid_characters() {
+    assert!(matches!(crate::validate_idempotency_key("ok-123_A"), Ok(())));
+    assert!(matches!(crate::validate_idempotency_key("space not allowed"), Err(BatchError::IdempotencyKeyInvalid)));
+    assert!(matches!(crate::validate_idempotency_key("invalid$key"), Err(BatchError::IdempotencyKeyInvalid)));
+}
+
+#[test]
 fn test_idempotency_key_storage_persistence() {
     let env = Env::default();
     let (client, _admin, _token_client, _token_admin) = setup_program(&env, 10_000);
@@ -3359,8 +3380,8 @@ fn test_idempotency_key_too_long() {
     let (client, _admin, _token_client, _token_admin) = setup_program(&env, 10_000);
 
     let recipient = Address::generate(&env);
-    // Create a key that's too long (> 128 characters)
-    let long_key = String::from_str(&env, "a".repeat(129).as_str());
+    // Create a key that's too long (> 256 characters)
+    let long_key = String::from_str(&env, "a".repeat(257).as_str());
 
     // Should panic with IdempotencyKeyInvalid
     let result = std::panic::catch_unwind(|| {
@@ -3446,8 +3467,8 @@ fn test_idempotency_key_max_length_boundary() {
     let (client, _admin, _token_client, _token_admin) = setup_program(&env, 10_000);
 
     let recipient = Address::generate(&env);
-    // Create a key that's exactly at the max length (128 characters)
-    let max_key = String::from_str(&env, "a".repeat(128).as_str());
+    // Create a key that's exactly at the max length (256 characters)
+    let max_key = String::from_str(&env, "a".repeat(256).as_str());
 
     // Should work fine
     let data = client.single_payout_idempotent(&recipient, &1000, &Some(max_key.clone()));
