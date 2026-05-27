@@ -1010,6 +1010,9 @@ mod test_risk_flags;
 mod test_serialization_compatibility;
 
 #[cfg(test)]
+mod test_pause_event_migration;
+
+#[cfg(test)]
 mod test_payout_splits;
 
 // ========================================================================
