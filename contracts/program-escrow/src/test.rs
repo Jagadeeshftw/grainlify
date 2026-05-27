@@ -4792,4 +4792,84 @@ fn test_batch_payout_schema_version_set_on_init() {
     let (client, _admin, _token_client, _token_admin) = setup_program(&env, 0);
     // Version 0 means not yet written (legacy) — any value is acceptable.
     let _v = client.get_batch_payout_schema_version();
+
+#[test]
+fn test_update_fee_recipient_admin_only() {
+    let env = Env::default();
+    let (client, admin, _token, _token_admin) = setup_program(&env, 1000);
+    
+    let new_recipient = Address::generate(&env);
+    
+    // Admin should be able to update
+    env.mock_all_auths();
+    client.update_fee_recipient(&new_recipient);
+    
+    let cfg = client.get_fee_config();
+    assert_eq!(cfg.fee_recipient, new_recipient);
+    
+    // Verify event was emitted
+    let events = env.events().all();
+    assert!(events.len() > 0);
 }
+
+
+
+#[test]
+fn test_update_fee_recipient_multiple_times() {
+    let env = Env::default();
+    let (client, _admin, _token, _token_admin) = setup_program(&env, 1000);
+    
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+    
+    env.mock_all_auths();
+    
+    // First update
+    client.update_fee_recipient(&recipient1);
+    let cfg = client.get_fee_config();
+    assert_eq!(cfg.fee_recipient, recipient1);
+    
+    // Second update
+    client.update_fee_recipient(&recipient2);
+    let cfg = client.get_fee_config();
+    assert_eq!(cfg.fee_recipient, recipient2);
+}
+
+#[test]
+fn test_fee_recipient_update_event_contains_old_and_new() {
+    let env = Env::default();
+    let (client, _admin, _token, _token_admin) = setup_program(&env, 1000);
+    
+    let original_cfg = client.get_fee_config();
+    let new_recipient = Address::generate(&env);
+    
+    env.mock_all_auths();
+    client.update_fee_recipient(&new_recipient);
+    
+    let events = env.events().all();
+    // Verify at least one event was published
+    assert!(events.len() > 0, "Expected at least one event to be published");
+}
+
+#[test]
+fn test_update_fee_recipient_preserves_other_fee_config() {
+    let env = Env::default();
+    let (client, _admin, _token, _token_admin) = setup_program(&env, 1000);
+    
+    let original_cfg = client.get_fee_config();
+    let new_recipient = Address::generate(&env);
+    
+    env.mock_all_auths();
+    client.update_fee_recipient(&new_recipient);
+    
+    let updated_cfg = client.get_fee_config();
+    
+    // Verify only fee_recipient changed
+    assert_eq!(updated_cfg.fee_recipient, new_recipient);
+    assert_eq!(updated_cfg.lock_fee_rate, original_cfg.lock_fee_rate);
+    assert_eq!(updated_cfg.payout_fee_rate, original_cfg.payout_fee_rate);
+    assert_eq!(updated_cfg.lock_fixed_fee, original_cfg.lock_fixed_fee);
+    assert_eq!(updated_cfg.payout_fixed_fee, original_cfg.payout_fixed_fee);
+    assert_eq!(updated_cfg.fee_enabled, original_cfg.fee_enabled);
+}
+

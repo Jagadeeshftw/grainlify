@@ -206,7 +206,7 @@ mod test {
         env.mock_all_auths();
         let (client, admin) = setup_test(&env);
 
-        client.configure_circuit_breaker(&admin, &5u32, &2u32, &10u32);
+        client.configure_circuit_breaker(&admin, &5u32, &2u32, &10u32, &300u64);
 
         let circuit_events = env.events().all();
         let ev = circuit_events.get(circuit_events.len() - 1).unwrap();
