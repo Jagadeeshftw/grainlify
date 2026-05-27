@@ -1066,7 +1066,60 @@ pub enum DataKey {
     RoleManagementSchemaVersion,
     /// Role management configuration for deterministic behavior.
     RoleManagementConfig,
+    /// Anonymous resolver for a program — maps program_id to AnonymousResolver.
+    AnonymousResolver(String),
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ANONYMIZATION TYPES (Issue #1291)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Resolver address used to anonymize payout recipients for a program.
+///
+/// When set, the resolver acts as an intermediary: the contract pays the
+/// resolver instead of the real recipient, and the resolver is responsible
+/// for forwarding funds off-chain. This keeps recipient identities off-chain
+/// while preserving on-chain auditability of total amounts.
+///
+/// ### Security notes
+/// - Only the admin can set or update the resolver.
+/// - The resolver address is stored per-program so different programs can
+///   use different resolvers.
+/// - Setting the resolver to `None` disables anonymization for that program.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AnonymousResolver {
+    /// The resolver address that receives anonymized payouts.
+    pub resolver: Address,
+    /// Admin that set this resolver.
+    pub set_by: Address,
+    /// Ledger timestamp when the resolver was last updated.
+    pub updated_at: u64,
+}
+
+/// Event emitted when an anonymous resolver is set or updated for a program.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AnonymousResolverSetEvent {
+    pub version: u32,
+    pub program_id: String,
+    pub resolver: Address,
+    pub set_by: Address,
+    pub timestamp: u64,
+}
+
+/// Event emitted when an anonymous resolver is removed from a program.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AnonymousResolverRemovedEvent {
+    pub version: u32,
+    pub program_id: String,
+    pub removed_by: Address,
+    pub timestamp: u64,
+}
+
+const ANONYMOUS_RESOLVER_SET: Symbol = symbol_short!("AnonRslvS");
+const ANONYMOUS_RESOLVER_REMOVED: Symbol = symbol_short!("AnonRslvR");
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -6512,6 +6565,89 @@ pub fn preview_split(
             overall_score_bps,
         }
     }
+
+    // ========================================================================
+    // Anonymization — Issue #1291
+    // ========================================================================
+
+    /// Set or update the anonymous resolver for a program.
+    ///
+    /// The resolver is an intermediary address that receives payouts on behalf
+    /// of real recipients, keeping recipient identities off-chain.
+    ///
+    /// ### Authorization
+    /// Only the contract admin may call this function.
+    ///
+    /// ### Parameters
+    /// - `program_id` – The program to configure.
+    /// - `resolver`   – Address that will receive anonymized payouts.
+    ///
+    /// ### Errors
+    /// Panics if the contract has no admin set or the program does not exist.
+    pub fn set_anonymous_resolver(env: Env, program_id: String, resolver: Address) {
+        let admin = Self::require_admin(&env);
+
+        // Verify the program exists
+        let program_key = DataKey::Program(program_id.clone());
+        if !env.storage().instance().has(&program_key) {
+            panic!("Program not found");
+        }
+
+        let timestamp = env.ledger().timestamp();
+        let record = AnonymousResolver {
+            resolver: resolver.clone(),
+            set_by: admin.clone(),
+            updated_at: timestamp,
+        };
+
+        env.storage()
+            .instance()
+            .set(&DataKey::AnonymousResolver(program_id.clone()), &record);
+
+        env.events().publish(
+            (ANONYMOUS_RESOLVER_SET,),
+            AnonymousResolverSetEvent {
+                version: EVENT_VERSION_V2,
+                program_id,
+                resolver,
+                set_by: admin,
+                timestamp,
+            },
+        );
+    }
+
+    /// Remove the anonymous resolver for a program, disabling anonymization.
+    ///
+    /// ### Authorization
+    /// Only the contract admin may call this function.
+    pub fn remove_anonymous_resolver(env: Env, program_id: String) {
+        let admin = Self::require_admin(&env);
+
+        let key = DataKey::AnonymousResolver(program_id.clone());
+        if !env.storage().instance().has(&key) {
+            panic!("No anonymous resolver set for this program");
+        }
+
+        env.storage().instance().remove(&key);
+
+        let timestamp = env.ledger().timestamp();
+        env.events().publish(
+            (ANONYMOUS_RESOLVER_REMOVED,),
+            AnonymousResolverRemovedEvent {
+                version: EVENT_VERSION_V2,
+                program_id,
+                removed_by: admin,
+                timestamp,
+            },
+        );
+    }
+
+    /// Return the anonymous resolver record for a program, or `None` if not set.
+    pub fn get_anonymous_resolver(env: Env, program_id: String) -> Option<AnonymousResolver> {
+        env.storage()
+            .instance()
+            .get(&DataKey::AnonymousResolver(program_id))
+    }
 }
 
 #[cfg(test)]
@@ -6527,3 +6663,5 @@ mod test_pagination;
 mod rbac_tests;
 #[cfg(test)]
 mod test_batch_receipts;
+#[cfg(test)]
+mod test_anonymization;
