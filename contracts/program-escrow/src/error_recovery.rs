@@ -213,7 +213,7 @@ pub fn get_status(env: &Env) -> CircuitBreakerStatus {
 pub fn check_and_allow(env: &Env) -> Result<(), u32> {
     // Check for automatic timeout transitions first
     check_timeout_transitions(env);
-    
+
     match get_state(env) {
         CircuitState::Open => {
             emit_circuit_event(env, symbol_short!("cb_reject"), get_failure_count(env));
@@ -294,7 +294,7 @@ pub fn record_success(env: &Env) {
 pub fn check_timeout_transitions(env: &Env) {
     let state = get_state(env);
     let now = env.ledger().timestamp();
-    
+
     match state {
         CircuitState::Open => {
             let opened_at: u64 = env
@@ -302,7 +302,7 @@ pub fn check_timeout_transitions(env: &Env) {
                 .persistent()
                 .get(&CircuitBreakerKey::OpenedAt)
                 .unwrap_or(0);
-            
+
             if opened_at > 0 {
                 let config = get_config(env);
                 if now >= opened_at + config.recovery_window {
@@ -329,11 +329,8 @@ fn transition_to_half_open_timeout(env: &Env) {
 
     // Emit event indicating automatic timeout transition
     env.events().publish(
-        (symbol_short!("circuit"), symbol_short!("cb_timeout")),
-        (
-            symbol_short!("auto_half"),
-            env.ledger().timestamp(),
-        ),
+        (symbol_short!("circuit"), symbol_short!("cb_tmout")),
+        (symbol_short!("auto_half"), env.ledger().timestamp()),
     );
 }
 

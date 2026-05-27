@@ -1,0 +1,66 @@
+name: "Benchmark Gate — batch_payout gas regression"
+
+on:
+  pull_request:
+    paths:
+      - "contracts/program-escrow/**"
+      - "contracts/benchmarks/**"
+  push:
+    branches:
+      - master
+      - develop
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  benchmark-gate:
+    name: "batch_payout gas regression gate"
+    runs-on: ubuntu-latest
+
+    env:
+      RUST_LOG: "warn"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            contracts/program-escrow/target/
+          key: ${{ runner.os }}-program-escrow-cargo-${{ hashFiles('contracts/program-escrow/**/Cargo.lock', 'contracts/program-escrow/**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-program-escrow-cargo-
+
+      - name: "CI gate: batch_payout(50) CPU instruction threshold"
+        working-directory: contracts/program-escrow
+        run: cargo test -p program-escrow ci_benchmark_gate_batch_payout_50 -- --nocapture
+
+      - name: "Gas profiling: all batch sizes (informational)"
+        working-directory: contracts/program-escrow
+        continue-on-error: false
+        run: cargo test -p program-escrow test_gas_profile_ -- --nocapture
+
+      - name: Benchmark summary
+        run: |
+          echo "──────────────────────────────────────────────────────────────────"
+          echo "  Benchmark gate complete."
+          echo "  Review [BENCH] and [GAS-PROFILE] lines above for CPU instruction"
+          echo "  counts and trend data."
+          echo ""
+          echo "  CI threshold (50 recipients): 12,000,000 CPU instructions"
+          echo "  Threshold constant: CPU_INSNS_THRESHOLD_50"
+          echo "  Location: contracts/program-escrow/src/test_batch_operations.rs"
+          echo ""
+          echo "  Full documentation:"
+          echo "  docs/gas-optimization/batch-payout-benchmarks.md"
+          echo "──────────────────────────────────────────────────────────────────"

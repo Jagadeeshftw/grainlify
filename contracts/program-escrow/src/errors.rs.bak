@@ -23,7 +23,7 @@
 //! - Error codes are stable and documented for client integration
 //! - All errors are deterministic and reproducible
 
-use soroban_sdk::Error as SorobanError;
+use soroban_sdk::contracterror;
 
 /// Canonical error enum for all public program-escrow entrypoints.
 ///
@@ -941,17 +941,17 @@ impl ContractError {
 // Manual From impls so that contract functions returning Result<T, ContractError>
 // satisfy the soroban contractimpl requirements (which need From<soroban_sdk::Error>
 // for the error type and From<&E> for soroban_sdk::Error).
-impl From<SorobanError> for ContractError {
-    fn from(_e: SorobanError) -> Self {
-        // Fallback: SorobanError -> ContractError conversion is only
+impl From<soroban_sdk::Error> for ContractError {
+    fn from(_e: soroban_sdk::Error) -> Self {
+        // Fallback: soroban_sdk::Error -> ContractError conversion is only
         // invoked by macro-generated client code; contract internals always
         // return concrete ContractError variants directly.
         ContractError::Unauthorized
     }
 }
 
-impl From<&ContractError> for SorobanError {
+impl From<&ContractError> for soroban_sdk::Error {
     fn from(e: &ContractError) -> Self {
-        SorobanError::from_contract_error(*e as u32)
+        soroban_sdk::Error::from_contract_error(*e as u32)
     }
 }

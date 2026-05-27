@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "generated_at": "2025-05-27T00:00:00Z",
+  "network": "testnet",
+  "contract_name": "program-escrow",
+  "function": "batch_payout",
+  "note": "ESTIMATED values — run contracts/scripts/run_testnet_benchmarks.sh against the real testnet to populate with actual on-chain data. ledger_sequence=0 and transaction_hash=PENDING indicate values that have not yet been recorded from a live deployment.",
+  "ci_threshold_cpu_instructions_50": 12000000,
+  "measurements": [
+    {
+      "batch_size": 1,
+      "ledger_sequence": 0,
+      "transaction_hash": "PENDING",
+      "fee_stroops": 1850,
+      "fee_xlm": "0.000185",
+      "cpu_instructions": 480000,
+      "memory_bytes": 68000,
+      "ledger_reads": 8,
+      "ledger_writes": 4,
+      "status": "estimated",
+      "measured_at": "2025-05-27T00:00:00Z"
+    },
+    {
+      "batch_size": 10,
+      "ledger_sequence": 0,
+      "transaction_hash": "PENDING",
+      "fee_stroops": 8200,
+      "fee_xlm": "0.000820",
+      "cpu_instructions": 2100000,
+      "memory_bytes": 210000,
+      "ledger_reads": 17,
+      "ledger_writes": 13,
+      "status": "estimated",
+      "measured_at": "2025-05-27T00:00:00Z"
+    },
+    {
+      "batch_size": 50,
+      "ledger_sequence": 0,
+      "transaction_hash": "PENDING",
+      "fee_stroops": 28500,
+      "fee_xlm": "0.002850",
+      "cpu_instructions": 9800000,
+      "memory_bytes": 890000,
+      "ledger_reads": 57,
+      "ledger_writes": 53,
+      "status": "estimated",
+      "measured_at": "2025-05-27T00:00:00Z"
+    },
+    {
+      "batch_size": 100,
+      "ledger_sequence": 0,
+      "transaction_hash": "PENDING",
+      "fee_stroops": 54000,
+      "fee_xlm": "0.005400",
+      "cpu_instructions": 19200000,
+      "memory_bytes": 1750000,
+      "ledger_reads": 107,
+      "ledger_writes": 103,
+      "status": "estimated",
+      "measured_at": "2025-05-27T00:00:00Z"
+    }
+  ]
+}
