@@ -1022,59 +1022,60 @@ pub enum DataKey {
     DisputeRecord(String),                     // DisputeRecord (single active dispute per contract)
     PayoutIdempotency(String),                 // idempotency_key -> PayoutIdempotencyKey
     HistoryPaginationConfig,         // HistoryPaginationConfig
-    /// Upgrade-safe schema version marker for spend-limit threshold storage.
-    /// Written on init; increment when `MultisigConfig` layout changes.
     SpendLimitSchemaVersion,
-    /// Upgrade-safe schema version marker for pause flags storage.
-    /// Written on init; increment when `PauseFlags` layout changes.
     PauseSchemaVersion,
-    /// Token allowlist: Vec<Address> of permitted token contract addresses.
-    /// When the list is non-empty, only listed tokens may be used in
-    /// `init_program` / `initialize_program`. An empty list means
-    /// enforcement is disabled (any token is accepted).
     TokenAllowlist,
-    /// Upgrade-safe schema version marker for token-allowlist storage.
-    /// Written on init; increment when the allowlist storage layout changes.
     TokenAllowlistSchemaVersion,
-    /// Spending configuration for program-level spend limits.
     SpendingConfig(String),
-    /// Spending state tracking for program-level spend limits.
     SpendingState(String),
-    /// Read-only mode flag. When true, all state-mutating operations are blocked.
     ReadOnlyMode,
-    /// Per-program metadata stored separately for upgrade-safe XDR compatibility.
     Metadata(String),
-    /// Per-program payout-key rotation nonce for replay protection.
     RotationNonce(String),
-    /// Upgrade-safe schema version marker for release trigger execution.
-    /// Tracks deterministic ordering, error reporting, and trigger statistics.
     ReleaseTriggerSchemaVersion,
-    /// Reentrancy guard flag (u32: 1 = NOT_ENTERED, 2 = ENTERED).
     ReentrancyGuard,
-    /// Idempotency key record — keyed by the caller-supplied string key.
-    /// Stores an `IdempotencyRecord` on success or failure for replay detection.
     IdempotencyKey(String),
-    /// Upgrade-safe schema version marker for idempotency key storage.
-    /// Written on init; increment when `IdempotencyRecord` layout changes.
     IdempotencySchemaVersion,
-    /// Upgrade-safe schema version marker for batch payout storage.
-    /// Written on init; increment when batch payout storage layout changes.
     BatchPayoutSchemaVersion,
-    /// Upgrade-safe schema version marker for circuit breaker storage.
-    /// Written on init; increment when circuit breaker storage layout changes.
     CircuitBreakerSchemaVersion,
-    /// Batch receipt keyed by receipt ID.
     BatchReceipt(u64),
-    /// Pending admin address for two-step admin rotation (step 1).
     PendingAdmin,
-    /// Pending controller address for two-step controller rotation (step 1).
     PendingController(String),
-    /// Upgrade-safe schema version marker for role management storage.
-    /// Written on init; increment when role management layout changes.
     RoleManagementSchemaVersion,
-    /// Role management configuration for deterministic behavior.
     RoleManagementConfig,
+    /// Per-program idempotency key index for pruning (program_id -> Vec<String>).
+    IdempotencyKeyIndex(String),
 }
+
+/// Idempotency record stored per (program_id, key) pair.
+///
+/// `expires_at` is the ledger sequence number after which this record is considered
+/// stale and eligible for pruning. A key that is expired is rejected distinctly
+/// from a key that is still valid (duplicate vs. expired).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PayoutIdempotencyKey {
+    /// The idempotency key string supplied by the caller.
+    pub key: String,
+    /// Ledger sequence at which this record was created.
+    pub created_at_ledger: u32,
+    /// Ledger sequence after which this record is considered expired.
+    /// Set to `created_at_ledger + IDEMPOTENCY_KEY_TTL_LEDGERS` on creation.
+    pub expires_at: u32,
+}
+
+/// Event emitted when idempotency keys are pruned.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IdempotencyKeysPrunedEvent {
+    pub version: u32,
+    pub program_id: String,
+    pub pruned_count: u32,
+    pub admin: Address,
+}
+
+const IDEMPOTENCY_KEYS_PRUNED: Symbol = symbol_short!("IdemPrn");
+/// Number of ledgers an idempotency key is valid for (~7 days at 5s/ledger).
+pub const IDEMPOTENCY_KEY_TTL_LEDGERS: u32 = 100_000;
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -4655,11 +4656,13 @@ impl ProgramEscrowContract {
             level = next_level;
         }
         level.get(0).unwrap()
+
     }
 
     fn batch_payout_internal(
         env: Env,
         caller: Option<Address>,
+        idempotency_key: Option<String>,
         recipients: soroban_sdk::Vec<Address>,
         amounts: soroban_sdk::Vec<i128>,
         idempotency_key: Option<String>,
@@ -5846,6 +5849,100 @@ impl ProgramEscrowContract {
     /// Return the admin address.
     pub fn get_admin(env: Env) -> Option<Address> {
         env.storage().instance().get(&DataKey::Admin)
+    }
+
+    // ========================================================================
+    // Idempotency Key Management
+    // ========================================================================
+
+    /// Check and register an idempotency key for a payout.
+    ///
+    /// - Panics with `ExpiredIdempotencyKey` if the stored key is expired.
+    /// - Panics with `DuplicateIdempotencyKey` if the stored key is still valid.
+    fn check_and_register_idempotency_key(env: &Env, program_id: &String, key: &String) {
+        let current_ledger = env.ledger().sequence();
+        let storage_key = DataKey::IdempotencyKey(key.clone());
+
+        if let Some(record) = env
+            .storage()
+            .instance()
+            .get::<DataKey, PayoutIdempotencyKey>(&storage_key)
+        {
+            if current_ledger > record.expires_at {
+                panic!("ExpiredIdempotencyKey");
+            } else {
+                panic!("DuplicateIdempotencyKey");
+            }
+        }
+
+        let record = PayoutIdempotencyKey {
+            key: key.clone(),
+            created_at_ledger: current_ledger,
+            expires_at: current_ledger
+                .checked_add(IDEMPOTENCY_KEY_TTL_LEDGERS)
+                .unwrap_or(u32::MAX),
+        };
+        env.storage().instance().set(&storage_key, &record);
+
+        let index_key = DataKey::IdempotencyKeyIndex(program_id.clone());
+        let mut index: soroban_sdk::Vec<String> = env
+            .storage()
+            .instance()
+            .get(&index_key)
+            .unwrap_or(Vec::new(env));
+        index.push_back(key.clone());
+        env.storage().instance().set(&index_key, &index);
+    }
+
+    /// Prune expired idempotency keys for a program. Admin only.
+    /// Returns number of keys pruned.
+    pub fn prune_idempotency_keys(env: Env, program_id: String, max_prune: u32) -> u32 {
+        let admin = Self::require_admin(&env);
+        let current_ledger = env.ledger().sequence();
+        let index_key = DataKey::IdempotencyKeyIndex(program_id.clone());
+
+        let index: soroban_sdk::Vec<String> = env
+            .storage()
+            .instance()
+            .get(&index_key)
+            .unwrap_or(Vec::new(&env));
+
+        let mut pruned: u32 = 0;
+        let mut remaining: soroban_sdk::Vec<String> = Vec::new(&env);
+
+        for raw_key in index.iter() {
+            if pruned >= max_prune {
+                remaining.push_back(raw_key);
+                continue;
+            }
+            let storage_key = DataKey::IdempotencyKey(raw_key.clone());
+            if let Some(record) = env
+                .storage()
+                .instance()
+                .get::<DataKey, PayoutIdempotencyKey>(&storage_key)
+            {
+                if current_ledger > record.expires_at {
+                    env.storage().instance().remove(&storage_key);
+                    pruned += 1;
+                } else {
+                    remaining.push_back(raw_key);
+                }
+            }
+        }
+
+        env.storage().instance().set(&index_key, &remaining);
+
+        env.events().publish(
+            (IDEMPOTENCY_KEYS_PRUNED,),
+            IdempotencyKeysPrunedEvent {
+                version: EVENT_VERSION_V2,
+                program_id,
+                pruned_count: pruned,
+                admin,
+            },
+        );
+
+        pruned
     }
 }
 
