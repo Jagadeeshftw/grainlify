@@ -145,6 +145,7 @@ use soroban_sdk::xdr::ToXdr;
 
 mod errors;
 pub use errors::BatchPayoutError;
+use errors::ContractError;
 
 // Event types
 const PROGRAM_INITIALIZED: Symbol = symbol_short!("PrgInit");
@@ -156,6 +157,7 @@ const PAYOUT: Symbol = symbol_short!("Payout");
 const EVENT_VERSION_V2: u32 = 2;
 const PAUSE_STATE_CHANGED: Symbol = symbol_short!("PauseSt");
 const PAUSE_STATE_CHANGED_V2: Symbol = symbol_short!("PauseStV2");
+const AUTO_UNPAUSE: Symbol = symbol_short!("AutoUnpse");
 const MAINTENANCE_MODE_CHANGED: Symbol = symbol_short!("MaintSt");
 const PROGRAM_RISK_FLAGS_UPDATED: Symbol = symbol_short!("pr_risk");
 const PROGRAM_REGISTRY: Symbol = symbol_short!("ProgReg");
@@ -875,7 +877,7 @@ const SPEND_LIMIT_EXCEEDED: Symbol = symbol_short!("SpLimExc");
 const SPEND_LIMIT_SCHEMA: Symbol = symbol_short!("SpLimSch");
 const IDEMPOTENCY_SCHEMA: Symbol = symbol_short!("IdempSch");
 const IDEMPOTENCY_KEY_USED: Symbol = symbol_short!("IdempUsed");
-const ROLE_MANAGEMENT_SCHEMA: Symbol = symbol_short!("RoleMgmtSch");
+const ROLE_MANAGEMENT_SCHEMA: Symbol = symbol_short!("RolMgmSch");
 
 // Event symbol for per-window program spend limit enforcement
 const PROG_SPEND_LIMIT: Symbol = symbol_short!("prg_lim");
@@ -1084,6 +1086,12 @@ pub struct PauseFlags {
     pub refund_paused: bool,
     pub pause_reason: Option<String>,
     pub paused_at: u64,
+    /// Ledger timestamp after which lock_paused is automatically cleared (None = manual-only).
+    pub lock_unpause_at: Option<u64>,
+    /// Ledger timestamp after which release_paused is automatically cleared (None = manual-only).
+    pub release_unpause_at: Option<u64>,
+    /// Ledger timestamp after which refund_paused is automatically cleared (None = manual-only).
+    pub refund_unpause_at: Option<u64>,
 }
 
 #[contracttype]
@@ -1122,6 +1130,29 @@ pub struct PauseStateChangedV2 {
     pub admin: Address,
     pub reason: Option<String>,
     pub timestamp: u64,
+    pub receipt_id: u64,
+}
+
+/// Emitted when a pause mode is automatically cleared because its TTL expired.
+///
+/// ### Topics
+/// `(AUTO_UNPAUSE, operation_symbol)`
+///
+/// ### Security notes
+/// - `actor` is always "system" — triggered by guard logic, not a user call.
+/// - Emitted at most once per mode per guard invocation (not per repeated call).
+/// - Only emitted when `current_ledger_timestamp > unpause_at` (strictly greater).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AutoUnpauseEvent {
+    pub version: u32,
+    pub operation: Symbol,
+    /// Always "system" — the auto-unpause was triggered by the guard, not an admin.
+    pub actor: String,
+    /// The TTL threshold that was exceeded.
+    pub unpause_at: u64,
+    /// The ledger timestamp at which auto-unpause was triggered.
+    pub triggered_at: u64,
     pub receipt_id: u64,
 }
 
@@ -1351,8 +1382,8 @@ pub enum BatchError {
     IdempotencyKeyConflict = 410,
     IdempotencyKeyInvalid = 411,
     InvalidMerkleRoot = 409,
-    BatchReceiptNotFound = 410,
-    InvalidPaginationLimit = 411,
+    BatchReceiptNotFound = 414,
+    InvalidPaginationLimit = 415,
     PaginationLimitExceeded = 412,
     InvalidPaginationOffset = 413,
 }
@@ -1552,18 +1583,18 @@ impl ProgramEscrowContract {
         Ok(())
     }
 
-    fn validate_pagination(env: &Env, limit: u32) -> Result<(), Error> {
+    fn validate_pagination(env: &Env, limit: u32) -> Result<(), BatchError> {
         if limit == 0 {
-            return Err(Error::InvalidPaginationLimit);
+            return Err(BatchError::InvalidPaginationLimit);
         }
-        
+
         // Validate schema version for upgrade safety
         Self::validate_pagination_schema(env)
-            .map_err(|_| Error::InvalidPaginationOffset)?;
-        
+            .map_err(|_| BatchError::InvalidPaginationOffset)?;
+
         let cfg = Self::get_history_pagination_config(env);
         if limit > cfg.max_limit {
-            return Err(Error::PaginationLimitExceeded);
+            return Err(BatchError::PaginationLimitExceeded);
         }
         Ok(())
     }
@@ -1996,6 +2027,9 @@ impl ProgramEscrowContract {
                     refund_paused: false,
                     pause_reason: None,
                     paused_at: 0,
+                    lock_unpause_at: None,
+                    release_unpause_at: None,
+                    refund_unpause_at: None,
                 },
             );
         }
@@ -2833,6 +2867,9 @@ impl ProgramEscrowContract {
                 refund_paused: false,
                 pause_reason: None,
                 paused_at: 0,
+                lock_unpause_at: None,
+                release_unpause_at: None,
+                refund_unpause_at: None,
             },
         );
         Self::ensure_history_pagination_config(&env);
@@ -3114,7 +3151,7 @@ impl ProgramEscrowContract {
     }
 
     /// Get role management schema version for testing.
-    pub fn get_role_management_schema_version(env: Env) -> u32 {
+    pub fn get_role_mgmt_schema_ver(env: Env) -> u32 {
         env.storage()
             .instance()
             .get(&DataKey::RoleManagementSchemaVersion)
@@ -3542,13 +3579,18 @@ impl ProgramEscrowContract {
             .unwrap_or_else(|| Vec::new(&env))
     }
 
-    /// Update pause flags (admin only)
+    /// Update pause flags (admin only).
+    ///
+    /// `unpause_at` is an optional ledger timestamp (seconds since epoch) after which the
+    /// pause modes being set to `true` in this call will be automatically cleared by the
+    /// guard logic. Pass `None` for permanent (manual-only) pause.
     pub fn set_paused(
         env: Env,
         lock: Option<bool>,
         release: Option<bool>,
         refund: Option<bool>,
         reason: Option<String>,
+        unpause_at: Option<u64>,
     ) {
         if !env.storage().instance().has(&DataKey::Admin) {
             panic!("Not initialized");
@@ -3567,6 +3609,8 @@ impl ProgramEscrowContract {
         if let Some(paused) = lock {
             let previous_paused = flags.lock_paused;
             flags.lock_paused = paused;
+            // Store or clear TTL for this mode.
+            flags.lock_unpause_at = if paused { unpause_at } else { None };
             let receipt_id = Self::increment_receipt_id(&env);
             env.events().publish(
                 (PAUSE_STATE_CHANGED,),
@@ -3597,6 +3641,7 @@ impl ProgramEscrowContract {
         if let Some(paused) = release {
             let previous_paused = flags.release_paused;
             flags.release_paused = paused;
+            flags.release_unpause_at = if paused { unpause_at } else { None };
             let receipt_id = Self::increment_receipt_id(&env);
             env.events().publish(
                 (PAUSE_STATE_CHANGED,),
@@ -3627,6 +3672,7 @@ impl ProgramEscrowContract {
         if let Some(paused) = refund {
             let previous_paused = flags.refund_paused;
             flags.refund_paused = paused;
+            flags.refund_unpause_at = if paused { unpause_at } else { None };
             let receipt_id = Self::increment_receipt_id(&env);
             env.events().publish(
                 (PAUSE_STATE_CHANGED,),
@@ -3764,6 +3810,9 @@ impl ProgramEscrowContract {
                 refund_paused: false,
                 pause_reason: None,
                 paused_at: 0,
+                lock_unpause_at: None,
+                release_unpause_at: None,
+                refund_unpause_at: None,
             })
     }
 
@@ -3790,20 +3839,109 @@ impl ProgramEscrowContract {
             .unwrap_or(0)
     }
 
-    /// Check if an operation is paused
+    /// Check if an operation is paused, applying TTL-based auto-unpause if needed.
+    ///
+    /// If a pause mode has `unpause_at` set and the current ledger timestamp strictly
+    /// exceeds that value, the mode is automatically cleared, storage is updated, and
+    /// an `AUTO_UNPAUSE` event is emitted with `actor = "system"`. This is an O(1)
+    /// check with no iteration. Repeated calls after clearing do NOT re-emit.
     fn check_paused(env: &Env, operation: Symbol) -> bool {
         if Self::is_maintenance_mode(env.clone()) && operation == symbol_short!("lock") {
             return true;
         }
-        let flags = Self::get_pause_flags(env);
-        if operation == symbol_short!("lock") {
-            return flags.lock_paused;
-        } else if operation == symbol_short!("release") {
-            return flags.release_paused;
-        } else if operation == symbol_short!("refund") {
-            return flags.refund_paused;
+
+        let mut flags = Self::get_pause_flags(env);
+        let current_time = env.ledger().timestamp();
+        let mut flags_changed = false;
+
+        // TTL check for lock mode.
+        if flags.lock_paused {
+            if let Some(unpause_at) = flags.lock_unpause_at {
+                if current_time > unpause_at {
+                    flags.lock_paused = false;
+                    flags.lock_unpause_at = None;
+                    flags_changed = true;
+                    let receipt_id = Self::increment_receipt_id(env);
+                    env.events().publish(
+                        (AUTO_UNPAUSE, symbol_short!("lock")),
+                        AutoUnpauseEvent {
+                            version: EVENT_VERSION_V2,
+                            operation: symbol_short!("lock"),
+                            actor: String::from_str(env, "system"),
+                            unpause_at,
+                            triggered_at: current_time,
+                            receipt_id,
+                        },
+                    );
+                }
+            }
         }
-        false
+
+        // TTL check for release mode.
+        if flags.release_paused {
+            if let Some(unpause_at) = flags.release_unpause_at {
+                if current_time > unpause_at {
+                    flags.release_paused = false;
+                    flags.release_unpause_at = None;
+                    flags_changed = true;
+                    let receipt_id = Self::increment_receipt_id(env);
+                    env.events().publish(
+                        (AUTO_UNPAUSE, symbol_short!("release")),
+                        AutoUnpauseEvent {
+                            version: EVENT_VERSION_V2,
+                            operation: symbol_short!("release"),
+                            actor: String::from_str(env, "system"),
+                            unpause_at,
+                            triggered_at: current_time,
+                            receipt_id,
+                        },
+                    );
+                }
+            }
+        }
+
+        // TTL check for refund mode.
+        if flags.refund_paused {
+            if let Some(unpause_at) = flags.refund_unpause_at {
+                if current_time > unpause_at {
+                    flags.refund_paused = false;
+                    flags.refund_unpause_at = None;
+                    flags_changed = true;
+                    let receipt_id = Self::increment_receipt_id(env);
+                    env.events().publish(
+                        (AUTO_UNPAUSE, symbol_short!("refund")),
+                        AutoUnpauseEvent {
+                            version: EVENT_VERSION_V2,
+                            operation: symbol_short!("refund"),
+                            actor: String::from_str(env, "system"),
+                            unpause_at,
+                            triggered_at: current_time,
+                            receipt_id,
+                        },
+                    );
+                }
+            }
+        }
+
+        if flags_changed {
+            // Clear shared pause metadata if all modes are now unpaused.
+            let any_paused = flags.lock_paused || flags.release_paused || flags.refund_paused;
+            if !any_paused {
+                flags.pause_reason = None;
+                flags.paused_at = 0;
+            }
+            env.storage().instance().set(&DataKey::PauseFlags, &flags);
+        }
+
+        if operation == symbol_short!("lock") {
+            flags.lock_paused
+        } else if operation == symbol_short!("release") {
+            flags.release_paused
+        } else if operation == symbol_short!("refund") {
+            flags.refund_paused
+        } else {
+            false
+        }
     }
 
     // --- Circuit Breaker & Rate Limit ---
@@ -4802,6 +4940,7 @@ impl ProgramEscrowContract {
             } else {
                 panic!("Operation rejected by circuit breaker");
             }
+        }
         // 8. Pre-validate fees for every entry BEFORE any transfer.
         //    This guarantees atomicity: if any fee would consume an entire payout
         //    the whole batch is rejected with no state changes.
@@ -5508,344 +5647,61 @@ impl ProgramEscrowContract {
         let mut released_count: u32 = 0;
         let mut skipped_count: u32 = 0;
 
-use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype,
-    Address, Env, String, Symbol, Vec, token,
-};
+        // Process schedules in deterministic ascending order by schedule_id.
+        let schedule_count = schedules.len() as u32;
+        let mut idx: u32 = 0;
+        let mut updated_schedules: soroban_sdk::Vec<ProgramReleaseSchedule> = Vec::new(&env);
 
-// ---------------------------------------------------------------------------
-// Errors
-// ---------------------------------------------------------------------------
-
-#[contracterror]
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum Error {
-    NotInitialized     = 1,
-    AlreadyInitialized = 2,
-    Unauthorized       = 3,
-    ProgramNotFound    = 4,
-    InvalidStatus      = 5,
-    AlreadyExists      = 6,
-    InvalidAmount      = 7,
-}
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-/// Lifecycle state of a program.
-///
-/// Storage discriminant (u32):
-///   Draft     = 0  (NEW in v2)
-///   Active    = 1
-///   Completed = 2
-///   Cancelled = 3
-///
-/// IMPORTANT: never reorder or remove variants after deployment.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ProgramStatus {
-    /// Created but not yet published. No deposits accepted.
-    Draft,
-    /// Live — deposits open.
-    Active,
-    /// All payouts made; funds released.
-    Completed,
-    /// Cancelled; funds refunded.
-    Cancelled,
-}
-
-/// Core program data stored on-chain.
-///
-/// v2 changes:
-/// - `status` now starts as Draft (was Active)
-/// - `published_at` is new; None while in Draft
-#[contracttype]
-#[derive(Clone, Debug)]
-pub struct ProgramData {
-    pub program_id:   String,
-    pub name:         String,
-    pub organizer:    Address,
-    pub status:       ProgramStatus,
-    pub token:        Address,
-    pub balance:      i128,
-    pub created_at:   u64,
-    /// Ledger timestamp when publish_program() was called. None in Draft.
-    pub published_at: Option<u64>,
-}
-
-// Storage keys
-#[contracttype]
-pub enum DataKey {
-    Admin,
-    Program(String),
-}
-
-// ---------------------------------------------------------------------------
-// Contract
-// ---------------------------------------------------------------------------
-
-#[contract]
-pub struct ProgramEscrowContract;
-
-#[contractimpl]
-impl ProgramEscrowContract {
-
-    /// Initialise the contract with an admin address.
-    pub fn initialize(env: Env, admin: Address) -> Result<(), Error> {
-        if env.storage().instance().has(&DataKey::Admin) {
-            return Err(Error::AlreadyInitialized);
-        }
-        env.storage().instance().set(&DataKey::Admin, &admin);
-        Ok(())
-    }
-
-    // -----------------------------------------------------------------------
-    // Program management
-    // -----------------------------------------------------------------------
-
-    /// Create a new program in **Draft** status.
-    ///
-    /// # Errors
-    /// - `AlreadyExists`  – program_id already taken.
-    /// - `Unauthorized`   – caller is not the admin.
-    pub fn create_program(
-        env:        Env,
-        program_id: String,
-        name:       String,
-        token:      Address,
-    ) -> Result<(), Error> {
-        let admin: Address = env.storage().instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
-
-        let key = DataKey::Program(program_id.clone());
-        if env.storage().persistent().has(&key) {
-            return Err(Error::AlreadyExists);
+        while idx < schedule_count {
+            let schedule = schedules.get(idx).unwrap();
+            if !schedule.released && schedule.release_timestamp <= now {
+                let contract_balance = token_client.balance(&contract_address);
+                if contract_balance >= schedule.amount {
+                    token_client.transfer(&contract_address, &schedule.recipient, &schedule.amount);
+                    let mut released_schedule = schedule.clone();
+                    released_schedule.released = true;
+                    released_schedule.released_at = Some(now);
+                    released_schedule.released_by = None;
+                    updated_schedules.push_back(released_schedule);
+                    release_history.push_back(ProgramReleaseHistory {
+                        schedule_id: schedule.schedule_id,
+                        recipient: schedule.recipient.clone(),
+                        amount: schedule.amount,
+                        released_at: now,
+                        release_type: ReleaseType::Automatic,
+                    });
+                    program_data.remaining_balance = program_data
+                        .remaining_balance
+                        .checked_sub(schedule.amount)
+                        .unwrap_or(0);
+                    released_count += 1;
+                } else {
+                    updated_schedules.push_back(schedule);
+                    skipped_count += 1;
+                }
+            } else {
+                updated_schedules.push_back(schedule);
+            }
+            idx += 1;
         }
 
-        let program = ProgramData {
-            program_id:   program_id.clone(),
-            name,
-            organizer:    admin,
-            status:       ProgramStatus::Draft,   // v2: starts as Draft
-            token,
-            balance:      0,
-            created_at:   env.ledger().timestamp(),
-            published_at: None,                   // v2: new field
-        };
-
-        env.storage().persistent().set(&key, &program);
-        env.events().publish(
-            (Symbol::new(&env, "program_created"), program_id),
-            ProgramStatus::Draft,
-        );
-        Ok(())
-    }
-
-    /// Transition a program from **Draft** → **Active**.
-    ///
-    /// Once published a program cannot return to Draft.
-    ///
-    /// # Errors
-    /// - `ProgramNotFound` – unknown program_id.
-    /// - `InvalidStatus`   – program is not in Draft.
-    /// - `Unauthorized`    – caller is not the admin.
-    pub fn publish_program(
-        env:        Env,
-        program_id: String,
-    ) -> Result<(), Error> {
-        let admin: Address = env.storage().instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
-
-        let key = DataKey::Program(program_id.clone());
-        let mut program: ProgramData = env.storage().persistent()
-            .get(&key)
-            .ok_or(Error::ProgramNotFound)?;
-
-        if program.status != ProgramStatus::Draft {
-            return Err(Error::InvalidStatus);
-        }
-
-        program.status       = ProgramStatus::Active;
-        program.published_at = Some(env.ledger().timestamp());
-        env.storage().persistent().set(&key, &program);
+        env.storage().instance().set(&SCHEDULES, &updated_schedules);
+        env.storage().instance().set(&RELEASE_HISTORY, &release_history);
+        env.storage().instance().set(&PROGRAM_DATA, &program_data);
 
         env.events().publish(
-            (Symbol::new(&env, "program_published"), program_id),
-            ProgramStatus::Active,
+            (SCHEDULE_RELEASED,),
+            ScheduleTriggerSummaryEvent {
+                version: EVENT_VERSION_V2,
+                program_id: program_data.program_id,
+                triggered_at: now,
+                released_count,
+                skipped_count,
+            },
         );
-        Ok(())
-    }
 
-    /// Deposit tokens into an **Active** program.
-    ///
-    /// # Errors
-    /// - `InvalidStatus`  – program is not Active.
-    /// - `InvalidAmount`  – amount <= 0.
-    pub fn deposit_funds(
-        env:        Env,
-        program_id: String,
-        from:       Address,
-        amount:     i128,
-    ) -> Result<(), Error> {
-        if amount <= 0 {
-            return Err(Error::InvalidAmount);
-        }
-        from.require_auth();
-
-        let key = DataKey::Program(program_id.clone());
-        let mut program: ProgramData = env.storage().persistent()
-            .get(&key)
-            .ok_or(Error::ProgramNotFound)?;
-
-        if program.status != ProgramStatus::Active {
-            return Err(Error::InvalidStatus);
-        }
-
-        let token_client = token::Client::new(&env, &program.token);
-        token_client.transfer(&from, &env.current_contract_address(), &amount);
-
-        program.balance += amount;
-        env.storage().persistent().set(&key, &program);
-        Ok(())
-    }
-
-    /// Complete a program, releasing balance to the organizer.
-    ///
-    /// # Errors
-    /// - `InvalidStatus` – program is not Active.
-    /// - `Unauthorized`  – caller is not the admin.
-    pub fn complete_program(
-        env:        Env,
-        program_id: String,
-    ) -> Result<(), Error> {
-        let admin: Address = env.storage().instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
-
-        let key = DataKey::Program(program_id.clone());
-        let mut program: ProgramData = env.storage().persistent()
-            .get(&key)
-            .ok_or(Error::ProgramNotFound)?;
-
-        if program.status != ProgramStatus::Active {
-            return Err(Error::InvalidStatus);
-        }
-        
-        // Check that program is in Active status before allowing refund
-        let program_data: ProgramData = env
-            .storage()
-            .instance()
-            .get(&PROGRAM_DATA)
-            .unwrap_or_else(|| panic!("Program not initialized"));
-        
-        if program_data.status != ProgramStatus::Active {
-            panic!("{}", errors::ContractError::ProgramNotActive as u32);
-        }
-        
-        claim_period::cancel_claim(&env, &program_id, claim_id, &admin)
-    }
-
-    /// Retrieve a stored claim record by program and claim id.
-    pub fn get_claim(env: Env, program_id: String, claim_id: u64) -> claim_period::ClaimRecord {
-        claim_period::get_claim(&env, &program_id, claim_id)
-    }
-
-    /// Set the default claim window used by off-chain workflows.
-    pub fn set_claim_window(env: Env, admin: Address, window_seconds: u64) {
-        claim_period::set_claim_window(&env, &admin, window_seconds)
-    }
-
-    /// Return the configured default claim window duration in seconds.
-    pub fn get_claim_window(env: Env) -> u64 {
-        claim_period::get_claim_window(&env)
-    }
-
-    // ========================================================================
-    // Dispute Resolution
-    // ========================================================================
-
-        if program.balance > 0 {
-            let token_client = token::Client::new(&env, &program.token);
-            token_client.transfer(
-                &env.current_contract_address(),
-                &program.organizer,
-                &program.balance,
-            );
-        }
-
-        program.status  = ProgramStatus::Completed;
-        program.balance = 0;
-        env.storage().persistent().set(&key, &program);
-
-        env.events().publish(
-            (Symbol::new(&env, "program_completed"), program_id),
-            ProgramStatus::Completed,
-        );
-        Ok(())
-    }
-
-    /// Cancel a Draft or Active program, refunding balance.
-    ///
-    /// # Errors
-    /// - `InvalidStatus` – program is Completed or already Cancelled.
-    /// - `Unauthorized`  – caller is not the admin.
-    pub fn cancel_program(
-        env:            Env,
-        program_id:     String,
-        refund_address: Address,
-    ) -> Result<(), Error> {
-        let admin: Address = env.storage().instance()
-            .get(&DataKey::Admin)
-            .ok_or(Error::NotInitialized)?;
-        admin.require_auth();
-
-        let key = DataKey::Program(program_id.clone());
-        let mut program: ProgramData = env.storage().persistent()
-            .get(&key)
-            .ok_or(Error::ProgramNotFound)?;
-
-        if matches!(program.status, ProgramStatus::Completed | ProgramStatus::Cancelled) {
-            return Err(Error::InvalidStatus);
-        }
-
-        if program.balance > 0 {
-            let token_client = token::Client::new(&env, &program.token);
-            token_client.transfer(
-                &env.current_contract_address(),
-                &refund_address,
-                &program.balance,
-            );
-        }
-
-        program.status  = ProgramStatus::Cancelled;
-        program.balance = 0;
-        env.storage().persistent().set(&key, &program);
-
-        env.events().publish(
-            (Symbol::new(&env, "program_cancelled"), program_id),
-            ProgramStatus::Cancelled,
-        );
-        Ok(())
-    }
-
-    // -----------------------------------------------------------------------
-    // View methods
-    // -----------------------------------------------------------------------
-
-    /// Return the data for a program, or None if not found.
-    pub fn get_program(env: Env, program_id: String) -> Option<ProgramData> {
-        env.storage().persistent().get(&DataKey::Program(program_id))
-    }
-
-    /// Return the admin address.
-    pub fn get_admin(env: Env) -> Option<Address> {
-        env.storage().instance().get(&DataKey::Admin)
+        reentrancy_guard::release(&env);
+        released_count
     }
 }
 
@@ -5855,7 +5711,8 @@ mod test_pagination;
 // Pre-existing broken test modules excluded until their referenced types/methods are implemented:
 // #[cfg(test)] mod test_archival;
 // #[cfg(test)] mod test_batch_operations;
-// #[cfg(test)] mod test_pause;
+#[cfg(test)]
+mod test_pause;
 
 #[cfg(test)]
 #[cfg(any())]
