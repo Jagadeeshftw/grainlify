@@ -42,7 +42,6 @@ use soroban_sdk::contracterror;
 /// Error messages are intentionally generic and do not contain sensitive data
 /// such as addresses, amounts, or internal state. This prevents information
 /// leakage through error channels.
-#[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum ContractError {
@@ -164,7 +163,17 @@ pub enum ContractError {
     /// This error occurs when the caller has exceeded
     /// the allowed rate for operations.
     RateLimitExceeded = 18,
-    
+
+    /// Pagination limit is zero.
+    ///
+    /// This error occurs when a pagination query is called with `limit = 0`.
+    InvalidPaginationLimit = 19,
+
+    /// Pagination limit exceeds the configured maximum.
+    ///
+    /// This error occurs when `limit > HistoryPaginationConfig::max_limit`.
+    PaginationLimitExceedsMax = 20,
+
     // =========================================================================
     // Program Management Errors (100-199)
     // =========================================================================
@@ -210,6 +219,13 @@ pub enum ContractError {
     /// This error occurs when attempting to archive a program
     /// that has pending claims or scheduled releases.
     CannotArchiveWithPendingOps = 106,
+    
+    /// Program is not in Active status.
+    ///
+    /// This error occurs when attempting to perform operations
+    /// that require the program to be in Active status (e.g., refunds).
+    /// Programs must be published via publish_program() before these operations.
+    ProgramNotActive = 107,
     
     // =========================================================================
     // Fund Operation Errors (200-299)
@@ -525,6 +541,28 @@ pub enum ContractError {
     SpendLimitExceeded = 904,
     
     // =========================================================================
+    // Release Trigger Errors (905-909)
+    // =========================================================================
+    
+    /// Release trigger encountered a critical error.
+    ///
+    /// This error occurs when the release trigger encounters
+    /// unrecoverable internal state corruption or determinism violation.
+    ReleaseTriggerFailed = 905,
+    
+    /// No schedules were due for processing.
+    ///
+    /// This error occurs when trigger_program_releases is called
+    /// but no schedules meet the release timestamp threshold.
+    NoSchedulesDue = 906,
+    
+    /// Determinism violation detected during trigger.
+    ///
+    /// This error occurs when the trigger execution detects
+    /// a violation of the deterministic ordering guarantee.
+    DeterminismViolation = 907,
+    
+    // =========================================================================
     // Batch Recovery Errors (1000-1099)
     // =========================================================================
     
@@ -605,6 +643,154 @@ pub enum ContractError {
     /// This error occurs when a batch item has exceeded
     /// the maximum number of retry attempts.
     MaxRetriesExceeded = 1012,
+
+    // =========================================================================
+    // Token Allowlist Errors (1100-1199)
+    // =========================================================================
+
+    /// Token is not on the allowlist.
+    ///
+    /// This error occurs when a program initialization is attempted with a
+    /// token contract address that has not been added to the contract's
+    /// token allowlist. When the allowlist is non-empty, only explicitly
+    /// permitted tokens may be used.
+    ///
+    /// Resolution: ask the contract admin to add the token via
+    /// `add_allowed_token`, or use a token that is already on the list.
+    TokenNotAllowed = 1100,
+
+    /// Token is already on the allowlist.
+    ///
+    /// This error occurs when attempting to add a token that is already
+    /// present in the allowlist.
+    TokenAlreadyAllowed = 1101,
+
+    /// Token is not on the allowlist and cannot be removed.
+    ///
+    /// This error occurs when attempting to remove a token that is not
+    /// present in the allowlist.
+    TokenNotInAllowlist = 1102,
+
+    // =========================================================================
+    // Role Management Errors (1200-1299)
+    // =========================================================================
+
+    /// Admin rotation already in progress.
+    ///
+    /// This error occurs when attempting to start a new admin rotation
+    /// while another rotation is already pending.
+    AdminRotationInProgress = 1200,
+
+    /// No admin rotation in progress.
+    ///
+    /// This error occurs when attempting to accept or cancel an admin
+    /// rotation when no rotation is pending.
+    NoAdminRotationInProgress = 1201,
+
+    /// Invalid admin rotation state.
+    ///
+    /// This error occurs when admin rotation state is inconsistent
+    /// or corrupted.
+    InvalidAdminRotationState = 1202,
+
+    /// Controller rotation already in progress.
+    ///
+    /// This error occurs when attempting to start a new controller rotation
+    /// while another rotation is already pending for the same program.
+    ControllerRotationInProgress = 1203,
+
+    /// No controller rotation in progress.
+    ///
+    /// This error occurs when attempting to accept or cancel a controller
+    /// rotation when no rotation is pending.
+    NoControllerRotationInProgress = 1204,
+
+    /// Invalid controller rotation state.
+    ///
+    /// This error occurs when controller rotation state is inconsistent
+    /// or corrupted.
+    InvalidControllerRotationState = 1205,
+
+    /// Role transition period expired.
+    ///
+    /// This error occurs when attempting to complete a role rotation
+    /// after the allowed transition period has expired.
+    RoleTransitionExpired = 1206,
+
+    /// Invalid role proposal.
+    ///
+    /// This error occurs when the proposed role is invalid
+    /// (e.g., same as current, zero address, etc.).
+    InvalidRoleProposal = 1207,
+
+    /// Role rotation not allowed.
+    ///
+    /// This error occurs when role rotation is temporarily disabled
+    /// due to contract state (e.g., emergency mode, dispute, etc.).
+    RoleRotationNotAllowed = 1208,
+}
+
+/// Explicit error enum for all batch payout failure modes.
+///
+/// Used as the `Err` variant of `batch_payout` / `batch_payout_by` so callers
+/// receive a typed, stable error code instead of an opaque panic string.
+///
+/// ## Error Code Ranges
+/// Codes 3100–3199 are reserved for batch-payout errors.
+///
+/// ## Upgrade Safety
+/// Codes are stable. New variants may be added; existing codes will not change.
+#[soroban_sdk::contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum BatchPayoutError {
+    /// Program storage has not been initialized.
+    NotInitialized = 3100,
+    /// Release operations are paused.
+    Paused = 3101,
+    /// A dispute is open; payouts are blocked.
+    DisputeOpen = 3102,
+    /// Caller is not the authorized payout key, admin, or a permitted delegate.
+    Unauthorized = 3103,
+    /// `recipients` and `amounts` vectors have different lengths.
+    LengthMismatch = 3104,
+    /// Batch contains zero entries.
+    EmptyBatch = 3105,
+    /// At least one amount is zero or negative.
+    ZeroAmount = 3106,
+    /// Summing amounts would overflow `i128`.
+    AmountOverflow = 3107,
+    /// Batch total exceeds the per-program spend threshold.
+    SpendLimitExceeded = 3108,
+    /// Batch total exceeds the program's remaining balance.
+    InsufficientBalance = 3109,
+    /// Circuit breaker is open.
+    CircuitBreakerOpen = 3110,
+    /// Batch contains duplicate recipient addresses.
+    DuplicateRecipient = 3111,
+    /// A payout fee would consume an entire individual payout.
+    FeeConsumesAmount = 3112,
+}
+
+impl BatchPayoutError {
+    /// Returns a stable, human-readable description (no sensitive data).
+    pub fn description(self) -> &'static str {
+        match self {
+            BatchPayoutError::NotInitialized => "Program not initialized",
+            BatchPayoutError::Paused => "Funds Paused",
+            BatchPayoutError::DisputeOpen => "Payout blocked: dispute open",
+            BatchPayoutError::Unauthorized => "Unauthorized",
+            BatchPayoutError::LengthMismatch => "Recipients and amounts vectors must have the same length",
+            BatchPayoutError::EmptyBatch => "Cannot process empty batch",
+            BatchPayoutError::ZeroAmount => "All amounts must be greater than zero",
+            BatchPayoutError::AmountOverflow => "Payout amount overflow",
+            BatchPayoutError::SpendLimitExceeded => "Spend threshold exceeded",
+            BatchPayoutError::InsufficientBalance => "Insufficient balance",
+            BatchPayoutError::CircuitBreakerOpen => "Circuit breaker is OPEN",
+            BatchPayoutError::DuplicateRecipient => "Duplicate recipient in batch",
+            BatchPayoutError::FeeConsumesAmount => "Payout fee consumes entire payout",
+        }
+    }
 }
 
 impl ContractError {
@@ -638,6 +824,8 @@ impl ContractError {
             ContractError::EntryNotFound => "Entry not found",
             ContractError::InvalidConfig => "Invalid configuration",
             ContractError::RateLimitExceeded => "Rate limit exceeded",
+            ContractError::InvalidPaginationLimit => "Pagination limit must be greater than zero",
+            ContractError::PaginationLimitExceedsMax => "Pagination limit exceeds maximum",
             
             // Program Management Errors
             ContractError::ProgramInitFailed => "Program initialization failed",
@@ -725,6 +913,27 @@ impl ContractError {
             ContractError::BatchItemNotFound => "Batch item not found",
             ContractError::BatchItemAlreadyProcessed => "Batch item already processed",
             ContractError::MaxRetriesExceeded => "Maximum retries exceeded",
+
+            // Token Allowlist Errors
+            ContractError::TokenNotAllowed => "Token is not on the allowlist",
+            ContractError::TokenAlreadyAllowed => "Token is already on the allowlist",
+            ContractError::TokenNotInAllowlist => "Token is not on the allowlist and cannot be removed",
+            
+            // Role Management Errors
+            ContractError::AdminRotationInProgress => "Admin rotation already in progress",
+            ContractError::NoAdminRotationInProgress => "No admin rotation in progress",
+            ContractError::InvalidAdminRotationState => "Invalid admin rotation state",
+            ContractError::ControllerRotationInProgress => "Controller rotation already in progress",
+            ContractError::NoControllerRotationInProgress => "No controller rotation in progress",
+            ContractError::InvalidControllerRotationState => "Invalid controller rotation state",
+            ContractError::RoleTransitionExpired => "Role transition period expired",
+            ContractError::InvalidRoleProposal => "Invalid role proposal",
+            ContractError::RoleRotationNotAllowed => "Role rotation not allowed",
+            
+            // Release Trigger / Schedule Errors
+            ContractError::ReleaseTriggerFailed => "Release trigger failed",
+            ContractError::NoSchedulesDue => "No schedules are due for release",
+            ContractError::DeterminismViolation => "Determinism violation detected",
         }
     }
     

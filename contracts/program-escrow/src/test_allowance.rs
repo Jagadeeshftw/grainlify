@@ -33,7 +33,7 @@ fn test_lock_program_funds_from_allowance() {
         &None,
         &None,
     );
-    client.publish_program();
+    client.publish_program(&program_id);
 
     token_admin_client.mint(&depositor, &100_000);
 

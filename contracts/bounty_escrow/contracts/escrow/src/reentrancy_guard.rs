@@ -73,9 +73,14 @@
 use super::DataKey;
 use soroban_sdk::Env;
 
+/// State constants for the reentrancy guard.
+/// Using non-zero values prevents default-zero value confusion.
+const NOT_ENTERED: u32 = 1;
+const ENTERED: u32 = 2;
+
 /// Acquire the reentrancy guard.
 ///
-/// Sets a boolean flag in instance storage.  If the flag is already set,
+/// Sets a u32 flag (ENTERED) in instance storage. If the flag is already set to ENTERED,
 /// this function panics — indicating a re-entrant call.
 ///
 /// # Panics
@@ -83,24 +88,32 @@ use soroban_sdk::Env;
 /// Panics with `"Reentrancy detected"` if the guard has already been
 /// acquired and not yet released within the current execution context.
 pub fn acquire(env: &Env) {
-    if env.storage().instance().has(&DataKey::ReentrancyGuard) {
+    let status: u32 = env
+        .storage()
+        .instance()
+        .get(&DataKey::ReentrancyGuard)
+        .unwrap_or(NOT_ENTERED);
+
+    if status != NOT_ENTERED {
         panic!("Reentrancy detected");
     }
+
     env.storage()
         .instance()
-        .set(&DataKey::ReentrancyGuard, &true);
+        .set(&DataKey::ReentrancyGuard, &ENTERED);
 }
 
 /// Release the reentrancy guard.
 ///
-/// Removes the guard flag from instance storage, allowing the next
+/// Resets the guard flag to NOT_ENTERED in instance storage, allowing the next
 /// top-level invocation to proceed.
 ///
-/// Must be called on the **success path** of every function that called
-/// [`acquire`].  On error/panic paths Soroban's automatic state rollback
-/// clears the flag, so explicit release is not required there.
+/// On error/panic paths Soroban's automatic state rollback clears any mutations
+/// made after `acquire`, so the guard automatically resets if the transaction fails.
 pub fn release(env: &Env) {
-    env.storage().instance().remove(&DataKey::ReentrancyGuard);
+    env.storage()
+        .instance()
+        .set(&DataKey::ReentrancyGuard, &NOT_ENTERED);
 }
 
 /// Query whether the guard is currently held.
@@ -108,5 +121,9 @@ pub fn release(env: &Env) {
 /// Exposed only in test builds to allow assertions in integration tests.
 #[cfg(test)]
 pub fn is_active(env: &Env) -> bool {
-    env.storage().instance().has(&DataKey::ReentrancyGuard)
+    env.storage()
+        .instance()
+        .get::<DataKey, u32>(&DataKey::ReentrancyGuard)
+        .map(|s| s == ENTERED)
+        .unwrap_or(false)
 }

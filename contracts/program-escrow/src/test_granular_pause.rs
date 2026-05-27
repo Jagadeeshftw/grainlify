@@ -63,7 +63,7 @@ fn setup(
         &None::<i128>,
         &None::<soroban_sdk::Bytes>,
     );
-    client.publish_program();
+    client.publish_program(&program_id);
 
     // Fund the contract with tokens and lock them
     if initial_balance > 0 {
@@ -109,7 +109,7 @@ fn setup_claim_context(
         &None::<i128>,
         &None::<soroban_sdk::Bytes>,
     );
-    client.publish_program();
+    client.publish_program(&program_id);
 
     if initial_balance > 0 {
         token_sac.mint(&contract_id, &initial_balance);

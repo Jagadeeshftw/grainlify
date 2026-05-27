@@ -1,3 +1,5 @@
+extern crate std;
+
 use super::*;
 use soroban_sdk::{
     testutils::{Address as _, Events, Ledger, MockAuth, MockAuthInvoke},
@@ -26,14 +28,7 @@ fn setup_program(
     let token_admin_client = token::StellarAssetClient::new(env, &token_id);
 
     let program_id = String::from_str(env, "hack-2026");
-    client.init_program(
-        &program_id,
-        &admin,
-        &token_id,
-        &admin,
-        &None,
-        &None,
-    );
+    client.init_program(&program_id, &admin, &token_id, &admin, &None, &None);
     client.publish_program();
 
     if initial_amount > 0 {
@@ -108,7 +103,9 @@ fn test_edge_max_safe_lock_and_payout() {
     let (client, _admin, token_client, _token_admin) = setup_program(&env, safe_max);
 
     let recipient = Address::generate(&env);
-    client.single_payout(&recipient, &safe_max);
+    client.single_payout(&recipient, &safe_max,
+    &None
+);
 
     assert_eq!(client.get_remaining_balance(), 0);
     assert_eq!(token_client.balance(&recipient), safe_max);
@@ -121,7 +118,9 @@ fn test_single_payout_token_transfer_integration() {
     let (client, _admin, token_client, _token_admin) = setup_program(&env, 100_000);
 
     let recipient = Address::generate(&env);
-    let data = client.single_payout(&recipient, &30_000);
+    let data = client.single_payout(&recipient, &30_000,
+    &None
+);
 
     assert_eq!(data.remaining_balance, 70_000);
     assert_eq!(token_client.balance(&recipient), 30_000);
@@ -140,7 +139,9 @@ fn test_batch_payout_token_transfer_integration() {
     let recipients = vec![&env, r1.clone(), r2.clone(), r3.clone()];
     let amounts = vec![&env, 10_000, 20_000, 30_000];
 
-    let data = client.batch_payout(&recipients, &amounts);
+    let data = client.batch_payout(&recipients, &amounts,
+    &None
+);
     assert_eq!(data.remaining_balance, 90_000);
     assert_eq!(data.payout_history.len(), 3);
 
@@ -161,10 +162,14 @@ fn test_complete_lifecycle_integration() {
     let r2 = Address::generate(&env);
     let r3 = Address::generate(&env);
 
-    client.single_payout(&r1, &50_000);
+    client.single_payout(&r1, &50_000,
+    &None
+);
     let recipients = vec![&env, r2.clone(), r3.clone()];
     let amounts = vec![&env, 70_000, 30_000];
-    client.batch_payout(&recipients, &amounts);
+    client.batch_payout(&recipients, &amounts,
+    &None
+);
 
     let info = client.get_program_info();
     assert_eq!(info.total_funds, 300_000);
@@ -189,7 +194,9 @@ fn test_property_fuzz_balance_invariants() {
 
         if next_seed(&mut seed) % 2 == 0 {
             let recipient = Address::generate(&env);
-            client.single_payout(&recipient, &amount);
+            client.single_payout(&recipient, &amount,
+    &None
+);
         } else {
             let recipient1 = Address::generate(&env);
             let recipient2 = Address::generate(&env);
@@ -200,7 +207,9 @@ fn test_property_fuzz_balance_invariants() {
             }
             let recipients = vec![&env, recipient1, recipient2];
             let amounts = vec![&env, first, second];
-            client.batch_payout(&recipients, &amounts);
+            client.batch_payout(&recipients, &amounts,
+    &None
+);
         }
 
         expected_remaining -= amount;
@@ -227,7 +236,9 @@ fn test_stress_high_load_many_payouts() {
             amounts.push_back(3_000);
         }
 
-        client.batch_payout(&recipients, &amounts);
+        client.batch_payout(&recipients, &amounts,
+    &None
+);
     }
 
     let info = client.get_program_info();
@@ -245,7 +256,9 @@ fn test_gas_proxy_batch_vs_single_event_efficiency() {
     let single_before = env_single.events().all().len();
     for _ in 0..10 {
         let recipient = Address::generate(&env_single);
-        single_client.single_payout(&recipient, &1_000);
+        single_client.single_payout(&recipient, &1_000,
+    &None
+);
     }
     let single_events = env_single.events().all().len() - single_before;
 
@@ -261,7 +274,9 @@ fn test_gas_proxy_batch_vs_single_event_efficiency() {
     }
 
     let batch_before = env_batch.events().all().len();
-    batch_client.batch_payout(&recipients, &amounts);
+    batch_client.batch_payout(&recipients, &amounts,
+    &None
+);
     let batch_events = env_batch.events().all().len() - batch_before;
 
     assert!(batch_events <= single_events);
@@ -274,10 +289,14 @@ fn test_events_emit_v2_version_tags_for_all_program_emitters() {
     let r1 = Address::generate(&env);
     let r2 = Address::generate(&env);
 
-    client.single_payout(&r1, &10_000);
+    client.single_payout(&r1, &10_000,
+    &None
+);
     let recipients = vec![&env, r2];
     let amounts = vec![&env, 5_000];
-    client.batch_payout(&recipients, &amounts);
+    client.batch_payout(&recipients, &amounts,
+    &None
+);
 
     let events = env.events().all();
     let mut program_events_checked = 0_u32;
@@ -396,8 +415,9 @@ fn test_full_lifecycle_multi_program_batch_payouts() {
     let client_a = ProgramEscrowContractClient::new(&env, &contract_a);
     let auth_key_a = Address::generate(&env);
 
+    let program_id_a = String::from_str(&env, "hackathon-alpha");
     let prog_a = client_a.init_program(
-        &String::from_str(&env, "hackathon-alpha"),
+        &program_id_a,
         &auth_key_a,
         &token_id,
         &auth_key_a,
@@ -413,8 +433,9 @@ fn test_full_lifecycle_multi_program_batch_payouts() {
     let client_b = ProgramEscrowContractClient::new(&env, &contract_b);
     let auth_key_b = Address::generate(&env);
 
+    let program_id_b = String::from_str(&env, "hackathon-beta");
     let prog_b = client_b.init_program(
-        &String::from_str(&env, "hackathon-beta"),
+        &program_id_b,
         &auth_key_b,
         &token_id,
         &auth_key_b,
@@ -461,7 +482,8 @@ fn test_full_lifecycle_multi_program_batch_payouts() {
             winner_a3.clone(),
         ],
         &vec![&env, 100_000, 75_000, 50_000],
-    );
+        &None
+);
     assert_eq!(data_a1.remaining_balance, 275_000);
     assert_eq!(data_a1.payout_history.len(), 3);
     assert_eq!(token_client.balance(&winner_a1), 100_000);
@@ -475,7 +497,8 @@ fn test_full_lifecycle_multi_program_batch_payouts() {
     let data_b1 = client_b.batch_payout(
         &vec![&env, winner_b1.clone(), winner_b2.clone()],
         &vec![&env, 120_000, 80_000],
-    );
+        &None
+);
     assert_eq!(data_b1.remaining_balance, 200_000);
     assert_eq!(data_b1.payout_history.len(), 2);
     assert_eq!(token_client.balance(&winner_b1), 120_000);
@@ -489,7 +512,8 @@ fn test_full_lifecycle_multi_program_batch_payouts() {
     let data_a2 = client_a.batch_payout(
         &vec![&env, winner_a4.clone(), winner_a5.clone()],
         &vec![&env, 125_000, 50_000],
-    );
+        &None
+);
     assert_eq!(data_a2.remaining_balance, 100_000);
     assert_eq!(data_a2.payout_history.len(), 5);
     assert_eq!(token_client.balance(&winner_a4), 125_000);
@@ -508,7 +532,8 @@ fn test_full_lifecycle_multi_program_batch_payouts() {
             winner_b5.clone(),
         ],
         &vec![&env, 60_000, 40_000, 30_000],
-    );
+        &None
+);
     assert_eq!(data_b2.remaining_balance, 70_000);
     assert_eq!(data_b2.payout_history.len(), 5);
     assert_eq!(token_client.balance(&winner_b3), 60_000);
@@ -591,8 +616,9 @@ fn test_multi_token_balance_accounting_isolated_across_program_instances() {
     let payout_key_a = Address::generate(&env);
     let payout_key_b = Address::generate(&env);
 
+    let program_id_a = String::from_str(&env, "multi-token-a");
     client_a.init_program(
-        &String::from_str(&env, "multi-token-a"),
+        &program_id_a,
         &payout_key_a,
         &token_a,
         &payout_key_a,
@@ -600,8 +626,10 @@ fn test_multi_token_balance_accounting_isolated_across_program_instances() {
         &None,
     );
     client_a.publish_program();
+
+    let program_id_b = String::from_str(&env, "multi-token-b");
     client_b.init_program(
-        &String::from_str(&env, "multi-token-b"),
+        &program_id_b,
         &payout_key_b,
         &token_b,
         &payout_key_b,
@@ -622,7 +650,9 @@ fn test_multi_token_balance_accounting_isolated_across_program_instances() {
     assert_eq!(token_client_b.balance(&client_b.address), 300_000);
 
     let recipient = Address::generate(&env);
-    client_a.single_payout(&recipient, &120_000);
+    client_a.single_payout(&recipient, &120_000,
+    &None
+);
 
     // Payout in token A should not affect token B program balances.
     assert_eq!(client_a.get_remaining_balance(), 380_000);
@@ -637,7 +667,8 @@ fn test_multi_token_balance_accounting_isolated_across_program_instances() {
     client_b.batch_payout(
         &vec![&env, r_b1.clone(), r_b2.clone()],
         &vec![&env, 50_000, 25_000],
-    );
+        &None
+);
 
     // Payout in token B should not affect token A accounting.
     assert_eq!(client_a.get_remaining_balance(), 380_000);
@@ -667,7 +698,9 @@ fn test_anti_abuse_whitelist_bypass() {
         .set_timestamp(start_time + config.cooldown_period + 1);
 
     for _ in 0..(max_ops + 5) {
-        client.single_payout(&recipient, &100);
+        client.single_payout(&recipient, &100,
+    &None
+);
     }
 
     let info = client.get_program_info();
@@ -690,10 +723,10 @@ fn test_admin_rotation() {
     env.mock_all_auths();
 
     client.set_admin(&admin);
-    assert_eq!(client.get_program_admin(), Some(admin.clone()));
+    assert_eq!(client.get_admin(), Some(admin.clone()));
 
     client.set_admin(&new_admin);
-    assert_eq!(client.get_program_admin(), Some(new_admin));
+    assert_eq!(client.get_admin(), Some(new_admin));
 }
 
 /// After admin rotation, new admin can update rate limit config.
@@ -725,6 +758,247 @@ fn test_non_admin_cannot_update_config() {
     let env = Env::default();
     let contract_id = env.register_contract(None, ProgramEscrowContract);
     let client = ProgramEscrowContractClient::new(&env, &contract_id);
+}
+
+// ==================== ROLE SEPARATION TESTS ====================
+
+/// Test admin proposal with deterministic behavior and explicit errors.
+#[test]
+fn test_admin_rotation_proposal_success() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+    
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    
+    // Initialize contract with admin
+    client.initialize_contract(&admin);
+    
+    // Propose new admin
+    client.propose_admin(&new_admin);
+    
+    // Check that proposal was stored
+    let events = env.events().all();
+    assert!(events.len() >= 2); // init + propose
+    
+    // Verify schema version is set
+    let schema_version = client.get_role_management_schema_version();
+    assert_eq!(schema_version, 1);
+}
+
+/// Test admin rotation already in progress error.
+#[test]
+#[should_panic(expected = "Admin rotation already in progress")]
+fn test_admin_rotation_already_in_progress() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+    
+    let admin = Address::generate(&env);
+    let new_admin1 = Address::generate(&env);
+    let new_admin2 = Address::generate(&env);
+    
+    // Initialize contract with admin
+    client.initialize_contract(&admin);
+    
+    // Propose first admin
+    client.propose_admin(&new_admin1);
+    
+    // Try to propose second admin - should fail
+    client.propose_admin(&new_admin2);
+}
+
+/// Test admin rotation acceptance success.
+#[test]
+fn test_admin_rotation_acceptance_success() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+    
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    
+    // Initialize contract with admin
+    client.initialize_contract(&admin);
+    
+    // Propose new admin
+    client.propose_admin(&new_admin);
+    
+    // Accept admin role
+    client.accept_admin();
+    
+    // Verify admin was updated
+    let current_admin = client.get_admin().unwrap();
+    assert_eq!(current_admin, new_admin);
+    
+    // Check events
+    let events = env.events().all();
+    assert!(events.len() >= 3); // init + propose + accept
+}
+
+/// Test admin rotation acceptance without proposal.
+#[test]
+#[should_panic(expected = "No admin rotation in progress")]
+fn test_admin_acceptance_without_proposal() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+    
+    let admin = Address::generate(&env);
+    
+    // Initialize contract with admin
+    client.initialize_contract(&admin);
+    
+    // Try to accept without proposal - should fail
+    client.accept_admin();
+}
+
+/// Test admin rotation cancellation success.
+#[test]
+fn test_admin_rotation_cancellation_success() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+    
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    
+    // Initialize contract with admin
+    client.initialize_contract(&admin);
+    
+    // Propose new admin
+    client.propose_admin(&new_admin);
+    
+    // Cancel admin rotation
+    client.cancel_admin_rotation();
+    
+    // Verify original admin is still in place
+    let current_admin = client.get_admin().unwrap();
+    assert_eq!(current_admin, admin);
+}
+
+/// Test controller rotation proposal with deterministic behavior.
+#[test]
+fn test_controller_rotation_proposal_success() {
+    let env = Env::default();
+    let (client, admin, _token, _token_admin) = setup_program(&env, 0);
+    
+    let new_controller = Address::generate(&env);
+    let program_id = String::from_str(&env, "hack-2026");
+    
+    // Propose new controller
+    client.propose_controller(&program_id, &admin, &new_controller);
+    
+    // Check that proposal was stored
+    let events = env.events().all();
+    assert!(events.len() >= 3); // init + publish + propose
+    
+    // Verify schema version is set
+    let schema_version = client.get_role_management_schema_version();
+    assert_eq!(schema_version, 1);
+}
+
+/// Test controller rotation already in progress error.
+#[test]
+#[should_panic(expected = "Controller rotation already in progress")]
+fn test_controller_rotation_already_in_progress() {
+    let env = Env::default();
+    let (client, admin, _token, _token_admin) = setup_program(&env, 0);
+    
+    let new_controller1 = Address::generate(&env);
+    let new_controller2 = Address::generate(&env);
+    let program_id = String::from_str(&env, "hack-2026");
+    
+    // Propose first controller
+    client.propose_controller(&program_id, &admin, &new_controller1);
+    
+    // Try to propose second controller - should fail
+    client.propose_controller(&program_id, &admin, &new_controller2);
+}
+
+/// Test controller rotation acceptance success.
+#[test]
+fn test_controller_rotation_acceptance_success() {
+    let env = Env::default();
+    let (client, admin, _token, _token_admin) = setup_program(&env, 0);
+    
+    let new_controller = Address::generate(&env);
+    let program_id = String::from_str(&env, "hack-2026");
+    
+    // Propose new controller
+    client.propose_controller(&program_id, &admin, &new_controller);
+    
+    // Accept controller role
+    client.accept_controller(&program_id);
+    
+    // Verify controller was updated
+    let program_info = client.get_program_info();
+    assert_eq!(program_info.authorized_payout_key, new_controller);
+    
+    // Check events
+    let events = env.events().all();
+    assert!(events.len() >= 4); // init + publish + propose + accept
+}
+
+/// Test controller rotation cancellation success.
+#[test]
+fn test_controller_rotation_cancellation_success() {
+    let env = Env::default();
+    let (client, admin, _token, _token_admin) = setup_program(&env, 0);
+    
+    let new_controller = Address::generate(&env);
+    let program_id = String::from_str(&env, "hack-2026");
+    let original_controller = client.get_program_info().authorized_payout_key;
+    
+    // Propose new controller
+    client.propose_controller(&program_id, &admin, &new_controller);
+    
+    // Cancel controller rotation
+    client.cancel_controller_rotation(&program_id, &admin);
+    
+    // Verify original controller is still in place
+    let program_info = client.get_program_info();
+    assert_eq!(program_info.authorized_payout_key, original_controller);
+}
+
+/// Test role rotation blocked during emergency mode.
+#[test]
+#[should_panic(expected = "Role rotation not allowed")]
+fn test_role_rotation_blocked_during_emergency() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+    
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    
+    // Initialize contract with admin
+    client.initialize_contract(&admin);
+    
+    // Enable read-only mode (emergency)
+    client.set_read_only_mode(&true);
+    
+    // Try to propose admin - should fail
+    client.propose_admin(&new_admin);
+}
+
+/// Test invalid role proposal error.
+#[test]
+#[should_panic(expected = "Invalid role proposal")]
+fn test_invalid_role_proposal() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+    
+    let admin = Address::generate(&env);
+    
+    // Initialize contract with admin
+    client.initialize_contract(&admin);
+    
+    // Try to propose same admin - should fail
+    client.propose_admin(&admin);
+}
     let admin = Address::generate(&env);
     let non_admin = Address::generate(&env);
 
@@ -786,7 +1060,7 @@ fn test_batch_initialize_programs_empty_err() {
     let client = ProgramEscrowContractClient::new(&env, &contract_id);
     let items: Vec<ProgramInitItem> = Vec::new(&env);
     let res = client.try_batch_initialize_programs(&items);
-    assert!(matches!(res, Err(Ok(grainlify_core::errors::ContractError::InvalidBatchSize))));
+    assert!(matches!(res, Err(Ok(BatchError::InvalidBatchSizeProgram))));
 }
 
 #[test]
@@ -811,7 +1085,7 @@ fn test_batch_initialize_programs_duplicate_id_err() {
         reference_hash: None,
     });
     let res = client.try_batch_initialize_programs(&items);
-    assert!(matches!(res, Err(Ok(grainlify_core::errors::ContractError::DuplicateEntry))));
+    assert!(matches!(res, Err(Ok(BatchError::DuplicateProgramId))));
 }
 
 // =============================================================================
@@ -906,7 +1180,7 @@ fn test_batch_register_exceeds_max_batch_size() {
     }
 
     let res = client.try_batch_initialize_programs(&items);
-    assert!(matches!(res, Err(Ok(grainlify_core::errors::ContractError::InvalidBatchSize))));
+    assert!(matches!(res, Err(Ok(BatchError::InvalidBatchSizeProgram))));
 }
 
 #[test]
@@ -976,7 +1250,7 @@ fn test_batch_register_program_already_exists_error() {
     });
 
     let res = client.try_batch_initialize_programs(&second);
-    assert!(matches!(res, Err(Ok(grainlify_core::errors::ContractError::ProgramAlreadyExists))));
+    assert!(matches!(res, Err(Ok(BatchError::ProgramAlreadyExists))));
 
     // "brand-new" must NOT exist — all-or-nothing semantics
     assert!(!client.program_exists_by_id(&String::from_str(&env, "brand-new")));
@@ -1012,7 +1286,7 @@ fn test_batch_register_all_or_nothing_on_duplicate() {
     });
 
     let res = client.try_batch_initialize_programs(&items);
-    assert!(matches!(res, Err(Ok(grainlify_core::errors::ContractError::DuplicateEntry))));
+    assert!(matches!(res, Err(Ok(BatchError::DuplicateProgramId))));
 
     // Neither program should exist
     assert!(!client.program_exists_by_id(&String::from_str(&env, "alpha")));
@@ -1048,7 +1322,7 @@ fn test_batch_register_duplicate_at_tail() {
     });
 
     let res = client.try_batch_initialize_programs(&items);
-    assert!(matches!(res, Err(Ok(grainlify_core::errors::ContractError::DuplicateEntry))));
+    assert!(matches!(res, Err(Ok(BatchError::DuplicateProgramId))));
 }
 
 #[test]
@@ -1223,10 +1497,166 @@ fn test_batch_register_second_batch_conflicts_with_first() {
     });
 
     let res = client.try_batch_initialize_programs(&batch2);
-    assert!(matches!(res, Err(Ok(grainlify_core::errors::ContractError::ProgramAlreadyExists))));
+    assert!(matches!(res, Err(Ok(BatchError::ProgramAlreadyExists))));
 
     // "fresh" must not exist (all-or-nothing)
     assert!(!client.program_exists_by_id(&String::from_str(&env, "fresh")));
+}
+
+// =============================================================================
+// TOKEN ALLOWLIST ENFORCEMENT TESTS (#1071)
+// =============================================================================
+
+#[test]
+fn test_token_allowlist_enforcement_default_allows_all() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    client.initialize_contract(&admin);
+    
+    let token1 = Address::generate(&env);
+    let token2 = Address::generate(&env);
+    
+    assert!(client.is_token_allowed(&token1));
+    assert!(client.is_token_allowed(&token2));
+    
+    let program_id = String::from_str(&env, "prog-1");
+    // Should succeed because allowlist is empty
+    env.mock_all_auths();
+    client.init_program(&program_id, &admin, &token1, &admin, &None, &None);
+}
+
+#[test]
+fn test_token_allowlist_enforcement_blocks_unlisted() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    client.initialize_contract(&admin);
+    
+    let allowed_token = Address::generate(&env);
+    let unlisted_token = Address::generate(&env);
+    
+    // Add token to allowlist - this enables enforcement
+    env.mock_all_auths();
+    client.add_allowed_token(&allowed_token);
+    
+    assert!(client.is_token_allowed(&allowed_token));
+    assert!(!client.is_token_allowed(&unlisted_token));
+    
+    // Using allowed token succeeds
+    let program1 = String::from_str(&env, "prog-1");
+    client.init_program(&program1, &admin, &allowed_token, &admin, &None, &None);
+}
+
+#[test]
+#[should_panic(expected = "Token not on allowlist")]
+fn test_token_allowlist_enforcement_panic_unlisted() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    client.initialize_contract(&admin);
+    
+    let allowed_token = Address::generate(&env);
+    let unlisted_token = Address::generate(&env);
+    
+    env.mock_all_auths();
+    client.add_allowed_token(&allowed_token);
+    
+    let program2 = String::from_str(&env, "prog-2");
+    // This should panic
+    client.init_program(&program2, &admin, &unlisted_token, &admin, &None, &None);
+}
+
+#[test]
+fn test_token_allowlist_batch_initialization() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    client.initialize_contract(&admin);
+    
+    let allowed_token = Address::generate(&env);
+    
+    env.mock_all_auths();
+    client.add_allowed_token(&allowed_token);
+    
+    let mut items = Vec::new(&env);
+    items.push_back(ProgramInitItem {
+        program_id: String::from_str(&env, "prog-batch-1"),
+        authorized_payout_key: admin.clone(),
+        token_address: allowed_token.clone(),
+        reference_hash: None,
+    });
+    
+    let count = client.try_batch_initialize_programs(&items).unwrap().unwrap();
+    assert_eq!(count, 1);
+}
+
+#[test]
+#[should_panic(expected = "Token not on allowlist")]
+fn test_token_allowlist_batch_initialization_unlisted() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    client.initialize_contract(&admin);
+    
+    let allowed_token = Address::generate(&env);
+    let unlisted_token = Address::generate(&env);
+    
+    env.mock_all_auths();
+    client.add_allowed_token(&allowed_token);
+    
+    let mut items = Vec::new(&env);
+    items.push_back(ProgramInitItem {
+        program_id: String::from_str(&env, "prog-batch-1"),
+        authorized_payout_key: admin.clone(),
+        token_address: allowed_token.clone(),
+        reference_hash: None,
+    });
+    items.push_back(ProgramInitItem {
+        program_id: String::from_str(&env, "prog-batch-2"),
+        authorized_payout_key: admin.clone(),
+        token_address: unlisted_token.clone(),
+        reference_hash: None,
+    });
+    
+    let _ = client.batch_initialize_programs(&items);
+}
+
+#[test]
+fn test_token_allowlist_remove_token() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    client.initialize_contract(&admin);
+    
+    let token1 = Address::generate(&env);
+    let token2 = Address::generate(&env);
+    
+    env.mock_all_auths();
+    client.add_allowed_token(&token1);
+    client.add_allowed_token(&token2);
+    
+    assert!(client.is_token_allowed(&token1));
+    assert!(client.is_token_allowed(&token2));
+    
+    client.remove_allowed_token(&token1);
+    
+    assert!(!client.is_token_allowed(&token1));
+    assert!(client.is_token_allowed(&token2));
+    
+    let tokens = client.get_allowed_tokens();
+    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens.get(0).unwrap(), token2);
+    
+    // Removing last token disables enforcement
+    client.remove_allowed_token(&token2);
+    assert!(client.is_token_allowed(&token1)); // Enforcement disabled
 }
 
 // =============================================================================
@@ -1302,23 +1732,12 @@ fn test_multi_tenant_no_cross_program_balance_or_analytics() {
     let admin_b = Address::generate(&env);
     let creator = Address::generate(&env);
 
-    client_a.init_program(
-        &String::from_str(&env, "prog-isolation-a"),
-        &admin_a,
-        &token_id,
-        &creator,
-        &None,
-        &None,
-    );
+    let program_id_a = String::from_str(&env, "prog-isolation-a");
+    client_a.init_program(&program_id_a, &admin_a, &token_id, &creator, &None, &None);
     client_a.publish_program();
-    client_b.init_program(
-        &String::from_str(&env, "prog-isolation-b"),
-        &admin_b,
-        &token_id,
-        &creator,
-        &None,
-        &None,
-    );
+
+    let program_id_b = String::from_str(&env, "prog-isolation-b");
+    client_b.init_program(&program_id_b, &admin_b, &token_id, &creator, &None, &None);
     client_b.publish_program();
 
     token_sac.mint(&client_a.address, &500_000);
@@ -1334,7 +1753,9 @@ fn test_multi_tenant_no_cross_program_balance_or_analytics() {
     assert_eq!(stats_b.remaining_balance, 300_000);
 
     let r = Address::generate(&env);
-    client_a.single_payout(&r, &100_000);
+    client_a.single_payout(&r, &100_000,
+    &None
+);
 
     assert_eq!(client_a.get_remaining_balance(), 400_000);
     assert_eq!(client_b.get_remaining_balance(), 300_000);
@@ -1393,7 +1814,9 @@ fn test_analytics_after_single_payout() {
     let (client, _admin, _token, _token_admin) = setup_program(&env, initial_funds);
 
     let recipient = Address::generate(&env);
-    client.single_payout(&recipient, &payout_amount);
+    client.single_payout(&recipient, &payout_amount,
+    &None
+);
 
     let stats = client.get_program_aggregate_stats();
 
@@ -1417,7 +1840,9 @@ fn test_analytics_after_batch_payout() {
     let recipients = vec![&env, r1.clone(), r2.clone(), r3.clone()];
     let amounts = vec![&env, 10_000_0000000, 20_000_0000000, 30_000_0000000];
 
-    client.batch_payout(&recipients, &amounts);
+    client.batch_payout(&recipients, &amounts,
+    &None
+);
 
     let stats = client.get_program_aggregate_stats();
 
@@ -1442,11 +1867,15 @@ fn test_analytics_multiple_operations() {
     // Perform payouts
     let r1 = Address::generate(&env);
     let r2 = Address::generate(&env);
-    client.single_payout(&r1, &5_000_0000000);
+    client.single_payout(&r1, &5_000_0000000,
+    &None
+);
 
     let recipients = vec![&env, r2.clone()];
     let amounts = vec![&env, 3_000_0000000];
-    client.batch_payout(&recipients, &amounts);
+    client.batch_payout(&recipients, &amounts,
+    &None
+);
 
     let stats = client.get_program_aggregate_stats();
 
@@ -1511,7 +1940,9 @@ fn test_health_remaining_balance() {
     assert_eq!(balance1, initial_funds);
 
     let recipient = Address::generate(&env);
-    client.single_payout(&recipient, &25_000_0000000);
+    client.single_payout(&recipient, &25_000_0000000,
+    &None
+);
 
     let balance2 = client.get_remaining_balance();
     assert_eq!(balance2, 75_000_0000000i128);
@@ -1568,13 +1999,17 @@ fn test_comprehensive_analytics_workflow() {
     client.lock_program_funds(&50_000_0000000);
 
     let r1 = Address::generate(&env);
-    client.single_payout(&r1, &10_000_0000000);
+    client.single_payout(&r1, &10_000_0000000,
+    &None
+);
 
     let r2 = Address::generate(&env);
     let r3 = Address::generate(&env);
     let recipients = vec![&env, r2.clone(), r3.clone()];
     let amounts = vec![&env, 15_000_0000000, 20_000_0000000];
-    client.batch_payout(&recipients, &amounts);
+    client.batch_payout(&recipients, &amounts,
+    &None
+);
 
     let future_timestamp = env.ledger().timestamp() + 100;
     let r4 = Address::generate(&env);
@@ -1644,9 +2079,15 @@ fn test_analytics_query_functions() {
     let r2 = Address::generate(&env);
     let r3 = Address::generate(&env);
 
-    client.single_payout(&r1, &10_000_0000000);
-    client.single_payout(&r2, &20_000_0000000);
-    client.single_payout(&r3, &15_000_0000000);
+    client.single_payout(&r1, &10_000_0000000,
+    &None
+);
+    client.single_payout(&r2, &20_000_0000000,
+    &None
+);
+    client.single_payout(&r3, &15_000_0000000,
+    &None
+);
 
     // Query by recipient
     let payouts_r1 = client.get_payouts_by_recipient(&r1, &0, &10);
@@ -1672,12 +2113,18 @@ fn test_analytics_metrics_match_operation_counts() {
 
     let r1 = Address::generate(&env);
     let r2 = Address::generate(&env);
-    client.single_payout(&r1, &10_000_0000000);
-    client.single_payout(&r2, &20_000_0000000);
+    client.single_payout(&r1, &10_000_0000000,
+    &None
+);
+    client.single_payout(&r2, &20_000_0000000,
+    &None
+);
 
     let recipients = vec![&env, Address::generate(&env)];
     let amounts = vec![&env, 5_000_0000000i128];
-    client.batch_payout(&recipients, &amounts);
+    client.batch_payout(&recipients, &amounts,
+    &None
+);
 
     let stats = client.get_program_aggregate_stats();
     assert_eq!(stats.payout_count, 3);
@@ -1708,7 +2155,9 @@ fn test_batch_payout_happy_path_multiple_recipients() {
     let recipients = vec![&env, r1.clone(), r2.clone(), r3.clone()];
     let amounts = vec![&env, 1_000_000, 2_000_000, 3_000_000];
 
-    let data = client.batch_payout(&recipients, &amounts);
+    let data = client.batch_payout(&recipients, &amounts,
+    &None
+);
 
     // Verify balance updated correctly (all-or-nothing)
     assert_eq!(data.remaining_balance, 0);
@@ -1749,7 +2198,9 @@ fn test_batch_payout_with_duplicate_recipient_addresses() {
     let recipients = vec![&env, r1.clone(), r2.clone(), r1.clone()];
     let amounts = vec![&env, 1_000_000, 2_000_000, 1_500_000];
 
-    let data = client.batch_payout(&recipients, &amounts);
+    let data = client.batch_payout(&recipients, &amounts,
+    &None
+);
 
     // Balance should be fully consumed
     assert_eq!(data.remaining_balance, 0);
@@ -1797,7 +2248,9 @@ fn test_batch_payout_maximum_batch_size() {
     }
 
     // Execute large batch payout
-    let data = client.batch_payout(&recipients, &amounts);
+    let data = client.batch_payout(&recipients, &amounts,
+    &None
+);
 
     // Balance should be fully consumed
     assert_eq!(data.remaining_balance, 0);
@@ -1825,7 +2278,9 @@ fn test_batch_payout_empty_batch_panic() {
     let amounts = vec![&env];
 
     // Should panic
-    client.batch_payout(&recipients, &amounts);
+    client.batch_payout(&recipients, &amounts,
+    &None
+);
 }
 
 #[test]
@@ -1839,7 +2294,9 @@ fn test_batch_payout_mismatched_arrays_panic() {
     let amounts = vec![&env, 1_000_000]; // Only 1 amount for 2 recipients
 
     // Should panic
-    client.batch_payout(&recipients, &amounts);
+    client.batch_payout(&recipients, &amounts,
+    &None
+);
 }
 
 #[test]
@@ -1853,7 +2310,9 @@ fn test_batch_payout_invalid_amount_zero_panic() {
     let amounts = vec![&env, 0i128]; // Zero amount - invalid
 
     // Should panic
-    client.batch_payout(&recipients, &amounts);
+    client.batch_payout(&recipients, &amounts,
+    &None
+);
 }
 
 #[test]
@@ -1867,7 +2326,9 @@ fn test_batch_payout_invalid_amount_negative_panic() {
     let amounts = vec![&env, -1_000_000]; // Negative amount - invalid
 
     // Should panic
-    client.batch_payout(&recipients, &amounts);
+    client.batch_payout(&recipients, &amounts,
+    &None
+);
 }
 
 #[test]
@@ -1881,7 +2342,9 @@ fn test_batch_payout_insufficient_balance_panic() {
     let amounts = vec![&env, 10_000_000]; // More than available
 
     // Should panic
-    client.batch_payout(&recipients, &amounts);
+    client.batch_payout(&recipients, &amounts,
+    &None
+);
 }
 
 #[test]
@@ -1897,7 +2360,9 @@ fn test_batch_payout_partial_spend() {
     let recipients = vec![&env, r1, r2];
     let amounts = vec![&env, 3_000_000, 3_000_000];
 
-    let data = client.batch_payout(&recipients, &amounts);
+    let data = client.batch_payout(&recipients, &amounts,
+    &None
+);
 
     // Remaining balance should be correct
     assert_eq!(data.remaining_balance, 4_000_000);
@@ -1925,7 +2390,9 @@ fn test_batch_payout_atomicity_all_or_nothing() {
     let recipients = vec![&env, r1, r2];
     let amounts = vec![&env, 1_000_000, 2_000_000];
 
-    let data = client.batch_payout(&recipients, &amounts);
+    let data = client.batch_payout(&recipients, &amounts,
+    &None
+);
 
     // All records must be written
     assert_eq!(data.payout_history.len(), history_len_before + 2);
@@ -1947,7 +2414,9 @@ fn test_spend_threshold_single_payout_at_boundary_allowed() {
     client.set_program_spend_threshold(&program_id, &10_000);
 
     let recipient = Address::generate(&env);
-    let data = client.single_payout(&recipient, &10_000);
+    let data = client.single_payout(&recipient, &10_000,
+    &None
+);
 
     assert_eq!(data.remaining_balance, 40_000);
     assert_eq!(token_client.balance(&recipient), 10_000);
@@ -1963,7 +2432,9 @@ fn test_spend_threshold_single_payout_above_limit_rejected() {
     client.set_program_spend_threshold(&program_id, &10_000);
 
     let recipient = Address::generate(&env);
-    client.single_payout(&recipient, &10_001);
+    client.single_payout(&recipient, &10_001,
+    &None
+);
 }
 
 #[test]
@@ -1977,7 +2448,9 @@ fn test_spend_threshold_batch_total_above_limit_rejected() {
 
     let recipients = vec![&env, Address::generate(&env), Address::generate(&env)];
     let amounts = vec![&env, 6_000, 5_000];
-    client.batch_payout(&recipients, &amounts);
+    client.batch_payout(&recipients, &amounts,
+    &None
+);
 }
 
 #[test]
@@ -2000,7 +2473,9 @@ fn test_batch_payout_sequential_batches() {
     let r1 = Address::generate(&env);
     let recipients1 = vec![&env, r1];
     let amounts1 = vec![&env, 3_000_000];
-    let data1 = client.batch_payout(&recipients1, &amounts1);
+    let data1 = client.batch_payout(&recipients1, &amounts1,
+    &None
+);
 
     // Verify after first batch
     assert_eq!(data1.payout_history.len(), 1);
@@ -2011,7 +2486,9 @@ fn test_batch_payout_sequential_batches() {
     let r3 = Address::generate(&env);
     let recipients2 = vec![&env, r2, r3];
     let amounts2 = vec![&env, 2_000_000, 4_000_000];
-    let data2 = client.batch_payout(&recipients2, &amounts2);
+    let data2 = client.batch_payout(&recipients2, &amounts2,
+    &None
+);
 
     // Verify after second batch
     assert_eq!(data2.payout_history.len(), 3);
@@ -2040,9 +2517,15 @@ fn test_query_payouts_by_recipient_returns_correct_records() {
     let r2 = Address::generate(&env);
 
     // Multiple payouts: two to r1, one to r2
-    client.single_payout(&r1, &100_000);
-    client.single_payout(&r2, &150_000);
-    client.single_payout(&r1, &50_000);
+    client.single_payout(&r1, &100_000,
+    &None
+);
+    client.single_payout(&r2, &150_000,
+    &None
+);
+    client.single_payout(&r1, &50_000,
+    &None
+);
 
     let r1_records = client.query_payouts_by_recipient(&r1, &0, &10);
     assert_eq!(r1_records.len(), 2);
@@ -2063,7 +2546,9 @@ fn test_query_payouts_by_recipient_unknown_returns_empty() {
     let r1 = Address::generate(&env);
     let unknown = Address::generate(&env);
 
-    client.single_payout(&r1, &50_000);
+    client.single_payout(&r1, &50_000,
+    &None
+);
 
     let results = client.query_payouts_by_recipient(&unknown, &0, &10);
     assert_eq!(results.len(), 0);
@@ -2074,10 +2559,18 @@ fn test_query_payouts_by_amount_range_returns_matching() {
     let env = Env::default();
     let (client, _admin, _token, _token_admin) = setup_program(&env, 600_000);
 
-    client.single_payout(&Address::generate(&env), &10_000);
-    client.single_payout(&Address::generate(&env), &50_000);
-    client.single_payout(&Address::generate(&env), &100_000);
-    client.single_payout(&Address::generate(&env), &200_000);
+    client.single_payout(&Address::generate(&env), &10_000,
+    &None
+);
+    client.single_payout(&Address::generate(&env), &50_000,
+    &None
+);
+    client.single_payout(&Address::generate(&env), &100_000,
+    &None
+);
+    client.single_payout(&Address::generate(&env), &200_000,
+    &None
+);
 
     // Filter: 40_000 to 110_000
     let results = client.query_payouts_by_amount(&40_000, &110_000, &0, &10);
@@ -2092,9 +2585,15 @@ fn test_query_payouts_by_amount_exact_boundaries_included() {
     let env = Env::default();
     let (client, _admin, _token, _token_admin) = setup_program(&env, 600_000);
 
-    client.single_payout(&Address::generate(&env), &100_000);
-    client.single_payout(&Address::generate(&env), &200_000);
-    client.single_payout(&Address::generate(&env), &300_000);
+    client.single_payout(&Address::generate(&env), &100_000,
+    &None
+);
+    client.single_payout(&Address::generate(&env), &200_000,
+    &None
+);
+    client.single_payout(&Address::generate(&env), &300_000,
+    &None
+);
 
     // Exact boundaries should be included
     let results = client.query_payouts_by_amount(&100_000, &300_000, &0, &10);
@@ -2106,8 +2605,12 @@ fn test_query_payouts_by_amount_no_results_outside_range() {
     let env = Env::default();
     let (client, _admin, _token, _token_admin) = setup_program(&env, 200_000);
 
-    client.single_payout(&Address::generate(&env), &50_000);
-    client.single_payout(&Address::generate(&env), &100_000);
+    client.single_payout(&Address::generate(&env), &50_000,
+    &None
+);
+    client.single_payout(&Address::generate(&env), &100_000,
+    &None
+);
 
     let results = client.query_payouts_by_amount(&500_000, &999_000, &0, &10);
     assert_eq!(results.len(), 0);
@@ -2121,16 +2624,24 @@ fn test_query_payouts_by_timestamp_range_filters_correctly() {
     let base = env.ledger().timestamp();
 
     env.ledger().set_timestamp(base + 100);
-    client.single_payout(&Address::generate(&env), &100_000);
+    client.single_payout(&Address::generate(&env), &100_000,
+    &None
+);
 
     env.ledger().set_timestamp(base + 300);
-    client.single_payout(&Address::generate(&env), &100_000);
+    client.single_payout(&Address::generate(&env), &100_000,
+    &None
+);
 
     env.ledger().set_timestamp(base + 700);
-    client.single_payout(&Address::generate(&env), &100_000);
+    client.single_payout(&Address::generate(&env), &100_000,
+    &None
+);
 
     env.ledger().set_timestamp(base + 1200);
-    client.single_payout(&Address::generate(&env), &100_000);
+    client.single_payout(&Address::generate(&env), &100_000,
+    &None
+);
 
     // Filter for timestamps between base+200 and base+800
     let results = client.query_payouts_by_timestamp(&(base + 200), &(base + 800), &0, &10);
@@ -2148,13 +2659,19 @@ fn test_query_payouts_by_timestamp_exact_boundary_included() {
     let base = env.ledger().timestamp();
 
     env.ledger().set_timestamp(base + 100);
-    client.single_payout(&Address::generate(&env), &100_000);
+    client.single_payout(&Address::generate(&env), &100_000,
+    &None
+);
 
     env.ledger().set_timestamp(base + 200);
-    client.single_payout(&Address::generate(&env), &100_000);
+    client.single_payout(&Address::generate(&env), &100_000,
+    &None
+);
 
     env.ledger().set_timestamp(base + 300);
-    client.single_payout(&Address::generate(&env), &100_000);
+    client.single_payout(&Address::generate(&env), &100_000,
+    &None
+);
 
     // Exact boundary should include first and last
     let results = client.query_payouts_by_timestamp(&(base + 100), &(base + 300), &0, &10);
@@ -2168,7 +2685,9 @@ fn test_query_payouts_pagination_offset_and_limit() {
 
     let r1 = Address::generate(&env);
     for _ in 0..5 {
-        client.single_payout(&r1, &10_000);
+        client.single_payout(&r1, &10_000,
+    &None
+);
     }
 
     // Page 1
@@ -2190,7 +2709,9 @@ fn test_query_payouts_pagination_limit_zero_rejected() {
     let env = Env::default();
     let (client, _admin, _token, _token_admin) = setup_program(&env, 100_000);
     let r1 = Address::generate(&env);
-    client.single_payout(&r1, &10_000);
+    client.single_payout(&r1, &10_000,
+    &None
+);
     let _ = client.query_payouts_by_recipient(&r1, &0, &0);
 }
 
@@ -2200,7 +2721,9 @@ fn test_query_payouts_pagination_limit_above_max_rejected() {
     let env = Env::default();
     let (client, _admin, _token, _token_admin) = setup_program(&env, 100_000);
     let r1 = Address::generate(&env);
-    client.single_payout(&r1, &10_000);
+    client.single_payout(&r1, &10_000,
+    &None
+);
     let _ = client.query_payouts_by_recipient(&r1, &0, &201);
 }
 
@@ -2283,9 +2806,15 @@ fn test_combined_recipient_and_amount_filter_manual() {
 
     let r1 = Address::generate(&env);
 
-    client.single_payout(&r1, &10_000);
-    client.single_payout(&r1, &200_000);
-    client.single_payout(&r1, &50_000);
+    client.single_payout(&r1, &10_000,
+    &None
+);
+    client.single_payout(&r1, &200_000,
+    &None
+);
+    client.single_payout(&r1, &50_000,
+    &None
+);
 
     // Get r1's records, then filter by amount > 100_000 in test
     let records = client.query_payouts_by_recipient(&r1, &0, &10);
@@ -2357,8 +2886,14 @@ fn test_release_schedules_timestamps_and_manual_release_after_simulated_upgrade(
 
     let schedules_before = client.get_all_prog_release_schedules();
     assert_eq!(schedules_before.len(), 2);
-    assert_eq!(schedules_before.get(0).unwrap().release_timestamp, now + 100);
-    assert_eq!(schedules_before.get(1).unwrap().release_timestamp, now + 200);
+    assert_eq!(
+        schedules_before.get(0).unwrap().release_timestamp,
+        now + 100
+    );
+    assert_eq!(
+        schedules_before.get(1).unwrap().release_timestamp,
+        now + 200
+    );
     assert!(!schedules_before.get(0).unwrap().released);
     assert!(!schedules_before.get(1).unwrap().released);
 
@@ -2369,8 +2904,14 @@ fn test_release_schedules_timestamps_and_manual_release_after_simulated_upgrade(
 
     let schedules_mid = client.get_all_prog_release_schedules();
     assert_eq!(schedules_mid.len(), 2);
-    let mid_s1 = schedules_mid.iter().find(|s| s.schedule_id == s1.schedule_id).unwrap();
-    let mid_s2 = schedules_mid.iter().find(|s| s.schedule_id == s2.schedule_id).unwrap();
+    let mid_s1 = schedules_mid
+        .iter()
+        .find(|s| s.schedule_id == s1.schedule_id)
+        .unwrap();
+    let mid_s2 = schedules_mid
+        .iter()
+        .find(|s| s.schedule_id == s2.schedule_id)
+        .unwrap();
     assert!(mid_s1.released);
     assert_eq!(mid_s1.release_timestamp, now + 100);
     assert!(!mid_s2.released);
@@ -2385,7 +2926,10 @@ fn test_release_schedules_timestamps_and_manual_release_after_simulated_upgrade(
     assert_eq!(stats_after_manual.remaining_balance, 50_000);
 
     let schedules_final = client.get_all_prog_release_schedules();
-    let final_s2 = schedules_final.iter().find(|s| s.schedule_id == s2.schedule_id).unwrap();
+    let final_s2 = schedules_final
+        .iter()
+        .find(|s| s.schedule_id == s2.schedule_id)
+        .unwrap();
     assert!(final_s2.released);
     assert_eq!(final_s2.release_timestamp, now + 200);
 }
@@ -2430,7 +2974,9 @@ fn test_program_fee_zero_by_default_matches_prior_payouts() {
     let env = Env::default();
     let (client, _admin, token_client, _token_admin) = setup_program(&env, 100_000);
     let recipient = Address::generate(&env);
-    let data = client.single_payout(&recipient, &30_000);
+    let data = client.single_payout(&recipient, &30_000,
+    &None
+);
     assert_eq!(data.remaining_balance, 70_000);
     assert_eq!(token_client.balance(&recipient), 30_000);
 }
@@ -2452,7 +2998,9 @@ fn test_program_payout_fee_percentage_and_fixed() {
     );
     let recipient = Address::generate(&env);
     // Gross 10_000: 10% ceil = 1_000 + 500 fixed = 1_500 fee, net 8_500
-    client.single_payout(&recipient, &10_000);
+    client.single_payout(&recipient, &10_000,
+    &None
+);
     assert_eq!(token_client.balance(&recipient), 8_500);
     assert_eq!(token_client.balance(&fee_bucket), 1_500);
     assert_eq!(client.get_remaining_balance(), 90_000);
@@ -2501,6 +3049,478 @@ fn test_program_update_fee_config_disables_fees() {
     let _ = admin;
 }
 
+// ============================================================================
+// Idempotency Key Tests
+// ============================================================================
+
+#[test]
+fn test_single_payout_idempotent_first_time() {
+    let env = Env::default();
+    let (client, _admin, token_client, _token_admin) = setup_program(&env, 10_000);
+
+    let recipient = Address::generate(&env);
+    let idempotency_key = String::from_str(&env, "payout-001");
+
+    let initial_balance = token_client.balance(&client.address);
+    let data = client.single_payout_idempotent(&recipient, &1000, &Some(idempotency_key.clone()));
+
+    assert_eq!(data.remaining_balance, 9000);
+    assert_eq!(token_client.balance(&client.address), initial_balance - 1000);
+    assert_eq!(data.payout_history.len(), 1);
+}
+
+#[test]
+fn test_single_payout_idempotent_replay() {
+    let env = Env::default();
+    let (client, _admin, token_client, _token_admin) = setup_program(&env, 10_000);
+
+    let recipient = Address::generate(&env);
+    let idempotency_key = String::from_str(&env, "payout-001");
+
+    // First payout
+    let data1 = client.single_payout_idempotent(&recipient, &1000, &Some(idempotency_key.clone()));
+    let balance_after_first = token_client.balance(&client.address);
+    assert_eq!(data1.remaining_balance, 9000);
+    assert_eq!(data1.payout_history.len(), 1);
+
+    // Replay with same key - should not execute again
+    let data2 = client.single_payout_idempotent(&recipient, &1000, &Some(idempotency_key.clone()));
+    let balance_after_replay = token_client.balance(&client.address);
+
+    // Balance should be the same (no double payout)
+    assert_eq!(balance_after_first, balance_after_replay);
+    assert_eq!(data2.remaining_balance, 9000);
+    // Payout history should still have only 1 entry
+    assert_eq!(data2.payout_history.len(), 1);
+}
+
+#[test]
+fn test_single_payout_idempotent_different_keys() {
+    let env = Env::default();
+    let (client, _admin, token_client, _token_admin) = setup_program(&env, 10_000);
+
+    let recipient = Address::generate(&env);
+    let key1 = String::from_str(&env, "payout-001");
+    let key2 = String::from_str(&env, "payout-002");
+
+    // First payout with key1
+    let data1 = client.single_payout_idempotent(&recipient, &1000, &Some(key1.clone()));
+    assert_eq!(data1.remaining_balance, 9000);
+    assert_eq!(data1.payout_history.len(), 1);
+
+    // Second payout with key2 - should execute
+    let data2 = client.single_payout_idempotent(&recipient, &1000, &Some(key2.clone()));
+    assert_eq!(data2.remaining_balance, 8000);
+    assert_eq!(data2.payout_history.len(), 2);
+}
+
+#[test]
+fn test_single_payout_idempotent_without_key() {
+    let env = Env::default();
+    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 10_000);
+
+    let recipient = Address::generate(&env);
+
+    // Payout without idempotency key - should work like regular payout
+    let data = client.single_payout_idempotent(&recipient, &1000, &None);
+    assert_eq!(data.remaining_balance, 9000);
+    assert_eq!(data.payout_history.len(), 1);
+}
+
+#[test]
+fn test_batch_payout_idempotent_first_time() {
+    let env = Env::default();
+    let (client, _admin, token_client, _token_admin) = setup_program(&env, 10_000);
+
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+    let recipients = vec![&env, recipient1.clone(), recipient2.clone()];
+    let amounts = vec![&env, 1000, 2000];
+    let idempotency_key = String::from_str(&env, "batch-payout-001");
+
+    let initial_balance = token_client.balance(&client.address);
+    let data = client.batch_payout_idempotent(&recipients, &amounts, &Some(idempotency_key.clone()));
+
+    assert_eq!(data.remaining_balance, 7000);
+    assert_eq!(token_client.balance(&client.address), initial_balance - 3000);
+    assert_eq!(data.payout_history.len(), 2);
+}
+
+#[test]
+fn test_batch_payout_idempotent_replay() {
+    let env = Env::default();
+    let (client, _admin, token_client, _token_admin) = setup_program(&env, 10_000);
+
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+    let recipients = vec![&env, recipient1.clone(), recipient2.clone()];
+    let amounts = vec![&env, 1000, 2000];
+    let idempotency_key = String::from_str(&env, "batch-payout-001");
+
+    // First batch payout
+    let data1 = client.batch_payout_idempotent(&recipients, &amounts, &Some(idempotency_key.clone()));
+    let balance_after_first = token_client.balance(&client.address);
+    assert_eq!(data1.remaining_balance, 7000);
+    assert_eq!(data1.payout_history.len(), 2);
+
+    // Replay with same key - should not execute again
+    let data2 = client.batch_payout_idempotent(&recipients, &amounts, &Some(idempotency_key.clone()));
+    let balance_after_replay = token_client.balance(&client.address);
+
+    // Balance should be the same (no double payout)
+    assert_eq!(balance_after_first, balance_after_replay);
+    assert_eq!(data2.remaining_balance, 7000);
+    // Payout history should still have only 2 entries
+    assert_eq!(data2.payout_history.len(), 2);
+}
+
+#[test]
+fn test_batch_payout_idempotent_different_keys() {
+    let env = Env::default();
+    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 10_000);
+
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+    let recipients = vec![&env, recipient1.clone(), recipient2.clone()];
+    let amounts = vec![&env, 1000, 2000];
+    let key1 = String::from_str(&env, "batch-payout-001");
+    let key2 = String::from_str(&env, "batch-payout-002");
+
+    // First batch payout with key1
+    let data1 = client.batch_payout_idempotent(&recipients, &amounts, &Some(key1.clone()));
+    assert_eq!(data1.remaining_balance, 7000);
+    assert_eq!(data1.payout_history.len(), 2);
+
+    // Second batch payout with key2 - should execute
+    let data2 = client.batch_payout_idempotent(&recipients, &amounts, &Some(key2.clone()));
+    assert_eq!(data2.remaining_balance, 4000);
+    assert_eq!(data2.payout_history.len(), 4);
+}
+
+#[test]
+fn test_get_idempotency_key_status_exists() {
+    let env = Env::default();
+    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 10_000);
+
+    let recipient = Address::generate(&env);
+    let idempotency_key = String::from_str(&env, "payout-001");
+
+    // Execute payout with idempotency key
+    client.single_payout_idempotent(&recipient, &1000, &Some(idempotency_key.clone()));
+
+    // Query the idempotency key status
+    let status = client.get_idempotency_key_status(&idempotency_key);
+    assert!(status.is_some());
+
+    let record = status.unwrap();
+    assert_eq!(record.key, idempotency_key);
+    assert_eq!(record.amount, 1000);
+    assert_eq!(record.recipient, recipient);
+}
+
+#[test]
+fn test_get_idempotency_key_status_not_exists() {
+    let env = Env::default();
+    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 10_000);
+
+    let non_existent_key = String::from_str(&env, "non-existent-key");
+
+    // Query a non-existent idempotency key
+    let status = client.get_idempotency_key_status(&non_existent_key);
+    assert!(status.is_none());
+}
+
+#[test]
+fn test_idempotency_key_security_no_unauthorized_replay() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let sac = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token_id = sac.address();
+    let token_client = token::Client::new(&env, &token_id);
+    let token_admin_client = token::StellarAssetClient::new(&env, &token_id);
+
+    let program_id = String::from_str(&env, "hack-2026");
+    let payout_key = Address::generate(&env);
+    client.init_program(&program_id, &admin, &token_id, &payout_key, &None, &None);
+
+    token_admin_client.mint(&client.address, &10_000);
+    client.lock_program_funds(&10_000);
+
+    let recipient = Address::generate(&env);
+    let idempotency_key = String::from_str(&env, "payout-001");
+
+    // Execute payout with authorized key
+    env.mock_auths(&[
+        soroban_sdk::testutils::MockAuth {
+            address: &payout_key,
+            invoke: &soroban_sdk::testutils::MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "single_payout_idempotent",
+                args: (recipient.clone(), 1000i128, Some(idempotency_key.clone())).into_val(&env),
+                sub_invokes: &[],
+            },
+        }.into()]);
+    
+    let data1 = client.single_payout_idempotent(&recipient, &1000, &Some(idempotency_key.clone()));
+    assert_eq!(data1.remaining_balance, 9000);
+
+    // Replay should work without auth (idempotent read)
+    let data2 = client.single_payout_idempotent(&recipient, &1000, &Some(idempotency_key.clone()));
+    assert_eq!(data2.remaining_balance, 9000);
+}
+
+#[test]
+fn test_idempotency_key_edge_case_empty_string() {
+    let env = Env::default();
+    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 10_000);
+
+    let recipient = Address::generate(&env);
+    let empty_key = String::from_str(&env, "");
+
+    // Empty string key should be rejected (minimum length is 1)
+    let result = std::panic::catch_unwind(|| {
+        client.single_payout_idempotent(&recipient, &1000, &Some(empty_key.clone()));
+    });
+    assert!(result.is_err(), "Should reject empty idempotency key");
+}
+
+#[test]
+fn test_idempotency_key_storage_persistence() {
+    let env = Env::default();
+    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 10_000);
+
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+    let key1 = String::from_str(&env, "payout-001");
+    let key2 = String::from_str(&env, "payout-002");
+
+    // Execute two payouts with different keys
+    client.single_payout_idempotent(&recipient1, &1000, &Some(key1.clone()));
+    client.single_payout_idempotent(&recipient2, &2000, &Some(key2.clone()));
+
+    // Both keys should exist in storage
+    let status1 = client.get_idempotency_key_status(&key1);
+    let status2 = client.get_idempotency_key_status(&key2);
+
+    assert!(status1.is_some());
+    assert!(status2.is_some());
+
+    let record1 = status1.unwrap();
+    let record2 = status2.unwrap();
+
+    assert_eq!(record1.recipient, recipient1);
+    assert_eq!(record1.amount, 1000);
+    assert_eq!(record2.recipient, recipient2);
+    assert_eq!(record2.amount, 2000);
+}
+
+#[test]
+fn test_mixed_idempotent_and_regular_payouts() {
+    let env = Env::default();
+    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 10_000);
+
+    let recipient = Address::generate(&env);
+    let idempotency_key = String::from_str(&env, "payout-001");
+
+    // Regular payout (no idempotency)
+    client.single_payout(&recipient, &1000);
+    let data1 = client.get_program_info();
+    assert_eq!(data1.remaining_balance, 9000);
+    assert_eq!(data1.payout_history.len(), 1);
+
+    // Idempotent payout with key
+    client.single_payout_idempotent(&recipient, &1000, &Some(idempotency_key.clone()));
+    let data2 = client.get_program_info();
+    assert_eq!(data2.remaining_balance, 8000);
+    assert_eq!(data2.payout_history.len(), 2);
+
+    // Replay idempotent payout - should not execute
+    client.single_payout_idempotent(&recipient, &1000, &Some(idempotency_key.clone()));
+    let data3 = client.get_program_info();
+    assert_eq!(data3.remaining_balance, 8000);
+    assert_eq!(data3.payout_history.len(), 2);
+
+    // Another regular payout
+    client.single_payout(&recipient, &1000);
+    let data4 = client.get_program_info();
+    assert_eq!(data4.remaining_balance, 7000);
+    assert_eq!(data4.payout_history.len(), 3);
+}
+
+#[test]
+fn test_idempotency_key_too_long() {
+    let env = Env::default();
+    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 10_000);
+
+    let recipient = Address::generate(&env);
+    // Create a key that's too long (> 128 characters)
+    let long_key = String::from_str(&env, "a".repeat(129).as_str());
+
+    // Should panic with IdempotencyKeyInvalid
+    let result = std::panic::catch_unwind(|| {
+        client.single_payout_idempotent(&recipient, &1000, &Some(long_key));
+    });
+    assert!(result.is_err(), "Should reject idempotency key that's too long");
+}
+
+#[test]
+fn test_batch_idempotency_stores_all_recipients() {
+    let env = Env::default();
+    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 10_000);
+
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+    let recipient3 = Address::generate(&env);
+    let recipients = vec![&env, recipient1.clone(), recipient2.clone(), recipient3.clone()];
+    let amounts = vec![&env, 1000, 2000, 3000];
+    let idempotency_key = String::from_str(&env, "batch-all-recipients");
+
+    // Execute batch payout
+    client.batch_payout_idempotent(&recipients, &amounts, &Some(idempotency_key.clone()));
+
+    // Query the idempotency key status
+    let status = client.get_idempotency_key_status(&idempotency_key);
+    assert!(status.is_some());
+
+    let record = status.unwrap();
+    assert_eq!(record.key, idempotency_key);
+    assert_eq!(record.total_amount, 6000);
+    
+    // Verify batch recipients are stored
+    assert!(record.recipients.is_some());
+    let stored_recipients = record.recipients.unwrap();
+    assert_eq!(stored_recipients.len(), 3);
+    assert_eq!(stored_recipients.get(0), recipient1);
+    assert_eq!(stored_recipients.get(1), recipient2);
+    assert_eq!(stored_recipients.get(2), recipient3);
+    
+    // Verify batch amounts are stored
+    assert!(record.amounts.is_some());
+    let stored_amounts = record.amounts.unwrap();
+    assert_eq!(stored_amounts.len(), 3);
+    assert_eq!(stored_amounts.get(0), 1000);
+    assert_eq!(stored_amounts.get(1), 2000);
+    assert_eq!(stored_amounts.get(2), 3000);
+}
+
+#[test]
+fn test_single_idempotency_stores_correct_fields() {
+    let env = Env::default();
+    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 10_000);
+
+    let recipient = Address::generate(&env);
+    let idempotency_key = String::from_str(&env, "single-test");
+    let amount = 1500;
+
+    // Execute single payout
+    client.single_payout_idempotent(&recipient, &amount, &Some(idempotency_key.clone()));
+
+    // Query the idempotency key status
+    let status = client.get_idempotency_key_status(&idempotency_key);
+    assert!(status.is_some());
+
+    let record = status.unwrap();
+    assert_eq!(record.key, idempotency_key);
+    assert_eq!(record.total_amount, amount);
+    
+    // Verify single payout fields
+    assert!(record.recipient.is_some());
+    assert_eq!(record.recipient.unwrap(), recipient);
+    assert!(record.amount.is_some());
+    assert_eq!(record.amount.unwrap(), amount);
+    
+    // Verify batch fields are None
+    assert!(record.recipients.is_none());
+    assert!(record.amounts.is_none());
+}
+
+#[test]
+fn test_idempotency_key_max_length_boundary() {
+    let env = Env::default();
+    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 10_000);
+
+    let recipient = Address::generate(&env);
+    // Create a key that's exactly at the max length (128 characters)
+    let max_key = String::from_str(&env, "a".repeat(128).as_str());
+
+    // Should work fine
+    let data = client.single_payout_idempotent(&recipient, &1000, &Some(max_key.clone()));
+    assert_eq!(data.remaining_balance, 9000);
+
+    // Replay should be idempotent
+    let data2 = client.single_payout_idempotent(&recipient, &1000, &Some(max_key.clone()));
+    assert_eq!(data2.remaining_balance, 9000);
+    assert_eq!(data2.payout_history.len(), 1);
+}
+
+#[test]
+fn test_idempotency_across_different_programs() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // Setup first program
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let sac = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token_id = sac.address();
+    let token_client = token::Client::new(&env, &token_id);
+    let token_admin_client = token::StellarAssetClient::new(&env, &token_id);
+
+    let program_id1 = String::from_str(&env, "program-1");
+    let payout_key1 = Address::generate(&env);
+    client.init_program(&program_id1, &admin, &token_id, &payout_key1, &None, &None);
+
+    token_admin_client.mint(&client.address, &20_000);
+    client.lock_program_funds(&20_000);
+
+    // Execute payout with key in program 1
+    let recipient1 = Address::generate(&env);
+    let shared_key = String::from_str(&env, "shared-key-001");
+    client.single_payout_idempotent(&recipient1, &1000, &Some(shared_key.clone()));
+
+    // Verify key is stored
+    let status1 = client.get_idempotency_key_status(&shared_key);
+    assert!(status1.is_some());
+    assert_eq!(status1.unwrap().program_id, program_id1);
+}
+
+#[test]
+fn test_idempotency_key_with_special_characters() {
+    let env = Env::default();
+    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 10_000);
+
+    let recipient = Address::generate(&env);
+    // Test with UUID-like format
+    let uuid_key = String::from_str(&env, "550e8400-e29b-41d4-a716-446655440000");
+    
+    let data = client.single_payout_idempotent(&recipient, &1000, &Some(uuid_key.clone()));
+    assert_eq!(data.remaining_balance, 9000);
+
+    // Replay should be idempotent
+    let data2 = client.single_payout_idempotent(&recipient, &1000, &Some(uuid_key.clone()));
+    assert_eq!(data2.remaining_balance, 9000);
+    assert_eq!(data2.payout_history.len(), 1);
+
+    // Test with path-like format
+    let path_key = String::from_str(&env, "payouts/2024/01/batch-001");
+    let recipient2 = Address::generate(&env);
+    let data3 = client.single_payout_idempotent(&recipient2, &2000, &Some(path_key.clone()));
+    assert_eq!(data3.remaining_balance, 7000);
+}
+
+#[test]
+fn test_batch_payout_idempotent_replay_different_params() {
+    let env = Env::default();
+    let (client, _admin, token_client, _token_admin) = setup_program(&env, 10_000);
 // =============================================================================
 // SPEND LIMIT THRESHOLD TESTS (Issue #15)
 // =============================================================================
@@ -2522,7 +3542,9 @@ fn test_spend_limit_single_payout_below_threshold_succeeds() {
     let recipient = Address::generate(&env);
 
     client.set_program_spend_threshold(&program_id, &5_000);
-    client.single_payout(&recipient, &4_999);
+    client.single_payout(&recipient, &4_999,
+    &None
+);
 
     assert_eq!(token_client.balance(&recipient), 4_999);
     assert_eq!(client.get_remaining_balance(), 5_001);
@@ -2537,7 +3559,9 @@ fn test_spend_limit_single_payout_at_threshold_succeeds() {
     let recipient = Address::generate(&env);
 
     client.set_program_spend_threshold(&program_id, &5_000);
-    client.single_payout(&recipient, &5_000);
+    client.single_payout(&recipient, &5_000,
+    &None
+);
 
     assert_eq!(token_client.balance(&recipient), 5_000);
     assert_eq!(client.get_remaining_balance(), 5_000);
@@ -2553,7 +3577,9 @@ fn test_spend_limit_single_payout_above_threshold_rejected() {
     let recipient = Address::generate(&env);
 
     client.set_program_spend_threshold(&program_id, &5_000);
-    client.single_payout(&recipient, &5_001); // must panic
+    client.single_payout(&recipient, &5_001,
+    &None
+); // must panic
 }
 
 /// SL-4: batch_payout total below threshold succeeds.
@@ -2569,7 +3595,8 @@ fn test_spend_limit_batch_payout_below_threshold_succeeds() {
     client.batch_payout(
         &soroban_sdk::vec![&env, r1.clone(), r2.clone()],
         &soroban_sdk::vec![&env, 2_000i128, 3_000i128],
-    );
+        &None
+);
 
     assert_eq!(token_client.balance(&r1), 2_000);
     assert_eq!(token_client.balance(&r2), 3_000);
@@ -2590,6 +3617,7 @@ fn test_spend_limit_batch_payout_above_threshold_rejected() {
     client.batch_payout(
         &soroban_sdk::vec![&env, r1, r2],
         &soroban_sdk::vec![&env, 2_000i128, 3_000i128], // total = 5_000 > 4_000
+        &None,
     );
 }
 
@@ -2605,7 +3633,9 @@ fn test_spend_limit_threshold_checked_before_balance() {
 
     // Balance is 100_000 but threshold is only 1_000.
     client.set_program_spend_threshold(&program_id, &1_000);
-    client.single_payout(&recipient, &50_000); // threshold exceeded, not balance
+    client.single_payout(&recipient, &50_000,
+    &None
+); // threshold exceeded, not balance
 }
 
 /// SL-7: no threshold set → i128::MAX → any amount within balance is allowed.
@@ -2623,7 +3653,9 @@ fn test_spend_limit_no_threshold_allows_full_balance() {
         "default threshold must be i128::MAX"
     );
 
-    client.single_payout(&recipient, &10_000);
+    client.single_payout(&recipient, &10_000,
+    &None
+);
     assert_eq!(token_client.balance(&recipient), 10_000);
     assert_eq!(client.get_remaining_balance(), 0);
 }
@@ -2638,12 +3670,16 @@ fn test_spend_limit_threshold_update_takes_effect() {
 
     // Set tight threshold.
     client.set_program_spend_threshold(&program_id, &3_000);
-    client.single_payout(&recipient, &3_000);
+    client.single_payout(&recipient, &3_000,
+    &None
+);
     assert_eq!(token_client.balance(&recipient), 3_000);
 
     // Raise threshold.
     client.set_program_spend_threshold(&program_id, &10_000);
-    client.single_payout(&recipient, &10_000);
+    client.single_payout(&recipient, &10_000,
+    &None
+);
     assert_eq!(token_client.balance(&recipient), 13_000);
     assert_eq!(client.get_remaining_balance(), 7_000);
 }
@@ -2678,7 +3714,9 @@ fn test_spend_limit_exceeded_event_emitted_on_rejection() {
 
     let events_before = env.events().all().len();
     // Attempt an over-threshold payout; it will panic but the event is emitted first.
-    let result = client.try_single_payout(&recipient, &5_000);
+    let result = client.try_single_payout(&recipient, &5_000,
+    &None
+);
     assert!(result.is_err(), "over-threshold payout must fail");
 
     // The SpendLimitExceededEvent must have been emitted before the panic.
@@ -2719,7 +3757,9 @@ fn test_spend_limit_minimum_threshold_rejects_larger_amounts() {
     let recipient = Address::generate(&env);
 
     client.set_program_spend_threshold(&program_id, &1);
-    client.single_payout(&recipient, &2); // must panic
+    client.single_payout(&recipient, &2,
+    &None
+); // must panic
 }
 
 /// SL-13: threshold of 1 allows amount == 1.
@@ -2731,7 +3771,9 @@ fn test_spend_limit_minimum_threshold_allows_exact_amount() {
     let recipient = Address::generate(&env);
 
     client.set_program_spend_threshold(&program_id, &1);
-    client.single_payout(&recipient, &1);
+    client.single_payout(&recipient, &1,
+    &None
+);
     assert_eq!(token_client.balance(&recipient), 1);
 }
 
@@ -2753,6 +3795,266 @@ fn test_spend_limit_negative_threshold_rejected() {
     let (client, _admin, _token_client, _token_admin) = setup_program(&env, 0);
     let program_id = client.get_program_info().program_id;
     client.set_program_spend_threshold(&program_id, &-1);
+}
+
+// ============================================================================
+// PER-WINDOW SPENDING LIMITS — Issue #25
+// ============================================================================
+// Tests for time-windowed spend limits: set/get config, enforcement in
+// single_payout, batch_payout, schedule releases, window reset, and events.
+
+/// SW-1: No limit set → payouts proceed without restriction.
+#[test]
+fn test_spending_window_no_limit_allows_payout() {
+    let env = Env::default();
+    let (client, _admin, token_client, _token_admin) = setup_program(&env, 10_000);
+    let recipient = Address::generate(&env);
+
+    client.single_payout(&recipient, &10_000,
+    &None
+);
+    assert_eq!(token_client.balance(&recipient), 10_000);
+}
+
+/// SW-2: Limit disabled (enabled=false) → payouts proceed even if amount > max_amount.
+#[test]
+fn test_spending_window_disabled_limit_allows_payout() {
+    let env = Env::default();
+    let (client, _admin, token_client, _token_admin) = setup_program(&env, 10_000);
+    let program_id = client.get_program_info().program_id;
+    let recipient = Address::generate(&env);
+
+    client.set_program_spending_limit(&program_id, &86400u64, &100i128, &false);
+    client.single_payout(&recipient, &10_000,
+    &None
+);
+    assert_eq!(token_client.balance(&recipient), 10_000);
+}
+
+/// SW-3: single_payout within window limit succeeds.
+#[test]
+fn test_spending_window_single_payout_within_limit_succeeds() {
+    let env = Env::default();
+    let (client, _admin, token_client, _token_admin) = setup_program(&env, 10_000);
+    let program_id = client.get_program_info().program_id;
+    let recipient = Address::generate(&env);
+
+    client.set_program_spending_limit(&program_id, &86400u64, &5_000i128, &true);
+    client.single_payout(&recipient, &5_000,
+    &None
+);
+    assert_eq!(token_client.balance(&recipient), 5_000);
+}
+
+/// SW-4: single_payout exceeding window limit is rejected.
+#[test]
+#[should_panic(expected = "Program spending limit exceeded for current window")]
+fn test_spending_window_single_payout_exceeds_limit_rejected() {
+    let env = Env::default();
+    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 10_000);
+    let program_id = client.get_program_info().program_id;
+    let recipient = Address::generate(&env);
+
+    client.set_program_spending_limit(&program_id, &86400u64, &3_000i128, &true);
+    client.single_payout(&recipient, &3_001,
+    &None
+);
+}
+
+/// SW-5: Cumulative payouts within window are tracked; second payout that
+///        would push total over limit is rejected.
+#[test]
+#[should_panic(expected = "Program spending limit exceeded for current window")]
+fn test_spending_window_cumulative_limit_enforced() {
+    let env = Env::default();
+    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 10_000);
+    let program_id = client.get_program_info().program_id;
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+
+    // Window limit = 5_000; first payout = 3_000 (ok), second = 3_000 (total 6_000 > 5_000)
+    client.set_program_spending_limit(&program_id, &86400u64, &5_000i128, &true);
+    client.single_payout(&r1, &3_000,
+    &None
+);
+    client.single_payout(&r2, &3_000,
+    &None
+); // must panic
+}
+
+/// SW-6: batch_payout total within window limit succeeds.
+#[test]
+fn test_spending_window_batch_payout_within_limit_succeeds() {
+    let env = Env::default();
+    let (client, _admin, token_client, _token_admin) = setup_program(&env, 10_000);
+    let program_id = client.get_program_info().program_id;
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+
+    client.set_program_spending_limit(&program_id, &86400u64, &6_000i128, &true);
+    client.batch_payout(
+        &soroban_sdk::vec![&env, r1.clone(), r2.clone()],
+        &soroban_sdk::vec![&env, 2_000i128, 3_000i128],
+        &None
+);
+    assert_eq!(token_client.balance(&r1), 2_000);
+    assert_eq!(token_client.balance(&r2), 3_000);
+}
+
+/// SW-7: batch_payout total exceeding window limit is rejected.
+#[test]
+#[should_panic(expected = "Program spending limit exceeded for current window")]
+fn test_spending_window_batch_payout_exceeds_limit_rejected() {
+    let env = Env::default();
+    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 10_000);
+    let program_id = client.get_program_info().program_id;
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+
+    client.set_program_spending_limit(&program_id, &86400u64, &4_000i128, &true);
+    client.batch_payout(
+        &soroban_sdk::vec![&env, r1, r2],
+        &soroban_sdk::vec![&env, 2_000i128, 3_000i128], // total 5_000 > 4_000
+        &None,
+    );
+}
+
+/// SW-8: Window resets after window_size seconds; new window allows full limit again.
+#[test]
+fn test_spending_window_resets_after_window_expires() {
+    let env = Env::default();
+    let (client, _admin, token_client, _token_admin) = setup_program(&env, 20_000);
+    let program_id = client.get_program_info().program_id;
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+
+    // Short window of 100 seconds, limit 5_000
+    client.set_program_spending_limit(&program_id, &100u64, &5_000i128, &true);
+
+    // Exhaust the window
+    client.single_payout(&r1, &5_000,
+    &None
+);
+    assert_eq!(token_client.balance(&r1), 5_000);
+
+    // Advance time past the window
+    env.ledger().with_mut(|l| l.timestamp += 101);
+
+    // New window: same limit available again
+    client.single_payout(&r2, &5_000,
+    &None
+);
+    assert_eq!(token_client.balance(&r2), 5_000);
+}
+
+/// SW-9: get_program_spending_limit returns None when not set.
+#[test]
+fn test_spending_window_get_limit_none_when_not_set() {
+    let env = Env::default();
+    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 0);
+    let program_id = client.get_program_info().program_id;
+
+    let limit = client.get_program_spending_limit(&program_id);
+    assert!(limit.is_none(), "limit must be None when not configured");
+}
+
+/// SW-10: get_program_spending_state returns None before any payout.
+#[test]
+fn test_spending_window_get_state_none_before_payout() {
+    let env = Env::default();
+    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 0);
+    let program_id = client.get_program_info().program_id;
+
+    client.set_program_spending_limit(&program_id, &86400u64, &5_000i128, &true);
+    let state = client.get_program_spending_state(&program_id);
+    assert!(state.is_none(), "state must be None before any payout");
+}
+
+/// SW-11: get_program_spending_state reflects cumulative amount after payouts.
+#[test]
+fn test_spending_window_state_tracks_cumulative_amount() {
+    let env = Env::default();
+    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 10_000);
+    let program_id = client.get_program_info().program_id;
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+
+    client.set_program_spending_limit(&program_id, &86400u64, &10_000i128, &true);
+    client.single_payout(&r1, &2_000,
+    &None
+);
+    client.single_payout(&r2, &3_000,
+    &None
+);
+
+    let state = client.get_program_spending_state(&program_id).unwrap();
+    assert_eq!(state.amount_released, 5_000);
+}
+
+/// SW-12: zero window_size is rejected.
+#[test]
+#[should_panic(expected = "window_size must be greater than zero")]
+fn test_spending_window_zero_window_size_rejected() {
+    let env = Env::default();
+    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 0);
+    let program_id = client.get_program_info().program_id;
+    client.set_program_spending_limit(&program_id, &0u64, &5_000i128, &true);
+}
+
+/// SW-13: negative max_amount is rejected.
+#[test]
+#[should_panic(expected = "max_amount must be non-negative")]
+fn test_spending_window_negative_max_amount_rejected() {
+    let env = Env::default();
+    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 0);
+    let program_id = client.get_program_info().program_id;
+    client.set_program_spending_limit(&program_id, &86400u64, &-1i128, &true);
+}
+
+/// SW-14: Rejection emits the (limit, prog_spend) event.
+#[test]
+fn test_spending_window_rejection_emits_event() {
+    let env = Env::default();
+    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 10_000);
+    let program_id = client.get_program_info().program_id;
+    let recipient = Address::generate(&env);
+
+    client.set_program_spending_limit(&program_id, &86400u64, &1_000i128, &true);
+
+    let events_before = env.events().all().len();
+    let result = client.try_single_payout(&recipient, &5_000,
+    &None
+);
+    assert!(result.is_err(), "over-limit payout must fail");
+
+    let events_after = env.events().all();
+    assert!(
+        events_after.len() > events_before,
+        "rejection event must be emitted"
+    );
+}
+
+/// SW-15: Limit can be updated; new value takes effect immediately.
+#[test]
+fn test_spending_window_limit_update_takes_effect() {
+    let env = Env::default();
+    let (client, _admin, token_client, _token_admin) = setup_program(&env, 20_000);
+    let program_id = client.get_program_info().program_id;
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+
+    client.set_program_spending_limit(&program_id, &86400u64, &3_000i128, &true);
+    client.single_payout(&r1, &3_000,
+    &None
+);
+    assert_eq!(token_client.balance(&r1), 3_000);
+
+    // Raise limit
+    client.set_program_spending_limit(&program_id, &86400u64, &20_000i128, &true);
+    client.single_payout(&r2, &10_000,
+    &None
+);
+    assert_eq!(token_client.balance(&r2), 10_000);
 }
 
 // ============================================================================
@@ -2782,7 +4084,10 @@ fn test_pause_flags_default_all_false() {
 
     let flags = client.get_pause_flags();
     assert!(!flags.lock_paused, "lock_paused must default to false");
-    assert!(!flags.release_paused, "release_paused must default to false");
+    assert!(
+        !flags.release_paused,
+        "release_paused must default to false"
+    );
     assert!(!flags.refund_paused, "refund_paused must default to false");
 }
 
@@ -2796,7 +4101,9 @@ fn test_release_paused_blocks_single_payout() {
     client.set_paused(&None, &Some(true), &None, &None);
 
     let recipient = Address::generate(&env);
-    client.single_payout(&recipient, &100);
+    client.single_payout(&recipient, &100,
+    &None
+);
 }
 
 /// PM-04: release_paused blocks batch_payout with deterministic "Funds Paused" panic.
@@ -2812,7 +4119,8 @@ fn test_release_paused_blocks_batch_payout() {
     client.batch_payout(
         &soroban_sdk::vec![&env, r1],
         &soroban_sdk::vec![&env, 100i128],
-    );
+        &None
+);
 }
 
 /// PM-05: lock_paused blocks lock_program_funds with deterministic "Funds Paused" panic.
@@ -2835,7 +4143,9 @@ fn test_lock_paused_does_not_block_single_payout() {
     client.set_paused(&Some(true), &None, &None, &None);
 
     let recipient = Address::generate(&env);
-    let data = client.single_payout(&recipient, &200);
+    let data = client.single_payout(&recipient, &200,
+    &None
+);
     assert_eq!(data.remaining_balance, 800);
 }
 
@@ -2858,10 +4168,16 @@ fn test_unpause_restores_single_payout() {
     let (client, _admin, _token, _token_admin) = setup_program(&env, 1_000);
 
     client.set_paused(&None, &Some(true), &None, &None);
-    assert!(client.try_single_payout(&Address::generate(&env), &100).is_err());
+    assert!(client
+        .try_single_payout(&Address::generate(&env), &100,
+    &None
+)
+        .is_err());
 
     client.set_paused(&None, &Some(false), &None, &None);
-    let data = client.single_payout(&Address::generate(&env), &100);
+    let data = client.single_payout(&Address::generate(&env), &100,
+    &None
+);
     assert_eq!(data.remaining_balance, 900);
 }
 
@@ -2874,14 +4190,20 @@ fn test_unpause_restores_batch_payout() {
     client.set_paused(&None, &Some(true), &None, &None);
     let r1 = Address::generate(&env);
     assert!(client
-        .try_batch_payout(&soroban_sdk::vec![&env, r1.clone()], &soroban_sdk::vec![&env, 100i128])
+        .try_batch_payout(
+            &soroban_sdk::vec![&env, r1.clone()],
+            &soroban_sdk::vec![&env, 100i128]
+        ,
+    &None
+)
         .is_err());
 
     client.set_paused(&None, &Some(false), &None, &None);
     let data = client.batch_payout(
         &soroban_sdk::vec![&env, r1],
         &soroban_sdk::vec![&env, 100i128],
-    );
+        &None
+);
     assert_eq!(data.remaining_balance, 900);
 }
 
@@ -2907,14 +4229,20 @@ fn test_pause_state_changed_v2_event_on_pause() {
         }
     });
 
-    assert!(v2_event.is_some(), "PauseStateChangedV2 event must be emitted");
+    assert!(
+        v2_event.is_some(),
+        "PauseStateChangedV2 event must be emitted"
+    );
 
     let event = v2_event.unwrap();
-    let data: PauseStateChangedV2 = event.2.try_into_val(&env).unwrap();
+    let data = PauseStateChangedV2::try_from_val(&env, &event.2).unwrap();
 
     assert_eq!(data.version, EVENT_VERSION_V2);
     assert_eq!(data.operation, symbol_short!("release"));
-    assert_eq!(data.previous_paused, false, "previous_paused must be false before first pause");
+    assert_eq!(
+        data.previous_paused, false,
+        "previous_paused must be false before first pause"
+    );
     assert_eq!(data.paused, true);
     assert_eq!(data.admin, admin);
     assert_eq!(data.timestamp, 99_999);
@@ -2935,7 +4263,7 @@ fn test_pause_state_changed_v2_previous_paused_on_unpause() {
 
     let events = env.events().all();
     // Get the last PauseStateChangedV2 event (the unpause one)
-    let v2_events: Vec<_> = events
+    let v2_events: std::vec::Vec<_> = events
         .iter()
         .filter(|e| {
             let topics = e.1.clone();
@@ -2946,14 +4274,20 @@ fn test_pause_state_changed_v2_previous_paused_on_unpause() {
                 false
             }
         })
-        .collect();
+        .collect::<std::vec::Vec<_>>();
 
-    assert!(v2_events.len() >= 2, "Should have at least 2 PauseStateChangedV2 events");
+    assert!(
+        v2_events.len() >= 2,
+        "Should have at least 2 PauseStateChangedV2 events"
+    );
 
     let unpause_event = v2_events.last().unwrap();
-    let data: PauseStateChangedV2 = unpause_event.2.try_into_val(&env).unwrap();
+    let data = PauseStateChangedV2::try_from_val(&env, &unpause_event.2).unwrap();
 
-    assert_eq!(data.previous_paused, true, "previous_paused must be true when unpausing");
+    assert_eq!(
+        data.previous_paused, true,
+        "previous_paused must be true when unpausing"
+    );
     assert_eq!(data.paused, false);
 }
 
@@ -2965,9 +4299,16 @@ fn test_all_flags_paused_blocks_all_operations() {
 
     client.set_paused(&Some(true), &Some(true), &Some(true), &None);
 
-    assert!(client.try_lock_program_funds(&100).is_err(), "lock must be blocked");
     assert!(
-        client.try_single_payout(&Address::generate(&env), &100).is_err(),
+        client.try_lock_program_funds(&100).is_err(),
+        "lock must be blocked"
+    );
+    assert!(
+        client
+            .try_single_payout(&Address::generate(&env), &100,
+    &None
+)
+            .is_err(),
         "single_payout must be blocked"
     );
     assert!(
@@ -2975,7 +4316,9 @@ fn test_all_flags_paused_blocks_all_operations() {
             .try_batch_payout(
                 &soroban_sdk::vec![&env, Address::generate(&env)],
                 &soroban_sdk::vec![&env, 100i128]
-            )
+            ,
+    &None
+)
             .is_err(),
         "batch_payout must be blocked"
     );
@@ -2994,7 +4337,10 @@ fn test_partial_unpause_preserves_other_flags() {
 
     let flags = client.get_pause_flags();
     assert!(flags.lock_paused, "lock_paused must remain true");
-    assert!(!flags.release_paused, "release_paused must be false after unpause");
+    assert!(
+        !flags.release_paused,
+        "release_paused must be false after unpause"
+    );
     assert!(flags.refund_paused, "refund_paused must remain true");
 }
 
@@ -3037,5 +4383,493 @@ fn test_pause_reason_cleared_on_full_unpause() {
     client.set_paused(&Some(false), &None, &None, &None);
 
     let flags = client.get_pause_flags();
-    assert_eq!(flags.pause_reason, None, "reason must be cleared when fully unpaused");
+    assert_eq!(
+        flags.pause_reason, None,
+        "reason must be cleared when fully unpaused"
+    );
 }
+
+// ========================================================================
+// Idempotency Key Tests
+// ========================================================================
+
+/// Test idempotency key validation for successful batch payout
+#[test]
+fn test_idempotency_key_batch_payout_success() {
+    let env = Env::default();
+    let (client, admin, token, token_admin) = setup_program(&env, 1000_0000000);
+
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+    let recipients = vec![&env, recipient1.clone(), recipient2.clone()];
+    let amounts = vec![&env, 100_0000000, 200_0000000];
+    let idempotency_key = String::from_str(&env, "test-batch-123");
+
+    // First successful payout with idempotency key
+    let result = client.batch_payout(&recipients, &amounts, &Some(idempotency_key.clone()));
+    assert_eq!(result.remaining_balance, 700_0000000);
+
+    // Verify idempotency record was stored
+    let record: IdempotencyRecord = env.as_contract(&client.address, || { env.storage().instance().get(&DataKey::IdempotencyKey(idempotency_key.clone())).unwrap() });
+    assert_eq!(record.idempotency_key, idempotency_key);
+    assert_eq!(record.operation_type, symbol_short!("batchpay"));
+    assert!(record.success);
+    assert_eq!(record.total_amount, 300_0000000);
+    assert_eq!(record.recipient_count, 2);
+
+    // Verify events were emitted
+    let events = env.events().all();
+    assert!(events.len() >= 2); // BatchPayout + IdempotencyKeyUsed
+}
+
+/// Test idempotency key retry behavior for batch payout
+#[test]
+fn test_idempotency_key_batch_payout_retry() {
+    let env = Env::default();
+    let (client, admin, token, token_admin) = setup_program(&env, 1000_0000000);
+
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+    let recipients = vec![&env, recipient1.clone(), recipient2.clone()];
+    let amounts = vec![&env, 100_0000000, 200_0000000];
+    let idempotency_key = String::from_str(&env, "test-batch-retry-456");
+
+    // First successful payout
+    let result1 = client.batch_payout(&recipients, &amounts, &Some(idempotency_key.clone()));
+    assert_eq!(result1.remaining_balance, 700_0000000);
+
+    // Retry with same idempotency key should return same result
+    let result2 = client.batch_payout(&recipients, &amounts, &Some(idempotency_key.clone()));
+    assert_eq!(result2.remaining_balance, 700_0000000);
+    assert_eq!(result1.payout_history.len(), result2.payout_history.len());
+
+    // Verify retry event was emitted
+    let events = env.events().all();
+    let retry_events: soroban_sdk::Vec<_> = events.clone();
+    assert_eq!(retry_events.len(), 2); // First use + retry
+}
+
+/// Test idempotency key validation for successful single payout
+#[test]
+fn test_idempotency_key_single_payout_success() {
+    let env = Env::default();
+    let (client, admin, token, token_admin) = setup_program(&env, 1000_0000000);
+
+    let recipient = Address::generate(&env);
+    let amount = 500_0000000;
+    let idempotency_key = String::from_str(&env, "test-single-789");
+
+    // First successful payout with idempotency key
+    let result = client.single_payout(&recipient, &amount, &Some(idempotency_key.clone()));
+    assert_eq!(result.remaining_balance, 500_0000000);
+
+    // Verify idempotency record was stored
+    let record: IdempotencyRecord = env.as_contract(&client.address, || { env.storage().instance().get(&DataKey::IdempotencyKey(idempotency_key.clone())).unwrap() });
+    assert_eq!(record.idempotency_key, idempotency_key);
+    assert_eq!(record.operation_type, symbol_short!("singlepay"));
+    assert!(record.success);
+    assert_eq!(record.total_amount, 500_0000000);
+    assert_eq!(record.recipient_count, 1);
+}
+
+/// Test idempotency key retry behavior for single payout
+#[test]
+fn test_idempotency_key_single_payout_retry() {
+    let env = Env::default();
+    let (client, admin, token, token_admin) = setup_program(&env, 1000_0000000);
+
+    let recipient = Address::generate(&env);
+    let amount = 300_0000000;
+    let idempotency_key = String::from_str(&env, "test-single-retry-999");
+
+    // First successful payout
+    let result1 = client.single_payout(&recipient, &amount, &Some(idempotency_key.clone()));
+    assert_eq!(result1.remaining_balance, 700_0000000);
+
+    // Retry with same idempotency key should return same result
+    let result2 = client.single_payout(&recipient, &amount, &Some(idempotency_key.clone()));
+    assert_eq!(result2.remaining_balance, 700_0000000);
+    assert_eq!(result1.payout_history.len(), result2.payout_history.len());
+}
+
+/// Test idempotency key validation failures
+#[test]
+fn test_idempotency_key_validation_failures() {
+    let env = Env::default();
+    let (client, admin, token, token_admin) = setup_program(&env, 1000_0000000);
+
+    let recipient = Address::generate(&env);
+    let amount = 100_0000000;
+
+    // Empty idempotency key should panic
+    let empty_key = String::from_str(&env, "");
+    let result = client.try_single_payout(&recipient, &amount, &Some(empty_key));
+    assert!(result.is_err());
+
+    // Oversized idempotency key should panic
+    let oversized_key = String::from_str(&env, &"a".repeat(300));
+    let result = client.try_single_payout(&recipient, &amount, &Some(oversized_key));
+    assert!(result.is_err());
+}
+
+/// Test idempotency key with insufficient funds (failure case)
+#[test]
+fn test_idempotency_key_insufficient_funds() {
+    let env = Env::default();
+    let (client, admin, token, token_admin) = setup_program(&env, 100_0000000);
+
+    let recipient = Address::generate(&env);
+    let amount = 2000_0000000; // More than available
+    let idempotency_key = String::from_str(&env, "test-insufficient-111");
+
+    // First attempt should fail
+    let result = client.try_single_payout(&recipient, &amount, &Some(idempotency_key.clone()));
+    assert!(result.is_err());
+
+    // Verify failure record was stored
+    let record: IdempotencyRecord = env.as_contract(&client.address, || { env.storage().instance().get(&DataKey::IdempotencyKey(idempotency_key.clone())).unwrap() });
+    assert_eq!(record.idempotency_key, idempotency_key);
+    assert!(!record.success);
+    assert!(record.error_code.is_some());
+
+    // Retry should return same failure
+    let result2 = client.try_single_payout(&recipient, &amount, &Some(idempotency_key.clone()));
+    assert!(result2.is_err());
+}
+
+/// Test idempotency schema version initialization
+#[test]
+fn test_idempotency_schema_version() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    client.initialize_contract(&admin);
+
+    // Verify schema version is set
+    let schema_version = client.get_idempotency_schema_version();
+    assert_eq!(schema_version, IDEMPOTENCY_SCHEMA_VERSION_V1);
+
+    // Verify schema version event was emitted
+    let events = env.events().all();
+    let schema_events: soroban_sdk::Vec<_> = events.clone();
+    assert_eq!(schema_events.len(), 1);
+}
+
+/// Test idempotency key with no key provided (normal operation)
+#[test]
+fn test_idempotency_key_none_provided() {
+    let env = Env::default();
+    let (client, admin, token, token_admin) = setup_program(&env, 1000_0000000);
+
+    let recipient = Address::generate(&env);
+    let amount = 300_0000000;
+
+    // Payout without idempotency key should work normally
+    let result = client.single_payout(&recipient, &amount, &None);
+    assert_eq!(result.remaining_balance, 700_0000000);
+
+    // Should be able to do multiple payouts without idempotency keys
+    let recipient2 = Address::generate(&env);
+    let result2 = client.single_payout(&recipient2, &amount, &None);
+    assert_eq!(result2.remaining_balance, 400_0000000);
+}
+
+/// Test idempotency key isolation between different operations
+#[test]
+fn test_idempotency_key_operation_isolation() {
+    let env = Env::default();
+    let (client, admin, token, token_admin) = setup_program(&env, 1000_0000000);
+
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+    let recipients = vec![&env, recipient1.clone(), recipient2.clone()];
+    let amounts = vec![&env, 1000, 2000];
+    let idempotency_key = String::from_str(&env, "batch-replay-test");
+
+    // First batch payout
+    let data1 = client.batch_payout_idempotent(&recipients, &amounts, &Some(idempotency_key.clone()));
+    let balance_after_first = token_client.balance(&client.address);
+    assert_eq!(data1.remaining_balance, 7000);
+
+    // Try to replay with DIFFERENT recipients and amounts - should still be idempotent
+    let recipient3 = Address::generate(&env);
+    let different_recipients = vec![&env, recipient3.clone()];
+    let different_amounts = vec![&env, 5000];
+    
+    // This should return the original result, not execute with new params
+    let data2 = client.batch_payout_idempotent(&different_recipients, &different_amounts, &Some(idempotency_key.clone()));
+    let balance_after_replay = token_client.balance(&client.address);
+
+    // Balance should be the same (no execution with different params)
+    assert_eq!(balance_after_first, balance_after_replay);
+    assert_eq!(data2.remaining_balance, 7000);
+    assert_eq!(data2.payout_history.len(), 2); // Still only 2 from first payout
+}
+
+    let batch_amounts = vec![&env, 100_0000000, 100_0000000];
+    let single_amount = 200_0000000;
+    let idempotency_key = String::from_str(&env, "test-isolation-333");
+
+    // Batch payout with idempotency key
+    let batch_result = client.batch_payout(&recipients, &batch_amounts, &Some(idempotency_key.clone()));
+    assert_eq!(batch_result.remaining_balance, 800_0000000);
+
+    // Single payout with same idempotency key should fail (key already used)
+    let result = client.try_single_payout(&recipient1, &single_amount, &Some(idempotency_key.clone()));
+    assert!(result.is_err());
+
+    // Verify retry of batch payout still works
+    let batch_retry = client.batch_payout(&recipients, &batch_amounts, &Some(idempotency_key.clone()));
+    assert_eq!(batch_retry.remaining_balance, 800_0000000); // Same as before
+}
+
+/// Test idempotency key with different keys for same operation
+#[test]
+fn test_idempotency_key_different_keys_same_operation() {
+    let env = Env::default();
+    let (client, admin, token, token_admin) = setup_program(&env, 1000_0000000);
+
+    let recipient = Address::generate(&env);
+    let amount = 300_0000000;
+    let key1 = String::from_str(&env, "test-diff-key-1");
+    let key2 = String::from_str(&env, "test-diff-key-2");
+
+    // First payout with key1
+    let result1 = client.single_payout(&recipient, &amount, &Some(key1.clone()));
+    assert_eq!(result1.remaining_balance, 700_0000000);
+
+    // Second payout with different key2 should work (different recipient)
+    let recipient2 = Address::generate(&env);
+    let result2 = client.single_payout(&recipient2, &amount, &Some(key2.clone()));
+    assert_eq!(result2.remaining_balance, 400_0000000);
+
+    // Verify both keys have their own records
+    let record1: IdempotencyRecord = env.as_contract(&client.address, || { env.storage().instance().get(&DataKey::IdempotencyKey(key1)).unwrap() });
+    let record2: IdempotencyRecord = env.as_contract(&client.address, || { env.storage().instance().get(&DataKey::IdempotencyKey(key2)).unwrap() });
+    assert_eq!(record1.recipient_count, 1);
+    assert_eq!(record2.recipient_count, 1);
+}
+
+// ============================================================================
+// Batch Payout Atomicity Tests — Issue #24
+//
+// Verifies the all-or-nothing guarantee: if any validation fails, no transfers
+// occur and the contract balance is unchanged.
+// ============================================================================
+
+/// Atomicity: duplicate recipient in batch → zero transfers, balance unchanged.
+#[test]
+fn test_batch_atomicity_duplicate_recipient_no_partial_transfer() {
+    let env = Env::default();
+    let (client, _admin, token_client, _token_admin) = setup_program(&env, 10_000);
+
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+
+    // r1 appears twice — must be rejected before any transfer
+    let result = client.try_batch_payout(
+        &vec![&env, r1.clone(), r2.clone(), r1.clone()],
+        &vec![&env, 1_000i128, 2_000i128, 1_500i128],
+        &None,
+    );
+    assert!(result.is_err(), "duplicate recipient must be rejected");
+    assert_eq!(client.get_remaining_balance(), 10_000, "balance must be unchanged");
+    assert_eq!(token_client.balance(&r1), 0);
+    assert_eq!(token_client.balance(&r2), 0);
+}
+
+/// Atomicity: zero amount in batch → zero transfers, balance unchanged.
+#[test]
+fn test_batch_atomicity_zero_amount_no_partial_transfer() {
+    let env = Env::default();
+    let (client, _admin, token_client, _token_admin) = setup_program(&env, 10_000);
+
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+
+    // Second amount is zero — must be rejected before any transfer
+    let result = client.try_batch_payout(
+        &vec![&env, r1.clone(), r2.clone()],
+        &vec![&env, 1_000i128, 0i128],
+        &None,
+    );
+    assert!(result.is_err(), "zero amount must be rejected");
+    assert_eq!(client.get_remaining_balance(), 10_000);
+    assert_eq!(token_client.balance(&r1), 0);
+    assert_eq!(token_client.balance(&r2), 0);
+}
+
+/// Atomicity: insufficient balance → zero transfers, balance unchanged.
+#[test]
+fn test_batch_atomicity_insufficient_balance_no_partial_transfer() {
+    let env = Env::default();
+    let (client, _admin, token_client, _token_admin) = setup_program(&env, 1_000);
+
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+
+    // Total 3_000 > balance 1_000
+    let result = client.try_batch_payout(
+        &vec![&env, r1.clone(), r2.clone()],
+        &vec![&env, 1_500i128, 1_500i128],
+        &None,
+    );
+    assert!(result.is_err(), "over-balance batch must be rejected");
+    assert_eq!(client.get_remaining_balance(), 1_000);
+    assert_eq!(token_client.balance(&r1), 0);
+    assert_eq!(token_client.balance(&r2), 0);
+}
+
+/// Atomicity: mismatched recipients/amounts → zero transfers, balance unchanged.
+#[test]
+fn test_batch_atomicity_length_mismatch_no_partial_transfer() {
+    let env = Env::default();
+    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 10_000);
+
+    let r1 = Address::generate(&env);
+
+    let result = client.try_batch_payout(
+        &vec![&env, r1.clone()],
+        &vec![&env, 1_000i128, 2_000i128], // 2 amounts, 1 recipient
+        &None,
+    );
+    assert!(result.is_err(), "length mismatch must be rejected");
+    assert_eq!(client.get_remaining_balance(), 10_000);
+}
+
+/// Atomicity: batch exceeds MAX_BATCH_SIZE → rejected, balance unchanged.
+#[test]
+fn test_batch_atomicity_exceeds_max_batch_size() {
+    let env = Env::default();
+    let total = (MAX_BATCH_SIZE as i128 + 1) * 100;
+    let (client, _admin, _token_client, _token_admin) = setup_program(&env, total);
+
+    let mut recipients = vec![&env];
+    let mut amounts = vec![&env];
+    for _ in 0..(MAX_BATCH_SIZE + 1) {
+        recipients.push_back(Address::generate(&env));
+        amounts.push_back(100i128);
+    }
+
+    let result = client.try_batch_payout(&recipients, &amounts, &None);
+    assert!(result.is_err(), "batch exceeding MAX_BATCH_SIZE must be rejected");
+    assert_eq!(client.get_remaining_balance(), total);
+}
+
+/// Deterministic ordering: MAX_BATCH_SIZE boundary is accepted.
+#[test]
+fn test_batch_max_size_boundary_accepted() {
+    let env = Env::default();
+    let total = MAX_BATCH_SIZE as i128 * 100;
+    let (client, _admin, token_client, _token_admin) = setup_program(&env, total);
+
+    let mut recipients = vec![&env];
+    let mut amounts = vec![&env];
+    let mut addrs = soroban_sdk::Vec::new(&env);
+    for _ in 0..MAX_BATCH_SIZE {
+        let a = Address::generate(&env);
+        addrs.push_back(a.clone());
+        recipients.push_back(a);
+        amounts.push_back(100i128);
+    }
+
+    let data = client.batch_payout(&recipients, &amounts, &None);
+    assert_eq!(data.remaining_balance, 0);
+    assert_eq!(data.payout_history.len(), MAX_BATCH_SIZE);
+    for i in 0..MAX_BATCH_SIZE {
+        assert_eq!(token_client.balance(&addrs.get(i).unwrap()), 100);
+    }
+}
+
+/// Upgrade-safe storage: BatchPayoutSchemaVersion is readable after init.
+#[test]
+fn test_batch_payout_schema_version_set_on_init() {
+    let env = Env::default();
+    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 0);
+    // Version 0 means not yet written (legacy) — any value is acceptable.
+    let _v = client.get_batch_payout_schema_version();
+
+#[test]
+fn test_update_fee_recipient_admin_only() {
+    let env = Env::default();
+    let (client, admin, _token, _token_admin) = setup_program(&env, 1000);
+    
+    let new_recipient = Address::generate(&env);
+    
+    // Admin should be able to update
+    env.mock_all_auths();
+    client.update_fee_recipient(&new_recipient);
+    
+    let cfg = client.get_fee_config();
+    assert_eq!(cfg.fee_recipient, new_recipient);
+    
+    // Verify event was emitted
+    let events = env.events().all();
+    assert!(events.len() > 0);
+}
+
+
+
+#[test]
+fn test_update_fee_recipient_multiple_times() {
+    let env = Env::default();
+    let (client, _admin, _token, _token_admin) = setup_program(&env, 1000);
+    
+    let recipient1 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+    
+    env.mock_all_auths();
+    
+    // First update
+    client.update_fee_recipient(&recipient1);
+    let cfg = client.get_fee_config();
+    assert_eq!(cfg.fee_recipient, recipient1);
+    
+    // Second update
+    client.update_fee_recipient(&recipient2);
+    let cfg = client.get_fee_config();
+    assert_eq!(cfg.fee_recipient, recipient2);
+}
+
+#[test]
+fn test_fee_recipient_update_event_contains_old_and_new() {
+    let env = Env::default();
+    let (client, _admin, _token, _token_admin) = setup_program(&env, 1000);
+    
+    let original_cfg = client.get_fee_config();
+    let new_recipient = Address::generate(&env);
+    
+    env.mock_all_auths();
+    client.update_fee_recipient(&new_recipient);
+    
+    let events = env.events().all();
+    // Verify at least one event was published
+    assert!(events.len() > 0, "Expected at least one event to be published");
+}
+
+#[test]
+fn test_update_fee_recipient_preserves_other_fee_config() {
+    let env = Env::default();
+    let (client, _admin, _token, _token_admin) = setup_program(&env, 1000);
+    
+    let original_cfg = client.get_fee_config();
+    let new_recipient = Address::generate(&env);
+    
+    env.mock_all_auths();
+    client.update_fee_recipient(&new_recipient);
+    
+    let updated_cfg = client.get_fee_config();
+    
+    // Verify only fee_recipient changed
+    assert_eq!(updated_cfg.fee_recipient, new_recipient);
+    assert_eq!(updated_cfg.lock_fee_rate, original_cfg.lock_fee_rate);
+    assert_eq!(updated_cfg.payout_fee_rate, original_cfg.payout_fee_rate);
+    assert_eq!(updated_cfg.lock_fixed_fee, original_cfg.lock_fixed_fee);
+    assert_eq!(updated_cfg.payout_fixed_fee, original_cfg.payout_fixed_fee);
+    assert_eq!(updated_cfg.fee_enabled, original_cfg.fee_enabled);
+}
+

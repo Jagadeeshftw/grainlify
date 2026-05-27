@@ -83,7 +83,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                 },
                 {
-                  "bytes": "662bbb3fdd552087f979795402b2fd6af12bd7f7afc177452c51143828ea9028"
+                  "bytes": "5f3730344d91e690634ceeee2a6ebb84596b3b121fd49d172b228517eacab55e"
                 },
                 {
                   "bool": true
@@ -149,7 +149,7 @@
                   ]
                 },
                 {
-                  "bytes": "159ec67eec3b7be39918723ac6666824ff7abfebee0429e5a01993b2f618d5514d94965c82a7846b9419bf033eb25e5cb98dfc47d871c276213e32312fe3bb05"
+                  "bytes": "2cd88e19ccec575f6a395a4147752082a76f406d8ebd059afce075fed6b816f518aefc21f12aab960d372f7c02705a4922d60d01e221fe5b50ad6ce247566c08"
                 }
               ]
             }
@@ -394,7 +394,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "bytes": "662bbb3fdd552087f979795402b2fd6af12bd7f7afc177452c51143828ea9028"
+                  "bytes": "5f3730344d91e690634ceeee2a6ebb84596b3b121fd49d172b228517eacab55e"
                 }
               }
             },
@@ -748,7 +748,7 @@
                           ]
                         },
                         "val": {
-                          "bool": false
+                          "u32": 1
                         }
                       },
                       {

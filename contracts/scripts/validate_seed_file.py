@@ -26,9 +26,18 @@ SCHEMA_PATH = CONTRACTS_DIR / "contract-manifest-schema.json"
 
 _SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
 _ISO_Z_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
-_VALID_AUTH = {"admin", "signer", "any", "capability", "multisig"}
+_VALID_AUTH = {"admin", "signer", "any", "capability", "multisig",
+                 "authorized_payout_key", "proposed_admin", "controller_or_admin",
+                 "proposed_controller", "admin-or-governor", "none"}
 _VALID_NETWORKS = {"testnet", "mainnet", "futurenet", "local"}
 _VALID_DEPLOYMENT_STATUS = {"deployed", "upgraded", "rolled_back", "failed"}
+
+# Snapshot/rollback guardrail: manifest behaviors that must be present when
+# the contract exposes snapshot entrypoints.
+_SNAPSHOT_ENTRYPOINTS = {"create_config_snapshot", "restore_config_snapshot"}
+_REQUIRED_SNAPSHOT_SECURITY_FEATURES = {
+    "read-only mode",  # substring match — case-insensitive
+}
 
 
 def _load_json(path: Path):
@@ -80,6 +89,29 @@ def _basic_manifest_checks(manifest: dict, path: Path) -> list[str]:
             continue
         if auth not in _VALID_AUTH:
             errors.append(f"{path.name}: invalid authorization value {auth!r}")
+
+    # Snapshot/rollback guardrail: if the manifest exposes snapshot entrypoints,
+    # it must document at least one read-only-mode security feature so reviewers
+    # know mutations are blocked during incidents.
+    all_entrypoint_names: set[str] = set()
+    for section in (manifest.get("entrypoints") or {}).values():
+        if isinstance(section, list):
+            for ep in section:
+                if isinstance(ep, dict) and isinstance(ep.get("name"), str):
+                    all_entrypoint_names.add(ep["name"])
+
+    if _SNAPSHOT_ENTRYPOINTS & all_entrypoint_names:
+        security_features: list = (
+            (manifest.get("behaviors") or {}).get("security_features") or []
+        )
+        feature_text = " ".join(f.lower() for f in security_features if isinstance(f, str))
+        for required in _REQUIRED_SNAPSHOT_SECURITY_FEATURES:
+            if required not in feature_text:
+                errors.append(
+                    f"{path.name}: manifest exposes snapshot entrypoints but "
+                    f"behaviors.security_features does not mention {required!r} — "
+                    f"add a note confirming snapshot mutations are blocked in read-only mode"
+                )
 
     return errors
 
@@ -159,6 +191,228 @@ def _deployment_seed_checks(data: dict, path: Path) -> list[str]:
     return errors
 
 
+def _error_registry_checks(manifest: dict, path: Path) -> list[str]:
+    """Validate the error_registry section of a manifest with enhanced checks.
+
+    Checks:
+    - error_registry.codes is an array of objects with required fields
+    - Each entry has a positive integer `code`, non-empty string `name`, and valid `range`
+    - No two entries share the same numeric code (within this manifest)
+    - Error codes follow established range conventions (1-99, 100-199, etc.)
+    - If `ranges` are declared, every range has min <= max and follows conventions
+    - Cross-validation between codes and ranges
+    - Name format validation (PascalCase)
+    """
+    errors: list[str] = []
+    reg = manifest.get("error_registry")
+    if reg is None:
+        return errors  # section is optional
+    if not isinstance(reg, dict):
+        errors.append(f"{path.name}: error_registry must be an object; got {type(reg).__name__}")
+        return errors
+
+    # Validate codes array
+    codes = reg.get("codes", [])
+    if not isinstance(codes, list):
+        errors.append(f"{path.name}: error_registry.codes must be an array")
+        return errors
+
+    if len(codes) == 0:
+        errors.append(f"{path.name}: error_registry.codes cannot be empty")
+        return errors
+
+    # Track seen codes and ranges for validation
+    seen: dict[int, str] = {}
+    seen_ranges: set[str] = set()
+    code_ranges: dict[int, str] = {}
+
+    # Valid range definitions and their bounds
+    VALID_RANGES = {
+        "common": (1, 99),
+        "governance": (100, 199),
+        "escrow": (200, 299),
+        "identity": (300, 399),
+        "program_escrow": (400, 499),
+        "system": (1000, 9999),
+    }
+
+    for i, entry in enumerate(codes):
+        if not isinstance(entry, dict):
+            errors.append(f"{path.name}: error_registry.codes[{i}] must be an object")
+            continue
+
+        code = entry.get("code")
+        name = entry.get("name", f"<entry {i}>")
+        range_name = entry.get("range")
+        description = entry.get("description", "")
+
+        # Validate code
+        if not isinstance(code, int) or isinstance(code, bool) or code < 1:
+            errors.append(
+                f"{path.name}: error_registry.codes[{i}].code must be a positive integer; got {code!r}"
+            )
+            continue
+
+        # Validate name format (PascalCase)
+        if not isinstance(name, str) or not name.strip():
+            errors.append(f"{path.name}: error_registry.codes[{i}].name must be a non-empty string")
+        elif not re.match(r'^[A-Z][a-zA-Z0-9]*$', name):
+            errors.append(
+                f"{path.name}: error_registry.codes[{i}].name '{name}' must be PascalCase (e.g., 'AlreadyInitialized')"
+            )
+
+        # Validate range is present and valid
+        if not isinstance(range_name, str) or range_name not in VALID_RANGES:
+            errors.append(
+                f"{path.name}: error_registry.codes[{i}].range must be one of: {', '.join(VALID_RANGES.keys())}; got {range_name!r}"
+            )
+        else:
+            seen_ranges.add(range_name)
+            code_ranges[code] = range_name
+
+        # Validate description length
+        if isinstance(description, str) and len(description.strip()) > 0 and len(description) < 10:
+            errors.append(
+                f"{path.name}: error_registry.codes[{i}].description must be at least 10 characters if provided"
+            )
+
+        # Check for duplicate codes
+        if code in seen:
+            errors.append(
+                f"{path.name}: duplicate error code {code} — "
+                f"used by both '{seen[code]}' and '{name}'"
+            )
+        else:
+            seen[code] = name
+
+        # Validate code is within its declared range
+        if range_name in VALID_RANGES:
+            min_val, max_val = VALID_RANGES[range_name]
+            if not (min_val <= code <= max_val):
+                errors.append(
+                    f"{path.name}: error_registry.codes[{i}].code {code} is outside range '{range_name}' "
+                    f"(should be {min_val}-{max_val})"
+                )
+
+    # Validate ranges array
+    ranges = reg.get("ranges", [])
+    if not isinstance(ranges, list):
+        errors.append(f"{path.name}: error_registry.ranges must be an array")
+        return errors
+
+    if len(ranges) == 0:
+        errors.append(f"{path.name}: error_registry.ranges cannot be empty")
+        return errors
+
+    declared_ranges: set[str] = set()
+    for j, rng in enumerate(ranges):
+        if not isinstance(rng, dict):
+            errors.append(f"{path.name}: error_registry.ranges[{j}] must be an object")
+            continue
+        
+        rmin = rng.get("min")
+        rmax = rng.get("max")
+        rname = rng.get("name", f"<range {j}>")
+        rdescription = rng.get("description", "")
+
+        # Validate range name
+        if not isinstance(rname, str) or rname not in VALID_RANGES:
+            errors.append(
+                f"{path.name}: error_registry.ranges[{j}].name must be one of: {', '.join(VALID_RANGES.keys())}; got {rname!r}"
+            )
+        else:
+            declared_ranges.add(rname)
+
+        # Validate bounds
+        if not isinstance(rmin, int) or isinstance(rmin, bool) or rmin < 1:
+            errors.append(f"{path.name}: error_registry.ranges[{j}] ({rname!r}) min must be an integer >= 1")
+        if not isinstance(rmax, int) or isinstance(rmax, bool):
+            errors.append(f"{path.name}: error_registry.ranges[{j}] ({rname!r}) max must be an integer")
+        if isinstance(rmin, int) and isinstance(rmax, int) and rmin > rmax:
+            errors.append(
+                f"{path.name}: error_registry.ranges[{j}] ({rname!r}) min ({rmin}) > max ({rmax})"
+            )
+
+        # Validate range matches standard conventions
+        if rname in VALID_RANGES:
+            expected_min, expected_max = VALID_RANGES[rname]
+            if isinstance(rmin, int) and isinstance(rmax, int):
+                if rmin != expected_min or rmax != expected_max:
+                    errors.append(
+                        f"{path.name}: error_registry.ranges[{j}] ({rname!r}) should be {expected_min}-{expected_max} "
+                        f"according to conventions; got {rmin}-{rmax}"
+                    )
+
+        # Validate description
+        if isinstance(rdescription, str) and len(rdescription.strip()) > 0 and len(rdescription) < 10:
+            errors.append(
+                f"{path.name}: error_registry.ranges[{j}].description must be at least 10 characters if provided"
+            )
+
+    # Cross-validate that all used ranges are declared
+    for used_range in seen_ranges:
+        if used_range not in declared_ranges:
+            errors.append(
+                f"{path.name}: error_registry uses range '{used_range}' but it's not declared in ranges array"
+            )
+
+    # Validate cross-contract validation configuration
+    cross_validation = reg.get("cross_contract_validation", {})
+    if isinstance(cross_validation, dict):
+        allow_conflicts = cross_validation.get("allow_conflicts")
+        if allow_conflicts is not None and not isinstance(allow_conflicts, bool):
+            errors.append(
+                f"{path.name}: error_registry.cross_contract_validation.allow_conflicts must be boolean"
+            )
+
+        conflict_resolution = cross_validation.get("conflict_resolution", "warning")
+        if conflict_resolution not in ["error", "warning", "ignore"]:
+            errors.append(
+                f"{path.name}: error_registry.cross_contract_validation.conflict_resolution must be one of: error, warning, ignore"
+            )
+
+        excluded_contracts = cross_validation.get("excluded_contracts", [])
+        if not isinstance(excluded_contracts, list):
+            errors.append(
+                f"{path.name}: error_registry.cross_contract_validation.excluded_contracts must be an array"
+            )
+
+    return errors
+
+
+def _cross_manifest_error_code_warnings(
+    manifests_data: "list[tuple[Path, dict]]",
+) -> list[str]:
+    """Return warning strings for error codes that appear in more than one manifest.
+
+    Cross-contract duplicates are *warnings*, not errors: Soroban contracts have
+    independent error namespaces, so the same numeric value in two contracts is
+    legal.  However, documenting the overlap helps SDK authors and auditors.
+    """
+    # code -> list of (contract_name, variant_name)
+    global_map: dict[int, list[tuple[str, str]]] = {}
+    for path, manifest in manifests_data:
+        contract_name = manifest.get("contract_name") or path.stem
+        reg = manifest.get("error_registry") or {}
+        for entry in reg.get("codes") or []:
+            if not isinstance(entry, dict):
+                continue
+            code = entry.get("code")
+            name = entry.get("name", "?")
+            if not isinstance(code, int) or isinstance(code, bool) or code < 1:
+                continue
+            global_map.setdefault(code, []).append((contract_name, name))
+
+    warnings = []
+    for code, usages in sorted(global_map.items()):
+        if len(usages) > 1:
+            detail = ", ".join(f"{c}::{n}" for c, n in usages)
+            warnings.append(
+                f"WARN: error code {code} appears in multiple contracts: {detail}"
+            )
+    return warnings
+
+
 def main() -> int:
     # Existence + JSON validity check only (AJV is the schema enforcer).
     _load_json(SCHEMA_PATH)
@@ -169,12 +423,16 @@ def main() -> int:
         return 0
 
     all_errors: list[str] = []
+    valid_manifests: list[tuple[Path, dict]] = []
+
     for path in manifests:
         manifest = _load_json(path)
         if not isinstance(manifest, dict):
             all_errors.append(f"{path.name}: root must be an object; got {type(manifest).__name__}")
             continue
         all_errors.extend(_basic_manifest_checks(manifest, path))
+        all_errors.extend(_error_registry_checks(manifest, path))
+        valid_manifests.append((path, manifest))
 
     seed_files = _find_deployment_seed_files()
     for seed_path in seed_files:
@@ -189,7 +447,15 @@ def main() -> int:
             print(f"ERROR: {e}")
         return 1
 
-    print(f"OK: validated {len(manifests)} manifest(s) and {len(seed_files)} deployment seed file(s).")
+    # Cross-manifest warnings are printed but do not fail the script.
+    for w in _cross_manifest_error_code_warnings(valid_manifests):
+        print(w)
+
+    print(
+        f"OK: validated {len(manifests)} manifest(s), "
+        f"{len(seed_files)} deployment seed file(s), "
+        f"and error code registry uniqueness."
+    )
     return 0
 
 
