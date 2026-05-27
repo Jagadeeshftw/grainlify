@@ -495,8 +495,11 @@ pub struct ProgramDelegateSetEvent {
 pub struct ProgramDelegateRevokedEvent {
     pub version: u32,
     pub program_id: String,
+    pub delegate: Address,
     pub revoked_by: Address,
     pub timestamp: u64,
+    /// `true` when revoked via `emergency_revoke_delegate`; `false` for normal revocation.
+    pub emergency: bool,
 }
 
 #[contracttype]
@@ -3298,6 +3301,7 @@ impl ProgramEscrowContract {
     pub fn revoke_program_delegate(env: Env, program_id: String, caller: Address) -> ProgramData {
         let mut program_data = Self::get_program_data_by_id(&env, &program_id);
         let revoked_by = Self::require_program_owner_or_admin(&env, &program_data, &caller);
+        let delegate = program_data.delegate.clone().unwrap_or(revoked_by.clone());
 
         program_data.delegate = None;
         program_data.delegate_permissions = 0;
@@ -3308,8 +3312,75 @@ impl ProgramEscrowContract {
             ProgramDelegateRevokedEvent {
                 version: EVENT_VERSION_V2,
                 program_id,
+                delegate,
                 revoked_by,
                 timestamp: env.ledger().timestamp(),
+                emergency: false,
+            },
+        );
+
+        program_data
+    }
+
+    /// Emergency revocation of a delegate — admin only.
+    ///
+    /// ## Purpose
+    ///
+    /// Provides a fast-path for removing a compromised or malicious delegate
+    /// without requiring the delegate's cooperation or a two-step rotation.
+    /// The admin can call this at any time, even if the delegate is
+    /// unresponsive or acting adversarially.
+    ///
+    /// ## Authorization
+    ///
+    /// Only the contract-level admin (set via `initialize_contract`) may call
+    /// this function.  The payout-key owner and delegates are **not** permitted —
+    /// this separation ensures the function remains available even when the
+    /// payout-key itself may be compromised.
+    ///
+    /// ## Security Invariants
+    ///
+    /// 1. **Immediate effect** — permissions are zeroed atomically in the same
+    ///    ledger as the call; there is no delay or grace period.
+    /// 2. **Idempotent** — calling when no delegate is set is a no-op (does not
+    ///    panic) and still emits the event so the call is auditable.
+    /// 3. **Event flag** — `ProgramDelegateRevokedEvent::emergency = true`
+    ///    distinguishes this path from normal revocation in indexers and alerts.
+    ///
+    /// ## Arguments
+    /// * `program_id` — Target program whose delegate is being revoked.
+    /// * `delegate`   — Address of the compromised delegate to revoke.
+    ///
+    /// ## Panics
+    /// * `"Not initialized"` — admin key not set.
+    /// * `"Unauthorized"` — caller is not the contract admin.
+    /// * `"Program not found"` — `program_id` does not exist.
+    pub fn emergency_revoke_delegate(
+        env: Env,
+        program_id: String,
+        delegate: Address,
+    ) -> ProgramData {
+        // Only the contract-level admin may call this function.
+        let admin = Self::require_admin(&env);
+
+        let mut program_data = Self::get_program_data_by_id(&env, &program_id);
+
+        // Zero out delegate permissions regardless of whether the stored
+        // delegate matches `delegate` — a compromised key scenario may
+        // involve the delegate field already being cleared by another path.
+        program_data.delegate = None;
+        program_data.delegate_permissions = 0;
+        Self::store_program_data(&env, &program_id, &program_data);
+
+        env.events().publish(
+            (PROGRAM_DELEGATE_REVOKED, program_id.clone()),
+            ProgramDelegateRevokedEvent {
+                version: EVENT_VERSION_V2,
+                program_id,
+                delegate,
+                revoked_by: admin,
+                timestamp: env.ledger().timestamp(),
+                emergency: true,
             },
         );
 
