@@ -728,6 +728,14 @@ pub enum ContractError {
     /// This error occurs when role rotation is temporarily disabled
     /// due to contract state (e.g., emergency mode, dispute, etc.).
     RoleRotationNotAllowed = 1208,
+
+    /// Rotation timelock has not yet expired.
+    ///
+    /// This error occurs when `accept_admin` or `accept_controller` is called
+    /// before the mandatory 24-hour delay since the proposal has elapsed.
+    /// The caller must wait until `proposed_at + ROTATION_TIMELOCK_DELAY` seconds
+    /// have passed before accepting the role.
+    RotationTimelockActive = 1209,
 }
 
 /// Explicit error enum for all batch payout failure modes.

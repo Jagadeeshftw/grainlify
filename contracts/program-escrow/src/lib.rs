@@ -1067,8 +1067,14 @@ pub enum DataKey {
     BatchReceipt(u64),
     /// Pending admin address for two-step admin rotation (step 1).
     PendingAdmin,
+    /// Full transition state for pending admin rotation (proposed_at, deadline, nonce).
+    /// Stored alongside PendingAdmin to enable timelock enforcement in accept_admin.
+    PendingAdminState,
     /// Pending controller address for two-step controller rotation (step 1).
     PendingController(String),
+    /// Full transition state for pending controller rotation (proposed_at, deadline, nonce).
+    /// Stored alongside PendingController to enable timelock enforcement in accept_controller.
+    PendingControllerState(String),
     /// Upgrade-safe schema version marker for role management storage.
     /// Written on init; increment when role management layout changes.
     RoleManagementSchemaVersion,
@@ -1384,6 +1390,12 @@ const MIN_IDEMPOTENCY_KEY_LENGTH: u32 = 1;   // Minimum 1 character (non-empty)
 // Constants for program scheduling
 const BASE_FEE: i128 = 100;
 const MIN_INCREMENT: u64 = 86400; // 1 day in seconds
+
+/// Mandatory delay (in seconds) between proposing and accepting an admin/controller rotation.
+///
+/// Set to 24 hours (86 400 seconds). During this window the current admin can cancel
+/// the proposal if the proposer key was compromised.
+pub const ROTATION_TIMELOCK_DELAY: u64 = 86_400; // 24 hours in seconds
 const MAX_SLOTS: usize = 1000;
 /// Current release schedule storage schema version.
 ///
@@ -2901,6 +2913,7 @@ impl ProgramEscrowContract {
         
         // Store transition state with upgrade-safe schema
         env.storage().instance().set(&DataKey::PendingAdmin, &proposed_admin);
+        env.storage().instance().set(&DataKey::PendingAdminState, &transition_state);
         env.storage().instance().set(
             &DataKey::RoleManagementSchemaVersion, 
             &ROLE_MANAGEMENT_SCHEMA_VERSION_V1
@@ -2921,6 +2934,16 @@ impl ProgramEscrowContract {
 
     /// Accept the proposed admin role (step 2).
     /// The proposed admin must authorize. Returns explicit errors for deterministic behavior.
+    ///
+    /// ### Timelock
+    /// A mandatory 24-hour delay (`ROTATION_TIMELOCK_DELAY`) must elapse between
+    /// `propose_admin` and `accept_admin`. This gives the current admin time to cancel
+    /// a proposal made by a compromised key.
+    ///
+    /// ### Errors
+    /// - `NoAdminRotationInProgress` — no pending proposal exists.
+    /// - `RotationTimelockActive` — the 24-hour delay has not yet elapsed.
+    /// - `InvalidAdminRotationState` — storage is inconsistent.
     pub fn accept_admin(env: Env) -> Result<(), ContractError> {
         // Check if there's a pending rotation
         let proposed: Address = env
@@ -2931,18 +2954,25 @@ impl ProgramEscrowContract {
         
         proposed.require_auth();
         
-        let current_admin: Address = env.storage().instance().get(&DataKey::Admin)
+        // Enforce 24-hour timelock: read the stored transition state
+        let transition_state: RoleTransitionState = env
+            .storage()
+            .instance()
+            .get(&DataKey::PendingAdminState)
             .ok_or(ContractError::InvalidAdminRotationState)?;
         
-        // Verify this is the correct proposed admin
-        if proposed != env.current_contract_address() {
-            // In a real implementation, you'd verify the caller is the proposed admin
-            // This is a simplified check for demonstration
+        let now = env.ledger().timestamp();
+        if now < transition_state.proposed_at + ROTATION_TIMELOCK_DELAY {
+            return Err(ContractError::RotationTimelockActive);
         }
+        
+        let current_admin: Address = env.storage().instance().get(&DataKey::Admin)
+            .ok_or(ContractError::InvalidAdminRotationState)?;
         
         // Perform the role transition atomically
         env.storage().instance().set(&DataKey::Admin, &proposed);
         env.storage().instance().remove(&DataKey::PendingAdmin);
+        env.storage().instance().remove(&DataKey::PendingAdminState);
         
         env.events().publish(
             (ADMIN_ACCEPTED,),
@@ -2967,6 +2997,7 @@ impl ProgramEscrowContract {
         }
         
         env.storage().instance().remove(&DataKey::PendingAdmin);
+        env.storage().instance().remove(&DataKey::PendingAdminState);
         
         env.events().publish(
             (ADMIN_ROTATION_CANCELLED,),
@@ -3363,6 +3394,10 @@ impl ProgramEscrowContract {
             &proposed_controller,
         );
         env.storage().instance().set(
+            &DataKey::PendingControllerState(program_id.clone()),
+            &transition_state,
+        );
+        env.storage().instance().set(
             &DataKey::RoleManagementSchemaVersion, 
             &ROLE_MANAGEMENT_SCHEMA_VERSION_V1
         );
@@ -3383,6 +3418,16 @@ impl ProgramEscrowContract {
 
     /// Accept the proposed controller role for a program (step 2).
     /// The proposed controller must authorize. Returns explicit errors for deterministic behavior.
+    ///
+    /// ### Timelock
+    /// A mandatory 24-hour delay (`ROTATION_TIMELOCK_DELAY`) must elapse between
+    /// `propose_controller` and `accept_controller`. This gives the current admin/controller
+    /// time to cancel a proposal made by a compromised key.
+    ///
+    /// ### Errors
+    /// - `NoControllerRotationInProgress` — no pending proposal exists for this program.
+    /// - `RotationTimelockActive` — the 24-hour delay has not yet elapsed.
+    /// - `InvalidControllerRotationState` — storage is inconsistent.
     pub fn accept_controller(env: Env, program_id: String) -> Result<ProgramData, ContractError> {
         // Check if there's a pending rotation
         let proposed: Address = env
@@ -3393,14 +3438,20 @@ impl ProgramEscrowContract {
         
         proposed.require_auth();
         
+        // Enforce 24-hour timelock: read the stored transition state
+        let transition_state: RoleTransitionState = env
+            .storage()
+            .instance()
+            .get(&DataKey::PendingControllerState(program_id.clone()))
+            .ok_or(ContractError::InvalidControllerRotationState)?;
+        
+        let now = env.ledger().timestamp();
+        if now < transition_state.proposed_at + ROTATION_TIMELOCK_DELAY {
+            return Err(ContractError::RotationTimelockActive);
+        }
+        
         let mut program_data = Self::get_program_data_by_id(&env, &program_id);
         let previous_controller = program_data.authorized_payout_key.clone();
-        
-        // Verify this is the correct proposed controller
-        if proposed != env.current_contract_address() {
-            // In a real implementation, you'd verify caller is the proposed controller
-            // This is a simplified check for demonstration
-        }
         
         // Perform role transition atomically
         program_data.authorized_payout_key = proposed.clone();
@@ -3408,6 +3459,9 @@ impl ProgramEscrowContract {
         env.storage()
             .instance()
             .remove(&DataKey::PendingController(program_id.clone()));
+        env.storage()
+            .instance()
+            .remove(&DataKey::PendingControllerState(program_id.clone()));
         
         env.events().publish(
             (CONTROLLER_ACCEPTED, program_id.clone()),
@@ -3444,6 +3498,9 @@ impl ProgramEscrowContract {
         env.storage()
             .instance()
             .remove(&DataKey::PendingController(program_id.clone()));
+        env.storage()
+            .instance()
+            .remove(&DataKey::PendingControllerState(program_id.clone()));
         
         env.events().publish(
             (CONTROLLER_ROTATION_CANCELLED, program_id.clone()),

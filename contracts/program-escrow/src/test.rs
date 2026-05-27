@@ -822,8 +822,12 @@ fn test_admin_rotation_acceptance_success() {
     // Initialize contract with admin
     client.initialize_contract(&admin);
     
-    // Propose new admin
+    // Propose new admin at timestamp T
+    env.ledger().with_mut(|li| li.timestamp = 1_000_000);
     client.propose_admin(&new_admin);
+    
+    // Advance time past the 24h timelock before accepting
+    env.ledger().with_mut(|li| li.timestamp = 1_000_000 + ROTATION_TIMELOCK_DELAY);
     
     // Accept admin role
     client.accept_admin();
@@ -926,8 +930,12 @@ fn test_controller_rotation_acceptance_success() {
     let new_controller = Address::generate(&env);
     let program_id = String::from_str(&env, "hack-2026");
     
-    // Propose new controller
+    // Propose new controller at timestamp T
+    env.ledger().with_mut(|li| li.timestamp = 1_000_000);
     client.propose_controller(&program_id, &admin, &new_controller);
+    
+    // Advance time past the 24h timelock before accepting
+    env.ledger().with_mut(|li| li.timestamp = 1_000_000 + ROTATION_TIMELOCK_DELAY);
     
     // Accept controller role
     client.accept_controller(&program_id);
