@@ -787,26 +787,32 @@ fn test_admin_rotation_proposal_success() {
     assert_eq!(schema_version, 1);
 }
 
-/// Test admin rotation already in progress error.
+/// Test that a newer admin proposal overwrites any existing pending proposal.
 #[test]
-#[should_panic(expected = "Admin rotation already in progress")]
-fn test_admin_rotation_already_in_progress() {
+fn test_admin_rotation_latest_proposal_overwrites_previous() {
     let env = Env::default();
     let contract_id = env.register_contract(None, ProgramEscrowContract);
     let client = ProgramEscrowContractClient::new(&env, &contract_id);
-    
+
     let admin = Address::generate(&env);
     let new_admin1 = Address::generate(&env);
     let new_admin2 = Address::generate(&env);
-    
+
     // Initialize contract with admin
     client.initialize_contract(&admin);
-    
-    // Propose first admin
+
+    // Propose first admin, then replace it with a second proposal.
     client.propose_admin(&new_admin1);
-    
-    // Try to propose second admin - should fail
     client.propose_admin(&new_admin2);
+
+    // The pending proposal should now point at the newer candidate.
+    let pending_admin: Address = env.as_contract(&contract_id, || {
+        env.storage()
+            .instance()
+            .get(&DataKey::PendingAdmin)
+            .unwrap()
+    });
+    assert_eq!(pending_admin, new_admin2);
 }
 
 /// Test admin rotation acceptance success.
@@ -990,20 +996,27 @@ fn test_invalid_role_proposal() {
     let env = Env::default();
     let contract_id = env.register_contract(None, ProgramEscrowContract);
     let client = ProgramEscrowContractClient::new(&env, &contract_id);
-    
+
     let admin = Address::generate(&env);
-    
+
     // Initialize contract with admin
     client.initialize_contract(&admin);
-    
+
     // Try to propose same admin - should fail
     client.propose_admin(&admin);
 }
+
+/// Non-admins cannot update the global rate-limit configuration.
+#[test]
+#[should_panic(expected = "Unauthorized")]
+fn test_non_admin_cannot_update_rate_limit_config() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
     let non_admin = Address::generate(&env);
 
     env.mock_all_auths();
-
     client.set_admin(&admin);
 
     // Mock only non_admin so that update_rate_limit_config sees non_admin as caller;
