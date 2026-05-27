@@ -1107,11 +1107,16 @@ pub struct PauseStateChanged {
 /// ### Topics
 /// `(PAUSE_STATE_CHANGED_V2, operation_symbol)`
 ///
+/// ### Fields
+/// - `actor`: The address that triggered the pause state change (admin or authorized caller).
+/// - `reason`: Optional human-readable reason string, bounded to 256 characters.
+///
 /// ### Security notes
 /// - `previous_paused` is read from storage **before** the mutation so the
 ///   event accurately reflects the transition (old → new).
 /// - `invariant_ok` is always `true` on-chain; a `false` value would indicate
 ///   a storage corruption bug.
+/// - `reason` is bounded to [`PAUSE_REASON_MAX_LEN`] characters to prevent storage abuse.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PauseStateChangedV2 {
@@ -1119,11 +1124,18 @@ pub struct PauseStateChangedV2 {
     pub operation: Symbol,
     pub previous_paused: bool,
     pub paused: bool,
-    pub admin: Address,
+    /// The address that triggered the pause state change.
+    pub actor: Address,
+    /// Optional human-readable reason, bounded to 256 characters.
     pub reason: Option<String>,
     pub timestamp: u64,
     pub receipt_id: u64,
 }
+
+/// Maximum allowed length (in characters) for a pause reason string.
+///
+/// Enforced in [`ProgramEscrowContract::set_paused`] to prevent storage abuse.
+pub const PAUSE_REASON_MAX_LEN: u32 = 256;
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3542,7 +3554,21 @@ impl ProgramEscrowContract {
             .unwrap_or_else(|| Vec::new(&env))
     }
 
-    /// Update pause flags (admin only)
+    /// Update pause flags (admin only).
+    ///
+    /// ### Parameters
+    /// - `lock`: If `Some(true)`, pause lock operations; `Some(false)` unpauses.
+    /// - `release`: If `Some(true)`, pause release operations; `Some(false)` unpauses.
+    /// - `refund`: If `Some(true)`, pause refund operations; `Some(false)` unpauses.
+    /// - `reason`: Optional human-readable reason string, bounded to [`PAUSE_REASON_MAX_LEN`] (256) characters.
+    ///
+    /// ### Events
+    /// Emits [`PauseStateChanged`] and [`PauseStateChangedV2`] for each flag that changes.
+    /// The V2 event includes `actor` (the admin address) and `reason` for full audit trail.
+    ///
+    /// ### Errors
+    /// Panics if the contract is not initialized or the caller is not the admin.
+    /// Panics if `reason` exceeds 256 characters.
     pub fn set_paused(
         env: Env,
         lock: Option<bool>,
@@ -3556,6 +3582,13 @@ impl ProgramEscrowContract {
 
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         admin.require_auth();
+
+        // Enforce 256-character bound on reason to prevent storage abuse.
+        if let Some(ref r) = reason {
+            if r.len() > PAUSE_REASON_MAX_LEN {
+                panic!("Pause reason exceeds maximum length of 256 characters");
+            }
+        }
 
         let mut flags = Self::get_pause_flags(&env);
         let timestamp = env.ledger().timestamp();
@@ -3586,7 +3619,7 @@ impl ProgramEscrowContract {
                     operation: symbol_short!("lock"),
                     previous_paused,
                     paused,
-                    admin: admin.clone(),
+                    actor: admin.clone(),
                     reason: reason.clone(),
                     timestamp,
                     receipt_id,
@@ -3616,7 +3649,7 @@ impl ProgramEscrowContract {
                     operation: symbol_short!("release"),
                     previous_paused,
                     paused,
-                    admin: admin.clone(),
+                    actor: admin.clone(),
                     reason: reason.clone(),
                     timestamp,
                     receipt_id,
@@ -3646,7 +3679,7 @@ impl ProgramEscrowContract {
                     operation: symbol_short!("refund"),
                     previous_paused,
                     paused,
-                    admin: admin.clone(),
+                    actor: admin.clone(),
                     reason: reason.clone(),
                     timestamp,
                     receipt_id,
