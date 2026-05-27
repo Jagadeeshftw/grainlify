@@ -6527,3 +6527,5 @@ mod test_pagination;
 mod rbac_tests;
 #[cfg(test)]
 mod test_batch_receipts;
+#[cfg(test)]
+mod test_rbac;
