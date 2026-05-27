@@ -1,230 +1,31 @@
-name: E2E Upgrade and Migration Tests
+# Previously contained placeholder e2e steps; consolidated into real Rust checks.
+
+name: Contract smoke
 
 on:
   push:
     branches: [main, develop, master]
-    paths:
-      - 'contracts/**'
-      - '.github/workflows/e2e-upgrade-tests.yml'
   pull_request:
     branches: [main, develop, master]
-    paths:
-      - 'contracts/**'
   workflow_dispatch:
 
+concurrency:
+  group: contract-smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
-  RUST_VERSION: 1.85.0
-  STELLAR_CLI_VERSION: 22.5.0
+  CARGO_TERM_COLOR: always
 
 jobs:
-  grainlify-core-e2e-tests:
-    name: Grainlify Core E2E Upgrade Tests
+  build-test:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Rust (with Soroban targets)
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32v1-none, wasm32-unknown-unknown
-
-      - name: Cache Cargo dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            contracts/grainlify-core/target/
-          key: ${{ runner.os }}-cargo-grainlify-core-${{ hashFiles('contracts/grainlify-core/Cargo.lock', 'contracts/grainlify-core/src/**') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-grainlify-core-
-
-      - name: Install Stellar CLI
+      - name: Build and test soroban workspace
         run: |
-          URL="https://github.com/stellar/stellar-cli/releases/download/v${{ env.STELLAR_CLI_VERSION }}/stellar-cli-${{ env.STELLAR_CLI_VERSION }}-x86_64-unknown-linux-gnu.tar.gz"
-          curl -fL "$URL" -o stellar-cli.tar.gz
-          tar -xzf stellar-cli.tar.gz
-          mkdir -p "$HOME/.local/bin"
-          mv stellar "$HOME/.local/bin/stellar"
-          chmod +x "$HOME/.local/bin/stellar"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          "$HOME/.local/bin/stellar" --version
-
-      - name: Build Grainlify Core Contract
-        working-directory: contracts/grainlify-core
-        run: |
-          stellar contract build
-
-      - name: Run E2E Upgrade Tests
-        working-directory: contracts/grainlify-core
-        run: |
-          cargo check --lib
-
-      - name: Run Upgrade Rollback Tests
-        working-directory: contracts/grainlify-core
-        run: |
-          cargo check --lib
-
-      - name: Run Migration Hook Tests
-        working-directory: contracts/grainlify-core
-        run: |
-          cargo check --lib
-
-  bounty-escrow-e2e-tests:
-    name: Bounty Escrow E2E Upgrade Tests
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Rust (with Soroban targets)
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32v1-none, wasm32-unknown-unknown
-
-      - name: Cache Cargo dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            contracts/bounty_escrow/target/
-          key: ${{ runner.os }}-cargo-bounty-escrow-${{ hashFiles('contracts/bounty_escrow/**/Cargo.lock', 'contracts/bounty_escrow/contracts/escrow/src/**', 'contracts/grainlify-core/src/**') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-bounty-escrow-
-
-      - name: Cache target directory
-        uses: actions/cache@v4
-        with:
-          path: contracts/bounty_escrow/contracts/escrow/target
-          key: ${{ runner.os }}-target-bounty-escrow-${{ hashFiles('**/Cargo.lock', 'contracts/bounty_escrow/contracts/escrow/src/**', 'contracts/grainlify-core/src/**') }}
-          restore-keys: |
-            ${{ runner.os }}-target-bounty-escrow-
-
-      - name: Install Stellar CLI
-        run: |
-          URL="https://github.com/stellar/stellar-cli/releases/download/v${{ env.STELLAR_CLI_VERSION }}/stellar-cli-${{ env.STELLAR_CLI_VERSION }}-x86_64-unknown-linux-gnu.tar.gz"
-          curl -fL "$URL" -o stellar-cli.tar.gz
-          tar -xzf stellar-cli.tar.gz
-          mkdir -p "$HOME/.local/bin"
-          mv stellar "$HOME/.local/bin/stellar"
-          chmod +x "$HOME/.local/bin/stellar"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          "$HOME/.local/bin/stellar" --version
-
-      - name: Bounty Escrow CI Smoke Check
-        working-directory: contracts/bounty_escrow/contracts/escrow
-        run: |
-          test -f Cargo.toml
-          test -f src/lib.rs
-          test -f ../../README.md
-
-  program-escrow-e2e-tests:
-    name: Program Escrow E2E Tests
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Rust (with Soroban targets)
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32v1-none, wasm32-unknown-unknown
-
-      - name: Cache Cargo dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            contracts/program-escrow/target/
-          key: ${{ runner.os }}-cargo-program-escrow-${{ hashFiles('contracts/program-escrow/Cargo.lock', 'contracts/program-escrow/src/**', 'contracts/grainlify-core/src/**') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-program-escrow-
-
-      - name: Cache target directory
-        uses: actions/cache@v4
-        with:
-          path: contracts/program-escrow/target
-          key: ${{ runner.os }}-target-program-escrow-${{ hashFiles('**/Cargo.lock', 'contracts/program-escrow/src/**', 'contracts/grainlify-core/src/**') }}
-          restore-keys: |
-            ${{ runner.os }}-target-program-escrow-
-
-      - name: Install Stellar CLI
-        run: |
-          URL="https://github.com/stellar/stellar-cli/releases/download/v${{ env.STELLAR_CLI_VERSION }}/stellar-cli-${{ env.STELLAR_CLI_VERSION }}-x86_64-unknown-linux-gnu.tar.gz"
-          curl -fL "$URL" -o stellar-cli.tar.gz
-          tar -xzf stellar-cli.tar.gz
-          mkdir -p "$HOME/.local/bin"
-          mv stellar "$HOME/.local/bin/stellar"
-          chmod +x "$HOME/.local/bin/stellar"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          "$HOME/.local/bin/stellar" --version
-
-      - name: Program Escrow CI Smoke Check
-        working-directory: contracts/program-escrow
-        run: |
-          test -f Cargo.toml
-          test -f src/lib.rs
-          test -f STORAGE_LAYOUT.md
-
-  integration-tests:
-    name: Integration Tests (All Contracts)
-    runs-on: ubuntu-latest
-    needs: [grainlify-core-e2e-tests, bounty-escrow-e2e-tests, program-escrow-e2e-tests]
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Rust (with Soroban targets)
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ env.RUST_VERSION }}
-          targets: wasm32v1-none, wasm32-unknown-unknown
-
-      - name: Install Stellar CLI
-        run: |
-          URL="https://github.com/stellar/stellar-cli/releases/download/v${{ env.STELLAR_CLI_VERSION }}/stellar-cli-${{ env.STELLAR_CLI_VERSION }}-x86_64-unknown-linux-gnu.tar.gz"
-          curl -fL "$URL" -o stellar-cli.tar.gz
-          tar -xzf stellar-cli.tar.gz
-          mkdir -p "$HOME/.local/bin"
-          mv stellar "$HOME/.local/bin/stellar"
-          chmod +x "$HOME/.local/bin/stellar"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          "$HOME/.local/bin/stellar" --version
-
-      - name: Run Integration Tests
-        working-directory: contracts
-        run: |
-          cd grainlify-core
-          cargo test --test test_storage_layout
-
-  test-summary:
-    name: Test Summary
-    runs-on: ubuntu-latest
-    needs: [grainlify-core-e2e-tests, bounty-escrow-e2e-tests, program-escrow-e2e-tests, integration-tests]
-    if: always()
-    
-    steps:
-      - name: Check test results
-        run: |
-          echo "## E2E Upgrade and Migration Test Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ All end-to-end upgrade and migration tests completed" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Test Coverage:" >> $GITHUB_STEP_SUMMARY
-          echo "- Grainlify Core: Upgrade, migration, and rollback scenarios" >> $GITHUB_STEP_SUMMARY
-          echo "- Bounty Escrow: Pause/resume with upgrade scenarios" >> $GITHUB_STEP_SUMMARY
-          echo "- Program Escrow: Circuit breaker and error recovery" >> $GITHUB_STEP_SUMMARY
-          echo "- Integration: Cross-contract upgrade scenarios" >> $GITHUB_STEP_SUMMARY
+          cd soroban
+          cargo build --workspace
+          cargo test --workspace

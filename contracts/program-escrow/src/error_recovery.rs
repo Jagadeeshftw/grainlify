@@ -71,6 +71,8 @@ pub struct CircuitBreakerConfig {
     pub success_threshold: u32,
     /// Maximum number of error log entries to retain.
     pub max_error_log: u32,
+    /// Recovery window in ledger timestamps (seconds) after which Open transitions to HalfOpen.
+    pub recovery_window: u64,
 }
 
 impl CircuitBreakerConfig {
@@ -79,6 +81,7 @@ impl CircuitBreakerConfig {
             failure_threshold: 3,
             success_threshold: 1,
             max_error_log: 10,
+            recovery_window: 300, // 5 minutes default recovery window
         }
     }
 }
@@ -105,6 +108,7 @@ pub struct CircuitBreakerStatus {
     pub opened_at: u64,
     pub failure_threshold: u32,
     pub success_threshold: u32,
+    pub recovery_window: u64,
 }
 
 // ─────────────────────────────────────────────────────────
@@ -147,6 +151,8 @@ pub fn set_config(env: &Env, config: CircuitBreakerConfig) {
             config.failure_threshold,
             prev_config.success_threshold,
             config.success_threshold,
+            prev_config.recovery_window,
+            config.recovery_window,
             env.ledger().timestamp(),
         ),
     );
@@ -195,14 +201,19 @@ pub fn get_status(env: &Env) -> CircuitBreakerStatus {
             .unwrap_or(0),
         failure_threshold: config.failure_threshold,
         success_threshold: config.success_threshold,
+        recovery_window: config.recovery_window,
     }
 }
 
 /// **Call this before any protected operation.**
 ///
 /// Returns `Err(ERR_CIRCUIT_OPEN)` if the circuit is Open.
+/// Automatically transitions Open → HalfOpen if recovery_window has elapsed.
 /// Records that we are attempting an operation (no state change yet).
 pub fn check_and_allow(env: &Env) -> Result<(), u32> {
+    // Check for automatic timeout transitions first
+    check_timeout_transitions(env);
+    
     match get_state(env) {
         CircuitState::Open => {
             emit_circuit_event(env, symbol_short!("cb_reject"), get_failure_count(env));
@@ -274,6 +285,56 @@ pub fn record_success(env: &Env) {
             // Shouldn't happen if check_and_allow is used correctly; ignore.
         }
     }
+}
+
+/// Checks for automatic timeout transitions and applies them if needed.
+///
+/// - Open → HalfOpen: After recovery_window has elapsed since opened_at
+/// - HalfOpen → Closed: Automatically after first successful probe operation (handled in record_success)
+pub fn check_timeout_transitions(env: &Env) {
+    let state = get_state(env);
+    let now = env.ledger().timestamp();
+    
+    match state {
+        CircuitState::Open => {
+            let opened_at: u64 = env
+                .storage()
+                .persistent()
+                .get(&CircuitBreakerKey::OpenedAt)
+                .unwrap_or(0);
+            
+            if opened_at > 0 {
+                let config = get_config(env);
+                if now >= opened_at + config.recovery_window {
+                    // Recovery window has elapsed - transition to HalfOpen
+                    transition_to_half_open_timeout(env);
+                }
+            }
+        }
+        CircuitState::HalfOpen | CircuitState::Closed => {
+            // No automatic transitions needed for these states
+        }
+    }
+}
+
+/// Transitions the circuit from Open to HalfOpen due to timeout.
+/// This is an internal function called by check_timeout_transitions.
+fn transition_to_half_open_timeout(env: &Env) {
+    env.storage()
+        .persistent()
+        .set(&CircuitBreakerKey::State, &CircuitState::HalfOpen);
+    env.storage()
+        .persistent()
+        .set(&CircuitBreakerKey::SuccessCount, &0u32);
+
+    // Emit event indicating automatic timeout transition
+    env.events().publish(
+        (symbol_short!("circuit"), symbol_short!("cb_timeout")),
+        (
+            symbol_short!("auto_half"),
+            env.ledger().timestamp(),
+        ),
+    );
 }
 
 /// **Call this after a FAILED protected operation.**

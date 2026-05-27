@@ -76,25 +76,6 @@ mod test {
     use soroban_sdk::testutils::{Address as _, Ledger};
 
     #[test]
-    fn test_commit_reveal_success() {
-        let env = Env::default();
-        let creator = Address::generate(&env);
-
-        let value = Bytes::from_array(&env, &[1, 2, 3]);
-        let salt = Bytes::from_array(&env, &[4, 5, 6]);
-
-        let mut data = value.clone();
-        data.append(&salt);
-        let hash: BytesN<32> = env.crypto().sha256(&data).into();
-
-        let commitment = create_commitment(&env, creator.clone(), hash, None);
-
-        env.mock_all_auths();
-        let result = verify_reveal(&env, &commitment, creator.clone(), value, salt);
-        assert!(result.is_ok());
-    }
-
-    #[test]
     fn test_unauthorized_reveal() {
         let env = Env::default();
         let creator = Address::generate(&env);

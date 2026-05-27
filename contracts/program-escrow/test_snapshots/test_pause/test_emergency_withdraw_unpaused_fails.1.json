@@ -56,6 +56,27 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "HistoryPaginationConfig"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "map": [
+                            {
+                              "key": {
+                                "symbol": "max_limit"
+                              },
+                              "val": {
+                                "u32": 200
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "MaintenanceMode"
                             }
                           ]
@@ -113,18 +134,6 @@
                               }
                             }
                           ]
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
-                            {
-                              "symbol": "ReadOnlyMode"
-                            }
-                          ]
-                        },
-                        "val": {
-                          "bool": false
                         }
                       }
                     ]
@@ -249,7 +258,7 @@
             "data": {
               "vec": [
                 {
-                  "string": "caught panic 'Not paused' from contract function 'Symbol(obj#41)'"
+                  "string": "caught panic 'Not paused' from contract function 'Symbol(obj#47)'"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"

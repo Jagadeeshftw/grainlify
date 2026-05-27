@@ -258,20 +258,8 @@ fn build_seed_hash(
 /// - Gas: Proportional to candidate count
 ///
 /// # Examples
-/// ```rust
-/// use soroban_sdk::{symbol_short, Bytes, BytesN, Env, Vec, Address};
-/// use grainlify_core::pseudo_randomness::derive_selection;
-///
-/// let env = Env::default();
-/// let domain = symbol_short!("lottery");
-/// let context = Bytes::from_slice(&env, b"round_42");
-/// let external_seed = BytesN::from_array(&env, &[0x01; 32]);
-/// let mut candidates = Vec::new(&env);
-/// candidates.push_back(Address::generate(&env));
-/// candidates.push_back(Address::generate(&env));
-///
-/// let result = derive_selection(&env, &domain, &context, &external_seed, &candidates);
-/// assert!(result.is_some());
+/// ```text
+/// (See tests and on-chain usage; doctests use testutils for addresses.)
 /// ```
 ///
 /// # Panics

@@ -1,106 +1,76 @@
-//! # Reentrancy Guard Module
+//! Reentrancy guard for the soroban program escrow contract.
 //!
-//! Provides protection against reentrancy attacks in Soroban smart contracts.
-//!
-//! ## Overview
-//!
-//! Reentrancy occurs when an external contract call is made during the execution
-//! of a function, and that external contract calls back into the original contract
-//! before the first invocation has completed. This can lead to unexpected state
-//! changes and potential exploits.
-//!
-//! ## Implementation
-//!
-//! This guard uses a simple boolean flag stored in contract storage to track
-//! whether a protected function is currently executing. The guard:
-//! 1. Checks if the function is already executing (flag is true)
-//! 2. If yes, panics to prevent reentry
-//! 3. If no, sets the flag to true
-//! 4. Executes the protected code
-//! 5. Resets the flag to false when done
-//!
-//! ## Usage
-//!
-//! ```rust
-//! use crate::reentrancy_guard::{check_not_entered, set_entered, clear_entered};
-//!
-//! pub fn sensitive_function(env: Env) {
-//!     // Check and set guard
-//!     check_not_entered(&env);
-//!     set_entered(&env);
-//!     
-//!     // ... protected code that makes external calls ...
-//!     
-//!     // Clear guard before returning
-//!     clear_entered(&env);
-//! }
-//! ```
-//!
-//! ## Security Considerations
-//!
-//! - The guard MUST be cleared before the function returns
-//! - If a panic occurs, Soroban will roll back all state changes including the guard
-//! - The guard protects against same-contract reentrancy
-//! - Cross-contract reentrancy requires additional considerations
+//! Uses the `DataKey::ReentrancyGuard` variant stored in instance storage.
+//! Soroban rolls back all state on panic or `Err` return, so the flag
+//! cannot get permanently stuck.
 
-use soroban_sdk::{symbol_short, Env, Symbol};
+use crate::DataKey;
+use soroban_sdk::Env;
 
-/// Storage key for the reentrancy guard flag
-const REENTRANCY_GUARD: Symbol = symbol_short!("ReentGrd");
+/// State constants for the reentrancy guard.
+/// Using non-zero values prevents default-zero value confusion.
+const NOT_ENTERED: u32 = 1;
+const ENTERED: u32 = 2;
 
-/// Check if a protected function is currently executing.
-/// Panics if reentrancy is detected.
+/// Acquire the reentrancy guard.
+///
+/// Sets a u32 flag (ENTERED) in instance storage. If the flag is already set to ENTERED,
+/// this function panics — indicating a re-entrant call.
 ///
 /// # Panics
-/// * If the guard flag is already set (reentrancy detected)
-pub fn check_not_entered(env: &Env) {
-    let entered: bool = env
+/// Panics with `"Reentrancy detected"` if the guard is already held.
+pub fn acquire(env: &Env) {
+    let status: u32 = env
         .storage()
         .instance()
-        .get(&REENTRANCY_GUARD)
-        .unwrap_or(false);
+        .get(&DataKey::ReentrancyGuard)
+        .unwrap_or(NOT_ENTERED);
 
-    if entered {
+    if status != NOT_ENTERED {
         panic!("Reentrancy detected");
     }
-}
 
-/// Set the reentrancy guard flag to indicate a protected function is executing.
-pub fn set_entered(env: &Env) {
-    env.storage().instance().set(&REENTRANCY_GUARD, &true);
-}
-
-/// Clear the reentrancy guard flag to indicate the protected function has completed.
-pub fn clear_entered(env: &Env) {
-    env.storage().instance().set(&REENTRANCY_GUARD, &false);
-}
-
-/// Check if the guard is currently set (for testing purposes).
-///
-/// # Returns
-/// * `true` if a protected function is currently executing
-/// * `false` otherwise
-pub fn is_entered(env: &Env) -> bool {
     env.storage()
         .instance()
-        .get(&REENTRANCY_GUARD)
-        .unwrap_or(false)
+        .set(&DataKey::ReentrancyGuard, &ENTERED);
 }
 
-/// Macro to wrap a function with reentrancy protection.
+/// Release the reentrancy guard.
 ///
-/// This ensures the guard is properly set and cleared even if the function panics.
-/// Note: In Soroban, panics roll back all state changes, so the guard will be
-/// automatically cleared on panic.
-#[macro_export]
-macro_rules! with_reentrancy_guard {
-    ($env:expr, $body:block) => {{
-        $crate::reentrancy_guard::check_not_entered(&$env);
-        $crate::reentrancy_guard::set_entered(&$env);
+/// Resets the guard flag to NOT_ENTERED in instance storage.
+/// Note: On error/panic paths Soroban's automatic state rollback clears the
+/// guard automatically, so manual release is only needed on success.
+pub fn release(env: &Env) {
+    env.storage()
+        .instance()
+        .set(&DataKey::ReentrancyGuard, &NOT_ENTERED);
+}
 
-        let result = $body;
+/// Alias for [`release`] — clears the entered flag on success paths.
+#[inline(always)]
+pub fn clear_entered(env: &Env) {
+    release(env);
+}
 
-        $crate::reentrancy_guard::clear_entered(&$env);
-        result
-    }};
+/// Set the guard to ENTERED without the re-entrancy check.
+/// Used by low-level callers that manage the guard state manually.
+#[inline(always)]
+pub fn set_entered(env: &Env) {
+    env.storage()
+        .instance()
+        .set(&DataKey::ReentrancyGuard, &ENTERED);
+}
+
+/// Assert the guard is NOT_ENTERED without acquiring it.
+/// Panics with `"Reentrancy detected"` if already entered.
+#[inline(always)]
+pub fn check_not_entered(env: &Env) {
+    let status: u32 = env
+        .storage()
+        .instance()
+        .get(&DataKey::ReentrancyGuard)
+        .unwrap_or(NOT_ENTERED);
+    if status != NOT_ENTERED {
+        panic!("Reentrancy detected");
+    }
 }

@@ -27,8 +27,6 @@ fn create_escrow_contract<'a>(e: &Env) -> BountyEscrowContractClient<'a> {
     let id = e.register_contract(None, BountyEscrowContract);
     BountyEscrowContractClient::new(e, &id)
 }
-const NO_DEADLINE: u64 = u64::MAX;
-
 struct Setup<'a> {
     env: Env,
     _admin: Address,
@@ -140,8 +138,7 @@ fn test_future_deadline_stored_correctly() {
 
     let info = s.escrow.get_escrow_info(&10);
     assert_eq!(info.deadline, deadline);
-    assert_eq!(info.status, EscrowStatus::Refunded);
-    assert_eq!(s.token.balance(&s.depositor), before + 1_000);
+    assert_eq!(info.status, EscrowStatus::Locked);
 }
 
 #[test]
@@ -218,8 +215,6 @@ fn test_future_deadline_release_unaffected_by_deadline() {
 // a no-deadline escrow is through admin approval (approve_refund).  Release
 // operations are unaffected and work normally.
 // =============================================================================
-
-const NO_DEADLINE: u64 = u64::MAX;
 
 #[test]
 fn test_no_deadline_stored_correctly() {

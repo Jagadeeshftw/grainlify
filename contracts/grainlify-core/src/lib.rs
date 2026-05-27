@@ -1,26 +1,21 @@
-//! # Grainlify Contract Upgrade System
-//!
-//! Secure contract upgrade pattern with admin-controlled WASM updates and version tracking.
-//! - ❌ Not having a rollback plan
-
 #![no_std]
-
-mod multisig;
-use multisig::MultiSig;
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, Address, BytesN, Env,
     String, Symbol, Vec,
 };
-
-#[cfg(test)]
-use soroban_sdk::testutils::Address as _;
 pub mod asset;
 pub mod commit_reveal;
+pub mod error_registry;
 pub mod errors;
 mod governance;
+mod multisig;
 pub mod nonce;
 pub mod pseudo_randomness;
 pub mod strict_mode;
+use multisig::MultiSig;
+
+#[cfg(test)]
+mod test_error_registry;
 
 pub use governance::{GovernanceConfig, Proposal, ProposalStatus, Vote, VoteType, VotingScheme};
 
@@ -28,35 +23,185 @@ pub use governance::{GovernanceConfig, Proposal, ProposalStatus, Vote, VoteType,
 // Contract Errors
 // ============================================================================
 
-/// Typed errors for the GrainlifyContract.
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(u32)]
 pub enum ContractError {
     AlreadyInitialized = 1,
-    NotAdmin = 3, // Unified UNAUTHORIZED
     NotInitialized = 2,
+    NotAdmin = 3,
     ThresholdNotMet = 101,
     ProposalNotFound = 102,
+    /// [FIX-C01] Migration hash commitment not found — must call commit_migration first
+    MigrationCommitmentNotFound = 103,
+    /// [FIX-C01] Migration hash does not match committed hash
+    MigrationHashMismatch = 104,
+    /// [FIX-H02] Timelock delay exceeds maximum allowed value
+    TimelockDelayTooHigh = 105,
+    /// [FIX-C02] Snapshot restoring admin requires two-step confirmation
+    SnapshotRestoreAdminPending = 106,
+    /// Snapshot was pruned and is no longer available
+    SnapshotPruned = 107,
 }
+pub const STORAGE_SCHEMA_VERSION: u32 = 1;
+pub const LIVENESS_SCHEMA_VERSION: u32 = 1;
+/// Version stamp embedded in every event struct for cross-version compatibility checks.
+pub const EVENT_SCHEMA_VERSION: u32 = 1;
+const CONFIG_SNAPSHOT_LIMIT: u32 = 20;
+
+/// Maximum number of deployed contracts that can be registered.
+/// Prevents unbounded storage growth and ensures predictable gas costs.
+const MAX_DEPLOYED_CONTRACTS: u32 = 200;
+
+/// Default timelock delay for upgrade execution (24 hours in seconds)
+const DEFAULT_TIMELOCK_DELAY: u64 = 86_400;
+
+/// [FIX-H02] Maximum allowed timelock delay (30 days) — prevents bricking upgrades
+const MAX_TIMELOCK_DELAY: u64 = 2_592_000;
+
+/// [FIX-H02] Minimum allowed timelock delay (1 hour)
+const MIN_TIMELOCK_DELAY: u64 = 3_600;
+
+/// Default delay for config-change execution (6 hours in seconds).
+const DEFAULT_CONFIG_CHANGE_DELAY: u64 = 21_600;
+
+/// Current contract version used during initialization.
+const VERSION: u32 = 2;
 
 // ============================================================================
-// Upgrade Event
+// Data Structures
 // ============================================================================
 
-/// Emitted on every successful WASM upgrade (both single-admin and multisig paths).
-///
-/// Off-chain indexers and monitoring tools should subscribe to the
-/// `("upgrade", "wasm")` topic pair to track all contract upgrades.
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct UpgradeEvent {
     /// The new WASM hash that was installed.
     pub new_wasm_hash: BytesN<32>,
     /// Version number recorded at the time of upgrade (may be 0 if not yet set).
-    pub version: u32,
+    pub previous_version: u32,
     /// Ledger timestamp when the upgrade was executed.
     pub timestamp: u64,
+    /// Event schema version for cross-version compatibility checks.
+    pub event_version: u32,
+}
+
+/// Emitted when read-only mode is toggled.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReadOnlyModeEvent {
+    pub enabled: bool,
+    pub admin: Address,
+    pub timestamp: u64,
+    /// Event schema version for cross-version compatibility checks.
+    pub event_version: u32,
+}
+
+/// Emitted during contract initialization to record build and deployment information.
+///
+/// This event provides crucial metadata for auditing and monitoring contract deployments:
+/// - Allows indexers and monitoring systems to track contract initialization events
+/// - Records the initial admin address for access control auditing
+/// - Captures the exact ledger timestamp for event sequencing
+/// - Enables verification of deployment order and timing across networks
+///
+/// # Security Considerations
+/// - Event is emitted during `init_admin` which requires the admin's authorization
+/// - Provides transparent audit trail for deployment activities
+/// - Should be indexed by off-chain monitoring systems for initialization verification
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BuildInfoEvent {
+    /// Initialization path (`init_admin`, `init`, `init_with_network`, `init_governance`)
+    pub init_path: Symbol,
+    /// The admin address when initialization is admin-based; `None` for multisig init path
+    pub admin: Option<Address>,
+    /// Number of multisig signers used during initialization (0 for admin-based paths)
+    pub signer_count: u32,
+    /// Multisig threshold used during initialization (0 for admin-based paths)
+    pub threshold: u32,
+    /// Initial contract version set during initialization
+    pub version: u32,
+    /// Ledger timestamp when the contract was initialized
+    pub timestamp: u64,
+    /// Event schema version for cross-version compatibility checks.
+    pub event_version: u32,
+}
+
+/// Point-in-time snapshot of core configuration.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CoreConfigSnapshot {
+    pub id: u64,
+    pub timestamp: u64,
+    pub admin: Option<Address>,
+    pub version: u32,
+    pub previous_version: Option<u32>,
+    pub multisig_threshold: u32,
+    pub multisig_signers: Vec<Address>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SnapshotDiff {
+    pub from_id: u64,
+    pub to_id: u64,
+    pub admin_changed: bool,
+    pub version_changed: bool,
+    pub previous_version_changed: bool,
+    pub multisig_threshold_changed: bool,
+    pub multisig_signers_changed: bool,
+    pub from_version: u32,
+    pub to_version: u32,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RollbackInfo {
+    pub current_version: u32,
+    pub previous_version: u32,
+    pub rollback_available: bool,
+    pub has_migration: bool,
+    pub migration_from_version: u32,
+    pub migration_to_version: u32,
+    pub migration_timestamp: u64,
+    pub snapshot_count: u32,
+    pub has_snapshot: bool,
+    pub latest_snapshot_id: u64,
+    pub latest_snapshot_version: u32,
+}
+
+/// Persisted migration result for audit and idempotency.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MigrationState {
+    pub from_version: u32,
+    pub to_version: u32,
+    pub migrated_at: u64,
+    pub migration_hash: BytesN<32>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MigrationEvent {
+    pub from_version: u32,
+    pub to_version: u32,
+    pub timestamp: u64,
+    pub migration_hash: BytesN<32>,
+    pub success: bool,
+    pub error_message: Option<String>,
+    /// Event schema version for cross-version compatibility checks.
+    pub event_version: u32,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MigrationCommittedEvent {
+    pub target_version: u32,
+    pub hash: BytesN<32>,
+    pub committed_at: u64,
+    pub expires_at: u64,
+    /// Event schema version for cross-version compatibility checks.
+    pub event_version: u32,
 }
 
 /// Canonical read model for a multisig upgrade proposal.
@@ -89,467 +234,129 @@ pub struct UpgradeProposalRecord {
     pub cancelled: bool,
 }
 
-// ==================== MONITORING MODULE ====================
-mod monitoring {
-    use super::DataKey;
-    use soroban_sdk::{contracttype, symbol_short, Address, Env, String, Symbol, Vec};
 
-    // Storage keys
-    const OPERATION_COUNT: &str = "op_count";
-    const USER_COUNT: &str = "usr_count";
-    const ERROR_COUNT: &str = "err_count";
-    const USER_INDEX: &str = "usr_index";
-    const LAST_OPERATION_TS: &str = "last_op_ts";
-
-    // Event: Operation metric
-    #[contracttype]
-    #[derive(Clone, Debug)]
-    pub struct OperationMetric {
-        pub operation: Symbol,
-        pub caller: Address,
-        pub timestamp: u64,
-        pub success: bool,
-    }
-
-    // Event: Performance metric
-    #[contracttype]
-    #[derive(Clone, Debug)]
-    pub struct PerformanceMetric {
-        pub function: Symbol,
-        pub duration: u64,
-        pub timestamp: u64,
-    }
-
-    /// Operator-facing health status returned by `health_check`.
-    ///
-    /// The view is safe on empty state and reports zero-valued counters before
-    /// the contract has been initialized.
-    #[contracttype]
-    #[derive(Clone, Debug)]
-    pub struct HealthStatus {
-        /// True when the contract's monitoring and configuration invariants hold.
-        pub is_healthy: bool,
-        /// Ledger timestamp of the last tracked operation, or `0` if none exist.
-        pub last_operation: u64,
-        /// Total number of tracked operations.
-        pub total_operations: u64,
-        /// Semantic version derived from `DataKey::Version`.
-        pub contract_version: String,
-    }
-
-    /// Bounded aggregate analytics exposed to operators.
-    ///
-    /// `unique_users` is capped by [`MAX_TRACKED_USERS`] so storage stays
-    /// finite and reviewable.
-    #[contracttype]
-    #[derive(Clone, Debug)]
-    pub struct Analytics {
-        /// Total number of tracked operations.
-        pub operation_count: u64,
-        /// Count of distinct callers retained in the bounded monitoring index.
-        pub unique_users: u64,
-        /// Total number of tracked failed operations.
-        pub error_count: u64,
-        /// Failure rate in basis points (`10000 == 100%`).
-        pub error_rate: u32,
-    }
-
-    // Data: State snapshot
-    #[contracttype]
-    #[derive(Clone, Debug)]
-    pub struct StateSnapshot {
-        pub timestamp: u64,
-        pub total_operations: u64,
-        pub total_users: u64,
-        pub total_errors: u64,
-    }
-
-    /// Aggregated performance statistics for a tracked contract function.
-    ///
-    /// Counters are maintained in persistent storage by [`emit_performance`] and
-    /// read back by [`get_performance_stats`].  The storage footprint is bounded
-    /// by [`MAX_TRACKED_FUNCTIONS`] — see the eviction policy below.
-    #[contracttype]
-    #[derive(Clone, Debug)]
-    pub struct PerformanceStats {
-        pub function_name: Symbol,
-        pub call_count: u64,
-        pub total_time: u64,
-        pub avg_time: u64,
-        pub last_called: u64,
-    }
-
-    /// Invariant report for external auditors and monitoring tools.
-    #[contracttype]
-    #[derive(Clone, Debug, Eq, PartialEq)]
-    pub struct InvariantReport {
-        pub healthy: bool,
-        pub config_sane: bool,
-        pub metrics_sane: bool,
-        pub admin_set: bool,
-        pub version_set: bool,
-        pub version: u32,
-        pub operation_count: u64,
-        pub unique_users: u64,
-        pub error_count: u64,
-        pub violation_count: u32,
-    }
-
-    /// Maximum number of distinct function names whose performance counters
-    /// are retained in persistent storage.  When a new (previously unseen)
-    /// function is tracked and the index already contains this many entries,
-    /// the **oldest** entry (first element of the `perf_index` vector) is
-    /// evicted — its three storage keys (`perf_cnt`, `perf_time`, `perf_last`)
-    /// are removed before the new entry is appended.
-    ///
-    /// This caps total storage at `MAX_TRACKED_FUNCTIONS * 3 + 1` persistent
-    /// entries (counters + the index itself), preventing unbounded growth.
-    pub const MAX_TRACKED_FUNCTIONS: u32 = 50;
-
-    /// Maximum number of distinct callers retained for monitoring analytics.
-    pub const MAX_TRACKED_USERS: u32 = 64;
-
-    fn get_counter(env: &Env, key: &str) -> u64 {
-        env.storage()
-            .persistent()
-            .get(&Symbol::new(env, key))
-            .unwrap_or(0)
-    }
-
-    fn set_counter(env: &Env, key: &str, value: u64) {
-        env.storage()
-            .persistent()
-            .set(&Symbol::new(env, key), &value);
-    }
-
-    fn get_tracked_users(env: &Env) -> Vec<Address> {
-        env.storage()
-            .persistent()
-            .get(&Symbol::new(env, USER_INDEX))
-            .unwrap_or(Vec::new(env))
-    }
-
-    fn track_unique_user(env: &Env, caller: &Address) {
-        let mut users = get_tracked_users(env);
-        for index in 0..users.len() {
-            if users.get(index).unwrap() == *caller {
-                return;
-            }
-        }
-
-        if users.len() >= MAX_TRACKED_USERS {
-            set_counter(env, USER_COUNT, MAX_TRACKED_USERS as u64);
-            return;
-        }
-
-        users.push_back(caller.clone());
-        env.storage()
-            .persistent()
-            .set(&Symbol::new(env, USER_INDEX), &users);
-        set_counter(env, USER_COUNT, users.len().into());
-    }
-
-    fn version_semver_string(env: &Env) -> String {
-        let raw: u32 = env.storage().instance().get(&DataKey::Version).unwrap_or(0);
-        let semver = match raw {
-            0 => "0.0.0",
-            1 | 10000 => "1.0.0",
-            2 | 20000 => "2.0.0",
-            10100 => "1.1.0",
-            10001 => "1.0.1",
-            _ => "unknown",
-        };
-        String::from_str(env, semver)
-    }
-
-    /// Records an operation for monitoring and emits an operation metric event.
-    pub fn track_operation(env: &Env, operation: Symbol, caller: Address, success: bool) {
-        let count = get_counter(env, OPERATION_COUNT);
-        set_counter(env, OPERATION_COUNT, count.saturating_add(1));
-        set_counter(env, LAST_OPERATION_TS, env.ledger().timestamp());
-        track_unique_user(env, &caller);
-
-        if !success {
-            let err_count = get_counter(env, ERROR_COUNT);
-            set_counter(env, ERROR_COUNT, err_count.saturating_add(1));
-        }
-
-        env.events().publish(
-            (symbol_short!("metric"), symbol_short!("op")),
-            OperationMetric {
-                operation,
-                caller,
-                timestamp: env.ledger().timestamp(),
-                success,
-            },
-        );
-    }
-
-    /// Records a single invocation of `function` with the given `duration`.
-    ///
-    /// Increments `perf_cnt`, accumulates `perf_time`, and writes
-    /// `perf_last` (ledger timestamp) so that [`get_performance_stats`] can
-    /// reconstruct the full [`PerformanceStats`] for any tracked function.
-    ///
-    /// **Note on timestamp granularity:** Within a single ledger close,
-    /// `env.ledger().timestamp()` does not advance, so `duration` may be
-    /// zero when both start and end are sampled in the same ledger.
-    pub fn emit_performance(env: &Env, function: Symbol, duration: u64) {
-        // --- eviction bookkeeping -------------------------------------------
-        let index_key = Symbol::new(env, "perf_index");
-        let mut index: Vec<Symbol> = env
-            .storage()
-            .persistent()
-            .get(&index_key)
-            .unwrap_or(Vec::new(env));
-
-        // Check whether `function` is already tracked.
-        let mut already_tracked = false;
-        for i in 0..index.len() {
-            if index.get(i).unwrap() == function {
-                already_tracked = true;
-                break;
-            }
-        }
-
-        if !already_tracked {
-            // Evict the oldest entry when the cap is reached.
-            if index.len() >= MAX_TRACKED_FUNCTIONS {
-                let oldest = index.get(0).unwrap();
-                env.storage()
-                    .persistent()
-                    .remove(&(Symbol::new(env, "perf_cnt"), oldest.clone()));
-                env.storage()
-                    .persistent()
-                    .remove(&(Symbol::new(env, "perf_time"), oldest.clone()));
-                env.storage()
-                    .persistent()
-                    .remove(&(Symbol::new(env, "perf_last"), oldest.clone()));
-
-                let mut trimmed = Vec::new(env);
-                for i in 1..index.len() {
-                    trimmed.push_back(index.get(i).unwrap());
-                }
-                index = trimmed;
-            }
-            index.push_back(function.clone());
-            env.storage().persistent().set(&index_key, &index);
-        }
-
-        // --- update counters ------------------------------------------------
-        let count_key = (Symbol::new(env, "perf_cnt"), function.clone());
-        let time_key = (Symbol::new(env, "perf_time"), function.clone());
-        let last_key = (Symbol::new(env, "perf_last"), function.clone());
-
-        let count: u64 = env.storage().persistent().get(&count_key).unwrap_or(0);
-        let total: u64 = env.storage().persistent().get(&time_key).unwrap_or(0);
-        let timestamp = env.ledger().timestamp();
-
-        env.storage()
-            .persistent()
-            .set(&count_key, &count.saturating_add(1));
-        env.storage()
-            .persistent()
-            .set(&time_key, &total.saturating_add(duration));
-        env.storage()
-            .persistent()
-            .set(&last_key, &env.ledger().timestamp());
-
-        env.events().publish(
-            (symbol_short!("metric"), symbol_short!("perf")),
-            PerformanceMetric {
-                function,
-                duration,
-                timestamp,
-            },
-        );
-    }
-
-    /// Returns a panic-free health summary for off-chain operators.
-    pub fn health_check(env: &Env) -> HealthStatus {
-        let report = check_invariants(env);
-
-        HealthStatus {
-            is_healthy: report.healthy,
-            last_operation: get_counter(env, LAST_OPERATION_TS),
-            total_operations: report.operation_count,
-            contract_version: version_semver_string(env),
-        }
-    }
-
-    /// Returns bounded analytics for operator dashboards.
-    pub fn get_analytics(env: &Env) -> Analytics {
-        let ops = get_counter(env, OPERATION_COUNT);
-        let users = get_counter(env, USER_COUNT);
-        let errors = get_counter(env, ERROR_COUNT);
-
-        let error_rate = if ops > 0 {
-            ((errors as u128 * 10000) / ops as u128) as u32
-        } else {
-            0
-        };
-
-        Analytics {
-            operation_count: ops,
-            unique_users: users,
-            error_count: errors,
-            error_rate,
-        }
-    }
-
-    /// Returns a point-in-time snapshot of persisted monitoring counters.
-    pub fn get_state_snapshot(env: &Env) -> StateSnapshot {
-        StateSnapshot {
-            timestamp: env.ledger().timestamp(),
-            total_operations: get_counter(env, OPERATION_COUNT),
-            total_users: get_counter(env, USER_COUNT),
-            total_errors: get_counter(env, ERROR_COUNT),
-        }
-    }
-
-    /// Returns aggregated [`PerformanceStats`] for `function_name`.
-    ///
-    /// All counters default to `0` when the function has never been tracked,
-    /// so this call is always safe (no panics, no zero-division).
-    pub fn get_performance_stats(env: &Env, function_name: Symbol) -> PerformanceStats {
-        let count_key = (Symbol::new(env, "perf_cnt"), function_name.clone());
-        let time_key = (Symbol::new(env, "perf_time"), function_name.clone());
-        let last_key = (Symbol::new(env, "perf_last"), function_name.clone());
-
-        let count: u64 = env.storage().persistent().get(&count_key).unwrap_or(0);
-        let total: u64 = env.storage().persistent().get(&time_key).unwrap_or(0);
-        let last: u64 = env.storage().persistent().get(&last_key).unwrap_or(0);
-
-        let avg = if count > 0 { total / count } else { 0 };
-
-        PerformanceStats {
-            function_name,
-            call_count: count,
-            total_time: total,
-            avg_time: avg,
-            last_called: last,
-        }
-    }
-
-    /// Verify core monitoring/config invariants.
-    /// This is view-only and safe for frequent calls by off-chain monitors.
-    pub fn check_invariants(env: &Env) -> InvariantReport {
-        let op_key = Symbol::new(env, OPERATION_COUNT);
-        let usr_key = Symbol::new(env, USER_COUNT);
-        let err_key = Symbol::new(env, ERROR_COUNT);
-
-        let operation_count: u64 = env.storage().persistent().get(&op_key).unwrap_or(0);
-        let unique_users: u64 = env.storage().persistent().get(&usr_key).unwrap_or(0);
-        let error_count: u64 = env.storage().persistent().get(&err_key).unwrap_or(0);
-
-        let metrics_sane = error_count <= operation_count
-            && unique_users <= operation_count
-            && (operation_count > 0 || (unique_users == 0 && error_count == 0));
-
-        let admin_set = env.storage().instance().has(&DataKey::Admin);
-        let version_opt: Option<u32> = env.storage().instance().get(&DataKey::Version);
-        let version_set = version_opt.is_some();
-        let version = version_opt.unwrap_or(0);
-        let version_sane = version > 0;
-
-        let previous_version_opt: Option<u32> =
-            env.storage().instance().get(&DataKey::PreviousVersion);
-        let previous_version_sane = match (previous_version_opt, version_opt) {
-            (Some(prev), Some(curr)) => prev <= curr,
-            (Some(_), None) => false,
-            (None, _) => true,
-        };
-
-        let chain_id: Option<String> = env.storage().instance().get(&DataKey::ChainId);
-        let network_id: Option<String> = env.storage().instance().get(&DataKey::NetworkId);
-        let network_pair_sane = match (chain_id, network_id) {
-            (Some(chain), Some(network)) => chain.len() > 0 && network.len() > 0,
-            (None, None) => true,
-            _ => false,
-        };
-
-        let config_sane =
-            admin_set && version_set && version_sane && previous_version_sane && network_pair_sane;
-
-        let mut violation_count: u32 = 0;
-        if !admin_set {
-            violation_count += 1;
-        }
-        if !version_set || !version_sane {
-            violation_count += 1;
-        }
-        if !previous_version_sane {
-            violation_count += 1;
-        }
-        if !network_pair_sane {
-            violation_count += 1;
-        }
-        if error_count > operation_count {
-            violation_count += 1;
-        }
-        if unique_users > operation_count {
-            violation_count += 1;
-        }
-        if operation_count == 0 && (unique_users > 0 || error_count > 0) {
-            violation_count += 1;
-        }
-
-        InvariantReport {
-            healthy: config_sane && metrics_sane,
-            config_sane,
-            metrics_sane,
-            admin_set,
-            version_set,
-            version,
-            operation_count,
-            unique_users,
-            error_count,
-            violation_count,
-        }
-    }
-
-    pub fn verify_invariants(env: &Env) -> bool {
-        let report = check_invariants(env);
-        #[cfg(feature = "strict-mode")]
-        {
-            if !report.healthy {
-                use soroban_sdk::symbol_short;
-                env.events().publish(
-                    (symbol_short!("strict"), symbol_short!("inv_fail")),
-                    report.violation_count,
-                );
-            }
-        }
-        report.healthy
-    }
+/// [FIX-C01] Pre-committed migration hash for replay protection.
+///
+/// Admin must call `commit_migration(target_version, hash)` before calling
+/// `migrate(target_version, hash)`. The commitment is verified during migration
+/// to ensure the exact hash was pre-authorized by the admin in a separate tx.
+///
+/// # Replay Protection Flow
+/// 1. Admin calls `commit_migration(3, hash_of_migration_data)` → stored on-chain
+/// 2. Anyone can verify the commitment is live on-chain before execution
+/// 3. Admin calls `migrate(3, hash_of_migration_data)` → hash verified against commitment
+/// 4. Commitment is consumed (deleted) — cannot be replayed
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MigrationCommitment {
+    /// Target version this commitment authorizes
+    pub target_version: u32,
+    /// Hash committed by admin — must match hash passed to migrate()
+    pub hash: BytesN<32>,
+    /// Ledger timestamp when commitment was made
+    pub committed_at: u64,
+    /// Commitment expires after this timestamp (0 = no expiry)
+    pub expires_at: u64,
 }
 
-#[cfg(all(test, feature = "wasm_tests"))]
-mod test_core_monitoring;
-#[cfg(test)]
-mod test_pseudo_randomness;
-#[cfg(all(test, feature = "wasm_tests"))]
-mod test_serialization_compatibility;
-#[cfg(test)]
-mod test_storage_layout;
-#[cfg(all(test, feature = "wasm_tests"))]
-mod test_version_helpers;
-#[cfg(test)]
-mod test_strict_mode;
+/// [FIX-C02] Pending admin restore — two-step guard for snapshot-based admin changes.
+///
+/// When `restore_config_snapshot` would change the admin address, it creates
+/// a pending restore instead of applying immediately. The NEW admin address
+/// must then call `confirm_admin_restore(snapshot_id)` to finalize.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingAdminRestore {
+    pub snapshot_id: u64,
 
-// ==================== END MONITORING MODULE ====================
+    pub proposed_admin: Address,
 
-// ============================================================================
-// Contract Definition
-// ============================================================================
+    pub initiated_at: u64,
+    /// Restore expires if not confirmed within this many seconds
+    pub expires_at: u64,
+}
 
-#[cfg(feature = "contract")]
-#[contract]
-pub struct GrainlifyContract;
+/// Timelocked config change proposal for snapshot restores.
+///
+/// The proposal is created by admin and can be executed only after `execute_after`.
+/// This adds a review window for high-impact configuration restores.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConfigChangeProposal {
+    pub proposal_id: u64,
+    pub snapshot_id: u64,
+    pub proposer: Address,
+    pub created_at: u64,
+    pub execute_after: u64,
+    pub cancelled: bool,
+    pub executed: bool,
+}
 
-// ============================================================================
-// Data Structures
-// ============================================================================
+/// Kind of contract deployed in the Grainlify ecosystem.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ContractKind {
+    BountyEscrow,
+    ProgramEscrow,
+    SorobanEscrow,
+    GrainlifyCore,
+    ViewFacade,
+    Other,
+}
+
+/// A single entry in the deployed-contract registry.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeployedContract {
+    /// On-chain address of the deployed contract.
+    pub address: Address,
+    /// Human-readable name of the contract (e.g. "bounty-escrow-v3").
+    pub name: String,
+    /// Role / type of the contract within the ecosystem.
+    pub kind: ContractKind,
+    /// Numeric version reported at registration time.
+    pub version: u32,
+    /// Ledger timestamp when the contract was registered.
+    pub deployed_at: u64,
+}
+
+/// Liveness watchdog status — a single read-only view of the contract's
+/// operational health, pause state, and maintenance mode.
+///
+/// Returned by `liveness_watchdog()`. All fields are safe to read without auth.
+///
+/// # Fields
+/// * `paused`       — true when MultiSig pause is active (no payouts/upgrades)
+/// * `read_only`    — true when read-only mode is set (mutations blocked)
+/// * `healthy`      — true when monitoring invariants pass
+/// * `last_ping_ts` — ledger timestamp of the last `ping_watchdog` call (0 if never)
+/// * `version`      — current contract version number
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WatchdogStatus {
+    pub paused: bool,
+    pub read_only: bool,
+    pub healthy: bool,
+    pub last_ping_ts: u64,
+    pub version: u32,
+}
+
+/// Liveness snapshot returned by `liveness_watchdog`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LivenessStatus {
+    pub paused: bool,
+    pub read_only: bool,
+    pub healthy: bool,
+    pub last_ping_ts: u64,
+    pub is_paused: bool,
+    pub is_read_only: bool,
+    pub is_operational: bool,
+    pub version: u32,
+    pub admin_set: bool,
+    pub timestamp: u64,
+    pub schema_version: u32,
+}
 
 /// Storage keys for contract data.
 ///
@@ -588,11 +395,8 @@ pub struct GrainlifyContract;
 /// - Timelock delay prevents immediate execution after threshold approval
 #[contracttype]
 #[derive(Clone)]
-enum DataKey {
-    /// Administrator address with upgrade authority
-    /// - Immutable after initialization via init_admin()
-    /// - Required for all admin operations (upgrade, migrate, set_version)
-    /// - Persists across all WASM upgrades
+pub enum DataKey {
+    RegEntry(Symbol),
     Admin,
 
     /// Current version number (increments with upgrades)
@@ -600,8 +404,7 @@ enum DataKey {
     /// - Used to determine which migration functions to execute
     /// - Persists across all WASM upgrades
     Version,
-
-    /// WASM hash stored per proposal (for multisig upgrades)
+  /// WASM hash stored per proposal (for multisig upgrades)
     UpgradeProposal(u64),
 
     /// Proposer recorded per upgrade proposal.
@@ -616,26 +419,25 @@ enum DataKey {
     /// - Checked for idempotency in migrate() function
     /// - Persists across all WASM upgrades
     MigrationState,
-
-    /// Previous version before migration (for rollback support)
+    /// [FIX-C01] Pre-committed migration hash storage
+    MigrationCommitment(u32), // keyed by target_version
+        /// Previous version before migration (for rollback support)
     /// - Updated by upgrade() function
     /// - Allows comparison before and after WASM upgrade
     /// - Useful for debugging rollback scenarios
     PreviousVersion,
-
+    
     /// Configuration snapshot data by snapshot id
     /// - Stores point-in-time snapshots of admin/version/multisig config
     /// - Used for recovery and audit trails
     /// - Persists across upgrades
     ConfigSnapshot(u64),
-
-    /// Ordered list of retained snapshot ids
+       /// Ordered list of retained snapshot ids
     /// - Maintains order for historical queries
     /// - Limited to CONFIG_SNAPSHOT_LIMIT entries
     /// - Automatically rotates to prevent unbounded storage growth
     SnapshotIndex,
-
-    /// Monotonic snapshot id counter
+     /// Monotonic snapshot id counter
     /// - Increments with each create_config_snapshot() call
     /// - Ensures snapshot IDs are unique and ordered
     /// - Never decrements, safe for all future versions
@@ -646,7 +448,7 @@ enum DataKey {
     /// - Prevents contract state replay across networks
     /// - Must match network context during execution
     ChainId,
-
+   
     /// Network identifier for environment-specific behavior
     /// - Distinguishes mainnet from testnet contracts
     /// - May be used for feature flags or behavior divergence
@@ -667,633 +469,514 @@ enum DataKey {
     /// - Used to enforce delay before execution
     /// - proposal_id -> timestamp mapping
     UpgradeTimelock(u64),
+
+    /// Timelock delay period for configuration changes (in seconds)
+    /// - Default: 6 hours (21600 seconds) if not set
+    /// - Admin configurable (bounded by MIN/MAX timelock constants)
+    ConfigChangeDelay,
+
+    /// Monotonic counter for config-change proposal IDs.
+    ConfigChangeCounter,
+
+    /// Timelocked config-change proposal keyed by proposal_id.
+    ConfigChangeProposal(u64),
+
+    /// Deployed contract entry keyed by contract address.
+    DeployedContractEntry(Address),
+
+    /// Ordered index of registered deployed contract addresses.
+    DeployedContractIndex,
+
+    /// [FIX-C02] Pending admin restore awaiting new-admin confirmation
+    PendingAdminRestore,
+    /// Upgrade-safe schema version marker for liveness watchdog storage.
+    /// Written on init_admin; increment when WatchdogStatus layout changes.
+    LivenessSchemaVersion,
+    /// Timestamp of the last successful ping_watchdog call.
+    WatchdogLastPing,
 }
 
 // ============================================================================
-// Constants
+// Monitoring Module
 // ============================================================================
 
-/// Current contract version.
-///
-/// This constant should be incremented with each contract upgrade:
-/// - MAJOR version: Breaking changes
-/// - MINOR version: New features (backward compatible)
-/// - PATCH version: Bug fixes
-///
-/// # Version History
-/// - v1: Initial release with basic upgrade functionality
-/// - v2: Added state migration system
-///
-/// # Usage
-/// Set during initialization and can be updated via `set_version()`.
-#[cfg(feature = "contract")]
-const VERSION: u32 = 2;
-pub const STORAGE_SCHEMA_VERSION: u32 = 1;
-const CONFIG_SNAPSHOT_LIMIT: u32 = 20;
+mod monitoring {
+    use super::DataKey;
+    use soroban_sdk::{contracttype, symbol_short, Address, Env, String, Symbol, Vec};
 
-/// Default timelock delay for upgrade execution (24 hours in seconds)
-///
-/// This delay provides a security window where users can review
-/// upgrade proposals and prepare for potential emergencies.
-/// The delay can be adjusted by admin via `set_timelock_delay()`.
-const DEFAULT_TIMELOCK_DELAY: u64 = 86400; // 24 hours
+    const OPERATION_COUNT: &str = "op_count";
+    const USER_COUNT: &str = "usr_count";
+    const ERROR_COUNT: &str = "err_count";
+    const USER_INDEX: &str = "usr_index";
+    const LAST_OPERATION_TS: &str = "last_op_ts";
 
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CoreConfigSnapshot {
-    pub id: u64,
-    pub timestamp: u64,
-    pub admin: Option<Address>,
-    pub version: u32,
-    pub previous_version: Option<u32>,
-    pub multisig_threshold: u32,
-    pub multisig_signers: Vec<Address>,
-}
-
-/// Comparison result between two [`CoreConfigSnapshot`]s.
-///
-/// Produced by [`GrainlifyContract::compare_snapshots`] to highlight what
-/// changed between two points in time. Every field is `true` when the
-/// corresponding value differs between the two snapshots.
-///
-/// # Usage
-/// Auditors and off-chain tooling can call `compare_snapshots(old_id, new_id)`
-/// to quickly identify configuration drift without fetching and diffing
-/// full snapshot payloads.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SnapshotDiff {
-    /// ID of the earlier ("before") snapshot.
-    pub from_id: u64,
-    /// ID of the later ("after") snapshot.
-    pub to_id: u64,
-    /// `true` when the admin address changed between snapshots.
-    pub admin_changed: bool,
-    /// `true` when the contract version changed between snapshots.
-    pub version_changed: bool,
-    /// `true` when the `previous_version` field changed.
-    pub previous_version_changed: bool,
-    /// `true` when the multisig threshold changed.
-    pub multisig_threshold_changed: bool,
-    /// `true` when the multisig signer set changed.
-    pub multisig_signers_changed: bool,
-    /// Version in the "from" snapshot.
-    pub from_version: u32,
-    /// Version in the "to" snapshot.
-    pub to_version: u32,
-}
-
-/// Aggregated rollback intelligence for recovery drills.
-///
-/// Returned by [`GrainlifyContract::get_rollback_info`] to give operators a
-/// single-call view of everything needed to assess whether a rollback is
-/// possible and what it would entail.
-///
-/// All nested struct fields are flattened to scalar types for Soroban
-/// serialization compatibility.
-///
-/// # Security note
-/// This is a pure view function — no authorization required, no state mutation.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RollbackInfo {
-    /// Current on-chain contract version.
-    pub current_version: u32,
-    /// Version before the last upgrade (0 if never upgraded).
-    pub previous_version: u32,
-    /// `true` when a `previous_version` exists and a rollback target is known.
-    pub rollback_available: bool,
-    /// `true` when a migration state record exists.
-    pub has_migration: bool,
-    /// Migration source version (0 if no migration).
-    pub migration_from_version: u32,
-    /// Migration target version (0 if no migration).
-    pub migration_to_version: u32,
-    /// Timestamp when the last migration completed (0 if no migration).
-    pub migration_timestamp: u64,
-    /// Number of retained configuration snapshots available for restore.
-    pub snapshot_count: u32,
-    /// `true` when at least one configuration snapshot exists.
-    pub has_snapshot: bool,
-    /// ID of the most recent snapshot (0 if none).
-    pub latest_snapshot_id: u64,
-    /// Version captured in the most recent snapshot (0 if none).
-    pub latest_snapshot_version: u32,
-}
-
-fn contract_is_initialized(env: &Env) -> bool {
-    env.storage().instance().has(&DataKey::Version)
-        || env.storage().instance().has(&DataKey::Admin)
-        || env.storage().instance().has(&DataKey::ChainId)
-        || env.storage().instance().has(&DataKey::NetworkId)
-        || env.storage().instance().has(&governance::GOVERNANCE_CONFIG)
-        || env.storage().instance().has(&governance::PROPOSAL_COUNT)
-        || MultiSig::get_config_opt(env).is_some()
-}
-
-// ============================================================================
-// Migration System
-// ============================================================================
-
-/// Migration state tracking to prevent double migration and maintain audit trail.
-///
-/// # Fields
-/// - `from_version`: Version before migration (starting point)
-/// - `to_version`: Version after migration (target point)
-/// - `migrated_at`: Ledger timestamp when migration completed
-/// - `migration_hash`: SHA256 hash of migration data for verification
-///
-/// # Storage
-/// Stored in `DataKey::MigrationState` as instance storage, persists across
-/// all WASM upgrades. This is critical for preventing replayed migrations.
-///
-/// # Idempotency
-/// When migrate() is called again with the same target_version, this state
-/// is checked first. If to_version == target_version, the call returns early
-/// (no-op) to ensure migrations execute exactly once per version boundary.
-///
-/// # Usage
-/// Access via get_migration_state() contract function to verify:
-/// - Migration completed successfully
-/// - Exact version boundaries involved
-/// - Timestamp for audit trail
-/// - Hash for verification against external records
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct MigrationState {
-    /// Version that was migrated from
-    pub from_version: u32,
-    /// Version that was migrated to
-    pub to_version: u32,
-    /// Timestamp when migration completed (from env.ledger().timestamp())
-    pub migrated_at: u64,
-    /// Migration hash for verification and audit trail
-    pub migration_hash: BytesN<32>,
-}
-
-/// Migration event data emitted for off-chain indexing and audit trail.
-///
-/// # Events
-/// Emitted for every migrate() call, whether successful or failed:
-/// - Topic: symbol_short!("migration")
-/// - Data: MigrationEvent struct
-///
-/// # Fields
-/// - `from_version`: Starting version before migration
-/// - `to_version`: Target version for migration
-/// - `timestamp`: Ledger timestamp of migration
-/// - `migration_hash`: Verification hash from the call
-/// - `success`: Whether migration completed successfully
-/// - `error_message`: If success=false, contains error reason
-///
-/// # Audit Trail
-/// All migrations are recorded as events for off-chain monitoring.
-/// Failed migrations are also recorded for debugging and security purposes.
-#[contracttype]
-#[derive(Clone, Debug)]
-pub struct MigrationEvent {
-    /// Version before migration started
-    pub from_version: u32,
-    /// Target version for migration
-    pub to_version: u32,
-    /// Ledger timestamp of migration attempt/completion
-    pub timestamp: u64,
-    /// Migration data hash for verification
-    pub migration_hash: BytesN<32>,
-    /// True if migration succeeded, false if failed
-    pub success: bool,
-    /// Error message if migration failed (None if success=true)
-    pub error_message: Option<String>,
-}
-
-/// Event emitted when read-only mode is toggled.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ReadOnlyModeEvent {
-    pub enabled: bool,
-    pub admin: Address,
-    pub timestamp: u64,
-}
-
-// ============================================================================
-// Contract Implementation
-// ============================================================================
-
-// ========================================================================
-// Initialization
-// ========================================================================
-
-/// Initializes the contract with an admin address.
-///
-/// # Arguments
-/// * `env` - The contract environment
-/// * `admin` - Address authorized to perform upgrades
-///
-/// # Panics
-/// * If contract is already initialized
-///
-/// # State Changes
-/// - Sets Admin address in instance storage
-/// - Sets initial Version number
-///
-/// # Security Considerations
-/// - Can only be called once (prevents admin takeover)
-/// - Admin address is immutable after initialization
-/// - Admin should be a secure address (hardware wallet/multi-sig)
-/// - No authorization required for initialization (first-caller pattern)
-///
-/// # Example
-/// ```rust
-/// use soroban_sdk::{Address, Env};
-///
-/// let env = Env::default();
-/// let admin = Address::generate(&env);
-///
-/// // Initialize contract
-/// contract.init(&env, &admin);
-///
-/// // Subsequent init attempts will panic
-/// // contract.init(&env, &another_admin); // ❌ Panics!
-/// ```
-///
-/// # Gas Cost
-/// Low - Two storage writes
-///
-/// # Production Deployment
-/// ```bash
-/// # Deploy contract
-/// stellar contract deploy \
-///   --wasm target/wasm32-unknown-unknown/release/grainlify.wasm \
-///   --source ADMIN_SECRET_KEY
-///
-/// # Initialize with admin address
-/// stellar contract invoke \
-///   --id CONTRACT_ID \
-///   --source ADMIN_SECRET_KEY \
-///   -- init \
-///   --admin GADMIN_ADDRESS
-/// ```
-
-#[cfg(feature = "contract")]
-#[contractimpl]
-impl GrainlifyContract {
-    /// Initializes the contract with multisig configuration.
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `signers` - List of signer addresses for multisig
-    /// * `threshold` - Number of signatures required to execute proposals
-    ///
-    /// # Panics
-    /// * If contract is already initialized (prevents re-init attacks)
-    ///
-    /// # Security Model
-    /// - One-time initialization only
-    /// - Sets up multisig configuration for upgrade governance
-    /// - All signers must have matching threshold count
-    /// - Re-initialization is prevented across all init entrypoints
-    pub fn init(env: Env, signers: Vec<Address>, threshold: u32) {
-        let start = env.ledger().timestamp();
-
-        // Prevent re-initialization to protect immutability of multisig config
-        if contract_is_initialized(&env) {
-            panic!("Already initialized");
-        }
-
-        let caller = signers
-            .get(0)
-            .expect("multisig init requires at least one signer");
-
-        // Initialize multisig configuration
-        MultiSig::init(&env, signers, threshold);
-
-        // Set initial version to mark contract as initialized
-        env.storage().instance().set(&DataKey::Version, &VERSION);
-
-        // Track successful operation
-        let caller = env.current_contract_address();
-        monitoring::track_operation(&env, symbol_short!("init"), caller.clone(), true);
-
-        // Track performance
-        let duration = env.ledger().timestamp().saturating_sub(start);
-        monitoring::emit_performance(&env, symbol_short!("init"), duration);
+    #[contracttype]
+    #[derive(Clone, Debug)]
+    pub struct OperationMetric {
+        pub operation: Symbol,
+        pub caller: Address,
+        pub timestamp: u64,
+        pub success: bool,
     }
 
-    /// Initializes the contract with a single admin address.
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `admin` - Address authorized to perform upgrades
-    ///
-    /// # Panics
-    /// * If contract is already initialized (prevents re-init attacks)
-    ///
-    /// # Security Model
-    /// - One-time initialization only
-    /// - Admin address is immutable after initialization
-    /// - Only single admin, no multisig
-    /// - Re-initialization is prevented across all init entrypoints
-    ///
-    /// # State Changes
-    /// - Sets Admin address in instance storage (immutable)
-    /// - Sets initial Version number
-    /// - Tracks operation metrics
-    pub fn init_admin(env: Env, admin: Address) {
-        let start = env.ledger().timestamp();
-
-        // Prevent re-initialization to protect admin immutability
-        // Check both Admin and Version to be extra safe
-        if contract_is_initialized(&env) {
-            monitoring::track_operation(&env, symbol_short!("init"), admin.clone(), false);
-            panic!("Already initialized");
-        }
-
-        // Store admin address (immutable after this point)
-        env.storage().instance().set(&DataKey::Admin, &admin);
-
-        // Set initial version
-        env.storage().instance().set(&DataKey::Version, &VERSION);
-
-        // Read-only mode defaults to false
-        env.storage().instance().set(&DataKey::ReadOnlyMode, &false);
-
-        // Track successful operation
-        monitoring::track_operation(&env, symbol_short!("init"), admin, true);
-
-        // Track performance
-        let duration = env.ledger().timestamp().saturating_sub(start);
-        monitoring::emit_performance(&env, symbol_short!("init"), duration);
-
-        // Strict mode: verify post-initialization invariants
-        strict_mode::strict_assert(
-            contract_is_initialized(&env),
-            "Strict mode: contract not initialized after init_admin",
-        );
-        strict_mode::strict_emit(&env, symbol_short!("init"), symbol_short!("ok"));
+    #[contracttype]
+    #[derive(Clone, Debug)]
+    pub struct PerformanceMetric {
+        pub function: Symbol,
+        pub duration: u64,
+        pub timestamp: u64,
     }
 
-    /// Initializes the contract with governance-augmented setup.
-    ///
-    /// Enables one-time initialization for governance-controlled operations with
-    /// optional multisig support. This path is suitable for:
-    /// - DAOs requiring voting on upgrades
-    /// - Multi-level governance structures
-    /// - Hybrid admin + governance models
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `admin` - Address with initial administrative authority
-    /// * `config` - Governance configuration (voting period, thresholds, etc.)
-    ///
-    /// # Panics
-    /// * If contract is already initialized (prevents re-init attacks)
-    /// * If governance config is invalid (e.g., invalid thresholds)
-    ///
-    /// # Security Model
-    /// - One-time initialization only
-    /// - Admin address is immutable after initialization
-    /// - Does not require auth during first-call initialization
-    /// - Governance parameters are locked after initialization
-    /// - Re-initialization is prevented across all init entrypoints
-    ///
-    /// # Governance Configuration Validation
-    /// - `quorum_percentage`: Must be 0-10000 (basis points, 0-100%)
-    /// - `approval_threshold`: Must be 0-10000 (basis points, 0-100%)
-    /// - `voting_period`: May be zero if immediate-close voting is desired
-    /// - `voting_scheme`: OnePersonOneVote or TokenWeighted
-    ///
-    /// # State Changes
-    /// - Sets Admin address in instance storage (immutable)
-    /// - Initializes governance configuration
-    /// - Sets initial Version number
-    /// - Initializes proposal counter to 0
-    /// - Tracks operation metrics
-    ///
-    /// # Initialization Matrix
-    /// | Path | Admin | Multisig | Governance | Use Case |
-    /// |------|-------|----------|------------|----------|
-    /// | init | ❌ | ✅ | ❌ | M-of-N multisig upgrades |
-    /// | init_admin | ✅ | ❌ | ❌ | Single-admin trusted setup |
-    /// | init_governance | ✅ | ❌ | ✅ | DAO governance upgrades |
-    ///
-    /// # Example
-    /// ```rust
-    /// use soroban_sdk::{Address, Env};
-    /// use grainlify_core::{GovernanceConfig, VotingScheme};
-    ///
-    /// let env = Env::default();
-    /// let admin = Address::generate(&env);
-    ///
-    /// let gov_config = GovernanceConfig {
-    ///     voting_period: 86400,        // 24 hours
-    ///     execution_delay: 3600,       // 1 hour after approval
-    ///     quorum_percentage: 4000,     // 40% quorum
-    ///     approval_threshold: 6000,    // 60% approval needed
-    ///     min_proposal_stake: 1000,    // 1000 units stake
-    ///     voting_scheme: VotingScheme::OnePersonOneVote,
-    /// };
-    ///
-    /// // Initialize with governance
-    /// contract.init_governance(&env, &admin, &gov_config);
-    ///
-    /// // Subsequent init attempts will panic
-    /// // contract.init_governance(...); // ❌ Panics!
-    /// ```
-    ///
-    /// # Gas Cost
-    /// Medium - Multiple storage writes for governance config and version
-    ///
-    /// # Authorization
-    /// - No authorization required during initialization (first-caller pattern)
-    /// - Admin authorization required for governance operations after init
-    ///
-    /// # Events
-    /// Emits initialization tracking metrics for monitoring
-    pub fn init_governance(env: Env, admin: Address, config: GovernanceConfig) {
-        let start = env.ledger().timestamp();
+    #[contracttype]
+    #[derive(Clone, Debug)]
+    pub struct HealthStatus {
+        pub is_healthy: bool,
+        pub last_operation: u64,
+        pub total_operations: u64,
+        pub contract_version: String,
+    }
 
-        // Prevent re-initialization to protect immutability
-        if contract_is_initialized(&env) {
-            monitoring::track_operation(&env, symbol_short!("init_gov"), admin.clone(), false);
-            panic!("Already initialized");
-        }
+    #[contracttype]
+    #[derive(Clone, Debug)]
+    pub struct Analytics {
+        pub operation_count: u64,
+        pub unique_users: u64,
+        pub error_count: u64,
+        pub error_rate: u32,
+    }
 
-        match governance::validate_config(&config) {
-            Ok(()) => {}
-            Err(governance::Error::InvalidThreshold) => {
-                monitoring::track_operation(&env, symbol_short!("init_gov"), admin.clone(), false);
-                panic!("Invalid governance threshold");
-            }
-            Err(governance::Error::ThresholdTooLow) => {
-                monitoring::track_operation(&env, symbol_short!("init_gov"), admin.clone(), false);
-                panic!("Approval threshold too low (minimum 50%)");
-            }
-            Err(_) => {
-                monitoring::track_operation(&env, symbol_short!("init_gov"), admin.clone(), false);
-                panic!("Invalid governance configuration");
+    #[contracttype]
+    #[derive(Clone, Debug)]
+    pub struct StateSnapshot {
+        pub timestamp: u64,
+        pub total_operations: u64,
+        pub total_users: u64,
+        pub total_errors: u64,
+    }
+
+    #[contracttype]
+    #[derive(Clone, Debug)]
+    pub struct PerformanceStats {
+        pub function_name: Symbol,
+        pub call_count: u64,
+        pub total_time: u64,
+        pub avg_time: u64,
+        pub last_called: u64,
+    }
+
+    #[contracttype]
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct InvariantReport {
+        pub healthy: bool,
+        pub config_sane: bool,
+        pub metrics_sane: bool,
+        pub admin_set: bool,
+        pub version_set: bool,
+        pub version: u32,
+        pub operation_count: u64,
+        pub unique_users: u64,
+        pub error_count: u64,
+        pub violation_count: u32,
+    }
+
+    pub const MAX_TRACKED_FUNCTIONS: u32 = 50;
+    pub const MAX_TRACKED_USERS: u32 = 64;
+
+    fn get_counter(env: &Env, key: &str) -> u64 {
+        env.storage()
+            .persistent()
+            .get(&Symbol::new(env, key))
+            .unwrap_or(0)
+    }
+
+    fn set_counter(env: &Env, key: &str, value: u64) {
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(env, key), &value);
+    }
+
+    fn get_tracked_users(env: &Env) -> Vec<Address> {
+        env.storage()
+            .persistent()
+            .get(&Symbol::new(env, USER_INDEX))
+            .unwrap_or(Vec::new(env))
+    }
+
+    fn track_unique_user(env: &Env, caller: &Address) {
+        let mut users = get_tracked_users(env);
+        for index in 0..users.len() {
+            if users.get(index).unwrap() == *caller {
+                return;
             }
         }
-
-        // Store admin address (immutable after this point)
-        env.storage().instance().set(&DataKey::Admin, &admin);
-
-        // Initialize governance configuration
+        if users.len() >= MAX_TRACKED_USERS {
+            set_counter(env, USER_COUNT, MAX_TRACKED_USERS as u64);
+            return;
+        }
+        users.push_back(caller.clone());
         env.storage()
-            .instance()
-            .set(&governance::GOVERNANCE_CONFIG, &config);
+            .persistent()
+            .set(&Symbol::new(env, USER_INDEX), &users);
+        set_counter(env, USER_COUNT, users.len().into());
+    }
 
-        // Initialize proposal counter
-        env.storage()
-            .instance()
-            .set(&governance::PROPOSAL_COUNT, &0u32);
+    /// [FIX-H03] Dynamic semver decoding — handles any version, not just hardcoded ones
+    fn version_semver_string(env: &Env) -> String {
+        let raw: u32 = env.storage().instance().get(&DataKey::Version).unwrap_or(0);
+        // Promote legacy single-digit versions (1,2,...) to major.0.0 encoding
+        let encoded = if raw >= 10_000 { raw } else { raw.saturating_mul(10_000) };
+        let major = encoded / 10_000;
+        let minor = (encoded % 10_000) / 100;
+        let patch = encoded % 100;
 
-        // Set initial version
-        env.storage().instance().set(&DataKey::Version, &VERSION);
+        // Build semver string without heap alloc
+        let mut buf = [0u8; 12];
+        let mut pos = 0usize;
 
-        // Track successful operation
-        monitoring::track_operation(&env, symbol_short!("init_gov"), admin.clone(), true);
+        macro_rules! write_u32 {
+            ($n:expr) => {
+                let n: u32 = $n;
+                if n >= 100 { buf[pos] = b'0' + (n / 100) as u8; pos += 1; }
+                if n >= 10 { buf[pos] = b'0' + ((n % 100) / 10) as u8; pos += 1; }
+                buf[pos] = b'0' + (n % 10) as u8; pos += 1;
+            };
+        }
 
-        // Track performance
-        let duration = env.ledger().timestamp().saturating_sub(start);
-        monitoring::emit_performance(&env, symbol_short!("init_gov"), duration);
+        write_u32!(major);
+        buf[pos] = b'.'; pos += 1;
+        write_u32!(minor);
+        buf[pos] = b'.'; pos += 1;
+        write_u32!(patch);
 
-        // Emit initialization event
+        let s = core::str::from_utf8(&buf[..pos]).unwrap_or("0.0.0");
+        String::from_str(env, s)
+    }
+
+    pub fn track_operation(env: &Env, operation: Symbol, caller: Address, success: bool) {
+        let count = get_counter(env, OPERATION_COUNT);
+        set_counter(env, OPERATION_COUNT, count.saturating_add(1));
+        set_counter(env, LAST_OPERATION_TS, env.ledger().timestamp());
+        track_unique_user(env, &caller);
+        if !success {
+            let err_count = get_counter(env, ERROR_COUNT);
+            set_counter(env, ERROR_COUNT, err_count.saturating_add(1));
+        }
         env.events().publish(
-            (symbol_short!("init"), symbol_short!("gov")),
-            (admin, config.voting_period, config.approval_threshold),
+            (symbol_short!("metric"), symbol_short!("op")),
+            OperationMetric { operation, caller, timestamp: env.ledger().timestamp(), success },
         );
     }
 
-    /// Proposes an upgrade with a new WASM hash (multisig version).
-    ///
-    /// # Proposal Lifecycle
-    /// 1. Allocates a fresh, monotonic proposal identifier from [`MultiSig`].
-    /// 2. Stores the upgrade metadata (`wasm_hash`, `proposer`, `expiry`) under that id.
-    /// 3. Returns the identifier for later calls to [`approve_upgrade`],
-    ///    [`execute_upgrade`], and [`cancel_upgrade`].
-    ///
-    /// Proposal identifiers are stable and never intentionally reused. This
-    /// function panics if a freshly allocated id would overwrite existing
-    /// upgrade metadata.
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `proposer` - Address proposing the upgrade (must be a multisig signer)
-    /// * `wasm_hash` - Hash of the new WASM code
-    /// * `expiry` - Ledger timestamp (seconds) after which the proposal expires
-    ///   and can no longer be approved or executed. Pass `0` for no expiry.
-    ///
-    /// # Returns
-    /// * `u64` - The proposal ID
-    pub fn propose_upgrade(env: Env, proposer: Address, wasm_hash: BytesN<32>, expiry: u64) -> u64 {
-        let proposal_id = MultiSig::propose(&env, proposer.clone(), expiry);
+    pub fn emit_performance(env: &Env, function: Symbol, duration: u64) {
+        let index_key = Symbol::new(env, "perf_index");
+        let mut index: Vec<Symbol> = env
+            .storage().persistent().get(&index_key).unwrap_or(Vec::new(env));
 
-        if env
-            .storage()
-            .instance()
-            .has(&DataKey::UpgradeProposal(proposal_id))
-            || env
-                .storage()
-                .instance()
-                .has(&DataKey::UpgradeProposalProposer(proposal_id))
-        {
-            panic!("duplicate upgrade proposal id");
+        let mut already_tracked = false;
+        for i in 0..index.len() {
+            if index.get(i).unwrap() == function { already_tracked = true; break; }
         }
 
-        env.storage()
-            .instance()
-            .set(&DataKey::UpgradeProposal(proposal_id), &wasm_hash);
-        env.storage()
-            .instance()
-            .set(&DataKey::UpgradeProposalProposer(proposal_id), &proposer);
+        if !already_tracked {
+            if index.len() >= MAX_TRACKED_FUNCTIONS {
+                let oldest = index.get(0).unwrap();
+                env.storage().persistent().remove(&(Symbol::new(env, "perf_cnt"), oldest.clone()));
+                env.storage().persistent().remove(&(Symbol::new(env, "perf_time"), oldest.clone()));
+                env.storage().persistent().remove(&(Symbol::new(env, "perf_last"), oldest.clone()));
+                let mut trimmed = Vec::new(env);
+                for i in 1..index.len() { trimmed.push_back(index.get(i).unwrap()); }
+                index = trimmed;
+            }
+            index.push_back(function.clone());
+            env.storage().persistent().set(&index_key, &index);
+        }
 
-        proposal_id
+        let count_key = (Symbol::new(env, "perf_cnt"), function.clone());
+        let time_key = (Symbol::new(env, "perf_time"), function.clone());
+        let last_key = (Symbol::new(env, "perf_last"), function.clone());
+        let count: u64 = env.storage().persistent().get(&count_key).unwrap_or(0);
+        let total: u64 = env.storage().persistent().get(&time_key).unwrap_or(0);
+        let timestamp = env.ledger().timestamp();
+        env.storage().persistent().set(&count_key, &count.saturating_add(1));
+        env.storage().persistent().set(&time_key, &total.saturating_add(duration));
+        env.storage().persistent().set(&last_key, &timestamp);
+        env.events().publish(
+            (symbol_short!("metric"), symbol_short!("perf")),
+            PerformanceMetric { function, duration, timestamp },
+        );
     }
 
-    /// Approves an upgrade proposal (multisig version).
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `proposal_id` - The ID of the proposal to approve
-    /// * `signer` - Address approving the proposal
-    ///
-    /// The `proposal_id` must be the stable identifier returned by
-    /// [`propose_upgrade`]. Approval state is maintained by [`MultiSig`].
-    ///
-    /// # Panics
-    /// - If the proposal has expired (ledger time >= expiry and expiry != 0).
-    /// - If the proposal has been cancelled.
-    pub fn approve_upgrade(env: Env, proposal_id: u64, signer: Address) {
-        MultiSig::approve(&env, proposal_id, signer);
+    pub fn health_check(env: &Env) -> HealthStatus {
+        let report = check_invariants(env);
+        HealthStatus {
+            is_healthy: report.healthy,
+            last_operation: get_counter(env, LAST_OPERATION_TS),
+            total_operations: report.operation_count,
+            contract_version: version_semver_string(env), // [FIX-H03] now dynamic
+        }
+    }
 
-        // Check if this approval met the threshold and timelock should start
-        if MultiSig::can_execute(&env, proposal_id) {
-            let current_time = env.ledger().timestamp();
+    pub fn get_analytics(env: &Env) -> Analytics {
+        let ops = get_counter(env, OPERATION_COUNT);
+        let users = get_counter(env, USER_COUNT);
+        let errors = get_counter(env, ERROR_COUNT);
+        let error_rate = if ops > 0 {
+            ((errors as u128 * 10000) / ops as u128) as u32
+        } else { 0 };
+        Analytics { operation_count: ops, unique_users: users, error_count: errors, error_rate }
+    }
 
-            // Only set timelock if not already set (idempotent)
-            if !env
-                .storage()
-                .instance()
-                .has(&DataKey::UpgradeTimelock(proposal_id))
-            {
-                env.storage()
-                    .instance()
-                    .set(&DataKey::UpgradeTimelock(proposal_id), &current_time);
+    pub fn get_state_snapshot(env: &Env) -> StateSnapshot {
+        StateSnapshot {
+            timestamp: env.ledger().timestamp(),
+            total_operations: get_counter(env, OPERATION_COUNT),
+            total_users: get_counter(env, USER_COUNT),
+            total_errors: get_counter(env, ERROR_COUNT),
+        }
+    }
 
-                // Emit timelock start event
+    pub fn get_performance_stats(env: &Env, function_name: Symbol) -> PerformanceStats {
+        let count_key = (Symbol::new(env, "perf_cnt"), function_name.clone());
+        let time_key = (Symbol::new(env, "perf_time"), function_name.clone());
+        let last_key = (Symbol::new(env, "perf_last"), function_name.clone());
+        let count: u64 = env.storage().persistent().get(&count_key).unwrap_or(0);
+        let total: u64 = env.storage().persistent().get(&time_key).unwrap_or(0);
+        let last: u64 = env.storage().persistent().get(&last_key).unwrap_or(0);
+        let avg = if count > 0 { total / count } else { 0 };
+        PerformanceStats { function_name, call_count: count, total_time: total, avg_time: avg, last_called: last }
+    }
+
+    pub fn check_invariants(env: &Env) -> InvariantReport {
+        let operation_count: u64 = get_counter(env, OPERATION_COUNT);
+        let unique_users: u64 = get_counter(env, USER_COUNT);
+        let error_count: u64 = get_counter(env, ERROR_COUNT);
+
+        let metrics_sane = error_count <= operation_count
+            && unique_users <= operation_count
+            && (operation_count > 0 || (unique_users == 0 && error_count == 0));
+
+        let admin_set = env.storage().instance().has(&DataKey::Admin);
+        let version_opt: Option<u32> = env.storage().instance().get(&DataKey::Version);
+        let version_set = version_opt.is_some();
+        let version = version_opt.unwrap_or(0);
+        let version_sane = version > 0;
+
+        let previous_version_opt: Option<u32> = env.storage().instance().get(&DataKey::PreviousVersion);
+        let previous_version_sane = match (previous_version_opt, version_opt) {
+            (Some(prev), Some(curr)) => prev <= curr,
+            (Some(_), None) => false,
+            (None, _) => true,
+        };
+
+        let chain_id: Option<String> = env.storage().instance().get(&DataKey::ChainId);
+        let network_id: Option<String> = env.storage().instance().get(&DataKey::NetworkId);
+        let network_pair_sane = match (chain_id, network_id) {
+            (Some(chain), Some(network)) => chain.len() > 0 && network.len() > 0,
+            (None, None) => true,
+            _ => false,
+        };
+
+        let config_sane = admin_set && version_set && version_sane && previous_version_sane && network_pair_sane;
+        let mut violation_count: u32 = 0;
+        if !admin_set { violation_count += 1; }
+        if !version_set || !version_sane { violation_count += 1; }
+        if !previous_version_sane { violation_count += 1; }
+        if !network_pair_sane { violation_count += 1; }
+        if error_count > operation_count { violation_count += 1; }
+        if unique_users > operation_count { violation_count += 1; }
+        if operation_count == 0 && (unique_users > 0 || error_count > 0) { violation_count += 1; }
+
+        InvariantReport {
+            healthy: config_sane && metrics_sane,
+            config_sane, metrics_sane, admin_set, version_set, version,
+            operation_count, unique_users, error_count, violation_count,
+        }
+    }
+
+    pub fn verify_invariants(env: &Env) -> bool {
+        let report = check_invariants(env);
+        #[cfg(feature = "strict-mode")]
+        {
+            if !report.healthy {
                 env.events().publish(
-                    (symbol_short!("timelock"), symbol_short!("started")),
-                    (proposal_id, current_time),
+                    (symbol_short!("strict"), symbol_short!("inv_fail")),
+                    report.violation_count,
                 );
             }
         }
+        report.healthy
+    }
+}
+
+#[cfg(all(test, feature = "wasm_tests"))]
+mod test_core_monitoring;
+#[cfg(all(test, feature = "wasm_tests"))]
+mod test_pseudo_randomness;
+#[cfg(all(test, feature = "wasm_tests"))]
+mod test_serialization_compatibility;
+#[cfg(test)]
+mod test_storage_layout;
+#[cfg(all(test, feature = "wasm_tests"))]
+mod test_version_helpers;
+#[cfg(test)]
+mod test_strict_mode;
+#[cfg(test)]
+mod test_contract_registry;
+#[cfg(test)]
+mod test_config_change_timelock;
+#[cfg(test)]
+mod test_build_info_init_event;
+// ==================== END MONITORING MODULE ====================
+
+#[cfg_attr(feature = "contract", contract)]
+pub struct GrainlifyContract;
+#[cfg(feature = "contract")]
+#[contractimpl]
+impl GrainlifyContract {
+    fn emit_build_info_event(
+        env: &Env,
+        init_path: Symbol,
+        admin: Option<Address>,
+        signer_count: u32,
+        threshold: u32,
+    ) {
+        env.events().publish(
+            (symbol_short!("init"), symbol_short!("build")),
+            BuildInfoEvent {
+                init_path,
+                admin,
+                signer_count,
+                threshold,
+                version: VERSION,
+                timestamp: env.ledger().timestamp(),
+                event_version: EVENT_SCHEMA_VERSION,
+            },
+        );
     }
 
-    /// Cancels a pending upgrade proposal.
-    ///
-    /// Any signer may cancel a proposal that has not yet been executed.
-    /// Cancellation is irreversible — a cancelled proposal can never be
-    /// re-activated or executed. This prevents stale WASM hashes from
-    /// accumulating as potential attack surface after a governance deadline.
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `proposal_id` - The ID of the upgrade proposal to cancel
-    /// * `canceller` - A signer requesting cancellation (requires auth)
-    ///
-    /// # Panics
-    /// - If `canceller` is not in the multisig signer set.
-    /// - If the proposal does not exist.
-    /// - If the proposal has already been executed.
-    /// - If the proposal has already been cancelled.
-    ///
-    /// # Events
-    /// Emits `("cancelled",)` → `(proposal_id, canceller)` on success.
-    pub fn cancel_upgrade(env: Env, proposal_id: u64, canceller: Address) {
-        // Verify the upgrade proposal record exists before delegating to multisig.
-        if Self::load_upgrade_proposal(&env, proposal_id).is_none() {
-            panic!("Upgrade proposal not found");
+    /// One-time initialization: set the admin and initial version. Requires `admin` auth.
+    pub fn init_admin(env: Env, admin: Address) {
+        if env.storage().instance().has(&DataKey::Version) {
+            panic!("{}", ContractError::AlreadyInitialized as u32);
+        }
+        admin.require_auth();
+        env.storage().instance().set(&DataKey::Admin, &admin);
+        env.storage().instance().set(&DataKey::Version, &VERSION);
+        env.storage().instance().set(&DataKey::ReadOnlyMode, &false);
+        env.storage().instance().set(&DataKey::LivenessSchemaVersion, &LIVENESS_SCHEMA_VERSION);
+        
+        Self::emit_build_info_event(
+            &env,
+            symbol_short!("adm_init"),
+            Some(admin),
+            0,
+            0,
+        );
+    }
+
+    // ========================================================================
+    // Timelock Execution (continued from propose/approve flow)
+    // ========================================================================
+
+    /// Execute a multisig-approved upgrade after the timelock delay has elapsed.
+    pub fn execute_upgrade(env: Env, proposal_id: u64) {
+        let start = env.ledger().timestamp();
+        Self::require_not_read_only(&env);
+
+        if MultiSig::is_state_inconsistent(&env) {
+            panic!("Contract state inconsistent - upgrade blocked");
         }
 
-        MultiSig::cancel(&env, proposal_id, canceller);
+        let timelock_start: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::UpgradeTimelock(proposal_id))
+            .unwrap_or_else(|| panic!("Timelock not started - call approve_upgrade first"));
+
+        let timelock_delay = Self::get_timelock_delay(env.clone());
+        let current_time = env.ledger().timestamp();
+        let elapsed = current_time.saturating_sub(timelock_start);
+
+        if elapsed < timelock_delay {
+            let remaining = timelock_delay.saturating_sub(elapsed);
+            panic!("Timelock delay not met: {} seconds remaining", remaining);
+        }
+
+        if !MultiSig::can_execute(&env, proposal_id) {
+            panic!("Threshold not met or proposal not executable");
+        }
+
+        let wasm_hash: BytesN<32> = env
+            .storage()
+            .instance()
+            .get(&DataKey::UpgradeProposal(proposal_id))
+            .unwrap_or_else(|| panic!("Upgrade proposal not found"));
+
+        let current_version: u32 = env.storage().instance().get(&DataKey::Version).unwrap_or(1);
+        env.storage().instance().set(&DataKey::PreviousVersion, &current_version);
+
+        MultiSig::mark_executed(&env, proposal_id);
+        env.storage().instance().remove(&DataKey::UpgradeTimelock(proposal_id));
+
+        env.deployer().update_current_contract_wasm(wasm_hash.clone());
+
+        env.events().publish(
+            (symbol_short!("upgrade"), symbol_short!("wasm")),
+            UpgradeEvent {
+                new_wasm_hash: wasm_hash,
+                previous_version: current_version,
+                timestamp: env.ledger().timestamp(),
+                event_version: EVENT_SCHEMA_VERSION,
+            },
+        );
+
+        let duration = env.ledger().timestamp().saturating_sub(start);
+        monitoring::emit_performance(&env, symbol_short!("exec_upg"), duration);
     }
 
-    /// Returns the upgrade proposal metadata stored for `proposal_id`.
-    ///
-    /// This view is intended for review tooling, off-chain auditors, and tests
-    /// that need to confirm which WASM hash and proposer are bound to a given
-    /// multisig proposal identifier.
-    pub fn get_upgrade_proposal(env: Env, proposal_id: u64) -> Option<UpgradeProposalRecord> {
-        Self::load_upgrade_proposal(&env, proposal_id)
+    /// Single-admin upgrade path
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+        let start = env.ledger().timestamp();
+
+        #[cfg(feature = "strict-mode")]
+        {
+            let report = monitoring::check_invariants(&env);
+            strict_mode::strict_assert(report.healthy, "Strict mode: contract invariants unhealthy before upgrade");
+            strict_mode::strict_emit(&env, symbol_short!("upgrade"), symbol_short!("pre_chk"));
+        }
+
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .unwrap_or_else(|| panic!("{}", ContractError::NotInitialized as u32));
+        admin.require_auth();
+        Self::require_not_read_only(&env);
+
+        let current_version: u32 = env.storage().instance().get(&DataKey::Version).unwrap_or(1);
+        env.storage().instance().set(&DataKey::PreviousVersion, &current_version);
+        env.deployer().update_current_contract_wasm(new_wasm_hash.clone());
+
+        // [FIX-L02] Consistent event shape with execute_upgrade
+        env.events().publish(
+            (symbol_short!("upgrade"), symbol_short!("wasm")),
+            UpgradeEvent {
+                new_wasm_hash,
+                previous_version: current_version,
+                timestamp: env.ledger().timestamp(),
+                event_version: EVENT_SCHEMA_VERSION,
+            },
+        );
+
+        monitoring::track_operation(&env, symbol_short!("upgrade"), admin, true);
+        let duration = env.ledger().timestamp().saturating_sub(start);
+        monitoring::emit_performance(&env, symbol_short!("upgrade"), duration);
     }
 
-    /// Returns the current timelock delay period for upgrade execution.
-    ///
-    /// # Returns
-    /// * `u64` - Current timelock delay in seconds (default: 86400 = 24 hours)
-    ///
-    /// # Security Note
-    /// This is a view function and requires no authorization.
+    // ========================================================================
+    // Timelock Management
+    // ========================================================================
+
     pub fn get_timelock_delay(env: Env) -> u64 {
         env.storage()
             .instance()
@@ -1301,58 +984,30 @@ impl GrainlifyContract {
             .unwrap_or(DEFAULT_TIMELOCK_DELAY)
     }
 
-    /// Sets the timelock delay period for upgrade execution (admin only).
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `delay_seconds` - New delay period in seconds (minimum: 3600 = 1 hour)
-    ///
-    /// # Authorization
-    /// Only admin can call this function.
-    ///
-    /// # Security Considerations
-    /// - Minimum delay of 1 hour prevents immediate upgrades
-    /// - Can be increased but not decreased below minimum for security
-    /// - Changes apply to future proposals only
-    ///
-    /// # Events
-    /// Emits timelock delay change event for transparency.
+    /// [FIX-H02] Now enforces both minimum AND maximum to prevent bricking upgrades
     pub fn set_timelock_delay(env: Env, delay_seconds: u64) {
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         admin.require_auth();
-
         Self::require_not_read_only(&env);
 
-        // Enforce minimum delay of 1 hour for security
-        if delay_seconds < 3600 {
+        if delay_seconds < MIN_TIMELOCK_DELAY {
             panic!("Timelock delay must be at least 1 hour (3600 seconds)");
         }
 
-        let old_delay = Self::get_timelock_delay(env.clone());
-        env.storage()
-            .instance()
-            .set(&DataKey::TimelockDelay, &delay_seconds);
+        // [FIX-H02] Enforce maximum — prevents admin from bricking upgrade execution
+        if delay_seconds > MAX_TIMELOCK_DELAY {
+            panic!("Timelock delay cannot exceed 30 days (2592000 seconds)");
+        }
 
-        // Emit configuration change event
+        let old_delay = Self::get_timelock_delay(env.clone());
+        env.storage().instance().set(&DataKey::TimelockDelay, &delay_seconds);
+
         env.events().publish(
             (symbol_short!("timelock"), symbol_short!("dly_chg")),
-            (old_delay, delay_seconds)
+            (old_delay, delay_seconds),
         );
     }
 
-    /// Returns the timelock status for an upgrade proposal.
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `proposal_id` - The ID of the upgrade proposal
-    ///
-    /// # Returns
-    /// * `Option<u64>` - Some(remaining_seconds) if timelock is active, None if not started
-    ///
-    /// # Usage
-    /// - None: Timelock not started (threshold not met)
-    /// - Some(0): Timelock completed, ready to execute
-    /// - Some(n): N seconds remaining before execution
     pub fn get_timelock_status(env: Env, proposal_id: u64) -> Option<u64> {
         if let Some(timelock_start) = env
             .storage()
@@ -1362,709 +1017,263 @@ impl GrainlifyContract {
             let timelock_delay = Self::get_timelock_delay(env.clone());
             let current_time = env.ledger().timestamp();
             let elapsed = current_time.saturating_sub(timelock_start);
-
-            if elapsed >= timelock_delay {
-                Some(0) // Ready to execute
-            } else {
-                Some(timelock_delay.saturating_sub(elapsed)) // Remaining time
-            }
+            if elapsed >= timelock_delay { Some(0) } else { Some(timelock_delay.saturating_sub(elapsed)) }
         } else {
-            None // Timelock not started
+            None
         }
     }
 
-    /// Upgrades the contract to new WASM code.
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `new_wasm_hash` - Hash of the uploaded WASM code (32 bytes)
-    ///
-    /// # Authorization
-    /// - **CRITICAL**: Only admin can call this function
-    /// - Admin must sign the transaction
-    ///
-    /// # State Changes
-    /// - Replaces current contract WASM with new version
-    /// - Preserves all instance storage (admin, version, etc.)
-    /// - Does NOT automatically update version number (call `set_version` separately)
-    ///
-    /// # Security Considerations
-    /// - **Code Review**: New WASM must be audited before deployment
-    /// - **Testing**: Test upgrade on testnet first
-    /// - **State Compatibility**: Ensure new code is compatible with existing state
-    /// - **Rollback Plan**: Keep previous WASM hash for emergency rollback
-    /// - **Version Update**: Call `set_version` after upgrade if needed
-    ///
-    /// # Workflow
-    /// 1. Develop and test new contract version
-    /// 2. Build WASM: `cargo build --release --target wasm32-unknown-unknown`
-    /// 3. Upload WASM to Stellar network
-    /// 4. Get WASM hash from upload response
-    /// 5. Call this function with the hash
-    /// 6. (Optional) Call `set_version` to update version number
-    ///
-    /// # Example
-    /// ```rust
-    /// use soroban_sdk::{BytesN, Env};
-    ///
-    /// let env = Env::default();
-    ///
-    /// // Upload new WASM and get hash (done off-chain)
-    /// let wasm_hash = BytesN::from_array(
-    ///     &env,
-    ///     &[0xab, 0xcd, 0xef, ...] // 32 bytes
-    /// );
-    ///
-    /// // Perform upgrade (requires admin authorization)
-    /// contract.upgrade(&env, &wasm_hash);
-    ///
-    /// // Update version number
-    /// contract.set_version(&env, &2);
-    /// ```
-    ///
-    /// # Production Upgrade Process
-    /// ```bash
-    /// # 1. Build new WASM
-    /// cargo build --release --target wasm32-unknown-unknown
-    ///
-    /// # 2. Upload WASM to Stellar
-    /// stellar contract install \
-    ///   --wasm target/wasm32-unknown-unknown/release/grainlify.wasm \
-    ///   --source ADMIN_SECRET_KEY
-    /// # Output: WASM_HASH (e.g., abc123...)
-    ///
-    /// # 3. Upgrade contract
-    /// stellar contract invoke \
-    ///   --id CONTRACT_ID \
-    ///   --source ADMIN_SECRET_KEY \
-    ///   -- upgrade \
-    ///   --new_wasm_hash WASM_HASH
-    ///
-    /// # 4. Update version (optional)
-    /// stellar contract invoke \
-    ///   --id CONTRACT_ID \
-    ///   --source ADMIN_SECRET_KEY \
-    ///   -- set_version \
-    ///   --new_version 2
-    /// ```
-    ///
-    /// # Gas Cost
-    /// High - WASM code replacement is expensive
-    ///
-    /// # Emergency Rollback
-    /// If new version has issues, rollback to previous WASM:
-    /// ```bash
-    /// stellar contract invoke \
-    ///   --id CONTRACT_ID \
-    ///   --source ADMIN_SECRET_KEY \
-    ///   -- upgrade \
-    ///   --new_wasm_hash PREVIOUS_WASM_HASH
-    /// ```
-    ///
-    /// # Panics
-    /// * If admin address is not set (contract not initialized)
-    /// * If caller is not the admin
-
-    /// Executes an upgrade proposal that has met the multisig threshold.
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `proposal_id` - The ID of the upgrade proposal to execute
-    ///
-    /// # Authorization
-    /// No additional auth required here — the multisig approval quorum
-    /// (collected via [`approve_upgrade`]) acts as the authorization gate.
-    /// Panics with `"Threshold not met"` if quorum has not been reached.
-    ///
-    /// # Expiry / Cancellation
-    /// Panics with `"Proposal expired"` if the proposal's deadline has passed.
-    /// Panics with `"Proposal cancelled"` if the proposal was explicitly cancelled.
-    /// This ensures stale WASM hashes from lapsed governance windows can never
-    /// be executed.
-    ///
-    /// # Events
-    /// Emits `("upgrade", "wasm")` → [`UpgradeEvent`] on success.
-    ///
-    /// # State Preservation
-    /// All instance storage is preserved across the WASM replacement.
-    pub fn execute_upgrade(env: Env, proposal_id: u64) {
-        let start = env.ledger().timestamp();
-        let upgrade_op = Symbol::new(&env, "execute_upgrade");
-        let upgrade_exec = Symbol::new(&env, "upgrade_executed");
-
-        // Security: Verify contract state is consistent before upgrade
-        if !monitoring::verify_invariants(&env) {
-            monitoring::track_operation(
-                &env,
-                Symbol::new(&env, "execute_upgrade"),
-                env.current_contract_address(),
-                false,
-            );
-            panic!("Contract state inconsistent - upgrade blocked");
-        }
-
-        // Reject cancelled proposals before any further checks.
-        if MultiSig::is_cancelled(&env, proposal_id) {
-            monitoring::track_operation(
-                &env,
-                Symbol::new(&env, "execute_upgrade"),
-                env.current_contract_address(),
-                false,
-            );
-            panic!("Proposal cancelled");
-        }
-
-        // Reject expired proposals — stale WASM hashes must not be executable.
-        if MultiSig::is_expired(&env, proposal_id) {
-            monitoring::track_operation(
-                &env,
-                Symbol::new(&env, "execute_upgrade"),
-                env.current_contract_address(),
-                false,
-            );
-            panic!("Proposal expired");
-        }
-
-        // Verify proposal exists and has sufficient approvals
-        if !MultiSig::can_execute(&env, proposal_id) {
-            monitoring::track_operation(
-                &env,
-                Symbol::new(&env, "execute_upgrade"),
-                env.current_contract_address(),
-                false,
-            );
-            panic!("Threshold not met or proposal not executable");
-        }
-
-        // Enforce timelock delay
-        let timelock_start: u64 = env
-            .storage()
-            .instance()
-            .get(&DataKey::UpgradeTimelock(proposal_id))
-            .unwrap_or_else(|| panic!("Timelock not started - call approve_upgrade first"));
-
-        let timelock_delay: u64 = env
-            .storage()
-            .instance()
-            .get(&DataKey::TimelockDelay)
-            .unwrap_or(DEFAULT_TIMELOCK_DELAY);
-
-        let current_time = env.ledger().timestamp();
-        let elapsed = current_time.saturating_sub(timelock_start);
-
-        if elapsed < timelock_delay {
-            let remaining = timelock_delay.saturating_sub(elapsed);
-            monitoring::track_operation(
-                &env,
-                Symbol::new(&env, "execute_upgrade"),
-                env.current_contract_address(),
-                false,
-            );
-            panic!("Timelock delay not met: {} seconds remaining", remaining);
-        }
-
-        let proposal =
-            Self::load_upgrade_proposal(&env, proposal_id).expect("Missing upgrade proposal");
-        let wasm_hash = proposal.wasm_hash.clone();
-
-        // Store previous version for rollback tracking
-        let current_version = env.storage().instance().get(&DataKey::Version).unwrap_or(1);
+    /// Returns the config-change timelock delay in seconds.
+    pub fn get_config_change_delay(env: Env) -> u64 {
         env.storage()
             .instance()
-            .set(&DataKey::PreviousVersion, &current_version);
-
-        // Perform WASM upgrade — instance storage is preserved
-        env.deployer()
-            .update_current_contract_wasm(wasm_hash.clone());
-
-        // Emit structured upgrade event for off-chain indexers
-        env.events().publish(
-            (symbol_short!("upgrade"), symbol_short!("wasm")),
-            UpgradeEvent {
-                new_wasm_hash: proposal.wasm_hash.clone(),
-                version: current_version,
-                timestamp: env.ledger().timestamp(),
-            },
-        );
-
-        // Mark proposal as executed (prevents re-execution)
-        MultiSig::mark_executed(&env, proposal_id);
-
-        // Clean up timelock data
-        env.storage()
-            .instance()
-            .remove(&DataKey::UpgradeTimelock(proposal_id));
-
-        // Track successful operation
-        monitoring::track_operation(
-            &env,
-            Symbol::new(&env, "execute_upgrade"),
-            env.current_contract_address(),
-            true,
-        );
-
-        // Track performance
-        let duration = env.ledger().timestamp().saturating_sub(start);
-        monitoring::emit_performance(&env, Symbol::new(&env, "execute_upgrade"), duration);
-
-        // Emit upgrade execution event
-        env.events().publish(
-            (Symbol::new(&env, "upgrade_executed"),),
-            (proposal_id, proposal.wasm_hash, current_version),
-        );
+            .get(&DataKey::ConfigChangeDelay)
+            .unwrap_or(DEFAULT_CONFIG_CHANGE_DELAY)
     }
 
-    fn load_upgrade_proposal(env: &Env, proposal_id: u64) -> Option<UpgradeProposalRecord> {
-        let wasm_hash = env
-            .storage()
-            .instance()
-            .get(&DataKey::UpgradeProposal(proposal_id))?;
-        let proposer = env
-            .storage()
-            .instance()
-            .get(&DataKey::UpgradeProposalProposer(proposal_id));
-
-        // Pull expiry and cancelled state from the underlying multisig Proposal.
-        let (expiry, cancelled) = MultiSig::get_proposal_opt(env, proposal_id)
-            .map(|p| (p.expiry, p.cancelled))
-            .unwrap_or((0, false));
-
-        Some(UpgradeProposalRecord {
-            proposal_id,
-            proposer,
-            wasm_hash,
-            expiry,
-            cancelled,
-        })
-    }
-
-    /// Upgrades the contract to new WASM code (single admin version).
+    /// Sets the config-change timelock delay.
     ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `new_wasm_hash` - Hash of the uploaded WASM code (32 bytes)
-    /// Upgrades the contract to new WASM code (single admin version).
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `new_wasm_hash` - Hash of the uploaded WASM code (32 bytes)
-    ///
-    /// # Authorization
-    /// Requires `require_auth()` from the configured admin address.
-    /// Panics with [`ContractError::NotInitialized`] if the contract has not
-    /// been initialized, or [`ContractError::NotAdmin`] if the caller is not
-    /// the admin.
-    ///
-    /// # Events
-    /// Emits `("upgrade", "wasm")` → [`UpgradeEvent`] on success.
-    ///
-    /// # State Preservation
-    /// All instance storage (admin, version, migration state, snapshots) is
-    /// preserved across the WASM replacement — only the executable code changes.
-    /// Returns the configured admin address, or `None` if the contract has not
-    /// been initialized via [`init_admin`] or [`init_with_network`].
-    ///
-    /// This is a view-only helper for off-chain tooling and auditors.
-    pub fn get_admin(env: Env) -> Option<Address> {
-        env.storage().instance().get(&DataKey::Admin)
-    }
-
-    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
-        let start = env.ledger().timestamp();
-
-        // Strict mode: verify invariants before upgrade
-        #[cfg(feature = "strict-mode")]
-        {
-            let report = monitoring::check_invariants(&env);
-            strict_mode::strict_assert(
-                report.healthy,
-                "Strict mode: contract invariants unhealthy before upgrade",
-            );
-            strict_mode::strict_emit(&env, symbol_short!("upgrade"), symbol_short!("pre_chk"));
-        }
-
-        // Verify admin is set (contract initialized).
-        // Panics with ContractError::NotInitialized if admin key is absent.
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .unwrap_or_else(|| panic!("{}", ContractError::NotInitialized as u32));
-
-        // Require admin authorization — panics with auth error if not signed by admin.
-        // This is the primary security gate: only the configured admin can upgrade.
+    /// Delay must remain within the same guardrails as the upgrade timelock.
+    pub fn set_config_change_delay(env: Env, delay_seconds: u64) {
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         admin.require_auth();
-
         Self::require_not_read_only(&env);
 
-        // Store previous version for potential rollback
-        let current_version: u32 = env.storage().instance().get(&DataKey::Version).unwrap_or(1);
-        env.storage()
-            .instance()
-            .set(&DataKey::PreviousVersion, &current_version);
+        if delay_seconds < MIN_TIMELOCK_DELAY {
+            panic!("Config change delay must be at least 1 hour (3600 seconds)");
+        }
+        if delay_seconds > MAX_TIMELOCK_DELAY {
+            panic!("Config change delay cannot exceed 30 days (2592000 seconds)");
+        }
 
-        // Perform WASM upgrade — instance storage is preserved
-        env.deployer()
-            .update_current_contract_wasm(new_wasm_hash.clone());
-
-        // Emit structured upgrade event for off-chain indexers
+        let old_delay = Self::get_config_change_delay(env.clone());
+        env.storage().instance().set(&DataKey::ConfigChangeDelay, &delay_seconds);
         env.events().publish(
-            (symbol_short!("upgrade"), symbol_short!("wasm")),
-            UpgradeEvent {
-                new_wasm_hash,
-                version: current_version,
-                timestamp: env.ledger().timestamp(),
-            },
+            (symbol_short!("cfg_tmlk"), symbol_short!("dly_chg")),
+            (old_delay, delay_seconds),
         );
+    }
 
-        // Track successful operation
-        monitoring::track_operation(&env, symbol_short!("upgrade"), admin, true);
+    /// Creates a timelocked proposal to restore a configuration snapshot.
+    pub fn propose_config_snapshot_restore(env: Env, snapshot_id: u64) -> u64 {
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).expect("Admin not set");
+        admin.require_auth();
+        Self::require_not_read_only(&env);
 
-        // Track performance
-        let duration = env.ledger().timestamp().saturating_sub(start);
-        monitoring::emit_performance(&env, symbol_short!("upgrade"), duration);
+        if !env.storage().instance().has(&DataKey::ConfigSnapshot(snapshot_id)) {
+            panic!("Snapshot not found or has been pruned");
+        }
+
+        let proposal_id: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::ConfigChangeCounter)
+            .unwrap_or(0u64)
+            .saturating_add(1);
+        let now = env.ledger().timestamp();
+        let delay = Self::get_config_change_delay(env.clone());
+        let proposal = ConfigChangeProposal {
+            proposal_id,
+            snapshot_id,
+            proposer: admin,
+            created_at: now,
+            execute_after: now.saturating_add(delay),
+            cancelled: false,
+            executed: false,
+        };
+
+        env.storage().instance().set(&DataKey::ConfigChangeProposal(proposal_id), &proposal);
+        env.storage().instance().set(&DataKey::ConfigChangeCounter, &proposal_id);
+        env.events().publish(
+            (symbol_short!("cfg_tmlk"), symbol_short!("propose")),
+            (proposal_id, snapshot_id, proposal.execute_after),
+        );
+        proposal_id
+    }
+
+    /// Returns a config-change proposal by id.
+    pub fn get_config_change_proposal(env: Env, proposal_id: u64) -> Option<ConfigChangeProposal> {
+        env.storage().instance().get(&DataKey::ConfigChangeProposal(proposal_id))
+    }
+
+    /// Returns remaining delay in seconds for a config-change proposal.
+    ///
+    /// `Some(0)` means executable now. `None` means proposal does not exist.
+    pub fn get_config_change_status(env: Env, proposal_id: u64) -> Option<u64> {
+        let proposal: ConfigChangeProposal = env
+            .storage()
+            .instance()
+            .get(&DataKey::ConfigChangeProposal(proposal_id))?;
+
+        if proposal.cancelled || proposal.executed {
+            return Some(0);
+        }
+
+        let now = env.ledger().timestamp();
+        if now >= proposal.execute_after {
+            Some(0)
+        } else {
+            Some(proposal.execute_after.saturating_sub(now))
+        }
+    }
+
+    /// Cancels a pending config-change proposal.
+    pub fn cancel_config_change(env: Env, proposal_id: u64) {
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).expect("Admin not set");
+        admin.require_auth();
+        Self::require_not_read_only(&env);
+
+        let mut proposal: ConfigChangeProposal = env
+            .storage()
+            .instance()
+            .get(&DataKey::ConfigChangeProposal(proposal_id))
+            .unwrap_or_else(|| panic!("Config change proposal not found"));
+
+        if proposal.executed {
+            panic!("Config change proposal already executed");
+        }
+        if proposal.cancelled {
+            panic!("Config change proposal already cancelled");
+        }
+
+        proposal.cancelled = true;
+        env.storage().instance().set(&DataKey::ConfigChangeProposal(proposal_id), &proposal);
+        env.events().publish(
+            (symbol_short!("cfg_tmlk"), symbol_short!("cancel")),
+            proposal_id,
+        );
+    }
+
+    /// Executes a timelocked config-change proposal after delay expiry.
+    pub fn execute_config_snapshot_restore(env: Env, proposal_id: u64) {
+        Self::require_not_read_only(&env);
+
+        let mut proposal: ConfigChangeProposal = env
+            .storage()
+            .instance()
+            .get(&DataKey::ConfigChangeProposal(proposal_id))
+            .unwrap_or_else(|| panic!("Config change proposal not found"));
+
+        if proposal.cancelled {
+            panic!("Config change proposal has been cancelled");
+        }
+        if proposal.executed {
+            panic!("Config change proposal already executed");
+        }
+        let now = env.ledger().timestamp();
+        if now < proposal.execute_after {
+            panic!(
+                "Config change timelock not met: {} seconds remaining",
+                proposal.execute_after.saturating_sub(now)
+            );
+        }
+
+        Self::restore_snapshot_with_checks(&env, proposal.snapshot_id);
+        proposal.executed = true;
+        env.storage().instance().set(&DataKey::ConfigChangeProposal(proposal_id), &proposal);
+        env.events().publish(
+            (symbol_short!("cfg_tmlk"), symbol_short!("exec")),
+            (proposal_id, proposal.snapshot_id, now),
+        );
     }
 
     // ========================================================================
     // Version Management
     // ========================================================================
 
-    /// Retrieves the current contract version number.
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    ///
-    /// # Returns
-    /// * `u32` - Current version number (defaults to 0 if not set)
-    ///
-    /// # Usage
-    /// Use this to verify contract version for:
-    /// - Client compatibility checks
-    /// - Migration decision logic
-    /// - Audit trails
-    /// - Version-specific behavior
-    ///
-    /// # Example
-    /// ```rust
-    /// let version = contract.get_version(&env);
-    ///
-    /// match version {
-    ///     1 => println!("Running v1"),
-    ///     2 => println!("Running v2 with new features"),
-    ///     _ => println!("Unknown version"),
-    /// }
-    /// ```
-    ///
-    /// # Client-Side Usage
-    /// ```javascript
-    /// // Check contract version before interaction
-    /// const version = await contract.get_version();
-    ///
-    /// if (version < 2) {
-    ///     throw new Error("Contract version too old, please upgrade");
-    /// }
-    /// ```
-    ///
-    /// # Gas Cost
-    /// Very Low - Single storage read
     pub fn get_version(env: Env) -> u32 {
         env.storage().instance().get(&DataKey::Version).unwrap_or(0)
     }
 
-    /// Returns `true` when this contract was compiled with `strict-mode` enabled.
-    ///
-    /// Operators and deployment scripts can call this after deployment to verify
-    /// that dev/staging builds have strict checks active and mainnet builds do not.
+    pub fn get_admin(env: Env) -> Option<Address> {
+        env.storage().instance().get(&DataKey::Admin)
+    }
+
     pub fn is_strict_mode(_env: Env) -> bool {
         strict_mode::is_enabled()
     }
 
-    /// Returns the semantic version string decoded from the stored numeric encoding.
-    ///
-    /// # Encoding policy
-    /// Versions stored as `major * 10_000 + minor * 100 + patch` are decoded
-    /// directly.  Legacy single-digit values (`1`, `2`, …) are treated as
-    /// `major.0.0` for backward compatibility.  A stored value of `0` returns
-    /// `"0.0.0"`.
-    ///
-    /// # Examples
-    /// | stored value | returned string |
-    /// |---|---|
-    /// | `0`      | `"0.0.0"` |
-    /// | `1`      | `"1.0.0"` (legacy) |
-    /// | `10000`  | `"1.0.0"` |
-    /// | `10100`  | `"1.1.0"` |
-    /// | `10001`  | `"1.0.1"` |
-    /// | `20305`  | `"2.3.5"` |
-    ///
-    /// # Security note
-    /// This is a pure view function; it performs no authorization and cannot
-    /// mutate state.
     pub fn get_version_semver_string(env: Env) -> String {
         let encoded = Self::get_version_numeric_encoded(env.clone());
         let major = encoded / 10_000;
         let minor = (encoded % 10_000) / 100;
         let patch = encoded % 100;
-
-        // Build "major.minor.patch" without heap allocation beyond the SDK String.
-        // Maximum length: 3 digits each + 2 dots = 11 chars — well within limits.
         let mut buf = [0u8; 12];
         let mut pos = 0usize;
 
-        let write_u32 = |n: u32, buf: &mut [u8; 12], pos: &mut usize| {
-            if n >= 100 {
-                buf[*pos] = b'0' + (n / 100) as u8;
-                *pos += 1;
-            }
-            if n >= 10 {
-                buf[*pos] = b'0' + ((n % 100) / 10) as u8;
-                *pos += 1;
-            }
-            buf[*pos] = b'0' + (n % 10) as u8;
-            *pos += 1;
-        };
+        macro_rules! write_u32 {
+            ($n:expr) => {
+                let n: u32 = $n;
+                if n >= 100 { buf[pos] = b'0' + (n / 100) as u8; pos += 1; }
+                if n >= 10 { buf[pos] = b'0' + ((n % 100) / 10) as u8; pos += 1; }
+                buf[pos] = b'0' + (n % 10) as u8; pos += 1;
+            };
+        }
+        write_u32!(major); buf[pos] = b'.'; pos += 1;
+        write_u32!(minor); buf[pos] = b'.'; pos += 1;
+        write_u32!(patch);
 
-        write_u32(major, &mut buf, &mut pos);
-        buf[pos] = b'.';
-        pos += 1;
-        write_u32(minor, &mut buf, &mut pos);
-        buf[pos] = b'.';
-        pos += 1;
-        write_u32(patch, &mut buf, &mut pos);
-
-        // SAFETY: buf contains only ASCII digits and dots.
         let s = core::str::from_utf8(&buf[..pos]).unwrap_or("0.0.0");
         String::from_str(&env, s)
     }
 
-    /// Returns the stored version normalised to the `major * 10_000 + minor * 100 + patch`
-    /// encoding used throughout this contract.
-    ///
-    /// Legacy single-digit values (`1`, `2`, …, `9_999`) are promoted to
-    /// `value * 10_000` so that comparisons with fully-encoded versions are
-    /// always correct.
-    ///
-    /// # Examples
-    /// ```text
-    /// stored 1     → 10_000   (1.0.0)
-    /// stored 2     → 20_000   (2.0.0)
-    /// stored 10100 → 10_100   (1.1.0)  — already encoded, returned as-is
-    /// stored 0     → 0        (0.0.0)
-    /// ```
-    ///
-    /// # Security note
-    /// Pure view function; no auth required, no state mutation.
     pub fn get_version_numeric_encoded(env: Env) -> u32 {
         let raw: u32 = env.storage().instance().get(&DataKey::Version).unwrap_or(0);
-        if raw >= 10_000 {
-            raw
-        } else {
-            raw.saturating_mul(10_000)
-        }
+        if raw >= 10_000 { raw } else { raw.saturating_mul(10_000) }
     }
 
-    /// Asserts that the contract's current version is at least `min_numeric`.
-    ///
-    /// `min_numeric` must use the `major * 10_000 + minor * 100 + patch`
-    /// encoding (e.g., `20000` for ≥ 2.0.0, `10100` for ≥ 1.1.0).
-    ///
-    /// # Errors
-    /// Panics with [`ContractError::NotInitialized`] (code `2`) when the
-    /// contract has not been initialised yet (version == 0).
-    ///
-    /// Panics with the string `"version_too_low"` when the current encoded
-    /// version is strictly less than `min_numeric`.  Integrators should catch
-    /// this panic string to detect version incompatibility.
-    ///
-    /// # Examples
-    /// ```text
-    /// // Contract at 2.0.0 (stored as 20000 or legacy 2)
-    /// require_min_version(20000)  → ok
-    /// require_min_version(10000)  → ok   (1.0.0 ≤ 2.0.0)
-    /// require_min_version(20001)  → panic("version_too_low")
-    /// ```
-    ///
-    /// # Security note
-    /// Pure view function; no auth required, no state mutation.
     pub fn require_min_version(env: Env, min_numeric: u32) {
         let cur = Self::get_version_numeric_encoded(env.clone());
-        if cur == 0 {
-            panic!("{}", ContractError::NotInitialized as u32);
-        }
-        if cur < min_numeric {
-            panic!("version_too_low");
-        }
+        if cur == 0 { panic!("{}", ContractError::NotInitialized as u32); }
+        if cur < min_numeric { panic!("version_too_low"); }
     }
-
-    /// Updates the contract version number.
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `new_version` - New version number to set
-    ///
-    /// # Authorization
-    /// - Only admin can call this function
-    /// - Admin must sign the transaction
-    ///
-    /// # State Changes
-    /// - Updates Version in instance storage
-    ///
-    /// # Usage
-    /// Call this function after upgrading contract WASM to reflect
-    /// the new version number. This provides an audit trail of upgrades.
-    ///
-    /// # Version Numbering Strategy
-    /// Recommend using semantic versioning encoded as single u32:
-    /// - `1` = v1.0.0
-    /// - `2` = v2.0.0
-    /// - `101` = v1.0.1 (patch)
-    /// - `110` = v1.1.0 (minor)
-    ///
-    /// Or use simple incrementing:
-    /// - `1` = First version
-    /// - `2` = Second version
-    /// - `3` = Third version
-    ///
-    /// # Example
-    /// ```rust
-    /// // After upgrading WASM
-    /// contract.upgrade(&env, &new_wasm_hash);
-    ///
-    /// // Update version to reflect the upgrade
-    /// contract.set_version(&env, &2);
-    ///
-    /// // Verify
-    /// assert_eq!(contract.get_version(&env), 2);
-    /// ```
-    ///
-    /// # Best Practice
-    /// Document version changes:
-    /// ```rust
-    /// // Version History:
-    /// // 1 - Initial release
-    /// // 2 - Added feature X, fixed bug Y
-    /// // 3 - Performance improvements
-    /// contract.set_version(&env, &3);
-    /// ```
-    ///
-    /// # Security Note
-    /// This function does NOT perform the actual upgrade.
-    /// It only updates the version metadata. Always call
-    /// `upgrade()` first, then `set_version()`.
-    ///
-    /// # Gas Cost
-    /// Very Low - Single storage write
-    ///
-    /// # Panics
-    /// * If admin address is not set (contract not initialized)
-    /// * If caller is not the admin
 
     pub fn set_version(env: Env, new_version: u32) {
         let start = env.ledger().timestamp();
-
-        // Verify admin authorization
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         admin.require_auth();
-
         Self::require_not_read_only(&env);
-
-        // Update version number
-        env.storage()
-            .instance()
-            .set(&DataKey::Version, &new_version);
-
-        // Track successful operation
+        env.storage().instance().set(&DataKey::Version, &new_version);
         monitoring::track_operation(&env, symbol_short!("set_ver"), admin, true);
-
-        // Track performance
         let duration = env.ledger().timestamp().saturating_sub(start);
         monitoring::emit_performance(&env, symbol_short!("set_ver"), duration);
     }
 
-    /// Verifies that the instance storage aligns with the documented layout.
-    pub fn verify_storage_layout(env: Env) -> bool {
-        let admin_ok = env.storage().instance().has(&DataKey::Admin)
-            && env
-                .storage()
-                .instance()
-                .get::<_, Address>(&DataKey::Admin)
-                .is_some();
+    // ========================================================================
+    // Read-Only Mode
+    // ========================================================================
 
-        let version_ok = env.storage().instance().has(&DataKey::Version)
-            && env
-                .storage()
-                .instance()
-                .get::<_, u32>(&DataKey::Version)
-                .is_some();
-
-        let migration_ok = if env.storage().instance().has(&DataKey::MigrationState) {
-            env.storage()
-                .instance()
-                .get::<_, crate::MigrationState>(&DataKey::MigrationState)
-                .is_some()
-        } else {
-            true
-        };
-
-        admin_ok && version_ok && migration_ok
-    }
-
-    /// Returns true if the contract is in read-only mode.
     pub fn is_read_only(env: Env) -> bool {
-        env.storage()
-            .instance()
-            .get(&DataKey::ReadOnlyMode)
-            .unwrap_or(false)
+        env.storage().instance().get(&DataKey::ReadOnlyMode).unwrap_or(false)
     }
 
-    /// Enable or disable contract-wide read-only mode (admin only).
-    ///
-    /// When enabled, all state-mutating entrypoints reject with "Read-only mode"
-    /// while view calls remain fully functional.
     pub fn set_read_only_mode(env: Env, enabled: bool) {
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         admin.require_auth();
-
-        env.storage()
-            .instance()
-            .set(&DataKey::ReadOnlyMode, &enabled);
-
-        let event = ReadOnlyModeEvent {
-            enabled,
-            admin,
-            timestamp: env.ledger().timestamp(),
-        };
-
-        env.events().publish((symbol_short!("ROModeChg"),), event);
+        env.storage().instance().set(&DataKey::ReadOnlyMode, &enabled);
+        env.events().publish(
+            (symbol_short!("ROModeChg"),),
+            ReadOnlyModeEvent { enabled, admin, timestamp: env.ledger().timestamp(), event_version: EVENT_SCHEMA_VERSION },
+        );
     }
 
     fn require_not_read_only(env: &Env) {
-        let read_only: bool = env
-            .storage()
-            .instance()
-            .get(&DataKey::ReadOnlyMode)
-            .unwrap_or(false);
-        if read_only {
-            panic!("Read-only mode");
-        }
+        let read_only: bool = env.storage().instance().get(&DataKey::ReadOnlyMode).unwrap_or(false);
+        if read_only { panic!("Read-only mode"); }
     }
 
-    /// Creates an on-chain snapshot of critical core configuration (admin-only).
-    /// Returns snapshot id.
-    pub fn create_config_snapshot(env: Env) -> u64 {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .expect("Admin not set");
-        admin.require_auth();
+    // ========================================================================
+    // Config Snapshots
+    // ========================================================================
 
-        let next_id: u64 = env
-            .storage()
-            .instance()
-            .get(&DataKey::SnapshotCounter)
-            .unwrap_or(0)
-            + 1;
+    pub fn create_config_snapshot(env: Env) -> u64 {
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).expect("Admin not set");
+        admin.require_auth();
+        // [GUARDRAIL] Snapshots are state mutations — blocked in read-only mode
+        Self::require_not_read_only(&env);
+
+        let next_id: u64 = env.storage().instance()
+            .get(&DataKey::SnapshotCounter).unwrap_or(0) + 1;
 
         let (multisig_threshold, multisig_signers) = match MultiSig::get_config_opt(&env) {
             Some(cfg) => (cfg.threshold, cfg.signers),
@@ -2081,58 +1290,37 @@ impl GrainlifyContract {
             multisig_signers,
         };
 
-        env.storage()
-            .instance()
-            .set(&DataKey::ConfigSnapshot(next_id), &snapshot);
+        env.storage().instance().set(&DataKey::ConfigSnapshot(next_id), &snapshot);
 
-        let mut index: Vec<u64> = env
-            .storage()
-            .instance()
-            .get(&DataKey::SnapshotIndex)
-            .unwrap_or(Vec::new(&env));
+        let mut index: Vec<u64> = env.storage().instance()
+            .get(&DataKey::SnapshotIndex).unwrap_or(Vec::new(&env));
         index.push_back(next_id);
 
         if index.len() > CONFIG_SNAPSHOT_LIMIT {
             let oldest_snapshot_id = index.get(0).unwrap();
-            env.storage()
-                .instance()
-                .remove(&DataKey::ConfigSnapshot(oldest_snapshot_id));
-
+            env.storage().instance().remove(&DataKey::ConfigSnapshot(oldest_snapshot_id));
             let mut trimmed = Vec::new(&env);
-            for i in 1..index.len() {
-                trimmed.push_back(index.get(i).unwrap());
-            }
+            for i in 1..index.len() { trimmed.push_back(index.get(i).unwrap()); }
             index = trimmed;
         }
 
-        env.storage()
-            .instance()
-            .set(&DataKey::SnapshotIndex, &index);
-        env.storage()
-            .instance()
-            .set(&DataKey::SnapshotCounter, &next_id);
+        env.storage().instance().set(&DataKey::SnapshotIndex, &index);
+        env.storage().instance().set(&DataKey::SnapshotCounter, &next_id);
 
         env.events().publish(
             (symbol_short!("cfg_snap"), symbol_short!("create")),
             (next_id, snapshot.timestamp),
         );
-
         next_id
     }
 
-    /// Lists retained config snapshots in oldest-to-newest order.
     pub fn list_config_snapshots(env: Env) -> Vec<CoreConfigSnapshot> {
-        let index: Vec<u64> = env
-            .storage()
-            .instance()
-            .get(&DataKey::SnapshotIndex)
-            .unwrap_or(Vec::new(&env));
-
+        let index: Vec<u64> = env.storage().instance()
+            .get(&DataKey::SnapshotIndex).unwrap_or(Vec::new(&env));
         let mut snapshots: Vec<CoreConfigSnapshot> = Vec::new(&env);
-        for snapshot_id in index.iter() {
-            if let Some(snapshot) = env
-                .storage()
-                .instance()
+        for i in 0..index.len() {
+            let snapshot_id = index.get(i).unwrap();
+            if let Some(snapshot) = env.storage().instance()
                 .get::<DataKey, CoreConfigSnapshot>(&DataKey::ConfigSnapshot(snapshot_id))
             {
                 snapshots.push_back(snapshot);
@@ -2141,54 +1329,33 @@ impl GrainlifyContract {
         snapshots
     }
 
-    /// Retrieves a specific configuration snapshot by ID.
     pub fn get_config_snapshot(env: Env, snapshot_id: u64) -> Option<CoreConfigSnapshot> {
-        env.storage()
-            .instance()
-            .get(&DataKey::ConfigSnapshot(snapshot_id))
+        env.storage().instance().get(&DataKey::ConfigSnapshot(snapshot_id))
     }
 
-    /// Retrieves the most recently created configuration snapshot.
     pub fn get_latest_config_snapshot(env: Env) -> Option<CoreConfigSnapshot> {
-        let index: Vec<u64> = env
-            .storage()
-            .instance()
-            .get(&DataKey::SnapshotIndex)
-            .unwrap_or(Vec::new(&env));
-        if index.is_empty() {
-            return None;
-        }
+        let index: Vec<u64> = env.storage().instance()
+            .get(&DataKey::SnapshotIndex).unwrap_or(Vec::new(&env));
+        if index.is_empty() { return None; }
         let latest_id = index.get(index.len() - 1).unwrap();
-        env.storage()
-            .instance()
-            .get(&DataKey::ConfigSnapshot(latest_id))
+        env.storage().instance().get(&DataKey::ConfigSnapshot(latest_id))
     }
 
-    /// Returns the number of currently retained configuration snapshots.
     pub fn get_snapshot_count(env: Env) -> u32 {
-        let index: Vec<u64> = env
-            .storage()
-            .instance()
-            .get(&DataKey::SnapshotIndex)
-            .unwrap_or(Vec::new(&env));
+        let index: Vec<u64> = env.storage().instance()
+            .get(&DataKey::SnapshotIndex).unwrap_or(Vec::new(&env));
         index.len()
     }
 
-    /// Compares two snapshots and returns a diff indicating what changed.
     pub fn compare_snapshots(env: Env, from_id: u64, to_id: u64) -> SnapshotDiff {
-        let from: CoreConfigSnapshot = env
-            .storage()
-            .instance()
+        let from: CoreConfigSnapshot = env.storage().instance()
             .get(&DataKey::ConfigSnapshot(from_id))
             .unwrap_or_else(|| panic!("Snapshot not found: from_id"));
-        let to: CoreConfigSnapshot = env
-            .storage()
-            .instance()
+        let to: CoreConfigSnapshot = env.storage().instance()
             .get(&DataKey::ConfigSnapshot(to_id))
             .unwrap_or_else(|| panic!("Snapshot not found: to_id"));
         SnapshotDiff {
-            from_id,
-            to_id,
+            from_id, to_id,
             admin_changed: from.admin != to.admin,
             version_changed: from.version != to.version,
             previous_version_changed: from.previous_version != to.previous_version,
@@ -2199,129 +1366,128 @@ impl GrainlifyContract {
         }
     }
 
-    /// Returns aggregated rollback intelligence for operators.
-    pub fn get_rollback_info(env: Env) -> RollbackInfo {
-        let current_version: u32 = env.storage().instance().get(&DataKey::Version).unwrap_or(0);
-        let previous_version: u32 = env
-            .storage()
-            .instance()
-            .get(&DataKey::PreviousVersion)
-            .unwrap_or(0);
-        let rollback_available = previous_version > 0;
-
-        let migration_state: Option<MigrationState> =
-            env.storage().instance().get(&DataKey::MigrationState);
-        let has_migration = migration_state.is_some();
-        let migration_from_version = migration_state
-            .as_ref()
-            .map(|m| m.from_version)
-            .unwrap_or(0);
-        let migration_to_version = migration_state.as_ref().map(|m| m.to_version).unwrap_or(0);
-        let migration_timestamp = migration_state.as_ref().map(|m| m.migrated_at).unwrap_or(0);
-
-        let index: Vec<u64> = env
-            .storage()
-            .instance()
-            .get(&DataKey::SnapshotIndex)
-            .unwrap_or(Vec::new(&env));
-        let snapshot_count = index.len();
-        let has_snapshot = snapshot_count > 0;
-        let (latest_snapshot_id, latest_snapshot_version) = if has_snapshot {
-            let latest_id = index.get(snapshot_count - 1).unwrap();
-            let snap: CoreConfigSnapshot = env
-                .storage()
-                .instance()
-                .get(&DataKey::ConfigSnapshot(latest_id))
-                .unwrap_or_else(|| panic!("Snapshot index inconsistency"));
-            (latest_id, snap.version)
-        } else {
-            (0u64, 0u32)
-        };
-
-        RollbackInfo {
-            current_version,
-            previous_version,
-            rollback_available,
-            has_migration,
-            migration_from_version,
-            migration_to_version,
-            migration_timestamp,
-            snapshot_count,
-            has_snapshot,
-            latest_snapshot_id,
-            latest_snapshot_version,
-        }
-    }
-
-    /// Retrieves the chain identifier.
-    pub fn get_chain_id(env: Env) -> Option<String> {
-        env.storage().instance().get(&DataKey::ChainId)
-    }
-
-    /// Retrieves the network identifier.
-    pub fn get_network_id(env: Env) -> Option<String> {
-        env.storage().instance().get(&DataKey::NetworkId)
-    }
-
-    /// Retrieves both chain and network identifiers as a tuple.
-    pub fn get_network_info(env: Env) -> (Option<String>, Option<String>) {
-        let chain_id = env.storage().instance().get(&DataKey::ChainId);
-        let network_id = env.storage().instance().get(&DataKey::NetworkId);
-        (chain_id, network_id)
-    }
-
-    /// Initializes the contract with admin and optional chain/network configuration.
+    /// [FIX-C02] Restore now uses two-step process when admin address changes.
     ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `admin` - Address authorized to perform operations
-    /// * `chain_id` - Optional chain identifier (e.g., "stellar", "ethereum")
-    /// * `network_id` - Optional network identifier (e.g., "mainnet", "testnet")
-    pub fn init_with_network(env: Env, admin: Address, chain_id: String, network_id: String) {
-        if contract_is_initialized(&env) {
-            panic!("Already initialized");
-        }
+    /// If the snapshot would change the admin address, a `PendingAdminRestore`
+    /// is created instead of applying immediately. The new admin address must
+    /// call `confirm_admin_restore()` to finalize.
+    ///
+    /// If the snapshot does NOT change the admin, restore applies immediately
+    /// (same behavior as before).
+    pub fn restore_config_snapshot(env: Env, snapshot_id: u64) {
+        let admin: Address = env.storage().instance()
+            .get(&DataKey::Admin).expect("Admin not set");
+        admin.require_auth();
+        // [GUARDRAIL] Restores mutate state — blocked in read-only mode
+        Self::require_not_read_only(&env);
 
-        env.storage().instance().set(&DataKey::Admin, &admin);
-        env.storage().instance().set(&DataKey::Version, &VERSION);
-        env.storage().instance().set(&DataKey::ChainId, &chain_id);
-        env.storage()
-            .instance()
-            .set(&DataKey::NetworkId, &network_id);
+        Self::restore_snapshot_with_checks(&env, snapshot_id);
+
+        env.events().publish(
+            (symbol_short!("cfg_snap"), symbol_short!("restore")),
+            (snapshot_id, env.ledger().timestamp()),
+        );
     }
 
-    /// Restores core configuration from a previously captured snapshot (admin-only).
-    pub fn restore_config_snapshot(env: Env, snapshot_id: u64) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .expect("Admin not set");
-        admin.require_auth();
+    fn restore_snapshot_with_checks(env: &Env, snapshot_id: u64) {
 
-        let snapshot: CoreConfigSnapshot = env
-            .storage()
-            .instance()
+        // [FIX-M02] Explicit error when snapshot is pruned
+        let snapshot: CoreConfigSnapshot = env.storage().instance()
+            .get(&DataKey::ConfigSnapshot(snapshot_id))
+            .unwrap_or_else(|| panic!("{}", ContractError::SnapshotPruned as u32));
+
+        let current_admin: Option<Address> = env.storage().instance().get(&DataKey::Admin);
+
+        // [GUARDRAIL] Prevent no-op restore to save gas
+        let current_version: u32 = env.storage().instance().get(&DataKey::Version).unwrap_or(0);
+        let multisig_opt = MultiSig::get_config_opt(&env);
+        let current_threshold = multisig_opt.as_ref().map(|c| c.threshold).unwrap_or(0);
+        let current_signers = multisig_opt.as_ref().map(|c| c.signers.clone()).unwrap_or(Vec::new(&env));
+
+        if snapshot.version == current_version 
+            && snapshot.admin == current_admin 
+            && snapshot.multisig_threshold == current_threshold 
+            && snapshot.multisig_signers == current_signers 
+        {
+            return;
+        }
+
+        // [FIX-C02] Detect if restore would change admin — if so, require two-step confirmation
+        let admin_would_change = snapshot.admin != current_admin;
+
+        if admin_would_change {
+            // Create pending restore — new admin must confirm
+            let pending = PendingAdminRestore {
+                snapshot_id,
+                proposed_admin: snapshot.admin.clone().expect("Snapshot has no admin to restore"),
+                initiated_at: env.ledger().timestamp(),
+                expires_at: env.ledger().timestamp().saturating_add(DEFAULT_TIMELOCK_DELAY),
+            };
+            env.storage().instance().set(&DataKey::PendingAdminRestore, &pending);
+
+            env.events().publish(
+                (symbol_short!("cfg_snap"), symbol_short!("adm_pnd")),
+                (snapshot_id, pending.proposed_admin, pending.expires_at),
+            );
+            // Return early — do not apply yet
+            return;
+        }
+
+        // Admin unchanged — apply restore immediately
+        Self::apply_snapshot_restore(&env, &snapshot);
+    }
+
+    /// [FIX-C02] The proposed new admin confirms an admin-changing snapshot restore.
+    ///
+    /// Only the address that would BECOME the new admin can confirm this.
+    /// This ensures a compromised old key cannot silently transfer control.
+    pub fn confirm_admin_restore(env: Env, snapshot_id: u64) {
+        let pending: PendingAdminRestore = env.storage().instance()
+            .get(&DataKey::PendingAdminRestore)
+            .unwrap_or_else(|| panic!("No pending admin restore found"));
+
+        if pending.snapshot_id != snapshot_id {
+            panic!("Snapshot ID does not match pending restore");
+        }
+
+        // The proposed new admin must authorize this
+        pending.proposed_admin.require_auth();
+
+        // [GUARDRAIL] Confirm is a state mutation — blocked in read-only mode
+        Self::require_not_read_only(&env);
+
+        // Check expiry
+        if env.ledger().timestamp() > pending.expires_at {
+            env.storage().instance().remove(&DataKey::PendingAdminRestore);
+            panic!("Pending admin restore has expired");
+        }
+
+        let snapshot: CoreConfigSnapshot = env.storage().instance()
             .get(&DataKey::ConfigSnapshot(snapshot_id))
             .unwrap_or_else(|| panic!("Snapshot not found"));
 
-        if let Some(snapshot_admin) = snapshot.admin {
-            env.storage()
-                .instance()
-                .set(&DataKey::Admin, &snapshot_admin);
+        Self::apply_snapshot_restore(&env, &snapshot);
+
+        env.storage().instance().remove(&DataKey::PendingAdminRestore);
+
+        env.events().publish(
+            (symbol_short!("cfg_snap"), symbol_short!("adm_conf")),
+            (snapshot_id, env.ledger().timestamp()),
+        );
+    }
+
+    /// Internal: applies snapshot state to storage
+    fn apply_snapshot_restore(env: &Env, snapshot: &CoreConfigSnapshot) {
+        if let Some(ref snapshot_admin) = snapshot.admin {
+            env.storage().instance().set(&DataKey::Admin, snapshot_admin);
         } else {
             env.storage().instance().remove(&DataKey::Admin);
         }
 
-        env.storage()
-            .instance()
-            .set(&DataKey::Version, &snapshot.version);
+        env.storage().instance().set(&DataKey::Version, &snapshot.version);
 
         match snapshot.previous_version {
-            Some(prev) => env
-                .storage()
-                .instance()
-                .set(&DataKey::PreviousVersion, &prev),
+            Some(prev) => env.storage().instance().set(&DataKey::PreviousVersion, &prev),
             None => env.storage().instance().remove(&DataKey::PreviousVersion),
         }
 
@@ -2330,354 +1496,643 @@ impl GrainlifyContract {
                 signers: snapshot.multisig_signers.clone(),
                 threshold: snapshot.multisig_threshold,
             };
-            MultiSig::set_config(&env, config);
+            MultiSig::set_config(env, config);
         } else {
-            MultiSig::clear_config(&env);
+            MultiSig::clear_config(env);
         }
+    }
 
-        env.events().publish(
-            (symbol_short!("cfg_snap"), symbol_short!("restore")),
-            (snapshot_id, env.ledger().timestamp()),
-        );
+    /// [FIX-L04] Returns None on inconsistency instead of panicking — view fn safety
+    pub fn get_rollback_info(env: Env) -> RollbackInfo {
+        let current_version: u32 = env.storage().instance().get(&DataKey::Version).unwrap_or(0);
+        let previous_version: u32 = env.storage().instance().get(&DataKey::PreviousVersion).unwrap_or(0);
+        let rollback_available = previous_version > 0;
+
+        let migration_state: Option<MigrationState> = env.storage().instance().get(&DataKey::MigrationState);
+        let has_migration = migration_state.is_some();
+        let migration_from_version = migration_state.as_ref().map(|m| m.from_version).unwrap_or(0);
+        let migration_to_version = migration_state.as_ref().map(|m| m.to_version).unwrap_or(0);
+        let migration_timestamp = migration_state.as_ref().map(|m| m.migrated_at).unwrap_or(0);
+
+        let index: Vec<u64> = env.storage().instance()
+            .get(&DataKey::SnapshotIndex).unwrap_or(Vec::new(&env));
+        let snapshot_count = index.len();
+        let has_snapshot = snapshot_count > 0;
+
+        // [FIX-L04] Use Option pattern instead of panic on inconsistency
+        let (latest_snapshot_id, latest_snapshot_version) = if has_snapshot {
+            let latest_id = index.get(snapshot_count - 1).unwrap();
+            let snap: Option<CoreConfigSnapshot> = env.storage().instance()
+                .get(&DataKey::ConfigSnapshot(latest_id));
+            match snap {
+                Some(s) => (latest_id, s.version),
+                None => (0u64, 0u32), // Inconsistency: return safe defaults
+            }
+        } else {
+            (0u64, 0u32)
+        };
+
+        RollbackInfo {
+            current_version, previous_version, rollback_available,
+            has_migration, migration_from_version, migration_to_version,
+            migration_timestamp, snapshot_count, has_snapshot,
+            latest_snapshot_id, latest_snapshot_version,
+        }
     }
 
     // ========================================================================
-    // Monitoring & Analytics Functions
+    // Network Configuration
     // ========================================================================
 
-    /// Returns a panic-free health summary for operators.
-    ///
-    /// This view is safe before initialization. In that state it reports an
-    /// unhealthy contract with zero counters and semantic version `0.0.0`.
+    pub fn get_chain_id(env: Env) -> Option<String> {
+        env.storage().instance().get(&DataKey::ChainId)
+    }
+
+    pub fn get_network_id(env: Env) -> Option<String> {
+        env.storage().instance().get(&DataKey::NetworkId)
+    }
+
+    pub fn get_network_info(env: Env) -> (Option<String>, Option<String>) {
+        let chain_id = env.storage().instance().get(&DataKey::ChainId);
+        let network_id = env.storage().instance().get(&DataKey::NetworkId);
+        (chain_id, network_id)
+    }
+
+    // ========================================================================
+    // Storage Layout Verification
+    // ========================================================================
+
+    pub fn verify_storage_layout(env: Env) -> bool {
+        let admin_ok = env.storage().instance().has(&DataKey::Admin)
+            && env.storage().instance().get::<_, Address>(&DataKey::Admin).is_some();
+
+        let version_ok = env.storage().instance().has(&DataKey::Version)
+            && env.storage().instance().get::<_, u32>(&DataKey::Version).is_some();
+
+        let migration_ok = if env.storage().instance().has(&DataKey::MigrationState) {
+            // [FIX-L03] Also verify MigrationState schema is readable
+            env.storage().instance()
+                .get::<_, crate::MigrationState>(&DataKey::MigrationState)
+                .is_some()
+        } else {
+            true
+        };
+
+        admin_ok && version_ok && migration_ok
+    }
+
+    // ========================================================================
+    // Monitoring & Analytics
+    // ========================================================================
+
     pub fn health_check(env: Env) -> monitoring::HealthStatus {
         monitoring::health_check(&env)
     }
 
-    /// Returns bounded usage analytics for operator dashboards.
-    ///
-    /// `error_rate` is expressed in basis points and `unique_users` is capped
-    /// by the monitoring module's bounded tracked-user index.
     pub fn get_analytics(env: Env) -> monitoring::Analytics {
         monitoring::get_analytics(&env)
     }
 
-    /// Get state snapshot - returns current state
     pub fn get_state_snapshot(env: Env) -> monitoring::StateSnapshot {
         monitoring::get_state_snapshot(&env)
     }
 
-    /// Returns aggregated performance statistics for `function_name`.
-    ///
-    /// Counters default to zero when no data has been recorded, so this
-    /// endpoint is always safe to call for any symbol.
     pub fn get_performance_stats(env: Env, function_name: Symbol) -> monitoring::PerformanceStats {
         monitoring::get_performance_stats(&env, function_name)
     }
 
-    /// Return a detailed invariant report for auditors and monitoring tools.
     pub fn check_invariants(env: Env) -> monitoring::InvariantReport {
         monitoring::check_invariants(&env)
     }
 
-    /// Lightweight invariant verdict for frequent monitoring calls.
     pub fn verify_invariants(env: Env) -> bool {
         monitoring::verify_invariants(&env)
+    }
+
+    // ========================================================================
+    // Deployed Contract Registry
+    // ========================================================================
+
+    pub fn register_deployed_contract(
+        env: Env,
+        address: Address,
+        name: String,
+        kind: ContractKind,
+        version: u32,
+    ) {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Admin not set");
+        admin.require_auth();
+        Self::require_not_read_only(&env);
+
+        let mut index: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&DataKey::DeployedContractIndex)
+            .unwrap_or(Vec::new(&env));
+
+        let existed = env
+            .storage()
+            .instance()
+            .has(&DataKey::DeployedContractEntry(address.clone()));
+
+        if !existed {
+            if index.len() >= MAX_DEPLOYED_CONTRACTS {
+                panic!("Registry full");
+            }
+            index.push_back(address.clone());
+        }
+
+        let entry = DeployedContract {
+            address: address.clone(),
+            name,
+            kind,
+            version,
+            deployed_at: env.ledger().timestamp(),
+        };
+
+        env.storage()
+            .instance()
+            .set(&DataKey::DeployedContractEntry(address), &entry);
+        env.storage()
+            .instance()
+            .set(&DataKey::DeployedContractIndex, &index);
+    }
+
+    pub fn deregister_deployed_contract(env: Env, address: Address) {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Admin not set");
+        admin.require_auth();
+        Self::require_not_read_only(&env);
+
+        let had_entry = env
+            .storage()
+            .instance()
+            .has(&DataKey::DeployedContractEntry(address.clone()));
+        if !had_entry {
+            return;
+        }
+
+        env.storage()
+            .instance()
+            .remove(&DataKey::DeployedContractEntry(address.clone()));
+
+        let index: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&DataKey::DeployedContractIndex)
+            .unwrap_or(Vec::new(&env));
+        let mut trimmed = Vec::new(&env);
+        for i in 0..index.len() {
+            let addr = index.get(i).unwrap();
+            if addr != address {
+                trimmed.push_back(addr);
+            }
+        }
+        env.storage()
+            .instance()
+            .set(&DataKey::DeployedContractIndex, &trimmed);
+    }
+
+    pub fn get_deployed_contract(env: Env, address: Address) -> Option<DeployedContract> {
+        env.storage()
+            .instance()
+            .get(&DataKey::DeployedContractEntry(address))
+    }
+
+    pub fn deployed_contract_count(env: Env) -> u32 {
+        let index: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&DataKey::DeployedContractIndex)
+            .unwrap_or(Vec::new(&env));
+        index.len()
+    }
+
+    pub fn list_deployed_contracts(
+        env: Env,
+        offset: Option<u32>,
+        limit: Option<u32>,
+    ) -> Vec<DeployedContract> {
+        let index: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&DataKey::DeployedContractIndex)
+            .unwrap_or(Vec::new(&env));
+        let total = index.len();
+        let off = offset.unwrap_or(0);
+        if off > total {
+            panic!("Offset exceeds registry size");
+        }
+
+        let lim = limit.unwrap_or(total.saturating_sub(off));
+        let end = if off.saturating_add(lim) > total {
+            total
+        } else {
+            off + lim
+        };
+
+        let mut out: Vec<DeployedContract> = Vec::new(&env);
+        for i in off..end {
+            let addr = index.get(i).unwrap();
+            if let Some(entry) = env
+                .storage()
+                .instance()
+                .get::<_, DeployedContract>(&DataKey::DeployedContractEntry(addr))
+            {
+                out.push_back(entry);
+            }
+        }
+        out
     }
 
     // ========================================================================
     // Emergency Controls
     // ========================================================================
 
-    /// Pause the contract (emergency function).
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `signer` - Address of the signer authorizing the pause
-    ///
-    /// # Security
-    /// - Only authorized multisig signers can pause
-    /// - Paused state blocks all critical operations including upgrades
-    ///
-    /// # Events
-    /// - Emits pause event with signer address
     pub fn pause(env: Env, signer: Address) {
         MultiSig::pause(&env, signer);
     }
 
-    /// Unpause the contract.
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `signer` - Address of the signer authorizing the unpause
-    ///
-    /// # Security
-    /// - Only authorized multisig signers can unpause
-    /// - Restores normal contract operations
-    ///
-    /// # Events
-    /// - Emits unpause event with signer address
     pub fn unpause(env: Env, signer: Address) {
         MultiSig::unpause(&env, signer);
     }
 
-    /// Check if contract is currently paused.
-    ///
-    /// # Returns
-    /// * `bool` - True if contract is paused, false otherwise
     pub fn is_paused(env: Env) -> bool {
         MultiSig::is_contract_paused(&env)
     }
 
-    /// Check if a proposal can be executed.
+    /// Unified liveness watchdog view — no auth required, never panics.
     ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `proposal_id` - The ID of the proposal to check
+    /// Returns a `LivenessStatus` snapshot combining pause state, read-only
+    /// mode, monitoring health, last-ping timestamp, version, and admin
+    /// presence.  Designed for polling by monitoring agents, circuit breakers,
+    /// and dashboards.
     ///
-    /// # Returns
-    /// * `bool` - True if proposal can be executed, false otherwise
+    /// # Upgrade Safety
+    /// `schema_version` reflects `LivenessSchemaVersion` written at `init_admin`.
+    /// Returns `0` on legacy deployments where the marker was never written.
+    pub fn liveness_watchdog(env: Env) -> LivenessStatus {
+        let is_paused = MultiSig::is_contract_paused(&env);
+        let is_read_only: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::ReadOnlyMode)
+            .unwrap_or(false);
+        let version: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::Version)
+            .unwrap_or(0);
+        let healthy = monitoring::check_invariants(&env).healthy;
+        let last_ping_ts: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::WatchdogLastPing)
+            .unwrap_or(0);
+        LivenessStatus {
+            paused: is_paused,
+            read_only: is_read_only,
+            healthy,
+            last_ping_ts,
+            is_paused,
+            is_read_only,
+            is_operational: !is_paused && !is_read_only,
+            version,
+            admin_set: env.storage().instance().has(&DataKey::Admin),
+            schema_version: env
+                .storage()
+                .instance()
+                .get(&DataKey::LivenessSchemaVersion)
+                .unwrap_or(0),
+            timestamp: env.ledger().timestamp(),
+        }
+    }
+
     pub fn can_execute(env: Env, proposal_id: u64) -> bool {
         MultiSig::can_execute(&env, proposal_id)
     }
 
     // ========================================================================
-    // State Migration System
+    // Liveness Watchdog
     // ========================================================================
 
-    /// Executes state migration from current version to target version.
+    /// Admin: record a liveness ping — updates `WatchdogLastPing` timestamp.
     ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `target_version` - Version to migrate to (must be > current version)
-    /// * `migration_hash` - Hash of migration data for verification (32 bytes)
+    /// Allows off-chain monitors to prove the contract is reachable and the
+    /// admin key is live. Blocked when read-only mode is active.
     ///
     /// # Authorization
-    /// - REQUIRED: Only admin (set via init_admin) can call this function
-    /// - REQUIRED: Admin must sign the transaction (enforce_auth)
-    /// - EFFECT: Panics if caller is not the admin
-    ///
-    /// # State Changes (Idempotent)
-    /// - **First call**: Executes version-specific migration functions
-    /// - **First call**: Updates `DataKey::Version` to target_version
-    /// - **First call**: Stores migration state in `DataKey::MigrationState`
-    /// - **First call**: Emits successful migration event
-    /// - **Retry with same target**: Returns immediately (no-op, no events)
-    /// - **Retry with different target**: Panics (prevents confusion)
-    ///
-    /// # Storage Keys Involved
-    /// - `DataKey::Admin`: Retrieved for authorization check
-    /// - `DataKey::Version`: Read for current version, updated with target
-    /// - `DataKey::MigrationState`: Checked for idempotency, set after migration
-    /// - `DataKey::PreviousVersion`: May be updated by migration functions
-    ///
-    /// # Migration Chain Logic
-    /// If target_version > current_version + 1, executes intermediate migrations:
-    /// - v1 → v2 calls migrate_v1_to_v2()
-    /// - v2 → v3 calls migrate_v2_to_v3()
-    /// - v1 → v3 calls both in sequence
-    ///
-    /// # Version Control
-    /// - Returns error if target_version <= current_version
-    /// - Returns error if no migration path exists for version jump
-    /// - Ensures monotonically increasing version numbers
-    ///
-    /// # Audit Trail
-    /// - Emits MigrationEvent with from_version, to_version, timestamp, success flag
-    /// - Calls monitoring::track_operation for operation tracking
-    /// - Calls monitoring::emit_performance for gas accounting
-    ///
-    /// # Idempotency Guarantee
-    ///
-    /// ```rust
-    /// // Safe to retry: second call is a no-op
-    /// client.migrate(&3, &hash1);
-    /// client.migrate(&3, &hash1);  // Returns early, no events emitted
-    ///
-    /// // Different hash for same target: still returns early
-    /// client.migrate(&3, &hash2);  // Returns early, preserves original hash
-    ///
-    /// // Different target: panics with version check error
-    /// client.migrate(&3, &hash1);
-    /// client.migrate(&2, &hash1);  // Panics: "Target version must be greater"
-    /// ```
-    ///
-    /// # Security Considerations
-    /// 1. **Replay Protection**: Migration hash is stored and verified offline
-    /// 2. **Admin Control**: Only admin can trigger migrations
-    /// 3. **Version Monotonicity**: Cannot downgrade, forward-only migrations
-    /// 4. **State Isolation**: Old keys preserved (no key mutations except version)
-    /// 5. **Pre-WASM Upgrade**: Call migrate() AFTER uploading new WASM to update state
-    ///
-    /// # Storage Stability
-    /// This function does NOT modify the DataKey enum or rename keys.
-    /// Storage keys remain stable across all past and future versions:
-    /// - DataKey::Admin (0)
-    /// - DataKey::Version (1)
-    /// - DataKey::MigrationState (3)
-    /// - All other keys retain their enum variants
-    ///
-    /// # Failure Modes
-    /// - Panics if admin is not set (contract not initialized)
-    /// - Panics if caller is not admin (admin.require_auth fails)
-    /// - Panics if target_version <= current_version
-    /// - Panics if no migration path exists (e.g., v3 → v4 with no migrate_v3_to_v4)
-    ///
-    /// # Performance
-    /// - Gas: Proportional to migrations executed (typically 1-3 per call)
-    /// - Storage: Constant (same keys updated each call)
-    /// - Can be safely called multiple times with same arguments
-    pub fn migrate(env: Env, target_version: u32, migration_hash: BytesN<32>) {
-        let start = env.ledger().timestamp();
-
-        // Verify admin authorization
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+    /// Requires admin signature.
+    pub fn ping_watchdog(env: Env) {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .unwrap_or_else(|| panic!("{}", ContractError::NotInitialized as u32));
         admin.require_auth();
+        Self::require_not_read_only(&env);
+        let ts = env.ledger().timestamp();
+        env.storage().instance().set(&DataKey::WatchdogLastPing, &ts);
+        env.events().publish(
+            (symbol_short!("watchdog"), symbol_short!("ping")),
+            (admin, ts),
+        );
+    }
 
+    /// Returns the liveness schema version written at `init_admin`.
+    /// Returns `0` on legacy deployments where the marker was never written.
+    /// Increment `LivenessSchemaVersion` in `init_admin` whenever `WatchdogStatus` layout changes.
+    pub fn get_liveness_schema_version(env: Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&DataKey::LivenessSchemaVersion)
+            .unwrap_or(0)
+    }
+
+    // ========================================================================
+    // Migration State Queries
+    // ========================================================================
+
+    pub fn get_migration_state(env: Env) -> Option<MigrationState> {
+        if env.storage().instance().has(&DataKey::MigrationState) {
+            Some(env.storage().instance().get(&DataKey::MigrationState).unwrap())
+        } else {
+            None
+        }
+    }
+
+    pub fn get_previous_version(env: Env) -> Option<u32> {
+        if env.storage().instance().has(&DataKey::PreviousVersion) {
+            Some(env.storage().instance().get(&DataKey::PreviousVersion).unwrap())
+        } else {
+            None
+        }
+    }
+
+    // ========================================================================
+    // Multisig Initialization
+    // ========================================================================
+
+    /// Initialize with multisig governance (alternative to init_admin).
+    /// Requires at least one signer and a valid threshold.
+    pub fn init(env: Env, signers: Vec<Address>, threshold: u32) {
+        if env.storage().instance().has(&DataKey::Version) {
+            panic!("Already initialized");
+        }
+        let signer_count = signers.len();
+        MultiSig::init(&env, signers, threshold);
+        env.storage().instance().set(&DataKey::Version, &VERSION);
+        env.storage().instance().set(&DataKey::ReadOnlyMode, &false);
+        Self::emit_build_info_event(
+            &env,
+            symbol_short!("msig_init"),
+            None,
+            signer_count,
+            threshold,
+        );
+    }
+
+    /// Initialize with admin, chain_id, and network_id (network-aware init).
+    pub fn init_with_network(env: Env, admin: Address, chain_id: String, network_id: String) {
+        if env.storage().instance().has(&DataKey::Version) {
+            panic!("Already initialized");
+        }
+        admin.require_auth();
+        env.storage().instance().set(&DataKey::Admin, &admin);
+        env.storage().instance().set(&DataKey::Version, &VERSION);
+        env.storage().instance().set(&DataKey::ReadOnlyMode, &false);
+        env.storage().instance().set(&DataKey::ChainId, &chain_id);
+        env.storage().instance().set(&DataKey::NetworkId, &network_id);
+        Self::emit_build_info_event(
+            &env,
+            symbol_short!("net_init"),
+            Some(admin),
+            0,
+            0,
+        );
+    }
+
+    /// Initialize with governance configuration.
+    pub fn init_governance(env: Env, admin: Address, config: GovernanceConfig) {
+        if env.storage().instance().has(&DataKey::Version) {
+            panic!("Already initialized");
+        }
+        admin.require_auth();
+        if config.quorum_percentage == 0 || config.quorum_percentage > 10000 {
+            panic!("Invalid quorum percentage");
+        }
+        if config.approval_threshold < 5000 || config.approval_threshold > 10000 {
+            panic!("Invalid approval threshold");
+        }
+        env.storage().instance().set(&DataKey::Admin, &admin);
+        env.storage().instance().set(&DataKey::Version, &VERSION);
+        env.storage().instance().set(&DataKey::ReadOnlyMode, &false);
+        env.storage().instance().set(&governance::GOVERNANCE_CONFIG, &config);
+        env.storage().instance().set(&governance::PROPOSAL_COUNT, &0u32);
+        Self::emit_build_info_event(
+            &env,
+            symbol_short!("gov_init"),
+            Some(admin),
+            0,
+            0,
+        );
+    }
+
+    // ========================================================================
+    // Multisig Upgrade Proposal Flow
+    // ========================================================================
+
+    /// Propose a WASM upgrade via multisig. Returns the stable proposal ID.
+    /// `expiry` is a ledger timestamp after which the proposal cannot be approved
+    /// or executed (0 = no expiry).
+    pub fn propose_upgrade(env: Env, proposer: Address, wasm_hash: BytesN<32>, expiry: u64) -> u64 {
+        Self::require_not_read_only(&env);
+        let proposal_id = MultiSig::propose(&env, proposer.clone(), expiry);
+        env.storage().instance().set(&DataKey::UpgradeProposal(proposal_id), &wasm_hash);
+        env.storage().instance().set(&DataKey::UpgradeProposalProposer(proposal_id), &proposer);
+        proposal_id
+    }
+
+    /// Approve a pending upgrade proposal. Starts the timelock when threshold is met.
+    pub fn approve_upgrade(env: Env, proposal_id: u64, signer: Address) {
+        MultiSig::approve(&env, proposal_id, signer);
+        // Start timelock if threshold is now met and not already started
+        if MultiSig::can_execute(&env, proposal_id)
+            && !env.storage().instance().has(&DataKey::UpgradeTimelock(proposal_id))
+        {
+            let now = env.ledger().timestamp();
+            env.storage().instance().set(&DataKey::UpgradeTimelock(proposal_id), &now);
+            env.events().publish(
+                (Symbol::new(&env, "timelock"), Symbol::new(&env, "started")),
+                (proposal_id, now),
+            );
+        }
+    }
+
+    /// Cancel a pending upgrade proposal. Any signer may cancel.
+    pub fn cancel_upgrade(env: Env, proposal_id: u64, canceller: Address) {
+        MultiSig::cancel(&env, proposal_id, canceller);
+        env.storage().instance().remove(&DataKey::UpgradeTimelock(proposal_id));
+    }
+
+    /// Return the upgrade proposal record for a given proposal ID, or None.
+    pub fn get_upgrade_proposal(env: Env, proposal_id: u64) -> Option<UpgradeProposalRecord> {
+        Self::load_upgrade_proposal(&env, proposal_id)
+    }
+
+    // ========================================================================
+    // Migration
+    // ========================================================================
+
+    /// Pre-commit a migration hash for replay protection.
+    /// Must be called before `migrate()` with the same target_version and hash.
+    pub fn commit_migration(env: Env, target_version: u32, hash: BytesN<32>, expires_at: u64) {
+        let admin: Address = env.storage().instance().get(&DataKey::Admin)
+            .unwrap_or_else(|| panic!("{}", ContractError::NotInitialized as u32));
+        admin.require_auth();
+        Self::require_not_read_only(&env);
+        let commitment = MigrationCommitment {
+            target_version,
+            hash,
+            committed_at: env.ledger().timestamp(),
+            expires_at,
+        };
+        env.storage().instance().set(&DataKey::MigrationCommitment(target_version), &commitment);
+        env.events().publish(
+            (symbol_short!("migrate"), symbol_short!("commit")),
+            (target_version, env.ledger().timestamp()),
+        );
+    }
+
+    /// Execute a state migration to `target_version`.
+    ///
+    /// Requires a prior `commit_migration` call with the same hash (replay protection).
+    /// Idempotent: migrating to the same version twice is a no-op after the first call.
+    pub fn migrate(env: Env, target_version: u32, migration_hash: BytesN<32>) {
+        let admin: Address = env.storage().instance().get(&DataKey::Admin)
+            .unwrap_or_else(|| panic!("{}", ContractError::NotInitialized as u32));
+        admin.require_auth();
         Self::require_not_read_only(&env);
 
-        // Get current version
-        let current_version = env.storage().instance().get(&DataKey::Version).unwrap_or(1);
-
-        // Validate target version
-        if target_version <= current_version {
-            let error_msg =
-                String::from_str(&env, "Target version must be greater than current version");
-            emit_migration_event(
-                &env,
-                MigrationEvent {
-                    from_version: current_version,
-                    to_version: target_version,
-                    timestamp: env.ledger().timestamp(),
-                    migration_hash,
-                    success: false,
-                    error_message: Some(error_msg),
-                },
-            );
-            panic!("Target version must be greater than current version");
-        }
-
-        // Check if migration already completed
-        if env.storage().instance().has(&DataKey::MigrationState) {
-            let migration_state: MigrationState = env
-                .storage()
-                .instance()
-                .get(&DataKey::MigrationState)
-                .unwrap();
-
-            if migration_state.to_version >= target_version {
-                // Migration already completed, skip
+        // Idempotency: skip if already migrated to this version
+        if let Some(state) = env.storage().instance().get::<_, MigrationState>(&DataKey::MigrationState) {
+            if state.to_version == target_version {
                 return;
             }
         }
 
-        // Execute version-specific migrations
-        let mut from_version = current_version;
-        while from_version < target_version {
-            let next_version = from_version + 1;
+        // [FIX-C01] Verify commitment exists and hash matches
+        let commitment: MigrationCommitment = env.storage().instance()
+            .get(&DataKey::MigrationCommitment(target_version))
+            .unwrap_or_else(|| panic!("{}", ContractError::MigrationCommitmentNotFound as u32));
 
-            // Execute migration from from_version to next_version
-            match next_version {
-                2 => migrate_v1_to_v2(&env),
-                3 => migrate_v2_to_v3(&env),
-                _ => {
-                    let error_msg = String::from_str(&env, "No migration path available");
-                    emit_migration_event(
-                        &env,
-                        MigrationEvent {
-                            from_version,
-                            to_version: next_version,
-                            timestamp: env.ledger().timestamp(),
-                            migration_hash: migration_hash.clone(),
-                            success: false,
-                            error_message: Some(error_msg),
-                        },
-                    );
-                    panic!("No migration path available");
-                }
-            }
-
-            from_version = next_version;
+        if commitment.hash != migration_hash {
+            panic!("{}", ContractError::MigrationHashMismatch as u32);
         }
 
-        // Update version
-        env.storage()
-            .instance()
-            .set(&DataKey::Version, &target_version);
+        let current_version: u32 = env.storage().instance().get(&DataKey::Version).unwrap_or(1);
 
-        // Record migration state
-        let migration_state = MigrationState {
+        if target_version <= current_version {
+            panic!("Target version must be greater than current version");
+        }
+
+        if commitment.expires_at > 0 && env.ledger().timestamp() > commitment.expires_at {
+            panic!("Migration commitment has expired");
+        }
+
+        // Run version-specific migration logic
+        if current_version == 1 && target_version == 2 {
+            migrate_v1_to_v2(&env);
+        } else if current_version == 2 && target_version == 3 {
+            migrate_v2_to_v3(&env);
+        } else if current_version == 1 && target_version == 3 {
+            migrate_v1_to_v2(&env);
+            migrate_v2_to_v3(&env);
+        } else {
+            panic!("No migration path available");
+        }
+
+        let state = MigrationState {
             from_version: current_version,
             to_version: target_version,
             migrated_at: env.ledger().timestamp(),
             migration_hash: migration_hash.clone(),
         };
-        env.storage()
-            .instance()
-            .set(&DataKey::MigrationState, &migration_state);
+        env.storage().instance().set(&DataKey::MigrationState, &state);
+        env.storage().instance().set(&DataKey::Version, &target_version);
 
-        // Emit success event
-        emit_migration_event(
-            &env,
-            MigrationEvent {
-                from_version: current_version,
-                to_version: target_version,
-                timestamp: env.ledger().timestamp(),
-                migration_hash: migration_hash.clone(),
-                success: true,
-                error_message: None,
-            },
+        // Consume commitment (replay protection)
+        env.storage().instance().remove(&DataKey::MigrationCommitment(target_version));
+
+        env.events().publish(
+            (symbol_short!("migrate"), symbol_short!("done")),
+            (current_version, target_version, env.ledger().timestamp()),
         );
 
-        // Track successful operation
         monitoring::track_operation(&env, symbol_short!("migrate"), admin, true);
-
-        // Track performance
-        let duration = env.ledger().timestamp().saturating_sub(start);
-        monitoring::emit_performance(&env, symbol_short!("migrate"), duration);
     }
 
-    /// Gets the current migration state.
-    ///
-    /// # Returns
-    /// * `Option<MigrationState>` - Current migration state if exists
-    pub fn get_migration_state(env: Env) -> Option<MigrationState> {
-        if env.storage().instance().has(&DataKey::MigrationState) {
-            Some(
-                env.storage()
-                    .instance()
-                    .get(&DataKey::MigrationState)
-                    .unwrap(),
-            )
-        } else {
-            None
-        }
-    }
+    // ========================================================================
+    // Internal helpers
+    // ========================================================================
 
-    /// Gets the previous version (before last upgrade).
-    ///
-    /// # Returns
-    /// * `Option<u32>` - Previous version if exists
-    pub fn get_previous_version(env: Env) -> Option<u32> {
-        if env.storage().instance().has(&DataKey::PreviousVersion) {
-            Some(
-                env.storage()
-                    .instance()
-                    .get(&DataKey::PreviousVersion)
-                    .unwrap(),
-            )
-        } else {
-            None
-        }
+
+
+    fn load_upgrade_proposal(env: &Env, proposal_id: u64) -> Option<UpgradeProposalRecord> {
+        let wasm_hash: BytesN<32> = env
+            .storage()
+            .instance()
+            .get(&DataKey::UpgradeProposal(proposal_id))?;
+        let proposer: Option<Address> = env
+            .storage()
+            .instance()
+            .get(&DataKey::UpgradeProposalProposer(proposal_id));
+        let proposal = multisig::MultiSig::get_proposal_opt(env, proposal_id)?;
+
+        Some(UpgradeProposalRecord {
+            proposal_id,
+            proposer,
+            wasm_hash,
+            expiry: proposal.expiry,
+            cancelled: proposal.cancelled,
+        })
     }
 }
 
-// ── UpgradeInterface conformance (Issue #574) ───────────────────────────────
+fn migrate_v1_to_v2(_env: &Env) {}
+
+fn migrate_v2_to_v3(_env: &Env) {}
+
+// ============================================================================
+// Event Version Compatibility
+// ============================================================================
+
+/// Returns true when `version` matches the current `EVENT_SCHEMA_VERSION`.
+///
+/// Indexers and off-chain consumers should call this guard when deserializing
+/// events so they can surface unknown-version events instead of silently
+/// misinterpreting them.
+pub fn is_compatible_event_version(version: u32) -> bool {
+    version == EVENT_SCHEMA_VERSION
+}
+
+#[cfg(test)]
+mod test_event_versioning;
+
+// ============================================================================
+// Trait Conformance
+// ============================================================================
 
 pub mod traits {
     use soroban_sdk::{Env, String};
 
-    /// Upgrade interface — mirrors bounty_escrow traits.rs definition.
-    /// Kept local to avoid cross-crate dependency.
     pub trait UpgradeInterface {
         fn get_version(env: &Env) -> u32;
         fn set_version(env: &Env, new_version: u32) -> Result<(), String>;
@@ -2689,679 +2144,9 @@ impl traits::UpgradeInterface for GrainlifyContract {
     fn get_version(env: &Env) -> u32 {
         GrainlifyContract::get_version(env.clone())
     }
-
     fn set_version(env: &Env, new_version: u32) -> Result<(), soroban_sdk::String> {
-        // set_version panics if admin auth fails; surface as Err for trait callers.
         GrainlifyContract::set_version(env.clone(), new_version);
         Ok(())
     }
 }
-
-// ============================================================================
-// Migration Functions
-// ============================================================================
-
-/// Emits a migration event for audit trail and off-chain indexing.
-///
-/// # Arguments
-/// * `env` - The contract environment
-/// * `event` - MigrationEvent struct containing migration details
-///
-/// # Event Topic
-/// Published with topic: symbol_short!("migration")
-///
-/// # Off-Chain Integration
-/// Indexers should listen for events with topic "migration" to maintain
-/// an audit trail of all migration attempts (both successful and failed).
-fn emit_migration_event(env: &Env, event: MigrationEvent) {
-    env.events().publish((symbol_short!("migration"),), event);
-}
-
-/// Migration from version 1 to version 2 - Storage transformation handler.
-///
-/// # Purpose
-/// This function is called when migrating from v1 to v2. It handles any
-/// data structure transformations or state reorganization needed.
-///
-/// # Current Implementation
-/// This is a placeholder with no-op implementation. When v2 breaking changes
-/// are defined, implement the following pattern:
-///
-/// ```rust
-/// // 1. Read old data format from storage
-/// let old_data: OldStructure = env.storage().instance().get(&DataKey::OldKey)?;
-///
-/// // 2. Transform to new format
-/// let new_data = transform_to_new_format(old_data);
-///
-/// // 3. Write new format
-/// env.storage().instance().set(&DataKey::NewKey, &new_data);
-///
-/// // 4. Optionally clean up old keys
-/// env.storage().instance().remove(&DataKey::OldKey);
-/// ```
-///
-/// # Important Notes
-/// - NEVER rename or remove DataKey enum variants (breaks storage stability)
-/// - Use new enum variants for new storage keys in future migrations
-/// - Document all data transformations with examples
-/// - Test migrations thoroughly on testnet before mainnet deployment
-/// - Store migration data on-chain for audit trail verification
-///
-/// # Security Considerations
-/// - Storage keys must remain stable across all versions
-/// - Data transformations must be idempotent (can replay without issues)
-/// - Invalid data should be explicitly handled (panic or default)
-/// - Admin authorization is already verified by the migrate() function
-fn migrate_v1_to_v2(_env: &Env) {
-    // Placeholder migration - add actual data structure transformations here
-    // when v2 includes breaking changes to contract state.
-    //
-    // Current implementation effect: No-op (v1 storage layout compatible with v2)
-    //
-    // Future implementations should follow this pattern:
-    // - Read old entities
-    // - Transform schemas
-    // - Write new entities
-    // - Clean up old keys (optional, to save storage)
-}
-
-/// Migration from version 2 to version 3 - Storage transformation handler.
-///
-/// # Purpose
-/// This function is called when migrating from v2 to v3. It handles any
-/// data structure transformations or state reorganization needed.
-///
-/// # Current Implementation
-/// This is a placeholder with no-op implementation. When v3 breaking changes
-/// are defined, implement similar to migrate_v1_to_v2().
-///
-/// # Storage Key Guarantee
-/// All existing storage keys from v1 and v2 remain valid:
-/// - DataKey::Admin (unchanged, immutable)
-/// - DataKey::Version (unchanged, managed by migrate())
-/// - DataKey::MigrationState (unchanged, tracks migration history)
-/// - All user-defined keys (backward compatible)
-///
-/// # Adding New Features in v3+
-/// If v3 introduces new contract functionality:
-/// 1. Define new DataKey variants (new enum indices don't conflict)
-/// 2. Initialize new storage in migrate_v2_to_v3() if needed
-/// 3. Use get().unwrap_or(default) for missing keys in existing code
-/// 4. Document new keys in DataKey enum comments
-fn migrate_v2_to_v3(_env: &Env) {
-    // Placeholder migration - add actual data structure transformations here
-    // when v3 includes breaking changes to contract state.
-    //
-    // Current implementation effect: No-op (v2 storage layout compatible with v3)
-}
-
-// ============================================================================
-// Testing Module
-// ============================================================================
-#[cfg(all(test, feature = "wasm_tests"))]
-mod test {
-    use super::*;
-    use soroban_sdk::{
-        testutils::{Address as _, Events},
-        Env,
-    };
-
-    // Include end-to-end upgrade and migration tests
-    pub mod e2e_upgrade_migration_tests;
-    #[cfg(feature = "governance_contract_tests")]
-    pub mod invariant_entrypoints_tests;
-    pub mod nonce_tests;
-    pub mod state_snapshot_tests;
-    #[cfg(feature = "upgrade_rollback_tests")]
-    pub mod upgrade_rollback_scenarios;
-    #[cfg(feature = "upgrade_rollback_tests")]
-    pub mod upgrade_rollback_tests;
-    pub mod upgrade_timelock_tests;
-
-    // WASM for testing (only available after building for wasm32 target)
-    #[cfg(feature = "upgrade_rollback_tests")]
-    pub const WASM: &[u8] =
-        include_bytes!("../../target/wasm32-unknown-unknown/release/grainlify_core.wasm");
-
-    #[test]
-    fn multisig_init_works() {
-        let env = Env::default();
-        let contract_id = env.register_contract(None, GrainlifyContract);
-        let client = GrainlifyContractClient::new(&env, &contract_id);
-
-        let mut signers = soroban_sdk::Vec::new(&env);
-        signers.push_back(Address::generate(&env));
-        signers.push_back(Address::generate(&env));
-        signers.push_back(Address::generate(&env));
-
-        client.init(&signers, &2u32);
-    }
-
-    #[test]
-    fn test_set_version() {
-        let env = Env::default();
-        env.mock_all_auths();
-
-        let contract_id = env.register_contract(None, GrainlifyContract);
-        let client = GrainlifyContractClient::new(&env, &contract_id);
-
-        let admin = Address::generate(&env);
-        client.init_admin(&admin);
-
-        client.set_version(&2);
-        assert_eq!(client.get_version(), 2);
-    }
-
-    #[test]
-    fn test_core_config_snapshot_create_and_restore() {
-        let env = Env::default();
-        env.mock_all_auths();
-
-        let contract_id = env.register_contract(None, GrainlifyContract);
-        let client = GrainlifyContractClient::new(&env, &contract_id);
-
-        let admin = Address::generate(&env);
-        client.init_admin(&admin);
-        client.set_version(&5);
-
-        let snapshot_id = client.create_config_snapshot();
-
-        client.set_version(&11);
-        assert_eq!(client.get_version(), 11);
-
-        client.restore_config_snapshot(&snapshot_id);
-        assert_eq!(client.get_version(), 5);
-    }
-
-    #[test]
-    fn test_core_config_snapshot_prunes_oldest_entries() {
-        let env = Env::default();
-        env.mock_all_auths();
-
-        let contract_id = env.register_contract(None, GrainlifyContract);
-        let client = GrainlifyContractClient::new(&env, &contract_id);
-
-        let admin = Address::generate(&env);
-        client.init_admin(&admin);
-
-        for version in 1..=25u32 {
-            client.set_version(&version);
-            client.create_config_snapshot();
-        }
-
-        let snapshots = client.list_config_snapshots();
-        assert_eq!(snapshots.len(), 20);
-
-        let oldest_retained = snapshots.get(0).unwrap();
-        assert_eq!(oldest_retained.id, 6);
-    }
-
-    #[test]
-    fn test_migration_v2_to_v3() {
-        let env = Env::default();
-        env.mock_all_auths();
-
-        let contract_id = env.register_contract(None, GrainlifyContract);
-        let client = GrainlifyContractClient::new(&env, &contract_id);
-
-        let admin = Address::generate(&env);
-        client.init_admin(&admin);
-
-        // Initial version should be 2
-        assert_eq!(client.get_version(), 2);
-
-        // Create migration hash
-        let migration_hash = BytesN::from_array(&env, &[0u8; 32]);
-
-        // Migrate to version 3
-        client.migrate(&3, &migration_hash);
-
-        // Verify version updated
-        assert_eq!(client.get_version(), 3);
-
-        // Verify migration state recorded
-        let migration_state = client.get_migration_state();
-        assert!(migration_state.is_some());
-        let state = migration_state.unwrap();
-        assert_eq!(state.from_version, 2);
-        assert_eq!(state.to_version, 3);
-    }
-
-    #[test]
-    #[should_panic(expected = "Target version must be greater than current version")]
-    fn test_migration_invalid_target_version() {
-        let env = Env::default();
-        env.mock_all_auths();
-
-        let contract_id = env.register_contract(None, GrainlifyContract);
-        let client = GrainlifyContractClient::new(&env, &contract_id);
-
-        let admin = Address::generate(&env);
-        client.init_admin(&admin);
-
-        let migration_hash = BytesN::from_array(&env, &[0u8; 32]);
-
-        // Try to migrate to version 1 when already at version 1
-        client.migrate(&1, &migration_hash);
-    }
-
-    #[test]
-    fn test_migration_repeated_same_version_is_idempotent() {
-        let env = Env::default();
-        env.mock_all_auths();
-
-        let contract_id = env.register_contract(None, GrainlifyContract);
-        let client = GrainlifyContractClient::new(&env, &contract_id);
-
-        let admin = Address::generate(&env);
-        client.init_admin(&admin);
-
-        let migration_hash = BytesN::from_array(&env, &[0u8; 32]);
-
-        // Migrate to version 3
-        client.migrate(&3, &migration_hash);
-        assert_eq!(client.get_version(), 3);
-
-        // Repeating same target is a no-op (idempotent)
-        client.migrate(&3, &migration_hash);
-        assert_eq!(client.get_version(), 3);
-    }
-
-    #[test]
-    fn test_get_previous_version() {
-        let env = Env::default();
-        env.mock_all_auths();
-
-        let contract_id = env.register_contract(None, GrainlifyContract);
-        let client = GrainlifyContractClient::new(&env, &contract_id);
-
-        let admin = Address::generate(&env);
-        client.init_admin(&admin);
-
-        // Initially no previous version
-        assert!(client.get_previous_version().is_none());
-
-        // Simulate upgrade (this would normally be done via upgrade() but we'll set version directly)
-        client.set_version(&2);
-
-        // Previous version should still be None unless upgrade() was called
-        // This test verifies the get_previous_version function works
-    }
-
-    // ========================================================================
-    // Integration Tests: Upgrade and Migration Workflow
-    // ========================================================================
-
-    #[test]
-    fn test_complete_upgrade_and_migration_workflow() {
-        let env = Env::default();
-        env.mock_all_auths();
-
-        let contract_id = env.register_contract(None, GrainlifyContract);
-        let client = GrainlifyContractClient::new(&env, &contract_id);
-
-        let admin = Address::generate(&env);
-
-        // 1. Initialize contract
-        client.init_admin(&admin);
-        assert_eq!(client.get_version(), 2);
-
-        // 2. Simulate upgrade (in real scenario, this would call upgrade() with WASM hash)
-        // For testing, we'll just test the migration part
-        let migration_hash = BytesN::from_array(&env, &[1u8; 32]);
-
-        // 3. Migrate to version 3
-        client.migrate(&3, &migration_hash);
-
-        // 4. Verify version updated
-        assert_eq!(client.get_version(), 3);
-
-        // 5. Verify migration state recorded
-        let migration_state = client.get_migration_state();
-        assert!(migration_state.is_some());
-        let state = migration_state.unwrap();
-        assert_eq!(state.from_version, 2);
-        assert_eq!(state.to_version, 3);
-
-        // 6. Verify events emitted
-        let events = env.events().all();
-        assert!(events.len() > 0);
-    }
-
-    #[test]
-    fn test_migration_sequential_versions() {
-        let env = Env::default();
-        env.mock_all_auths();
-
-        let contract_id = env.register_contract(None, GrainlifyContract);
-        let client = GrainlifyContractClient::new(&env, &contract_id);
-
-        let admin = Address::generate(&env);
-        client.init_admin(&admin);
-
-        // Migrate from v2 to v3
-        let hash1 = BytesN::from_array(&env, &[1u8; 32]);
-        client.migrate(&3, &hash1);
-        assert_eq!(client.get_version(), 3);
-    }
-
-    #[test]
-    fn test_migration_event_emission() {
-        let env = Env::default();
-        env.mock_all_auths();
-
-        let contract_id = env.register_contract(None, GrainlifyContract);
-        let client = GrainlifyContractClient::new(&env, &contract_id);
-
-        let admin = Address::generate(&env);
-        client.init_admin(&admin);
-
-        let initial_event_count = env.events().all().len();
-
-        let migration_hash = BytesN::from_array(&env, &[2u8; 32]);
-        client.migrate(&3, &migration_hash);
-
-        // Verify migration event was emitted
-        let events = env.events().all();
-        assert!(events.len() > initial_event_count);
-    }
-
-    #[test]
-    fn test_admin_initialization() {
-        let env = Env::default();
-        env.mock_all_auths();
-
-        let contract_id = env.register_contract(None, GrainlifyContract);
-        let client = GrainlifyContractClient::new(&env, &contract_id);
-
-        let admin = Address::generate(&env);
-        client.init_admin(&admin);
-
-        assert_eq!(client.get_version(), 2);
-    }
-
-    #[test]
-    fn test_network_initialization() {
-        let env = Env::default();
-        env.mock_all_auths();
-
-        let contract_id = env.register_contract(None, GrainlifyContract);
-        let client = GrainlifyContractClient::new(&env, &contract_id);
-
-        let admin = Address::generate(&env);
-        let chain_id = String::from_str(&env, "stellar");
-        let network_id = String::from_str(&env, "testnet");
-
-        client.init_with_network(&admin, &chain_id, &network_id);
-
-        // Verify initialization
-        assert_eq!(client.get_version(), 2);
-
-        // Verify network configuration
-        let retrieved_chain = client.get_chain_id();
-        let retrieved_network = client.get_network_id();
-
-        assert_eq!(retrieved_chain, Some(chain_id));
-        assert_eq!(retrieved_network, Some(network_id));
-    }
-
-    #[test]
-    fn test_network_info_getter() {
-        let env = Env::default();
-        env.mock_all_auths();
-
-        let contract_id = env.register_contract(None, GrainlifyContract);
-        let client = GrainlifyContractClient::new(&env, &contract_id);
-
-        let admin = Address::generate(&env);
-        let chain_id = String::from_str(&env, "ethereum");
-        let network_id = String::from_str(&env, "mainnet");
-
-        client.init_with_network(&admin, &chain_id, &network_id);
-
-        // Test tuple getter
-        let (chain, network) = client.get_network_info();
-        assert_eq!(chain, Some(chain_id));
-        assert_eq!(network, Some(network_id));
-    }
-
-    #[test]
-    #[should_panic(expected = "Already initialized")]
-    fn test_cannot_reinitialize_network_config() {
-        let env = Env::default();
-        env.mock_all_auths();
-
-        let contract_id = env.register_contract(None, GrainlifyContract);
-        let client = GrainlifyContractClient::new(&env, &contract_id);
-
-        let admin1 = Address::generate(&env);
-        let admin2 = Address::generate(&env);
-        let chain_id = String::from_str(&env, "stellar");
-        let network_id = String::from_str(&env, "testnet");
-
-        // First initialization should succeed
-        client.init_with_network(&admin1, &chain_id, &network_id);
-
-        // Second initialization should panic
-        client.init_with_network(&admin2, &chain_id, &network_id);
-    }
-
-    #[test]
-    fn test_legacy_init_still_works() {
-        let env = Env::default();
-        env.mock_all_auths();
-
-        let contract_id = env.register_contract(None, GrainlifyContract);
-        let client = GrainlifyContractClient::new(&env, &contract_id);
-
-        let admin = Address::generate(&env);
-
-        // Legacy init should still work (without network config)
-        client.init_admin(&admin);
-
-        // Network info should be None for legacy initialization
-        assert_eq!(client.get_chain_id(), None);
-        assert_eq!(client.get_network_id(), None);
-        let (chain, network) = client.get_network_info();
-        assert_eq!(chain, None);
-        assert_eq!(network, None);
-    }
-
-    #[test]
-    #[should_panic(expected = "Already initialized")]
-    fn test_cannot_reinitialize_admin() {
-        let env = Env::default();
-        env.mock_all_auths();
-
-        let contract_id = env.register_contract(None, GrainlifyContract);
-        let client = GrainlifyContractClient::new(&env, &contract_id);
-
-        let admin1 = Address::generate(&env);
-        let admin2 = Address::generate(&env);
-
-        client.init_admin(&admin1);
-        client.init_admin(&admin2);
-    }
-
-    #[test]
-    fn test_admin_persists_across_version_updates() {
-        let env = Env::default();
-        env.mock_all_auths();
-
-        let contract_id = env.register_contract(None, GrainlifyContract);
-        let client = GrainlifyContractClient::new(&env, &contract_id);
-
-        let admin = Address::generate(&env);
-        client.init_admin(&admin);
-
-        client.set_version(&3);
-        assert_eq!(client.get_version(), 3);
-
-        client.set_version(&4);
-        assert_eq!(client.get_version(), 4);
-    }
-
-    // ========================================================================
-    // Migration Hook Tests (Issue #45)
-    // ========================================================================
-
-    #[test]
-    fn test_migration_rejects_repeat_for_same_target_version() {
-        let env = Env::default();
-        env.mock_all_auths();
-
-        let contract_id = env.register_contract(None, GrainlifyContract);
-        let client = GrainlifyContractClient::new(&env, &contract_id);
-
-        let admin = Address::generate(&env);
-        client.init_admin(&admin);
-
-        // Verify initial version
-        assert_eq!(client.get_version(), 2);
-
-        // Migrate to v3
-        let hash = BytesN::from_array(&env, &[1u8; 32]);
-        client.migrate(&3, &hash);
-
-        // Second call with same version is a no-op (idempotent)
-        client.migrate(&3, &hash);
-        assert_eq!(client.get_version(), 3);
-    }
-
-    #[test]
-    fn test_migration_transforms_state_correctly() {
-        let env = Env::default();
-        env.mock_all_auths();
-
-        let contract_id = env.register_contract(None, GrainlifyContract);
-        let client = GrainlifyContractClient::new(&env, &contract_id);
-
-        let admin = Address::generate(&env);
-        client.init_admin(&admin);
-
-        let initial_version = client.get_version();
-        assert_eq!(initial_version, 2);
-
-        let hash = BytesN::from_array(&env, &[2u8; 32]);
-
-        // Execute migration to v3
-        client.migrate(&3, &hash);
-
-        // Verify transformations
-        assert_eq!(client.get_version(), 3);
-
-        let state = client.get_migration_state().unwrap();
-        assert_eq!(state.from_version, initial_version);
-        assert_eq!(state.to_version, 3);
-        assert_eq!(state.migration_hash, hash);
-        // Timestamp is set (may be 0 in test environment)
-    }
-
-    #[test]
-    fn test_migration_requires_admin_authorization() {
-        let env = Env::default();
-
-        let contract_id = env.register_contract(None, GrainlifyContract);
-        let client = GrainlifyContractClient::new(&env, &contract_id);
-
-        let admin = Address::generate(&env);
-        client.init_admin(&admin);
-
-        env.mock_all_auths_allowing_non_root_auth();
-
-        let hash = BytesN::from_array(&env, &[3u8; 32]);
-
-        // This should require admin auth
-        client.migrate(&3, &hash);
-
-        // Verify auth was required
-        assert!(!env.auths().is_empty());
-    }
-
-    #[test]
-    #[should_panic(expected = "Target version must be greater than current version")]
-    fn test_migration_rejects_downgrade() {
-        let env = Env::default();
-        env.mock_all_auths();
-
-        let contract_id = env.register_contract(None, GrainlifyContract);
-        let client = GrainlifyContractClient::new(&env, &contract_id);
-
-        let admin = Address::generate(&env);
-        client.init_admin(&admin);
-
-        client.set_version(&4);
-
-        let hash = BytesN::from_array(&env, &[4u8; 32]);
-
-        // Try to migrate to lower version - should panic
-        client.migrate(&3, &hash);
-    }
-
-    #[test]
-    fn test_migration_state_persists() {
-        let env = Env::default();
-        env.mock_all_auths();
-
-        let contract_id = env.register_contract(None, GrainlifyContract);
-        let client = GrainlifyContractClient::new(&env, &contract_id);
-
-        let admin = Address::generate(&env);
-        client.init_admin(&admin);
-
-        let hash = BytesN::from_array(&env, &[5u8; 32]);
-        client.migrate(&3, &hash);
-
-        // Retrieve state multiple times
-        let state1 = client.get_migration_state().unwrap();
-        let state2 = client.get_migration_state().unwrap();
-
-        assert_eq!(state1.from_version, state2.from_version);
-        assert_eq!(state1.to_version, state2.to_version);
-        assert_eq!(state1.migrated_at, state2.migrated_at);
-        assert_eq!(state1.migration_hash, state2.migration_hash);
-    }
-
-    #[test]
-    fn test_migration_emits_success_event() {
-        let env = Env::default();
-        env.mock_all_auths();
-
-        let contract_id = env.register_contract(None, GrainlifyContract);
-        let client = GrainlifyContractClient::new(&env, &contract_id);
-
-        let admin = Address::generate(&env);
-        client.init_admin(&admin);
-
-        let initial_events = env.events().all().len();
-
-        let hash = BytesN::from_array(&env, &[6u8; 32]);
-        client.migrate(&3, &hash);
-
-        let events = env.events().all();
-        assert!(events.len() > initial_events);
-    }
-
-    #[test]
-    fn test_migration_tracks_previous_version() {
-        let env = Env::default();
-        env.mock_all_auths();
-
-        let contract_id = env.register_contract(None, GrainlifyContract);
-        let client = GrainlifyContractClient::new(&env, &contract_id);
-
-        let admin = Address::generate(&env);
-        client.init_admin(&admin);
-
-        let v_before = client.get_version();
-        assert_eq!(v_before, 2);
-
-        let hash = BytesN::from_array(&env, &[7u8; 32]);
-        client.migrate(&3, &hash);
-
-        let state = client.get_migration_state().unwrap();
-        assert_eq!(state.from_version, v_before);
-        assert_eq!(state.to_version, 3);
-    }
-}
+mod test;

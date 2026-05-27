@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -13,7 +14,9 @@ type DB struct {
 	Pool *pgxpool.Pool
 }
 
-func Connect(ctx context.Context, dbURL string) (*DB, error) {
+// Connect opens a pgxpool and attaches a SlowQueryTracer with the given
+// threshold (milliseconds). Pass 0 to collect metrics without log emission.
+func Connect(ctx context.Context, dbURL string, slowQueryThresholdMS int64) (*DB, error) {
 	if dbURL == "" {
 		return nil, fmt.Errorf("DB_URL is required")
 	}
@@ -44,6 +47,10 @@ func Connect(ctx context.Context, dbURL string) (*DB, error) {
 	cfg.MaxConnIdleTime = 5 * time.Minute
 	cfg.HealthCheckPeriod = 30 * time.Second
 
+	// Attach slow-query tracer.
+	cfg.ConnConfig.Tracer = NewSlowQueryTracer(slowQueryThresholdMS)
+	slog.Info("slow query tracer attached", "threshold_ms", slowQueryThresholdMS)
+
 	slog.Info("creating database connection pool",
 		"max_conns", cfg.MaxConns,
 		"min_conns", cfg.MinConns,
@@ -72,29 +79,35 @@ func Connect(ctx context.Context, dbURL string) (*DB, error) {
 	return &DB{Pool: pool}, nil
 }
 
-// maskDBURL masks the password in a database URL for logging
+// maskDBURL masks the password in a database URL for logging.
+// Format: scheme://user:password@host:port/db
 func maskDBURL(dbURL string) string {
-	// Simple masking: replace password with ***
-	// Format: postgresql://user:password@host:port/db
 	if len(dbURL) < 20 {
 		return "***"
 	}
-	// Find @ symbol and mask everything between : and @
-	atIdx := -1
-	colonIdx := -1
-	for i, r := range dbURL {
-		if r == '@' {
-			atIdx = i
-			break
-		}
-		if r == ':' && colonIdx == -1 {
-			colonIdx = i
-		}
+	// Skip past the scheme (e.g. "postgresql://") before searching for credentials.
+	searchFrom := 0
+	if idx := strings.Index(dbURL, "://"); idx >= 0 {
+		searchFrom = idx + 3
 	}
-	if atIdx > 0 && colonIdx > 0 && colonIdx < atIdx {
-		return dbURL[:colonIdx+1] + "***" + dbURL[atIdx:]
+
+	atIdx := strings.Index(dbURL[searchFrom:], "@")
+	if atIdx < 0 {
+		return "***"
 	}
-	return "***"
+	atIdx += searchFrom // absolute index
+
+	colonIdx := strings.Index(dbURL[searchFrom:], ":")
+	if colonIdx < 0 {
+		return "***"
+	}
+	colonIdx += searchFrom // absolute index
+
+	if colonIdx >= atIdx {
+		// No password field (user@host form).
+		return "***"
+	}
+	return dbURL[:colonIdx+1] + "***" + dbURL[atIdx:]
 }
 
 func (d *DB) Close() {

@@ -56,7 +56,13 @@
 }
 
 .animate-shimmer {
-  animation: shimmer 2s infinite;
+  animation: shimmer 1.5s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-shimmer {
+    animation: none;
+  }
 }
 
 @custom-variant dark (&:is(.dark *));
@@ -106,19 +112,6 @@
   animation: slide-in-right 0.3s ease-out;
 }
 
-/* Shimmer animation for skeleton loaders */
-@keyframes shimmer {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(100%);
-  }
-}
-
-.animate-shimmer {
-  animation: shimmer 2s infinite;
-}
 
 :root {
   /* Base font size */

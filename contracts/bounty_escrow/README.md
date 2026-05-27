@@ -111,6 +111,15 @@ Valid payout paths are mutually exclusive: admin `release_funds` moves escrow to
 
 The escrow contract implements an optional timelock mechanism for sensitive admin actions to protect against compromised admin keys. When enabled, admin actions must go through a propose-and-execute flow with a configurable delay.
 
+### Admin Rotation with Timelock
+
+The contract features a **two-step admin rotation system** with configurable timelock for secure governance transitions. See [ADMIN_ROTATION_TIMELOCK.md](contracts/escrow/ADMIN_ROTATION_TIMELOCK.md) for complete documentation including:
+- Proposal and acceptance flow
+- Timelock configuration (1 hour to 30 days)
+- Security invariants and authorization
+- Event specifications
+- Upgrade safety considerations
+
 ### Two-Step Flow
 
 1. **Propose** - Admin calls `propose_admin_action` with the desired action and parameters

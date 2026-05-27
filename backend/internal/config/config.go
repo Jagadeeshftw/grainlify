@@ -73,6 +73,11 @@ type Config struct {
 	SandboxShadowedOperations      string // Comma-separated operations to shadow (e.g. "lock_funds,release_funds")
 	SandboxSourceSecret            string // Separate keypair for sandbox transactions
 	SandboxMaxConcurrentShadows    int    // Max concurrent shadow goroutines (default: 10)
+
+	// SlowQueryThresholdMS is the minimum query duration in milliseconds that
+	// triggers a slow-query log entry. Set to 0 to disable slow-query logging
+	// while still collecting query metrics. Default: 500 ms.
+	SlowQueryThresholdMS int64
 }
 
 func Load() Config {
@@ -140,6 +145,8 @@ func Load() Config {
 		SandboxShadowedOperations:      getEnv("SANDBOX_SHADOWED_OPERATIONS", "lock_funds,release_funds,refund,single_payout,batch_payout"),
 		SandboxSourceSecret:            getEnv("SANDBOX_SOURCE_SECRET", ""),
 		SandboxMaxConcurrentShadows:    getEnvInt("SANDBOX_MAX_CONCURRENT_SHADOWS", 10),
+
+		SlowQueryThresholdMS: int64(getEnvInt("SLOW_QUERY_THRESHOLD_MS", 500)),
 	}
 }
 

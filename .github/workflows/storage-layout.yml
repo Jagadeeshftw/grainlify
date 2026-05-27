@@ -3,25 +3,30 @@ name: Storage Layout Checks
 on:
   pull_request:
     paths:
-      - "contracts/**/src/**"
-      - "contracts/**/STORAGE_LAYOUT.md"
+      - "contracts/grainlify-core/**"
       - ".github/workflows/storage-layout.yml"
+  push:
+    branches: [main, develop, master]
+    paths:
+      - "contracts/grainlify-core/**"
+      - ".github/workflows/storage-layout.yml"
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
   verify-storage-layout:
-    name: Verify Storage Layout Tests
+    name: Storage layout test target
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: wasm32v1-none
-      - name: Run grainlify-core storage layout tests
+          targets: wasm32v1-none, wasm32-unknown-unknown
+      - name: test_storage_layout
         run: |
           cd contracts/grainlify-core
           cargo test --test test_storage_layout
-      - name: Run program-escrow storage layout tests
-        run: |
-          cd contracts/program-escrow
-          test -f STORAGE_LAYOUT.md
+      - name: program-escrow package exists
+        run: test -f contracts/program-escrow/STORAGE_LAYOUT.md
+        # Path is for documentation checks; program-escrow is still under top-level contracts/

@@ -50,7 +50,7 @@ fn setup(
 
     let program_id = String::from_str(env, "dispute-test-program");
     client.init_program(&program_id, &admin, &token_id, &admin, &None, &None);
-    client.publish_program();
+    client.publish_program(&program_id);
 
     if fund_amount > 0 {
         token_sac.mint(&contract_id, &fund_amount);

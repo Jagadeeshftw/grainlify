@@ -1,4 +1,4 @@
-name: Smart Contracts CI/CD
+name: Smart Contracts CI
 
 on:
   pull_request:
@@ -16,43 +16,22 @@ on:
       - "contracts/**"
       - ".github/workflows/contracts-ci.yml"
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
-  contracts-ci:
-    name: Format, Build, Test, and Stellar Build Check
-    runs-on: macos-latest
-
-    defaults:
-      run:
-        working-directory: contracts/bounty_escrow
-
+  soroban-rust:
+    name: Soroban workspace (build + test)
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Rust (with Soroban targets)
+      - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32v1-none, wasm32-unknown-unknown
 
-      - name: Install Stellar CLI
-        run: |
-          VERSION="22.5.0"
-          ARCH="$(uname -m)"
-          case "$ARCH" in
-            arm64|aarch64) TARGET="aarch64-apple-darwin" ;;
-            x86_64) TARGET="x86_64-apple-darwin" ;;
-            *) echo "Unsupported macOS architecture: $ARCH" && exit 1 ;;
-          esac
-          URL="https://github.com/stellar/stellar-cli/releases/download/v${VERSION}/stellar-cli-${VERSION}-${TARGET}.tar.gz"
-          curl -fL "$URL" -o stellar-cli.tar.gz
-          tar -xzf stellar-cli.tar.gz
-          mkdir -p "$HOME/.local/bin"
-          mv stellar "$HOME/.local/bin/stellar"
-          chmod +x "$HOME/.local/bin/stellar"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          "$HOME/.local/bin/stellar" --version
-
-      - name: Cache Cargo dependencies
+      - name: Cache cargo
         uses: actions/cache@v4
         with:
           path: |
@@ -60,79 +39,42 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            contracts/bounty_escrow/target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('contracts/bounty_escrow/**/Cargo.lock', 'contracts/bounty_escrow/contracts/escrow/src/**', 'contracts/grainlify-core/src/**') }}
+            soroban/target/
+          key: ${{ runner.os }}-soroban-cargo-${{ hashFiles('soroban/**/Cargo.lock', 'soroban/**/Cargo.toml', 'contracts/grainlify-core/**') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-soroban-cargo-
 
-      - name: Check code formatting
+      - name: Build and test (soroban workspace)
         run: |
-          test -f contracts/escrow/src/lib.rs
+          cd soroban
+          cargo build --workspace
+          cargo test --workspace
 
-      - name: Build contracts
-        run: |
-          source $HOME/.cargo/env
-          cd ../grainlify-core
-          cargo check --lib
-
-      - name: Run tests
-        run: |
-          source $HOME/.cargo/env
-          cd ../grainlify-core
-          cargo test --test test_storage_layout
-
-      - name: Run invariant checker tests
-        run: |
-          test -f ../grainlify-core/src/nonce.rs
-
-      - name: Build Soroban contract
-        run: |
-          test -f contracts/escrow/src/lib.rs
-
-      - name: Stellar build check
-        run: |
-          test -f ../grainlify-core/STORAGE_LAYOUT.md
-
-      - name: Set up Stellar identity for tests
-        run: |
-          source $HOME/.cargo/env
-          # Create the grainlify-deployer identity needed by script tests
-          echo "Creating grainlify-deployer identity for tests..."
-          stellar keys generate grainlify-deployer || echo "Identity already exists"
-          stellar keys ls | grep grainlify-deployer || echo "Identity setup complete"
-
-      - name: Run script tests
-        run: |
-          # From working-directory contracts/bounty_escrow, scripts live at ../scripts
-          chmod +x ../scripts/test_deploy_failures.sh
-          chmod +x ../scripts/test_upgrade_failures.sh
-          chmod +x ../scripts/test_all_script_failures.sh
-
-          echo "Running individual script tests..."
-          ../scripts/test_deploy_failures.sh
-          ../scripts/test_upgrade_failures.sh
-
-          echo "Running comprehensive script failure test suite..."
-          ../scripts/test_all_script_failures.sh
-
-  sdk-smoke-tests:
-    name: SDK Smoke Tests
+  grainlify-core:
+    name: grainlify-core (integration tests)
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          node-version: '20'
+          targets: wasm32v1-none, wasm32-unknown-unknown
 
-      - name: Install dependencies
-        run: |
-          cd contracts/sdk
-          npm install
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            contracts/grainlify-core/target/
+          key: ${{ runner.os }}-grainlify-core-${{ hashFiles('contracts/grainlify-core/**/Cargo.lock', 'contracts/grainlify-core/**') }}
+          restore-keys: |
+            ${{ runner.os }}-grainlify-core-
 
-      - name: Run smoke tests
+      - name: Test grainlify-core
         run: |
-          cd contracts/sdk
-          npm run test:smoke
+          cd contracts/grainlify-core
+          cargo test

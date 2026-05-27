@@ -118,6 +118,25 @@ stellar keys address grainlify-deployer
 stellar keys fund grainlify-deployer --network testnet
 ```
 
+---
+
+## Manifest Validation
+
+Schema validation:
+
+- `validate-manifests.sh` (AJV CLI)
+- `validate-manifests.js` (Node, cross-platform)
+
+Lightweight manifest + deployment seed validator (no extra deps):
+
+- `validate_seed_file.py`
+
+Run:
+
+```bash
+python3 contracts/scripts/validate_seed_file.py
+```
+
 ### Setting Up Mainnet
 
 > **Warning:** Mainnet deployments use real XLM and are irreversible.

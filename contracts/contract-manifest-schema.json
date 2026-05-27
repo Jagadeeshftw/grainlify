@@ -6,6 +6,54 @@
   "type": "object",
   "required": ["contract_name", "contract_purpose", "version", "entrypoints", "configuration", "behaviors"],
   "properties": {
+    "error_registry": {
+      "type": "object",
+      "description": "Error code registry for this contract. Enables cross-manifest uniqueness validation and SDK generation.",
+      "properties": {
+        "codes": {
+          "type": "array",
+          "description": "All error codes defined in this contract's error enum, in ascending order.",
+          "items": {
+            "$ref": "#/$defs/error_registry_entry"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "ranges": {
+          "type": "array",
+          "description": "Reserved numeric ranges for this contract's error codes. Must follow established conventions: 1-99 (common), 100-199 (governance), 200-299 (escrow), 300-399 (identity), 400-499 (program_escrow), 1000+ (system).",
+          "items": {
+            "$ref": "#/$defs/error_code_range"
+          },
+          "minItems": 1
+        },
+        "cross_contract_validation": {
+          "type": "object",
+          "description": "Cross-contract validation configuration",
+          "properties": {
+            "allow_conflicts": {
+              "type": "boolean",
+              "description": "Whether conflicts with other contracts are allowed (default: false)",
+              "default": false
+            },
+            "conflict_resolution": {
+              "type": "string",
+              "enum": ["error", "warning", "ignore"],
+              "description": "How to handle cross-contract conflicts",
+              "default": "warning"
+            },
+            "excluded_contracts": {
+              "type": "array",
+              "description": "List of contract names to exclude from conflict checking",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "required": ["codes", "ranges"]
+    },
     "contract_name": {
       "type": "string",
       "description": "Human-readable name of the smart contract",
@@ -75,7 +123,7 @@
         },
         "view": {
           "type": "array",
-          "description": "Read-only functions that don't require authentication",
+          "description": "Read-only functions that don't require authentication. Includes liveness/health views such as liveness_watchdog() which returns a LivenessStatus snapshot combining pause state, read-only mode, version, and admin presence.",
           "items": {
             "$ref": "#/$defs/entrypoint"
           }
@@ -169,6 +217,54 @@
           "items": {
             "$ref": "#/$defs/event"
           }
+        },
+        "emergency_pause": {
+          "type": "object",
+          "description": "Configuration and policy for emergency pause functionality",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "blocks_upgrades": {
+              "type": "boolean"
+            }
+          }
+        },
+        "timelocked_upgrades": {
+          "type": "object",
+          "description": "Configuration and policy for timelocked upgrades",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "min_delay_seconds": {
+              "type": "integer"
+            },
+            "max_delay_seconds": {
+              "type": "integer"
+            }
+          }
+        },
+        "snapshot_rollback": {
+          "type": "object",
+          "description": "Configuration and policy for on-chain state snapshots and rollbacks",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "snapshot_limit": {
+              "type": "integer",
+              "description": "Maximum number of retained snapshots"
+            },
+            "two_step_admin_restore": {
+              "type": "boolean",
+              "description": "Whether restoring an admin change requires a two-step confirmation"
+            },
+            "blocked_in_read_only": {
+              "type": "boolean",
+              "description": "Whether snapshot mutations are blocked when the contract is in read-only mode"
+            }
+          }
         }
       }
     },
@@ -252,6 +348,40 @@
         }
       }
     },
+    "registry": {
+      "type": "object",
+      "description": "Deployed contract registry metadata",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether the contract maintains a registry of deployed addresses"
+        },
+        "max_entries": {
+          "type": "integer",
+          "description": "Maximum number of contracts that can be registered"
+        },
+        "entrypoint_register": {
+          "type": "string",
+          "description": "Entrypoint name for registering a contract"
+        },
+        "entrypoint_deregister": {
+          "type": "string",
+          "description": "Entrypoint name for deregistering a contract"
+        },
+        "entrypoint_list": {
+          "type": "string",
+          "description": "Entrypoint name for listing registered contracts"
+        },
+        "entrypoint_get": {
+          "type": "string",
+          "description": "Entrypoint name for getting a single registered contract"
+        },
+        "entrypoint_count": {
+          "type": "string",
+          "description": "Entrypoint name for getting the registry count"
+        }
+      }
+    },
     "documentation": {
       "type": "object",
       "description": "Documentation references",
@@ -281,7 +411,8 @@
       "properties": {
         "name": {
           "type": "string",
-          "description": "Function name"
+          "description": "Function name",
+          "examples": ["init_program", "batch_payout", "liveness_watchdog", "get_liveness_schema_version"]
         },
         "description": {
           "type": "string",
@@ -300,7 +431,8 @@
           "properties": {
             "type": {
               "type": "string",
-              "description": "Return type"
+              "description": "Return type",
+              "examples": ["ProgramData", "bool", "u32", "LivenessStatus", "Option<Address>"]
             },
             "description": {
               "type": "string",
@@ -311,11 +443,16 @@
         "authorization": {
           "type": "string",
           "description": "Authorization requirements",
-          "enum": ["admin", "signer", "any", "capability", "multisig"]
+          "enum": ["admin", "signer", "any", "none", "capability", "multisig", "admin-or-governor"]
         },
         "pausable": {
           "type": "boolean",
           "description": "Whether this function can be paused"
+        },
+        "timelocked": {
+          "type": "boolean",
+          "description": "Whether this function requires a timelock delay before execution",
+          "default": false
         },
         "gas_estimate": {
           "type": "string",
@@ -369,6 +506,16 @@
         },
         "admin_only": {
           "type": "boolean",
+          "default": false
+        },
+        "timelock_seconds": {
+          "type": "integer",
+          "description": "Required timelock delay in seconds for applying this configuration parameter",
+          "minimum": 0
+        },
+        "requires_proposal": {
+          "type": "boolean",
+          "description": "Whether this parameter must be changed via propose/execute governance flow",
           "default": false
         }
       }
@@ -450,6 +597,16 @@
         "description": {
           "type": "string"
         },
+        "event_version": {
+          "type": "integer",
+          "description": "Schema version of this event struct. Matches the EVENT_SCHEMA_VERSION constant in the contract source. Consumers must validate this field before deserializing event data to detect cross-version incompatibilities.",
+          "minimum": 1
+        },
+        "min_compatible_version": {
+          "type": "integer",
+          "description": "Minimum EVENT_SCHEMA_VERSION value that a consumer can safely deserialize. Useful when a new version adds optional fields that older consumers can ignore.",
+          "minimum": 1
+        },
         "data": {
           "type": "array",
           "description": "Event data fields",
@@ -472,6 +629,21 @@
         "trigger": {
           "type": "string",
           "description": "When this event is emitted"
+        },
+        "topic": {
+          "type": "array",
+          "description": "Event topic path as emitted on-chain (e.g. [\"init\", \"build\"])",
+          "items": {
+            "type": "string"
+          }
+        },
+        "auth_context": {
+          "type": "string",
+          "description": "Authorization context required for the event to be emitted"
+        },
+        "security_notes": {
+          "type": "string",
+          "description": "Security and audit notes for the event"
         }
       }
     },
@@ -613,6 +785,81 @@
           "items": {
             "type": "string"
           }
+        }
+      }
+    },
+    "error_registry_entry": {
+      "type": "object",
+      "description": "A single error code entry in the registry.",
+      "required": ["code", "name", "range"],
+      "properties": {
+        "code": {
+          "type": "integer",
+          "description": "Numeric discriminant used in the #[contracterror] enum. Must be within designated ranges: 1-99 (common), 100-199 (governance), 200-299 (escrow), 300-399 (identity), 400-499 (program_escrow), 1000+ (system).",
+          "minimum": 1,
+          "maximum": 9999
+        },
+        "name": {
+          "type": "string",
+          "description": "Rust variant name (e.g. 'AlreadyInitialized'). Must match the enum variant name exactly.",
+          "minLength": 1,
+          "pattern": "^[A-Z][a-zA-Z0-9]*$"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable explanation of when this error is raised. Should be clear and actionable.",
+          "minLength": 10
+        },
+        "range": {
+          "type": "string",
+          "description": "Logical range this code belongs to. Must be one of: common, governance, escrow, identity, program_escrow, system.",
+          "enum": ["common", "governance", "escrow", "identity", "program_escrow", "system"]
+        },
+        "added_in": {
+          "type": "string",
+          "description": "Contract version when this code was introduced.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "deprecated_in": {
+          "type": "string",
+          "description": "Contract version when this code was deprecated (if applicable).",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "security_critical": {
+          "type": "boolean",
+          "description": "Whether this error indicates a security-critical condition that should be monitored.",
+          "default": false
+        }
+      }
+    },
+    "error_code_range": {
+      "type": "object",
+      "description": "A reserved numeric range for error codes in this contract. Must follow established range conventions.",
+      "required": ["name", "min", "max"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Logical name of the range. Must be one of: common, governance, escrow, identity, program_escrow, system.",
+          "enum": ["common", "governance", "escrow", "identity", "program_escrow", "system"]
+        },
+        "min": {
+          "type": "integer",
+          "description": "Inclusive lower bound. Must align with standard range conventions.",
+          "minimum": 1
+        },
+        "max": {
+          "type": "integer",
+          "description": "Inclusive upper bound. Must be greater than or equal to min."
+        },
+        "description": {
+          "type": "string",
+          "description": "What kinds of errors live in this range.",
+          "minLength": 10
+        },
+        "reserved": {
+          "type": "boolean",
+          "description": "Whether this range is reserved for future use (default: false).",
+          "default": false
         }
       }
     }

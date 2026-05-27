@@ -402,7 +402,9 @@ fn test_partial_release_then_refund_succeeds() {
         .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     // Partial release
-    setup.escrow.partial_release(&bounty_id, &recipient, &60_000);
+    setup
+        .escrow
+        .partial_release(&bounty_id, &recipient, &60_000);
 
     let escrow = setup.escrow.get_escrow_info(&bounty_id);
     assert_eq!(escrow.remaining_amount, 40_000);
@@ -450,7 +452,9 @@ fn test_interleaved_partial_refunds_and_releases() {
     assert_eq!(escrow.remaining_amount, 70_000);
 
     // Partial release (40%)
-    setup.escrow.partial_release(&bounty_id, &recipient, &40_000);
+    setup
+        .escrow
+        .partial_release(&bounty_id, &recipient, &40_000);
 
     let escrow = setup.escrow.get_escrow_info(&bounty_id);
     assert_eq!(escrow.remaining_amount, 30_000);
@@ -539,12 +543,10 @@ fn test_release_prevents_admin_approved_refund() {
     assert_eq!(escrow.status, EscrowStatus::Released);
 
     // Attempt to approve refund → must fail
-    let approve_attempt = setup.escrow.try_approve_refund(
-        &bounty_id,
-        &amount,
-        &setup.depositor,
-        &RefundMode::Full,
-    );
+    let approve_attempt =
+        setup
+            .escrow
+            .try_approve_refund(&bounty_id, &amount, &setup.depositor, &RefundMode::Full);
     assert!(approve_attempt.is_err());
 
     // Attempt refund → must fail
@@ -685,7 +687,9 @@ fn test_complex_interleaved_operations() {
     assert_eq!(escrow.remaining_amount, 80_000);
 
     // Step 2: Partial release (30,000)
-    setup.escrow.partial_release(&bounty_id, &recipient, &30_000);
+    setup
+        .escrow
+        .partial_release(&bounty_id, &recipient, &30_000);
 
     let escrow = setup.escrow.get_escrow_info(&bounty_id);
     assert_eq!(escrow.remaining_amount, 50_000);
@@ -700,7 +704,9 @@ fn test_complex_interleaved_operations() {
     assert_eq!(escrow.remaining_amount, 25_000);
 
     // Step 4: Attempt release (30,000) → must fail (insufficient funds)
-    let release_attempt = setup.escrow.try_partial_release(&bounty_id, &recipient, &30_000);
+    let release_attempt = setup
+        .escrow
+        .try_partial_release(&bounty_id, &recipient, &30_000);
     assert!(release_attempt.is_err());
 
     // Step 5: Refund remaining (25,000)
@@ -743,7 +749,9 @@ fn test_partial_release_then_admin_approved_refund() {
         .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     // Partial release
-    setup.escrow.partial_release(&bounty_id, &recipient, &60_000);
+    setup
+        .escrow
+        .partial_release(&bounty_id, &recipient, &60_000);
 
     let escrow = setup.escrow.get_escrow_info(&bounty_id);
     assert_eq!(escrow.remaining_amount, 40_000);

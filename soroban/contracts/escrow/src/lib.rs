@@ -640,43 +640,36 @@ impl EscrowContract {
 
         depositor.require_auth();
         if !env.storage().instance().has(&DataKey::Admin) {
-            reentrancy_guard::release(&env);
             return Err(Error::NotInitialized);
         }
         if amount <= 0 {
             return Err(Error::InsufficientFunds);
         }
         if env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
-            reentrancy_guard::release(&env);
             return Err(Error::BountyExists);
         }
 
         // Enforcement rules from JURISDICTION_SEGMENTATION.md
         if let OptionalJurisdiction::Some(config) = &jurisdiction {
             if config.lock_paused {
-                reentrancy_guard::release(&env);
                 return Err(Error::Unauthorized);
             }
             if let Some(max_amount) = config.max_lock_amount {
                 if amount > max_amount {
-                    reentrancy_guard::release(&env);
                     return Err(Error::TransactionExceedsLimit);
                 }
             }
             if config.requires_kyc && !Self::is_claim_valid(env.clone(), depositor.clone()) {
-                reentrancy_guard::release(&env);
                 return Err(Error::Unauthorized);
             }
             if config.enforce_identity_limits {
                 if let Err(e) = Self::enforce_transaction_limit(&env, &depositor, amount) {
-                    reentrancy_guard::release(&env);
                     return Err(e);
                 }
             }
         } else {
             // Generic behavior: always enforce identity limits
             if let Err(e) = Self::enforce_transaction_limit(&env, &depositor, amount) {
-                reentrancy_guard::release(&env);
                 return Err(e);
             }
         }
@@ -791,7 +784,6 @@ impl EscrowContract {
         Self::require_escrow_actor(&env, &escrow, &caller, DELEGATE_PERMISSION_RELEASE)?;
         if let OptionalJurisdiction::Some(config) = &escrow.jurisdiction {
             if config.release_paused {
-                reentrancy_guard::release(&env);
                 return Err(Error::Unauthorized);
             }
         }
@@ -858,7 +850,6 @@ impl EscrowContract {
         Self::require_escrow_actor(&env, &escrow, &caller, DELEGATE_PERMISSION_REFUND)?;
         if let OptionalJurisdiction::Some(config) = &escrow.jurisdiction {
             if config.refund_paused {
-                reentrancy_guard::release(&env);
                 return Err(Error::Unauthorized);
             }
         }

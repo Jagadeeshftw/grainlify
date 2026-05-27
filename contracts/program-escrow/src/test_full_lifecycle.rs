@@ -1,10 +1,7 @@
 #![cfg(test)]
 
 use super::*;
-use soroban_sdk::{
-    testutils::Address as _,
-    token, vec, Address, Env, String,
-};
+use soroban_sdk::{testutils::Address as _, token, vec, Address, Env, String};
 
 /// Helper: Register the contract and return a client plus the contract address.
 fn make_client(env: &Env) -> (ProgramEscrowContractClient<'static>, Address) {
@@ -174,6 +171,7 @@ fn test_batch_and_split_payout_integration() {
 
     // 1. Initial funding: 10,000 tokens
     client.init_program(&prog_id, &admin, &token_id, &creator, &None, &None);
+    client.publish_program(&prog_id);
     token_sac.mint(&client.address, &10_000);
     client.lock_program_funds(&10_000);
 

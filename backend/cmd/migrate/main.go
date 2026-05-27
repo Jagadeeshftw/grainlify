@@ -23,7 +23,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	d, err := db.Connect(ctx, cfg.DBURL)
+	d, err := db.Connect(ctx, cfg.DBURL, cfg.SlowQueryThresholdMS)
 	if err != nil {
 		slog.Error("db connect failed", "error", err)
 		os.Exit(1)

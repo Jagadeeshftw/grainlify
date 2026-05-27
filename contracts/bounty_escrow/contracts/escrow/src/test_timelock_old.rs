@@ -56,7 +56,7 @@ mod test_timelock {
         client.configure_timelock(&7200, &true);
 
         // Try direct admin call - should be blocked
-        client.set_maintenance_mode(&true);
+        client.set_maintenance_mode(&true, &None);
     }
 
     #[test]
@@ -76,7 +76,7 @@ mod test_timelock {
         client.configure_timelock(&7200, &false);
 
         // Direct admin call should work
-        client.set_maintenance_mode(&true);
+        client.set_maintenance_mode(&true, &None);
 
         // Verify maintenance mode is set
         assert!(client.is_maintenance_mode());
@@ -272,7 +272,7 @@ mod test_timelock {
     client.configure_timelock(&7200, &true);
 
     // Try direct admin call - should be blocked
-    client.set_maintenance_mode(&true);
+    client.set_maintenance_mode(&true, &None);
 }
 
 #[test]
@@ -292,7 +292,7 @@ fn test_direct_admin_call_works_when_disabled() {
     client.configure_timelock(&7200, &false);
 
     // Direct admin call should work
-    client.set_maintenance_mode(&true);
+    client.set_maintenance_mode(&true, &None);
 
     // Verify maintenance mode is set
     assert!(client.is_maintenance_mode());

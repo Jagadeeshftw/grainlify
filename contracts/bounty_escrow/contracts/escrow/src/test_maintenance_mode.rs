@@ -38,7 +38,7 @@ fn test_maintenance_mode_toggles_and_blocks_lock() {
         li.timestamp = 555;
     });
 
-    contract.set_maintenance_mode(&true);
+    contract.set_maintenance_mode(&true, &None);
     assert_eq!(contract.is_maintenance_mode(), true);
 
     let events = env.events().all();
@@ -52,7 +52,7 @@ fn test_maintenance_mode_toggles_and_blocks_lock() {
     assert_eq!(data.admin, admin);
     assert_eq!(data.timestamp, 555);
 
-    contract.set_maintenance_mode(&false);
+    contract.set_maintenance_mode(&false, &None);
     assert_eq!(contract.is_maintenance_mode(), false);
 }
 
@@ -67,7 +67,7 @@ fn test_lock_fails_in_maintenance_mode() {
     let depositor = Address::generate(&env);
     token_admin_client.mint(&depositor, &1000i128);
 
-    contract.set_maintenance_mode(&true);
+    contract.set_maintenance_mode(&true, &None);
 
     contract.lock_funds(&depositor, &1u64, &1000i128, &999999999u64);
 }
@@ -86,7 +86,7 @@ fn test_release_and_refund_allowed_in_maintenance_mode() {
     contract.lock_funds(&depositor, &1u64, &1000i128, &999999999u64);
 
     // Enable maintenance mode
-    contract.set_maintenance_mode(&true);
+    contract.set_maintenance_mode(&true, &None);
 
     // Release should succeed (not panicking)
     let contributor = Address::generate(&env);

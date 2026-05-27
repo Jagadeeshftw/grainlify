@@ -17,9 +17,10 @@ use soroban_sdk::{
 const TEST_DOMAIN: &str = "test";
 
 /// Generate a deterministic test seed
-fn test_seed(env: &Env, seed_value: u8) -> BytesN<32> {
+fn test_seed(env: &Env, seed_value: u32) -> BytesN<32> {
     let mut seed = [0u8; 32];
-    seed[0] = seed_value;
+    let le = seed_value.to_le_bytes();
+    seed[0..4].copy_from_slice(&le);
     BytesN::from_array(env, &seed)
 }
 
@@ -229,7 +230,7 @@ fn test_uniform_distribution_large_candidate_pool() {
     let num_trials = 1000;
 
     for i in 0..num_trials {
-        let seed = test_seed(&env, i as u8);
+        let seed = test_seed(&env, i);
         let result = derive_selection(&env, &domain, &context, &seed, &candidates);
 
         if let Some(selection) = result {
@@ -385,8 +386,8 @@ fn test_seed_grinding_simulation() {
     let candidates = generate_candidates(&env, 5);
 
     let target_candidate = candidates.get(0).unwrap(); // Attacker wants this to win
-    let mut attempts = 0;
-    let max_attempts = 1000;
+    let mut attempts = 0u32;
+    let max_attempts: u32 = 1000;
 
     // Simulate seed grinding - try many seeds to get desired outcome
     for seed_value in 0..max_attempts {

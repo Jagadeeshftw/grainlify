@@ -21,6 +21,8 @@ use soroban_sdk::{
     Vec,
 };
 
+mod reentrancy_guard;
+
 const MAX_BATCH_SIZE: u32 = 20;
 const MAX_PAGE_SIZE: u32 = 20;
 const MAX_LABELS: u32 = 10;
@@ -290,6 +292,7 @@ pub enum DataKey {
     ProgramIndex,
     DeprecationState,
     LabelConfig,
+    ReentrancyGuard,
     // Ownership transfer
     PendingAdmin,
     ProgramPendingAdmin(u64),
@@ -738,8 +741,15 @@ impl ProgramEscrowContract {
         kyc_attested: Option<bool>,
         labels: Vec<String>,
     ) -> Result<(), Error> {
-        Self::ensure_initialized(&env)?;
-        Self::ensure_not_deprecated(&env)?;
+        // GUARD: acquire reentrancy lock
+        reentrancy_guard::acquire(&env);
+
+        if let Err(e) = Self::ensure_initialized(&env) {
+            return Err(e);
+        }
+        if let Err(e) = Self::ensure_not_deprecated(&env) {
+            return Err(e);
+        }
         Self::require_contract_admin(&env);
 
         if env
@@ -762,11 +772,9 @@ impl ProgramEscrowContract {
         Self::enforce_jurisdiction_rules(&jurisdiction, total_funding, kyc_attested)?;
         let labels = Self::normalize_labels(&env, labels)?;
 
-        let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
-        let token_client = token::Client::new(&env, &token_addr);
         admin.require_auth();
-        token_client.transfer(&admin, &env.current_contract_address(), &total_funding);
 
+        // EFFECTS: write program state before external call
         let program = Program {
             admin: admin.clone(),
             payout_key: admin.clone(), // Default payout_key to admin for backward compatibility
@@ -778,6 +786,7 @@ impl ProgramEscrowContract {
         };
         Self::store_program(&env, program_id, &program);
         Self::append_program_id(&env, program_id);
+
         Self::emit_program_registered(
             &env,
             program_id,
@@ -791,11 +800,19 @@ impl ProgramEscrowContract {
             ProgramLabelsUpdatedEvent {
                 version: 1,
                 program_id,
-                actor: admin,
+                actor: admin.clone(),
                 labels,
                 timestamp: env.ledger().timestamp(),
             },
         );
+
+        // INTERACTION: external token transfer is last
+        let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
+        let token_client = token::Client::new(&env, &token_addr);
+        token_client.transfer(&admin, &env.current_contract_address(), &total_funding);
+
+        // GUARD: release reentrancy lock
+        reentrancy_guard::release(&env);
         Ok(())
     }
 

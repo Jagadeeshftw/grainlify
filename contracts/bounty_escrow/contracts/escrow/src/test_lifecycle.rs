@@ -207,7 +207,7 @@ fn test_full_bounty_lifecycle_with_refund() {
     escrow_client.lock_funds(&depositor, &bounty_id, &initial_amount, &deadline);
 
     // Verify Locked state
-    let info = escrow_client.get_escrow_info(&bounty_id);
+    let info = escrow_client.get_escrow(&bounty_id);
     assert_eq!(info.status, EscrowStatus::Locked);
     assert_eq!(info.amount, initial_amount);
     assert_eq!(info.remaining_amount, initial_amount);
@@ -287,7 +287,7 @@ fn test_full_bounty_lifecycle_with_refund() {
     escrow_client.refund(&bounty_id);
 
     // Verify partially refunded state
-    let info = escrow_client.get_escrow_info(&bounty_id);
+    let info = escrow_client.get_escrow(&bounty_id);
     assert_eq!(info.status, EscrowStatus::PartiallyRefunded);
     assert_eq!(info.remaining_amount, initial_amount - refund_amount);
     assert_eq!(token_client.balance(&depositor), 5000 + refund_amount);
@@ -350,7 +350,7 @@ fn test_full_bounty_lifecycle_with_refund() {
     escrow_client.refund(&bounty_id);
 
     // Verify final state
-    let final_info = escrow_client.get_escrow_info(&bounty_id);
+    let final_info = escrow_client.get_escrow(&bounty_id);
     assert_eq!(final_info.status, EscrowStatus::Refunded);
     assert_eq!(final_info.remaining_amount, 0);
     assert_eq!(token_client.balance(&depositor), 10000);
@@ -388,14 +388,14 @@ fn test_lock_to_release_sac_transfers() {
 
     assert_eq!(token_client.balance(&depositor), 0);
     assert_eq!(token_client.balance(&escrow_client.address), amount);
-    let info = escrow_client.get_escrow_info(&bounty_id);
+    let info = escrow_client.get_escrow(&bounty_id);
     assert_eq!(info.status, EscrowStatus::Locked);
 
     escrow_client.release_funds(&bounty_id, &contributor);
 
     assert_eq!(token_client.balance(&contributor), amount);
     assert_eq!(token_client.balance(&escrow_client.address), 0);
-    let info = escrow_client.get_escrow_info(&bounty_id);
+    let info = escrow_client.get_escrow(&bounty_id);
     assert_eq!(info.status, EscrowStatus::Released);
     assert_eq!(info.remaining_amount, 0);
 }
@@ -434,7 +434,7 @@ fn test_refund_after_deadline_no_approval_needed() {
     });
     // Should succeed without any admin approval
     ctx.client.refund(&1u64);
-    let info = ctx.client.get_escrow_info(&1u64);
+    let info = ctx.client.get_escrow(&1u64);
     assert_eq!(info.status, EscrowStatus::Refunded);
     assert_eq!(info.remaining_amount, 0);
 }
@@ -548,7 +548,7 @@ fn test_init_with_network_replay_rejected() {
 fn test_lock_funds_after_init() {
     let ctx = setup_init();
     lock(&ctx, 1, DEFAULT_AMOUNT);
-    let info = ctx.client.get_escrow_info(&1u64);
+    let info = ctx.client.get_escrow(&1u64);
     assert_eq!(info.status, EscrowStatus::Locked);
     assert_eq!(info.amount, DEFAULT_AMOUNT);
 }
@@ -637,7 +637,7 @@ fn test_release_funds_happy_path() {
     let ctx = setup_init();
     lock(&ctx, 1, DEFAULT_AMOUNT);
     ctx.client.release_funds(&1u64, &ctx.contributor);
-    let info = ctx.client.get_escrow_info(&1u64);
+    let info = ctx.client.get_escrow(&1u64);
     assert_eq!(info.status, EscrowStatus::Released);
     assert_eq!(info.remaining_amount, 0);
 }
@@ -699,7 +699,7 @@ fn test_refund_after_deadline_happy_path() {
         ..Default::default()
     });
     ctx.client.refund(&1u64);
-    let info = ctx.client.get_escrow_info(&1u64);
+    let info = ctx.client.get_escrow(&1u64);
     assert_eq!(info.status, EscrowStatus::Refunded);
     assert_eq!(info.remaining_amount, 0);
 }
@@ -769,7 +769,7 @@ fn test_early_refund_with_admin_approval() {
         .approve_refund(&1u64, &DEFAULT_AMOUNT, &ctx.depositor, &RefundMode::Full);
     ctx.client.refund(&1u64);
     assert_eq!(
-        ctx.client.get_escrow_info(&1u64).status,
+        ctx.client.get_escrow(&1u64).status,
         EscrowStatus::Refunded
     );
 }
@@ -782,7 +782,7 @@ fn test_partial_refund_flow() {
     ctx.client
         .approve_refund(&1u64, &partial, &ctx.depositor, &RefundMode::Partial);
     ctx.client.refund(&1u64);
-    let info = ctx.client.get_escrow_info(&1u64);
+    let info = ctx.client.get_escrow(&1u64);
     assert_eq!(info.status, EscrowStatus::PartiallyRefunded);
     assert_eq!(info.remaining_amount, DEFAULT_AMOUNT - partial);
     assert_eq!(
@@ -830,7 +830,7 @@ fn test_deprecated_blocks_lock_funds() {
 #[test]
 fn test_maintenance_mode_blocks_lock() {
     let ctx = setup_init();
-    ctx.client.set_maintenance_mode(&true);
+    ctx.client.set_maintenance_mode(&true, &None);
     let r = ctx
         .client
         .try_lock_funds(&ctx.depositor, &1u64, &DEFAULT_AMOUNT, &FUTURE_DL);
@@ -882,7 +882,7 @@ fn test_deprecation_emits_event() {
 #[test]
 fn test_maintenance_mode_emits_event() {
     let ctx = setup_init();
-    ctx.client.set_maintenance_mode(&true);
+    ctx.client.set_maintenance_mode(&true, &None);
     let all = ctx.env.events().all();
     let data = find_data(&ctx.env, &all, symbol_short!("maint")).expect("maint event missing");
     let p: events::MaintenanceModeChanged = data.into_val(&ctx.env);
@@ -933,9 +933,9 @@ fn test_all_lifecycle_events_carry_v2_version() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[test]
-fn test_get_escrow_info_not_found() {
+fn test_get_escrow_not_found() {
     let ctx = setup_init();
-    let r = ctx.client.try_get_escrow_info(&9999u64);
+    let r = ctx.client.try_get_escrow(&9999u64);
     assert!(r.is_err());
     assert_eq!(r.unwrap_err().unwrap(), Error::BountyNotFound);
 }
@@ -981,7 +981,7 @@ fn test_admin_early_refund_to_custom_recipient() {
 
     escrow_client.refund(&bounty_id);
 
-    let info = escrow_client.get_escrow_info(&bounty_id);
+    let info = escrow_client.get_escrow(&bounty_id);
     assert_eq!(info.status, EscrowStatus::Refunded);
     assert_eq!(info.remaining_amount, 0);
     // Funds went to the custom recipient, not the depositor
@@ -1068,7 +1068,7 @@ fn test_refund_blocked_when_paused() {
     escrow_client.set_paused(&None, &None, &Some(false), &None);
     escrow_client.refund(&bounty_id);
 
-    let info = escrow_client.get_escrow_info(&bounty_id);
+    let info = escrow_client.get_escrow(&bounty_id);
     assert_eq!(info.status, EscrowStatus::Refunded);
 }
 
@@ -1095,7 +1095,7 @@ fn test_sequential_partial_refunds_drain_escrow() {
     escrow_client.approve_refund(&bounty_id, &1000, &depositor, &RefundMode::Partial);
     escrow_client.refund(&bounty_id);
 
-    let info = escrow_client.get_escrow_info(&bounty_id);
+    let info = escrow_client.get_escrow(&bounty_id);
     assert_eq!(info.status, EscrowStatus::PartiallyRefunded);
     assert_eq!(info.remaining_amount, 2000);
     assert_eq!(token_client.balance(&depositor), 1000);
@@ -1104,7 +1104,7 @@ fn test_sequential_partial_refunds_drain_escrow() {
     escrow_client.approve_refund(&bounty_id, &1000, &depositor, &RefundMode::Partial);
     escrow_client.refund(&bounty_id);
 
-    let info = escrow_client.get_escrow_info(&bounty_id);
+    let info = escrow_client.get_escrow(&bounty_id);
     assert_eq!(info.status, EscrowStatus::PartiallyRefunded);
     assert_eq!(info.remaining_amount, 1000);
     assert_eq!(token_client.balance(&depositor), 2000);
@@ -1113,7 +1113,7 @@ fn test_sequential_partial_refunds_drain_escrow() {
     escrow_client.approve_refund(&bounty_id, &1000, &depositor, &RefundMode::Full);
     escrow_client.refund(&bounty_id);
 
-    let info = escrow_client.get_escrow_info(&bounty_id);
+    let info = escrow_client.get_escrow(&bounty_id);
     assert_eq!(info.status, EscrowStatus::Refunded);
     assert_eq!(info.remaining_amount, 0);
     assert_eq!(token_client.balance(&depositor), 3000);
@@ -1153,7 +1153,7 @@ fn test_dry_run_refund_reflects_eligibility() {
     assert_eq!(result.resulting_status, EscrowStatus::Refunded);
 
     // Actual state is unchanged (dry run is read-only)
-    let info = escrow_client.get_escrow_info(&bounty_id);
+    let info = escrow_client.get_escrow(&bounty_id);
     assert_eq!(info.status, EscrowStatus::Locked);
 }
 
