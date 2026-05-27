@@ -615,6 +615,34 @@ pub enum ContractError {
     /// This error occurs when a payout is submitted with an idempotency key
     /// whose `expires_at` ledger sequence has already passed.
     ExpiredIdempotencyKey = 1101,
+
+    // =========================================================================
+    // Multisig Admin Op Errors (1200-1299)
+    // =========================================================================
+
+    /// A pending admin operation already exists.
+    PendingOpExists = 1200,
+
+    /// No pending admin operation found.
+    NoPendingOp = 1201,
+
+    /// The pending operation has expired.
+    PendingOpExpired = 1202,
+
+    /// Signer has already approved the pending operation.
+    AlreadyApproved = 1203,
+
+    /// Caller is not a configured multisig signer.
+    NotASigner = 1204,
+
+    /// Payload hash does not match the pending operation.
+    PayloadMismatch = 1205,
+
+    /// Insufficient approvals to execute the operation.
+    InsufficientApprovals = 1206,
+
+    /// Multisig config is invalid (e.g. required_approvals > signers.len()).
+    InvalidMultisigConfig = 1207,
 }
 
 impl ContractError {
@@ -738,6 +766,16 @@ impl ContractError {
             // Idempotency Key Errors
             ContractError::DuplicateIdempotencyKey => "Idempotency key already used",
             ContractError::ExpiredIdempotencyKey => "Idempotency key has expired",
+
+            // Multisig Admin Op Errors
+            ContractError::PendingOpExists => "A pending admin operation already exists",
+            ContractError::NoPendingOp => "No pending admin operation found",
+            ContractError::PendingOpExpired => "Pending admin operation has expired",
+            ContractError::AlreadyApproved => "Signer has already approved",
+            ContractError::NotASigner => "Caller is not a configured signer",
+            ContractError::PayloadMismatch => "Payload hash does not match pending operation",
+            ContractError::InsufficientApprovals => "Insufficient approvals to execute",
+            ContractError::InvalidMultisigConfig => "Invalid multisig configuration",
         }
     }
     

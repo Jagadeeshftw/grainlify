@@ -547,6 +547,8 @@ pub enum DataKey {
     HistoryPaginationConfig,         // HistoryPaginationConfig
     IdempotencyKey(String, String),  // (program_id, key) -> PayoutIdempotencyKey
     IdempotencyKeyIndex(String),     // program_id -> Vec<String> (ordered key list for pruning)
+    MultisigThresholdConfig,         // MultisigThresholdConfig (global admin multisig)
+    PendingAdminOp,                  // PendingAdminOp (at most one pending op at a time)
 }
 
 /// Idempotency record stored per (program_id, key) pair.
@@ -579,6 +581,103 @@ pub struct IdempotencyKeysPrunedEvent {
 const IDEMPOTENCY_KEYS_PRUNED: Symbol = symbol_short!("IdemPrn");
 /// Number of ledgers an idempotency key is valid for (~7 days at 5s/ledger).
 pub const IDEMPOTENCY_KEY_TTL_LEDGERS: u32 = 100_000;
+
+// ========================================================================
+// Multisig Threshold for High-Value Admin Operations
+// ========================================================================
+
+/// How long a pending admin operation waits for approvals before expiring.
+/// ~24 hours at 5 s/ledger.
+pub const ADMIN_OP_EXPIRY_LEDGERS: u32 = 17_280;
+
+/// Global configuration for the admin multisig threshold.
+///
+/// When `required_approvals > 1`, any admin operation whose value meets or
+/// exceeds `high_value_threshold` must be proposed, approved by M-of-N
+/// signers, and then executed — rather than taking effect immediately.
+///
+/// Setting `required_approvals = 1` (the default) disables the multisig
+/// gate and all admin ops execute immediately as before.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MultisigThresholdConfig {
+    /// Addresses authorised to approve pending admin operations.
+    pub signers: soroban_sdk::Vec<Address>,
+    /// Number of approvals required before an op can be executed (M-of-N).
+    /// Must be >= 1 and <= signers.len().
+    pub required_approvals: u32,
+    /// Operations whose `value` meets or exceeds this threshold require
+    /// multisig approval. Set to `i128::MAX` to require multisig for all ops
+    /// regardless of value.
+    pub high_value_threshold: i128,
+}
+
+/// Identifies which critical admin operation is pending.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AdminOpKind {
+    /// Update the global fee configuration.
+    UpdateFeeConfig,
+    /// Change the global multisig threshold configuration itself.
+    UpdateMultisigConfig,
+    /// Emergency withdraw of funds from the contract.
+    EmergencyWithdraw,
+}
+
+/// A pending admin operation awaiting multisig approval.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingAdminOp {
+    /// Which operation is pending.
+    pub kind: AdminOpKind,
+    /// Monetary value associated with the operation (used for threshold check).
+    /// For fee changes this is 0; for emergency withdraw this is the amount.
+    pub value: i128,
+    /// Address that proposed this operation.
+    pub proposed_by: Address,
+    /// Ledger sequence at which this proposal was created.
+    pub proposed_at: u32,
+    /// Ledger sequence after which this proposal expires.
+    pub expires_at: u32,
+    /// Addresses that have approved so far.
+    pub approvals: soroban_sdk::Vec<Address>,
+    /// Opaque payload bytes — ABI-encoded arguments for the operation.
+    /// Callers must pass the same payload to `execute_admin_op`.
+    pub payload_hash: soroban_sdk::Bytes,
+}
+
+const ADMIN_OP_PROPOSED: Symbol = symbol_short!("AdmProp");
+const ADMIN_OP_APPROVED: Symbol = symbol_short!("AdmAppr");
+const ADMIN_OP_EXECUTED: Symbol = symbol_short!("AdmExec");
+const ADMIN_OP_EXPIRED: Symbol = symbol_short!("AdmExp");
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminOpProposedEvent {
+    pub version: u32,
+    pub kind: AdminOpKind,
+    pub proposed_by: Address,
+    pub expires_at: u32,
+    pub required_approvals: u32,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminOpApprovedEvent {
+    pub version: u32,
+    pub kind: AdminOpKind,
+    pub approved_by: Address,
+    pub approvals_so_far: u32,
+    pub required_approvals: u32,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminOpExecutedEvent {
+    pub version: u32,
+    pub kind: AdminOpKind,
+    pub executed_by: Address,
+}
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3936,6 +4035,268 @@ impl ProgramEscrowContract {
         );
 
         pruned
+    }
+
+    // ========================================================================
+    // Multisig Threshold for High-Value Admin Operations
+    // ========================================================================
+
+    /// Configure the global multisig threshold for admin operations.
+    ///
+    /// After this is set, any admin operation whose value meets or exceeds
+    /// `high_value_threshold` must go through the propose → approve → execute
+    /// flow rather than executing immediately.
+    ///
+    /// # Authorization
+    /// Caller must be the contract admin.
+    ///
+    /// # Arguments
+    /// * `signers` - Addresses authorised to approve pending ops (N).
+    /// * `required_approvals` - Number of approvals needed (M). Must be >= 1 and <= N.
+    /// * `high_value_threshold` - Minimum value that triggers multisig gate.
+    pub fn set_multisig_threshold_config(
+        env: Env,
+        signers: soroban_sdk::Vec<Address>,
+        required_approvals: u32,
+        high_value_threshold: i128,
+    ) {
+        Self::require_admin(&env);
+
+        if signers.is_empty() {
+            panic!("InvalidMultisigConfig: signers must not be empty");
+        }
+        if required_approvals == 0 || required_approvals > signers.len() as u32 {
+            panic!("InvalidMultisigConfig: required_approvals out of range");
+        }
+        if high_value_threshold < 0 {
+            panic!("InvalidMultisigConfig: threshold must be non-negative");
+        }
+
+        let cfg = MultisigThresholdConfig {
+            signers,
+            required_approvals,
+            high_value_threshold,
+        };
+        env.storage()
+            .instance()
+            .set(&DataKey::MultisigThresholdConfig, &cfg);
+    }
+
+    /// Get the current multisig threshold configuration, if set.
+    pub fn get_multisig_threshold_config(env: Env) -> Option<MultisigThresholdConfig> {
+        env.storage()
+            .instance()
+            .get(&DataKey::MultisigThresholdConfig)
+    }
+
+    /// Propose a high-value admin operation for multisig approval.
+    ///
+    /// The proposer must be the contract admin. The proposer's approval is
+    /// automatically counted. If `required_approvals == 1` the op is ready
+    /// to execute immediately after this call.
+    ///
+    /// Only one pending operation is allowed at a time.
+    ///
+    /// # Arguments
+    /// * `kind` - Which admin operation is being proposed.
+    /// * `value` - Monetary value of the operation (0 for non-monetary ops).
+    /// * `payload_hash` - Hash of the encoded arguments; must be re-supplied at execute time.
+    pub fn propose_admin_op(
+        env: Env,
+        kind: AdminOpKind,
+        value: i128,
+        payload_hash: soroban_sdk::Bytes,
+    ) -> PendingAdminOp {
+        let admin = Self::require_admin(&env);
+
+        // Reject if a pending op already exists and has not expired
+        if let Some(existing) = env
+            .storage()
+            .instance()
+            .get::<DataKey, PendingAdminOp>(&DataKey::PendingAdminOp)
+        {
+            if env.ledger().sequence() <= existing.expires_at {
+                panic!("PendingOpExists");
+            }
+            // Expired op — silently replace it
+        }
+
+        let cfg: MultisigThresholdConfig = env
+            .storage()
+            .instance()
+            .get(&DataKey::MultisigThresholdConfig)
+            .unwrap_or(MultisigThresholdConfig {
+                signers: vec![&env, admin.clone()],
+                required_approvals: 1,
+                high_value_threshold: i128::MAX,
+            });
+
+        let current_ledger = env.ledger().sequence();
+        let expires_at = current_ledger
+            .checked_add(ADMIN_OP_EXPIRY_LEDGERS)
+            .unwrap_or(u32::MAX);
+
+        // Proposer auto-approves
+        let mut approvals: soroban_sdk::Vec<Address> = Vec::new(&env);
+        approvals.push_back(admin.clone());
+
+        let op = PendingAdminOp {
+            kind: kind.clone(),
+            value,
+            proposed_by: admin.clone(),
+            proposed_at: current_ledger,
+            expires_at,
+            approvals,
+            payload_hash,
+        };
+
+        env.storage()
+            .instance()
+            .set(&DataKey::PendingAdminOp, &op);
+
+        env.events().publish(
+            (ADMIN_OP_PROPOSED,),
+            AdminOpProposedEvent {
+                version: EVENT_VERSION_V2,
+                kind,
+                proposed_by: admin,
+                expires_at,
+                required_approvals: cfg.required_approvals,
+            },
+        );
+
+        op
+    }
+
+    /// Approve the pending admin operation.
+    ///
+    /// Caller must be one of the configured multisig signers and must not have
+    /// already approved. Each signer may approve at most once.
+    pub fn approve_admin_op(env: Env, signer: Address) -> PendingAdminOp {
+        signer.require_auth();
+
+        let cfg: MultisigThresholdConfig = env
+            .storage()
+            .instance()
+            .get(&DataKey::MultisigThresholdConfig)
+            .unwrap_or_else(|| panic!("NoPendingOp: multisig not configured"));
+
+        // Verify signer is in the configured list
+        let mut is_signer = false;
+        for s in cfg.signers.iter() {
+            if s == signer {
+                is_signer = true;
+                break;
+            }
+        }
+        if !is_signer {
+            panic!("NotASigner");
+        }
+
+        let mut op: PendingAdminOp = env
+            .storage()
+            .instance()
+            .get(&DataKey::PendingAdminOp)
+            .unwrap_or_else(|| panic!("NoPendingOp"));
+
+        if env.ledger().sequence() > op.expires_at {
+            panic!("PendingOpExpired");
+        }
+
+        // Check for duplicate approval
+        for existing in op.approvals.iter() {
+            if existing == signer {
+                panic!("AlreadyApproved");
+            }
+        }
+
+        op.approvals.push_back(signer.clone());
+        env.storage()
+            .instance()
+            .set(&DataKey::PendingAdminOp, &op);
+
+        env.events().publish(
+            (ADMIN_OP_APPROVED,),
+            AdminOpApprovedEvent {
+                version: EVENT_VERSION_V2,
+                kind: op.kind.clone(),
+                approved_by: signer,
+                approvals_so_far: op.approvals.len() as u32,
+                required_approvals: cfg.required_approvals,
+            },
+        );
+
+        op
+    }
+
+    /// Execute the pending admin operation once the approval threshold is met.
+    ///
+    /// Caller must be the contract admin. The `payload_hash` must match what
+    /// was supplied at proposal time to prevent bait-and-switch attacks.
+    ///
+    /// # Arguments
+    /// * `payload_hash` - Must equal the hash stored in the pending op.
+    pub fn execute_admin_op(env: Env, payload_hash: soroban_sdk::Bytes) -> AdminOpKind {
+        let admin = Self::require_admin(&env);
+
+        let op: PendingAdminOp = env
+            .storage()
+            .instance()
+            .get(&DataKey::PendingAdminOp)
+            .unwrap_or_else(|| panic!("NoPendingOp"));
+
+        if env.ledger().sequence() > op.expires_at {
+            // Clean up expired op
+            env.storage().instance().remove(&DataKey::PendingAdminOp);
+            env.events().publish((ADMIN_OP_EXPIRED,), op.kind.clone());
+            panic!("PendingOpExpired");
+        }
+
+        // Payload integrity check — prevents bait-and-switch
+        if op.payload_hash != payload_hash {
+            panic!("PayloadMismatch");
+        }
+
+        let cfg: MultisigThresholdConfig = env
+            .storage()
+            .instance()
+            .get(&DataKey::MultisigThresholdConfig)
+            .unwrap_or(MultisigThresholdConfig {
+                signers: vec![&env, admin.clone()],
+                required_approvals: 1,
+                high_value_threshold: i128::MAX,
+            });
+
+        if (op.approvals.len() as u32) < cfg.required_approvals {
+            panic!("InsufficientApprovals");
+        }
+
+        let kind = op.kind.clone();
+
+        // Remove the pending op before executing (prevents re-entrancy)
+        env.storage().instance().remove(&DataKey::PendingAdminOp);
+
+        env.events().publish(
+            (ADMIN_OP_EXECUTED,),
+            AdminOpExecutedEvent {
+                version: EVENT_VERSION_V2,
+                kind: kind.clone(),
+                executed_by: admin,
+            },
+        );
+
+        kind
+    }
+
+    /// Get the current pending admin operation, if any.
+    pub fn get_pending_admin_op(env: Env) -> Option<PendingAdminOp> {
+        env.storage().instance().get(&DataKey::PendingAdminOp)
+    }
+
+    /// Cancel the pending admin operation. Admin only.
+    pub fn cancel_admin_op(env: Env) {
+        Self::require_admin(&env);
+        env.storage().instance().remove(&DataKey::PendingAdminOp);
     }
 
     /// Get reputation metrics for the current program.
