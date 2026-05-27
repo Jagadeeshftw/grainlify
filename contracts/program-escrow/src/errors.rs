@@ -599,6 +599,22 @@ pub enum ContractError {
     /// This error occurs when a batch item has exceeded
     /// the maximum number of retry attempts.
     MaxRetriesExceeded = 1012,
+
+    // =========================================================================
+    // Idempotency Key Errors (1100-1199)
+    // =========================================================================
+
+    /// Duplicate idempotency key.
+    ///
+    /// This error occurs when a payout is submitted with an idempotency key
+    /// that has already been used for a successful payout and has not yet expired.
+    DuplicateIdempotencyKey = 1100,
+
+    /// Expired idempotency key.
+    ///
+    /// This error occurs when a payout is submitted with an idempotency key
+    /// whose `expires_at` ledger sequence has already passed.
+    ExpiredIdempotencyKey = 1101,
 }
 
 impl ContractError {
@@ -718,6 +734,10 @@ impl ContractError {
             ContractError::BatchItemNotFound => "Batch item not found",
             ContractError::BatchItemAlreadyProcessed => "Batch item already processed",
             ContractError::MaxRetriesExceeded => "Maximum retries exceeded",
+
+            // Idempotency Key Errors
+            ContractError::DuplicateIdempotencyKey => "Idempotency key already used",
+            ContractError::ExpiredIdempotencyKey => "Idempotency key has expired",
         }
     }
     

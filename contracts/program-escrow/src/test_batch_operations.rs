@@ -6,7 +6,7 @@ use soroban_sdk::{testutils::Address as _, token, vec, Address, Env, String, Try
 
 use crate::{
     BatchError, LockItem, ProgramData, ProgramEscrowContract, ProgramEscrowContractClient,
-    ReleaseItem,
+    ReleaseItem, IDEMPOTENCY_KEY_TTL_LEDGERS,
 };
 
 pub struct Ctx<'a> {
@@ -185,4 +185,239 @@ fn test_batch_release_duplicate_fails() {
 
     let result = ctx.client.try_batch_release(&items);
     assert!(result.is_err());
+}
+
+// ============================================================
+// Idempotency Key Tests
+// ============================================================
+
+/// Helper: advance ledger sequence by `n` ledgers.
+fn advance_ledger(ctx: &Ctx, n: u32) {
+    ctx.env.ledger().with_mut(|li| {
+        li.sequence_number += n;
+    });
+}
+
+#[test]
+fn test_batch_payout_with_key_succeeds_first_time() {
+    let ctx = setup();
+    init_program(&ctx, "PROG1", 10_000);
+
+    let recipient = Address::generate(&ctx.env);
+    let key = String::from_str(&ctx.env, "payout-batch-001");
+
+    let result = ctx.client.try_batch_payout_with_key(
+        &ctx.admin,
+        &key,
+        &vec![&ctx.env, recipient.clone()],
+        &vec![&ctx.env, 1000i128],
+    );
+    assert!(result.is_ok());
+
+    let token_client = token::Client::new(&ctx.env, &ctx.token_id);
+    assert_eq!(token_client.balance(&recipient), 1000);
+}
+
+#[test]
+fn test_batch_payout_with_key_duplicate_rejected() {
+    let ctx = setup();
+    init_program(&ctx, "PROG1", 10_000);
+
+    let recipient = Address::generate(&ctx.env);
+    let key = String::from_str(&ctx.env, "payout-batch-dup");
+
+    // First call succeeds
+    ctx.client.batch_payout_with_key(
+        &ctx.admin,
+        &key,
+        &vec![&ctx.env, recipient.clone()],
+        &vec![&ctx.env, 500i128],
+    );
+
+    // Second call with same key must fail with DuplicateIdempotencyKey
+    let result = ctx.client.try_batch_payout_with_key(
+        &ctx.admin,
+        &key,
+        &vec![&ctx.env, recipient.clone()],
+        &vec![&ctx.env, 500i128],
+    );
+    assert!(result.is_err());
+    // Verify no extra tokens were transferred
+    let token_client = token::Client::new(&ctx.env, &ctx.token_id);
+    assert_eq!(token_client.balance(&recipient), 500);
+}
+
+#[test]
+fn test_batch_payout_with_key_expired_rejected_distinctly() {
+    let ctx = setup();
+    init_program(&ctx, "PROG1", 10_000);
+
+    let recipient = Address::generate(&ctx.env);
+    let key = String::from_str(&ctx.env, "payout-batch-exp");
+
+    // First call succeeds
+    ctx.client.batch_payout_with_key(
+        &ctx.admin,
+        &key,
+        &vec![&ctx.env, recipient.clone()],
+        &vec![&ctx.env, 500i128],
+    );
+
+    // Advance past TTL (100_001 ledgers)
+    advance_ledger(&ctx, 100_001);
+
+    // Second call with same key after expiry must also fail (expired, not duplicate)
+    let result = ctx.client.try_batch_payout_with_key(
+        &ctx.admin,
+        &key,
+        &vec![&ctx.env, recipient.clone()],
+        &vec![&ctx.env, 500i128],
+    );
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_different_keys_are_independent() {
+    let ctx = setup();
+    init_program(&ctx, "PROG1", 10_000);
+
+    let recipient = Address::generate(&ctx.env);
+    let key1 = String::from_str(&ctx.env, "key-001");
+    let key2 = String::from_str(&ctx.env, "key-002");
+
+    ctx.client.batch_payout_with_key(
+        &ctx.admin,
+        &key1,
+        &vec![&ctx.env, recipient.clone()],
+        &vec![&ctx.env, 500i128],
+    );
+
+    // key2 is independent — must succeed
+    let result = ctx.client.try_batch_payout_with_key(
+        &ctx.admin,
+        &key2,
+        &vec![&ctx.env, recipient.clone()],
+        &vec![&ctx.env, 500i128],
+    );
+    assert!(result.is_ok());
+
+    let token_client = token::Client::new(&ctx.env, &ctx.token_id);
+    assert_eq!(token_client.balance(&recipient), 1000);
+}
+
+#[test]
+fn test_prune_idempotency_keys_removes_expired() {
+    let ctx = setup();
+    init_program(&ctx, "PROG1", 10_000);
+
+    let recipient = Address::generate(&ctx.env);
+
+    // Register 3 keys
+    for i in 0u32..3 {
+        let key = String::from_str(&ctx.env, &soroban_sdk::format!(&ctx.env, "key-{}", i));
+        ctx.client.batch_payout_with_key(
+            &ctx.admin,
+            &key,
+            &vec![&ctx.env, recipient.clone()],
+            &vec![&ctx.env, 100i128],
+        );
+    }
+
+    // Advance past TTL
+    advance_ledger(&ctx, 100_001);
+
+    // Prune up to 10 keys
+    let pruned = ctx
+        .client
+        .prune_idempotency_keys(&String::from_str(&ctx.env, "PROG1"), &10);
+    assert_eq!(pruned, 3);
+}
+
+#[test]
+fn test_prune_respects_max_prune_limit() {
+    let ctx = setup();
+    init_program(&ctx, "PROG1", 10_000);
+
+    let recipient = Address::generate(&ctx.env);
+
+    // Register 5 keys
+    for i in 0u32..5 {
+        let key = String::from_str(&ctx.env, &soroban_sdk::format!(&ctx.env, "key-{}", i));
+        ctx.client.batch_payout_with_key(
+            &ctx.admin,
+            &key,
+            &vec![&ctx.env, recipient.clone()],
+            &vec![&ctx.env, 100i128],
+        );
+    }
+
+    advance_ledger(&ctx, 100_001);
+
+    // Only prune 2 at a time
+    let pruned = ctx
+        .client
+        .prune_idempotency_keys(&String::from_str(&ctx.env, "PROG1"), &2);
+    assert_eq!(pruned, 2);
+
+    // Prune the rest
+    let pruned2 = ctx
+        .client
+        .prune_idempotency_keys(&String::from_str(&ctx.env, "PROG1"), &10);
+    assert_eq!(pruned2, 3);
+}
+
+#[test]
+fn test_prune_does_not_remove_valid_keys() {
+    let ctx = setup();
+    init_program(&ctx, "PROG1", 10_000);
+
+    let recipient = Address::generate(&ctx.env);
+    let key = String::from_str(&ctx.env, "still-valid");
+
+    ctx.client.batch_payout_with_key(
+        &ctx.admin,
+        &key,
+        &vec![&ctx.env, recipient.clone()],
+        &vec![&ctx.env, 100i128],
+    );
+
+    // Do NOT advance ledger — key is still valid
+    let pruned = ctx
+        .client
+        .prune_idempotency_keys(&String::from_str(&ctx.env, "PROG1"), &10);
+    assert_eq!(pruned, 0);
+
+    // Key must still be rejected as duplicate
+    let result = ctx.client.try_batch_payout_with_key(
+        &ctx.admin,
+        &key,
+        &vec![&ctx.env, recipient.clone()],
+        &vec![&ctx.env, 100i128],
+    );
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_prune_empty_index_returns_zero() {
+    let ctx = setup();
+    init_program(&ctx, "PROG1", 1000);
+
+    let pruned = ctx
+        .client
+        .prune_idempotency_keys(&String::from_str(&ctx.env, "PROG1"), &10);
+    assert_eq!(pruned, 0);
+}
+
+#[test]
+fn test_batch_payout_without_key_unaffected() {
+    // Ensure existing batch_payout (no key) still works normally
+    let ctx = setup();
+    init_program(&ctx, "PROG1", 5000);
+
+    let recipient = Address::generate(&ctx.env);
+    let result = ctx.client.try_batch_payout(
+        &vec![&ctx.env, recipient.clone()],
+        &vec![&ctx.env, 1000i128],
+    );
+    assert!(result.is_ok());
 }

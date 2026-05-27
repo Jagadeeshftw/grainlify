@@ -545,7 +545,40 @@ pub enum DataKey {
     DependencyStatus(String),        // program_id -> DependencyStatus
     Dispute,                         // DisputeRecord (single active dispute per contract)
     HistoryPaginationConfig,         // HistoryPaginationConfig
+    IdempotencyKey(String, String),  // (program_id, key) -> PayoutIdempotencyKey
+    IdempotencyKeyIndex(String),     // program_id -> Vec<String> (ordered key list for pruning)
 }
+
+/// Idempotency record stored per (program_id, key) pair.
+///
+/// `expires_at` is the ledger sequence number after which this record is considered
+/// stale and eligible for pruning. A key that is expired is rejected distinctly
+/// from a key that is still valid (duplicate vs. expired).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PayoutIdempotencyKey {
+    /// The idempotency key string supplied by the caller.
+    pub key: String,
+    /// Ledger sequence at which this record was created.
+    pub created_at_ledger: u32,
+    /// Ledger sequence after which this record is considered expired.
+    /// Set to `created_at_ledger + IDEMPOTENCY_KEY_TTL_LEDGERS` on creation.
+    pub expires_at: u32,
+}
+
+/// Event emitted when idempotency keys are pruned.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IdempotencyKeysPrunedEvent {
+    pub version: u32,
+    pub program_id: String,
+    pub pruned_count: u32,
+    pub admin: Address,
+}
+
+const IDEMPOTENCY_KEYS_PRUNED: Symbol = symbol_short!("IdemPrn");
+/// Number of ledgers an idempotency key is valid for (~7 days at 5s/ledger).
+pub const IDEMPOTENCY_KEY_TTL_LEDGERS: u32 = 100_000;
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2370,7 +2403,7 @@ impl ProgramEscrowContract {
     /// - Protected by reentrancy guard.
     /// - Respects circuit breaker and threshold limits.
     pub fn batch_payout(env: Env, recipients: soroban_sdk::Vec<Address>, amounts: soroban_sdk::Vec<i128>) -> ProgramData {
-        Self::batch_payout_internal(env, None, recipients, amounts)
+        Self::batch_payout_internal(env, None, None, recipients, amounts)
     }
 
     pub fn batch_payout_by(
@@ -2379,12 +2412,35 @@ impl ProgramEscrowContract {
         recipients: soroban_sdk::Vec<Address>,
         amounts: soroban_sdk::Vec<i128>,
     ) -> ProgramData {
-        Self::batch_payout_internal(env, Some(caller), recipients, amounts)
+        Self::batch_payout_internal(env, Some(caller), None, recipients, amounts)
+    }
+
+    /// Execute batch payouts with an idempotency key to prevent duplicate submissions.
+    ///
+    /// # Arguments
+    /// * `caller` - Address of the authorized payout key.
+    /// * `idempotency_key` - Unique key for this payout batch. Rejected if already used
+    ///   (duplicate) or if the stored record has expired (expired).
+    /// * `recipients` - Vector of winner addresses.
+    /// * `amounts` - Vector of prize amounts.
+    ///
+    /// # Errors
+    /// - Panics with `DuplicateIdempotencyKey` if the key was already used and is still valid.
+    /// - Panics with `ExpiredIdempotencyKey` if the key was used before but has since expired.
+    pub fn batch_payout_with_key(
+        env: Env,
+        caller: Address,
+        idempotency_key: String,
+        recipients: soroban_sdk::Vec<Address>,
+        amounts: soroban_sdk::Vec<i128>,
+    ) -> ProgramData {
+        Self::batch_payout_internal(env, Some(caller), Some(idempotency_key), recipients, amounts)
     }
 
     fn batch_payout_internal(
         env: Env,
         caller: Option<Address>,
+        idempotency_key: Option<String>,
         recipients: soroban_sdk::Vec<Address>,
         amounts: soroban_sdk::Vec<i128>,
     ) -> ProgramData {
@@ -2424,6 +2480,11 @@ impl ProgramEscrowContract {
 
         // 4. Authorization
         Self::authorize_release_actor(&env, &program_data, caller.as_ref());
+
+        // 4b. Idempotency key check (after auth, before business logic)
+        if let Some(ref key) = idempotency_key {
+            Self::check_and_register_idempotency_key(&env, &program_data.program_id, key);
+        }
 
         // 5. Input validation
         if recipients.len() != amounts.len() {
@@ -3763,6 +3824,118 @@ impl ProgramEscrowContract {
     /// Returns `None` when no dispute has ever been opened.
     pub fn get_dispute(env: Env) -> Option<DisputeRecord> {
         env.storage().instance().get(&DataKey::Dispute)
+    }
+
+    // ========================================================================
+    // Idempotency Key Management
+    // ========================================================================
+
+    /// Check and register an idempotency key for a payout.
+    ///
+    /// - Returns `Ok(())` if the key is new and was successfully registered.
+    /// - Panics with `ExpiredIdempotencyKey` if the stored key is expired.
+    /// - Panics with `DuplicateIdempotencyKey` if the stored key is still valid.
+    fn check_and_register_idempotency_key(env: &Env, program_id: &String, key: &String) {
+        let current_ledger = env.ledger().sequence();
+        let storage_key = DataKey::IdempotencyKey(program_id.clone(), key.clone());
+
+        if let Some(record) = env
+            .storage()
+            .instance()
+            .get::<DataKey, PayoutIdempotencyKey>(&storage_key)
+        {
+            if current_ledger > record.expires_at {
+                // Key exists but is expired — reject distinctly from duplicate
+                panic!("ExpiredIdempotencyKey");
+            } else {
+                // Key exists and is still valid — duplicate
+                panic!("DuplicateIdempotencyKey");
+            }
+        }
+
+        // Key is new — register it
+        let record = PayoutIdempotencyKey {
+            key: key.clone(),
+            created_at_ledger: current_ledger,
+            expires_at: current_ledger
+                .checked_add(IDEMPOTENCY_KEY_TTL_LEDGERS)
+                .unwrap_or(u32::MAX),
+        };
+        env.storage().instance().set(&storage_key, &record);
+
+        // Append to the index for this program so prune can iterate
+        let index_key = DataKey::IdempotencyKeyIndex(program_id.clone());
+        let mut index: soroban_sdk::Vec<String> = env
+            .storage()
+            .instance()
+            .get(&index_key)
+            .unwrap_or(Vec::new(env));
+        index.push_back(key.clone());
+        env.storage().instance().set(&index_key, &index);
+    }
+
+    /// Prune expired idempotency keys for a program.
+    ///
+    /// Callable by the contract admin. Removes up to `max_prune` expired keys
+    /// from storage, freeing space for high-throughput programs.
+    ///
+    /// # Arguments
+    /// * `program_id` - The program whose keys should be pruned.
+    /// * `max_prune` - Maximum number of keys to remove in this call (caps work per tx).
+    ///
+    /// # Returns
+    /// Number of keys actually pruned.
+    pub fn prune_idempotency_keys(env: Env, program_id: String, max_prune: u32) -> u32 {
+    pub fn prune_idempotency_keys(env: Env, program_id: String, max_prune: u32) -> u32 {
+        // Only admin may prune
+        let admin = Self::require_admin(&env);
+
+        let current_ledger = env.ledger().sequence();
+        let index_key = DataKey::IdempotencyKeyIndex(program_id.clone());
+
+        let index: soroban_sdk::Vec<String> = env
+            .storage()
+            .instance()
+            .get(&index_key)
+            .unwrap_or(Vec::new(&env));
+
+        let mut pruned: u32 = 0;
+        let mut remaining: soroban_sdk::Vec<String> = Vec::new(&env);
+
+        for raw_key in index.iter() {
+            if pruned >= max_prune {
+                remaining.push_back(raw_key);
+                continue;
+            }
+            let storage_key = DataKey::IdempotencyKey(program_id.clone(), raw_key.clone());
+            if let Some(record) = env
+                .storage()
+                .instance()
+                .get::<DataKey, PayoutIdempotencyKey>(&storage_key)
+            {
+                if current_ledger > record.expires_at {
+                    env.storage().instance().remove(&storage_key);
+                    pruned += 1;
+                } else {
+                    remaining.push_back(raw_key);
+                }
+            }
+            // If the record is already gone (double-prune), just skip it
+        }
+
+        env.storage().instance().set(&index_key, &remaining);
+
+        env.events().publish(
+            (IDEMPOTENCY_KEYS_PRUNED,),
+            IdempotencyKeysPrunedEvent {
+                version: EVENT_VERSION_V2,
+                program_id,
+                pruned_count: pruned,
+                admin,
+            },
+        );
+
+        pruned
     }
 
     /// Get reputation metrics for the current program.
