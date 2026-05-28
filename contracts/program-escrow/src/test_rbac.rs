@@ -172,3 +172,235 @@ fn test_rbac_wrong_nonce_rejected_for_authorized_caller() {
     // Supply nonce=99 when stored nonce is 0.
     client.rotate_payout_key(&program_id, &payout_key, &new_key, &99);
 }
+
+// =========================================================================
+// ISSUE #1272: 24h time-lock delay for admin/controller rotation acceptance
+// =========================================================================
+
+/// Helper: set up a contract with admin and a program with payout_key.
+fn setup_with_program(
+    env: &Env,
+) -> (
+    ProgramEscrowContractClient<'static>,
+    Address, // admin
+    Address, // payout_key (controller)
+    String,  // program_id
+) {
+    env.mock_all_auths();
+    let (client, contract_id) = make_client(env);
+    let token_id = fund_contract(env, &contract_id, 0);
+    let admin = Address::generate(env);
+    let payout_key = Address::generate(env);
+    let program_id = String::from_str(env, "timelock-prog");
+    client.initialize_contract(&admin);
+    client.init_program(&program_id, &payout_key, &token_id, &payout_key, &None, &None);
+    (client, admin, payout_key, program_id)
+}
+
+// --- Admin rotation timelock ---
+
+/// accept_admin fails immediately after propose_admin (timelock not elapsed).
+#[test]
+fn test_accept_admin_before_timelock_returns_error() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|li| li.timestamp = 1_000_000);
+
+    let (client, _admin, _payout_key, _program_id) = setup_with_program(&env);
+    let new_admin = Address::generate(&env);
+
+    client.propose_admin(&new_admin);
+
+    // Advance time by less than 24h (e.g., 1 hour)
+    env.ledger().with_mut(|li| li.timestamp = 1_000_000 + 3_600);
+
+    let result = client.try_accept_admin();
+    assert_eq!(
+        result,
+        Err(Ok(ContractError::RotationTimelockActive)),
+        "accept_admin must fail before 24h timelock expires"
+    );
+}
+
+/// accept_admin succeeds exactly at the 24h boundary.
+#[test]
+fn test_accept_admin_after_timelock_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|li| li.timestamp = 1_000_000);
+
+    let (client, _admin, _payout_key, _program_id) = setup_with_program(&env);
+    let new_admin = Address::generate(&env);
+
+    client.propose_admin(&new_admin);
+
+    // Advance time by exactly 24h
+    env.ledger().with_mut(|li| li.timestamp = 1_000_000 + ROTATION_TIMELOCK_DELAY);
+
+    // Should succeed
+    client.accept_admin();
+}
+
+/// accept_admin succeeds after more than 24h.
+#[test]
+fn test_accept_admin_well_after_timelock_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|li| li.timestamp = 1_000_000);
+
+    let (client, _admin, _payout_key, _program_id) = setup_with_program(&env);
+    let new_admin = Address::generate(&env);
+
+    client.propose_admin(&new_admin);
+
+    // Advance time by 48h
+    env.ledger().with_mut(|li| li.timestamp = 1_000_000 + 2 * ROTATION_TIMELOCK_DELAY);
+
+    client.accept_admin();
+}
+
+/// Admin can cancel a pending rotation within the timelock window.
+#[test]
+fn test_admin_can_cancel_rotation_within_timelock() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|li| li.timestamp = 1_000_000);
+
+    let (client, _admin, _payout_key, _program_id) = setup_with_program(&env);
+    let new_admin = Address::generate(&env);
+
+    client.propose_admin(&new_admin);
+
+    // Cancel within the timelock window (1 hour after proposal)
+    env.ledger().with_mut(|li| li.timestamp = 1_000_000 + 3_600);
+    client.cancel_admin_rotation();
+
+    // After cancellation, accept_admin must fail with NoAdminRotationInProgress
+    let result = client.try_accept_admin();
+    assert_eq!(
+        result,
+        Err(Ok(ContractError::NoAdminRotationInProgress)),
+        "accept_admin must fail after cancellation"
+    );
+}
+
+/// After cancellation, a new proposal can be made.
+#[test]
+fn test_new_proposal_allowed_after_cancellation() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|li| li.timestamp = 1_000_000);
+
+    let (client, _admin, _payout_key, _program_id) = setup_with_program(&env);
+    let new_admin = Address::generate(&env);
+    let another_admin = Address::generate(&env);
+
+    client.propose_admin(&new_admin);
+    client.cancel_admin_rotation();
+
+    // Should be able to propose again
+    client.propose_admin(&another_admin);
+
+    // Advance past timelock and accept
+    env.ledger().with_mut(|li| li.timestamp = 1_000_000 + ROTATION_TIMELOCK_DELAY + 1);
+    client.accept_admin();
+}
+
+// --- Controller rotation timelock ---
+
+/// accept_controller fails immediately after propose_controller (timelock not elapsed).
+#[test]
+fn test_accept_controller_before_timelock_returns_error() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|li| li.timestamp = 2_000_000);
+
+    let (client, _admin, payout_key, program_id) = setup_with_program(&env);
+    let new_controller = Address::generate(&env);
+
+    client.propose_controller(&program_id, &payout_key, &new_controller);
+
+    // Advance time by less than 24h
+    env.ledger().with_mut(|li| li.timestamp = 2_000_000 + 3_600);
+
+    let result = client.try_accept_controller(&program_id);
+    assert_eq!(
+        result,
+        Err(Ok(ContractError::RotationTimelockActive)),
+        "accept_controller must fail before 24h timelock expires"
+    );
+}
+
+/// accept_controller succeeds exactly at the 24h boundary.
+#[test]
+fn test_accept_controller_after_timelock_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|li| li.timestamp = 2_000_000);
+
+    let (client, _admin, payout_key, program_id) = setup_with_program(&env);
+    let new_controller = Address::generate(&env);
+
+    client.propose_controller(&program_id, &payout_key, &new_controller);
+
+    // Advance time by exactly 24h
+    env.ledger().with_mut(|li| li.timestamp = 2_000_000 + ROTATION_TIMELOCK_DELAY);
+
+    let data = client.accept_controller(&program_id);
+    assert_eq!(data.authorized_payout_key, new_controller);
+}
+
+/// Admin can cancel a pending controller rotation within the timelock window.
+#[test]
+fn test_admin_can_cancel_controller_rotation_within_timelock() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|li| li.timestamp = 2_000_000);
+
+    let (client, admin, payout_key, program_id) = setup_with_program(&env);
+    let new_controller = Address::generate(&env);
+
+    client.propose_controller(&program_id, &payout_key, &new_controller);
+
+    // Cancel within the timelock window
+    env.ledger().with_mut(|li| li.timestamp = 2_000_000 + 3_600);
+    client.cancel_controller_rotation(&program_id, &admin);
+
+    // After cancellation, accept_controller must fail
+    let result = client.try_accept_controller(&program_id);
+    assert_eq!(
+        result,
+        Err(Ok(ContractError::NoControllerRotationInProgress)),
+        "accept_controller must fail after cancellation"
+    );
+}
+
+/// accept_admin with no pending proposal returns NoAdminRotationInProgress.
+#[test]
+fn test_accept_admin_no_pending_proposal_returns_error() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _payout_key, _program_id) = setup_with_program(&env);
+
+    let result = client.try_accept_admin();
+    assert_eq!(
+        result,
+        Err(Ok(ContractError::NoAdminRotationInProgress)),
+    );
+}
+
+/// accept_controller with no pending proposal returns NoControllerRotationInProgress.
+#[test]
+fn test_accept_controller_no_pending_proposal_returns_error() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _payout_key, program_id) = setup_with_program(&env);
+
+    let result = client.try_accept_controller(&program_id);
+    assert_eq!(
+        result,
+        Err(Ok(ContractError::NoControllerRotationInProgress)),
+    );
+}

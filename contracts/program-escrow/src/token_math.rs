@@ -24,15 +24,16 @@ pub const MAX_FEE_RATE: i128 = 5_000;
 ///
 /// `fee = floor(amount * fee_rate / BASIS_POINTS)`
 ///
-/// Returns 0 when `fee_rate` is 0 or on overflow.
+/// Panics on overflow.
 pub fn calculate_fee(amount: i128, fee_rate: i128) -> i128 {
     if fee_rate == 0 {
         return 0;
     }
     amount
         .checked_mul(fee_rate)
-        .and_then(|x| x.checked_div(BASIS_POINTS))
-        .unwrap_or(0)
+        .expect("Fee calculation overflow")
+        .checked_div(BASIS_POINTS)
+        .expect("Fee calculation overflow")
 }
 
 /// Split `amount` into `(fee, net)` where `fee + net == amount`.
