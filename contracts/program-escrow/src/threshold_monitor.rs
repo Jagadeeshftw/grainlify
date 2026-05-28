@@ -124,6 +124,10 @@ pub enum ThresholdKey {
     CooldownMultiplier,
 }
 
+fn persistent_key(key: ThresholdKey) -> (Symbol, ThresholdKey) {
+    (symbol_short!("th"), key)
+}
+
 // ─────────────────────────────────────────────────────────
 // Error codes
 // ─────────────────────────────────────────────────────────
@@ -142,16 +146,16 @@ pub fn init_threshold_monitor(env: &Env) {
     let config = ThresholdConfig::default();
     env.storage()
         .persistent()
-        .set(&ThresholdKey::Config, &config);
+        .set(&persistent_key(ThresholdKey::Config), &config);
 
     let metrics = WindowMetrics::new(env.ledger().timestamp());
     env.storage()
         .persistent()
-        .set(&ThresholdKey::CurrentMetrics, &metrics);
+        .set(&persistent_key(ThresholdKey::CurrentMetrics), &metrics);
 
     env.storage()
         .persistent()
-        .set(&ThresholdKey::CooldownMultiplier, &1u32);
+        .set(&persistent_key(ThresholdKey::CooldownMultiplier), &1u32);
 
     emit_config_event(env, symbol_short!("th_init"), &config);
 }
@@ -169,7 +173,7 @@ pub fn set_threshold_config(env: &Env, config: ThresholdConfig) -> Result<(), u3
     // Store new configuration
     env.storage()
         .persistent()
-        .set(&ThresholdKey::Config, &config);
+        .set(&persistent_key(ThresholdKey::Config), &config);
 
     // Emit configuration update event
     emit_config_update_event(env, &prev_config, &config);
@@ -181,7 +185,7 @@ pub fn set_threshold_config(env: &Env, config: ThresholdConfig) -> Result<(), u3
 pub fn get_threshold_config(env: &Env) -> ThresholdConfig {
     env.storage()
         .persistent()
-        .get(&ThresholdKey::Config)
+        .get(&persistent_key(ThresholdKey::Config))
         .unwrap_or(ThresholdConfig::default())
 }
 
@@ -198,7 +202,7 @@ pub fn record_operation_success(env: &Env) {
 
     env.storage()
         .persistent()
-        .set(&ThresholdKey::CurrentMetrics, &metrics);
+        .set(&persistent_key(ThresholdKey::CurrentMetrics), &metrics);
 }
 
 /// Record a failed operation
@@ -210,7 +214,7 @@ pub fn record_operation_failure(env: &Env) {
 
     env.storage()
         .persistent()
-        .set(&ThresholdKey::CurrentMetrics, &metrics);
+        .set(&persistent_key(ThresholdKey::CurrentMetrics), &metrics);
 }
 
 /// Record an outflow transaction
@@ -226,14 +230,14 @@ pub fn record_outflow(env: &Env, amount: i128) {
 
     env.storage()
         .persistent()
-        .set(&ThresholdKey::CurrentMetrics, &metrics);
+        .set(&persistent_key(ThresholdKey::CurrentMetrics), &metrics);
 }
 
 /// Get current window metrics
 pub fn get_current_metrics(env: &Env) -> WindowMetrics {
     env.storage()
         .persistent()
-        .get(&ThresholdKey::CurrentMetrics)
+        .get(&persistent_key(ThresholdKey::CurrentMetrics))
         .unwrap_or_else(|| WindowMetrics::new(env.ledger().timestamp()))
 }
 
@@ -249,7 +253,7 @@ fn rotate_window_if_needed(env: &Env) {
         // Archive current metrics
         env.storage()
             .persistent()
-            .set(&ThresholdKey::PreviousMetrics, &metrics);
+            .set(&persistent_key(ThresholdKey::PreviousMetrics), &metrics);
 
         // Emit window rotation event
         emit_window_rotation_event(env, &metrics);
@@ -258,7 +262,7 @@ fn rotate_window_if_needed(env: &Env) {
         let new_metrics = WindowMetrics::new(now);
         env.storage()
             .persistent()
-            .set(&ThresholdKey::CurrentMetrics, &new_metrics);
+            .set(&persistent_key(ThresholdKey::CurrentMetrics), &new_metrics);
     }
 }
 
@@ -342,7 +346,7 @@ pub fn is_cooldown_active(env: &Env) -> bool {
     let last_cooldown_end: u64 = env
         .storage()
         .persistent()
-        .get(&ThresholdKey::LastCooldownEnd)
+        .get(&persistent_key(ThresholdKey::LastCooldownEnd))
         .unwrap_or(0);
 
     let now = env.ledger().timestamp();
@@ -353,7 +357,7 @@ pub fn is_cooldown_active(env: &Env) -> bool {
 pub fn get_cooldown_multiplier(env: &Env) -> u32 {
     env.storage()
         .persistent()
-        .get(&ThresholdKey::CooldownMultiplier)
+        .get(&persistent_key(ThresholdKey::CooldownMultiplier))
         .unwrap_or(1)
 }
 
@@ -368,7 +372,7 @@ pub fn apply_cooldown(env: &Env) {
 
     env.storage()
         .persistent()
-        .set(&ThresholdKey::LastCooldownEnd, &cooldown_end);
+        .set(&persistent_key(ThresholdKey::LastCooldownEnd), &cooldown_end);
 }
 
 /// Increase cooldown multiplier for repeated breaches
@@ -379,14 +383,14 @@ pub fn increase_cooldown_multiplier(env: &Env) {
 
     env.storage()
         .persistent()
-        .set(&ThresholdKey::CooldownMultiplier, &new_multiplier);
+        .set(&persistent_key(ThresholdKey::CooldownMultiplier), &new_multiplier);
 }
 
 /// Reset cooldown multiplier after stability period
 pub fn reset_cooldown_multiplier(env: &Env) {
     env.storage()
         .persistent()
-        .set(&ThresholdKey::CooldownMultiplier, &1u32);
+        .set(&persistent_key(ThresholdKey::CooldownMultiplier), &1u32);
 }
 
 // ─────────────────────────────────────────────────────────
@@ -401,7 +405,7 @@ pub fn reset_metrics(env: &Env, admin: &Address) {
     let new_metrics = WindowMetrics::new(now);
     env.storage()
         .persistent()
-        .set(&ThresholdKey::CurrentMetrics, &new_metrics);
+        .set(&persistent_key(ThresholdKey::CurrentMetrics), &new_metrics);
 
     // Emit reset event
     emit_metrics_reset_event(env, admin, now);

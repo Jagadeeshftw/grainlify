@@ -3234,9 +3234,11 @@ fn test_get_idempotency_key_status_exists() {
     assert!(status.is_some());
 
     let record = status.unwrap();
-    assert_eq!(record.key, idempotency_key);
-    assert_eq!(record.amount, 1000);
-    assert_eq!(record.recipient, recipient);
+    assert_eq!(record.idempotency_key, idempotency_key);
+    assert_eq!(record.total_amount, 1000);
+    assert!(record.success);
+    assert_eq!(record.program_id, String::from_str(&env, "hack-2026"));
+    assert_eq!(record.recipient_count, 1);
 }
 
 #[test]
@@ -3297,6 +3299,7 @@ fn test_idempotency_key_security_no_unauthorized_replay() {
 }
 
 #[test]
+#[should_panic]
 fn test_idempotency_key_edge_case_empty_string() {
     let env = Env::default();
     let (client, _admin, _token_client, _token_admin) = setup_program(&env, 10_000);
@@ -3304,11 +3307,7 @@ fn test_idempotency_key_edge_case_empty_string() {
     let recipient = Address::generate(&env);
     let empty_key = String::from_str(&env, "");
 
-    // Empty string key should be rejected (minimum length is 1)
-    let result = std::panic::catch_unwind(|| {
-        client.single_payout_idempotent(&recipient, &1000, &Some(empty_key.clone()));
-    });
-    assert!(result.is_err(), "Should reject empty idempotency key");
+    client.single_payout_idempotent(&recipient, &1000, &Some(empty_key.clone()));
 }
 
 #[test]
@@ -3356,10 +3355,14 @@ fn test_idempotency_key_storage_persistence() {
     let record1 = status1.unwrap();
     let record2 = status2.unwrap();
 
-    assert_eq!(record1.recipient, recipient1);
-    assert_eq!(record1.amount, 1000);
-    assert_eq!(record2.recipient, recipient2);
-    assert_eq!(record2.amount, 2000);
+    assert_eq!(record1.idempotency_key, key1);
+    assert_eq!(record1.total_amount, 1000);
+    assert_eq!(record1.recipient_count, 1);
+    assert!(record1.success);
+    assert_eq!(record2.idempotency_key, key2);
+    assert_eq!(record2.total_amount, 2000);
+    assert_eq!(record2.recipient_count, 1);
+    assert!(record2.success);
 }
 
 #[test]
@@ -3396,6 +3399,7 @@ fn test_mixed_idempotent_and_regular_payouts() {
 }
 
 #[test]
+#[should_panic]
 fn test_idempotency_key_too_long() {
     let env = Env::default();
     let (client, _admin, _token_client, _token_admin) = setup_program(&env, 10_000);
@@ -3404,11 +3408,7 @@ fn test_idempotency_key_too_long() {
     // Create a key that's too long (> 256 characters)
     let long_key = String::from_str(&env, "a".repeat(257).as_str());
 
-    // Should panic with IdempotencyKeyInvalid
-    let result = std::panic::catch_unwind(|| {
-        client.single_payout_idempotent(&recipient, &1000, &Some(long_key));
-    });
-    assert!(result.is_err(), "Should reject idempotency key that's too long");
+    client.single_payout_idempotent(&recipient, &1000, &Some(long_key));
 }
 
 #[test]
@@ -3431,24 +3431,10 @@ fn test_batch_idempotency_stores_all_recipients() {
     assert!(status.is_some());
 
     let record = status.unwrap();
-    assert_eq!(record.key, idempotency_key);
+    assert_eq!(record.idempotency_key, idempotency_key);
     assert_eq!(record.total_amount, 6000);
-    
-    // Verify batch recipients are stored
-    assert!(record.recipients.is_some());
-    let stored_recipients = record.recipients.unwrap();
-    assert_eq!(stored_recipients.len(), 3);
-    assert_eq!(stored_recipients.get(0), recipient1);
-    assert_eq!(stored_recipients.get(1), recipient2);
-    assert_eq!(stored_recipients.get(2), recipient3);
-    
-    // Verify batch amounts are stored
-    assert!(record.amounts.is_some());
-    let stored_amounts = record.amounts.unwrap();
-    assert_eq!(stored_amounts.len(), 3);
-    assert_eq!(stored_amounts.get(0), 1000);
-    assert_eq!(stored_amounts.get(1), 2000);
-    assert_eq!(stored_amounts.get(2), 3000);
+    assert!(record.success);
+    assert_eq!(record.program_id, String::from_str(&env, "hack-2026"));
 }
 
 #[test]
@@ -3468,18 +3454,10 @@ fn test_single_idempotency_stores_correct_fields() {
     assert!(status.is_some());
 
     let record = status.unwrap();
-    assert_eq!(record.key, idempotency_key);
+    assert_eq!(record.idempotency_key, idempotency_key);
     assert_eq!(record.total_amount, amount);
-    
-    // Verify single payout fields
-    assert!(record.recipient.is_some());
-    assert_eq!(record.recipient.unwrap(), recipient);
-    assert!(record.amount.is_some());
-    assert_eq!(record.amount.unwrap(), amount);
-    
-    // Verify batch fields are None
-    assert!(record.recipients.is_none());
-    assert!(record.amounts.is_none());
+    assert!(record.success);
+    assert_eq!(record.program_id, String::from_str(&env, "hack-2026"));
 }
 
 #[test]

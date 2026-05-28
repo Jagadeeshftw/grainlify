@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use soroban_sdk::testutils::budget::Budget as _;
 use soroban_sdk::testutils::Ledger as _;
 use soroban_sdk::testutils::LedgerInfo as _;
 use soroban_sdk::{testutils::Address as _, testutils::Events, token, vec, Address, Env, String, TryIntoVal, Vec};
@@ -53,7 +54,7 @@ pub fn init_program(ctx: &Ctx, program_id: &str, amount: i128) {
         &Some(amount),
         &None,
     );
-    ctx.client.publish_program(&String::from_str(&ctx.env, program_id));
+    ctx.client.publish_program();
 }
 
 #[test]

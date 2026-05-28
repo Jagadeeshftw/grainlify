@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "generated_at": "2025-05-27T00:00:00Z",
+  "network": "testnet",
+  "contract_name": "program-escrow",
+  "function": "lock_program_funds",
+  "note": "ESTIMATED values — run contracts/scripts/run_testnet_benchmarks.sh against the real testnet to populate with actual on-chain data. ledger_sequence=0 and transaction_hash=PENDING indicate values that have not yet been recorded from a live deployment. lock_program_funds is O(1) so only a single batch_size=1 measurement is needed.",
+  "ci_threshold_cpu_instructions_50": 500000,
+  "measurements": [
+    {
+      "batch_size": 1,
+      "ledger_sequence": 0,
+      "transaction_hash": "PENDING",
+      "fee_stroops": 1200,
+      "fee_xlm": "0.000120",
+      "cpu_instructions": 320000,
+      "memory_bytes": 45000,
+      "ledger_reads": 5,
+      "ledger_writes": 2,
+      "status": "estimated",
+      "measured_at": "2025-05-27T00:00:00Z"
+    }
+  ]
+}
