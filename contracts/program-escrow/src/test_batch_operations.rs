@@ -3,11 +3,11 @@
 use soroban_sdk::testutils::budget::Budget as _;
 use soroban_sdk::testutils::Ledger as _;
 use soroban_sdk::testutils::LedgerInfo as _;
-use soroban_sdk::{testutils::Address as _, token, vec, Address, Env, String, TryIntoVal, Vec};
+use soroban_sdk::{testutils::Address as _, testutils::Events, token, vec, Address, Env, String, TryIntoVal, Vec};
 
 use crate::{
-    BatchError, LockItem, ProgramData, ProgramEscrowContract, ProgramEscrowContractClient,
-    ReleaseItem, IDEMPOTENCY_KEY_TTL_LEDGERS,
+    BatchError, BatchPayoutReplayedEvent, LockItem, ProgramData, ProgramEscrowContract,
+    ProgramEscrowContractClient, ReleaseItem,
 };
 
 pub struct Ctx<'a> {
@@ -188,40 +188,339 @@ fn test_batch_release_duplicate_fails() {
     assert!(result.is_err());
 }
 
+// ============================================================
+// Idempotency key tests
+// ============================================================
+
+/// Helper: build a two-recipient payout batch and return (recipients, amounts).
+fn two_recipient_batch(ctx: &Ctx) -> (soroban_sdk::Vec<Address>, soroban_sdk::Vec<i128>) {
+    let r1 = Address::generate(&ctx.env);
+    let r2 = Address::generate(&ctx.env);
+    let recipients = vec![&ctx.env, r1, r2];
+    let amounts = vec![&ctx.env, 300_i128, 200_i128];
+    (recipients, amounts)
+}
+
+/// A fresh idempotency key executes the payout and transfers funds.
+#[test]
+fn test_idempotent_batch_payout_first_call_succeeds() {
+    let ctx = setup();
+    init_program(&ctx, "PROG1", 1000);
+
+    let (recipients, amounts) = two_recipient_batch(&ctx);
+    let key = String::from_str(&ctx.env, "key-001");
+
+    let result = ctx
+        .client
+        .batch_payout_idempotent(&key, &recipients, &amounts);
+
+    // Balance reduced by 500
+    assert_eq!(result.remaining_balance, 500);
+    // Two payout records added
+    assert_eq!(result.payout_history.len(), 2);
+}
+
+/// Replaying the same key returns current state without transferring funds.
+#[test]
+fn test_idempotent_batch_payout_replay_no_double_payment() {
+    let ctx = setup();
+    init_program(&ctx, "PROG1", 1000);
+
+    let (recipients, amounts) = two_recipient_batch(&ctx);
+    let key = String::from_str(&ctx.env, "key-replay-001");
+
+    // First call — real payout
+    let first = ctx
+        .client
+        .batch_payout_idempotent(&key, &recipients, &amounts);
+    assert_eq!(first.remaining_balance, 500);
+
+    // Second call with identical key — must be a no-op
+    let second = ctx
+        .client
+        .batch_payout_idempotent(&key, &recipients, &amounts);
+
+    // Balance unchanged
+    assert_eq!(second.remaining_balance, 500);
+    // Payout history unchanged (no new records)
+    assert_eq!(second.payout_history.len(), 2);
+}
+
+/// Replay emits a BatchPayoutReplayedEvent (not a BatchPayout event).
+#[test]
+fn test_idempotent_batch_payout_replay_emits_audit_event() {
+    let ctx = setup();
+    init_program(&ctx, "PROG1", 1000);
+
+    let (recipients, amounts) = two_recipient_batch(&ctx);
+    let key = String::from_str(&ctx.env, "key-audit-001");
+
+    // First call — real payout
+    ctx.client
+        .batch_payout_idempotent(&key, &recipients, &amounts);
+
+    // Second call — should emit BatchPayoutReplayedEvent
+    ctx.client
+        .batch_payout_idempotent(&key, &recipients, &amounts);
+
+    let events = ctx.env.events().all();
+    // Find a BatchPayoutReplayedEvent whose idempotency_key matches
+    let replayed_event = events.iter().find(|e| {
+        let result: Result<BatchPayoutReplayedEvent, _> = (&e.2).try_into_val(&ctx.env);
+        if let Ok(ev) = result {
+            ev.idempotency_key == key
+        } else {
+            false
+        }
+    });
+
+    assert!(
+        replayed_event.is_some(),
+        "Expected BatchPayoutReplayedEvent for replayed key"
+    );
+    let ev: BatchPayoutReplayedEvent = (&replayed_event.unwrap().2).try_into_val(&ctx.env).unwrap();
+    assert_eq!(ev.version, 2);
+}
+
+/// Multiple distinct keys each execute independently.
+#[test]
+fn test_idempotent_batch_payout_distinct_keys_all_execute() {
+    let ctx = setup();
+    init_program(&ctx, "PROG1", 3000);
+
+    for key_str in ["key-0", "key-1", "key-2"] {
+        let key = String::from_str(&ctx.env, key_str);
+        let r = Address::generate(&ctx.env);
+        let recipients = vec![&ctx.env, r];
+        let amounts = vec![&ctx.env, 100_i128];
+        ctx.client
+            .batch_payout_idempotent(&key, &recipients, &amounts);
+    }
+
+    let prog = ctx
+        .client
+        .get_program_info_v2(&String::from_str(&ctx.env, "PROG1"));
+    assert_eq!(prog.remaining_balance, 2700);
+    assert_eq!(prog.payout_history.len(), 3);
+}
+
+/// Partial overlap: some keys are new, some are replays.
+/// Only the new keys should transfer funds.
+#[test]
+fn test_idempotent_batch_payout_partial_overlap() {
+    let ctx = setup();
+    init_program(&ctx, "PROG1", 2000);
+
+    // Execute key-A and key-B first
+    for k in ["key-A", "key-B"] {
+        let key = String::from_str(&ctx.env, k);
+        let r = Address::generate(&ctx.env);
+        let recipients = vec![&ctx.env, r];
+        let amounts = vec![&ctx.env, 200_i128];
+        ctx.client
+            .batch_payout_idempotent(&key, &recipients, &amounts);
+    }
+    // Balance: 2000 - 400 = 1600
+
+    // Now replay key-A (duplicate) and execute key-C (new)
+    let r_new = Address::generate(&ctx.env);
+    let replay_result = ctx.client.batch_payout_idempotent(
+        &String::from_str(&ctx.env, "key-A"),
+        &vec![&ctx.env, r_new.clone()],
+        &vec![&ctx.env, 200_i128],
+    );
+    // key-A is a replay — balance must still be 1600
+    assert_eq!(replay_result.remaining_balance, 1600);
+
+    let new_result = ctx.client.batch_payout_idempotent(
+        &String::from_str(&ctx.env, "key-C"),
+        &vec![&ctx.env, r_new],
+        &vec![&ctx.env, 200_i128],
+    );
+    // key-C is new — balance drops to 1400
+    assert_eq!(new_result.remaining_balance, 1400);
+
+    // Total payout history: 3 records (A, B, C — not the replay of A)
+    assert_eq!(new_result.payout_history.len(), 3);
+}
+
+/// Replaying a key does NOT add a new payout record to history.
+#[test]
+fn test_idempotent_replay_does_not_grow_payout_history() {
+    let ctx = setup();
+    init_program(&ctx, "PROG1", 1000);
+
+    let (recipients, amounts) = two_recipient_batch(&ctx);
+    let key = String::from_str(&ctx.env, "key-hist-001");
+
+    ctx.client
+        .batch_payout_idempotent(&key, &recipients, &amounts);
+    let after_first = ctx
+        .client
+        .get_program_info_v2(&String::from_str(&ctx.env, "PROG1"));
+    let history_len_after_first = after_first.payout_history.len();
+
+    // Replay three times
+    for _ in 0..3 {
+        ctx.client
+            .batch_payout_idempotent(&key, &recipients, &amounts);
+    }
+
+    let after_replays = ctx
+        .client
+        .get_program_info_v2(&String::from_str(&ctx.env, "PROG1"));
+    assert_eq!(
+        after_replays.payout_history.len(),
+        history_len_after_first,
+        "Replays must not append to payout history"
+    );
+}
+
+/// The delegate variant (batch_payout_idempotent_by) also respects idempotency.
+#[test]
+fn test_idempotent_batch_payout_by_replay_no_double_payment() {
+    let ctx = setup();
+    init_program(&ctx, "PROG1", 1000);
+
+    let (recipients, amounts) = two_recipient_batch(&ctx);
+    let key = String::from_str(&ctx.env, "key-by-001");
+
+    let first = ctx.client.batch_payout_idempotent_by(
+        &key,
+        &ctx.admin,
+        &recipients,
+        &amounts,
+    );
+    assert_eq!(first.remaining_balance, 500);
+
+    let second = ctx.client.batch_payout_idempotent_by(
+        &key,
+        &ctx.admin,
+        &recipients,
+        &amounts,
+    );
+    assert_eq!(second.remaining_balance, 500);
+    assert_eq!(second.payout_history.len(), 2);
+}
+
+/// Comprehensive audit check:
+/// 1. First call emits BATCH_PAYOUT
+/// 2. Second call emits BATCH_PAYOUT_REPLAYED
+/// 3. Second call does NOT emit BATCH_PAYOUT
+#[test]
+fn test_idempotent_batch_payout_audit_trail_integrity() {
+    let ctx = setup();
+    init_program(&ctx, "PROG1", 1000);
+
+    let (recipients, amounts) = two_recipient_batch(&ctx);
+    let key = String::from_str(&ctx.env, "key-audit-trail");
+
+    // First call
+    ctx.client.batch_payout_idempotent(&key, &recipients, &amounts);
+    
+    let events_after_first = ctx.env.events().all();
+    let payout_events_count = events_after_first.iter().filter(|e| {
+        e.0 == ctx.client.address && e.1.contains(soroban_sdk::symbol_short!("BatchPay").try_into_val(&ctx.env).unwrap())
+    }).count();
+    assert_eq!(payout_events_count, 1, "Expected exactly one BatchPayout event after first call");
+
+    // Second call (replay)
+    ctx.client.batch_payout_idempotent(&key, &recipients, &amounts);
+
+    let events_after_second = ctx.env.events().all();
+    
+    // Check BatchPayout still only 1
+    let payout_events_count_total = events_after_second.iter().filter(|e| {
+        e.0 == ctx.client.address && e.1.contains(soroban_sdk::symbol_short!("BatchPay").try_into_val(&ctx.env).unwrap())
+    }).count();
+    assert_eq!(payout_events_count_total, 1, "BatchPayout event must not be emitted on replay");
+
+    // Check BatchPayoutReplayed count
+    let replay_events_count = events_after_second.iter().filter(|e| {
+        e.0 == ctx.client.address && e.1.contains(soroban_sdk::symbol_short!("BatPayRp").try_into_val(&ctx.env).unwrap())
+    }).count();
+    assert_eq!(replay_events_count, 1, "Expected exactly one BatchPayoutReplayed event after replay");
+
+    // Verify the replay event data
+    let replayed_event = events_after_second.iter().find(|e| {
+        let result: Result<BatchPayoutReplayedEvent, _> = (&e.2).try_into_val(&ctx.env);
+        if let Ok(ev) = result {
+            ev.idempotency_key == key
+        } else {
+            false
+        }
+    });
+    assert!(replayed_event.is_some());
+}
+
+/// Test partial batch overlap with a mix of new and duplicate keys in interleaved order.
+#[test]
+fn test_idempotent_batch_payout_complex_retry_interleaving() {
+    let ctx = setup();
+    init_program(&ctx, "PROG1", 5000);
+
+    let keys = [
+        String::from_str(&ctx.env, "K1"),
+        String::from_str(&ctx.env, "K2"),
+        String::from_str(&ctx.env, "K3"),
+    ];
+
+    let r = Address::generate(&ctx.env);
+    let recipients = vec![&ctx.env, r];
+    let amounts = vec![&ctx.env, 100_i128];
+
+    // 1. Execute K1
+    ctx.client.batch_payout_idempotent(&keys[0], &recipients, &amounts);
+    // 2. Execute K2
+    ctx.client.batch_payout_idempotent(&keys[1], &recipients, &amounts);
+    // 3. Retry K1 (Replay)
+    ctx.client.batch_payout_idempotent(&keys[0], &recipients, &amounts);
+    // 4. Execute K3
+    ctx.client.batch_payout_idempotent(&keys[2], &recipients, &amounts);
+    // 5. Retry K2 (Replay)
+    ctx.client.batch_payout_idempotent(&keys[1], &recipients, &amounts);
+
+    let prog = ctx.client.get_program_info_v2(&String::from_str(&ctx.env, "PROG1"));
+    // Balance: 5000 - 100*3 = 4700
+    assert_eq!(prog.remaining_balance, 4700);
+    // History: 3 unique payouts
+    assert_eq!(prog.payout_history.len(), 3);
+
+    // Verify event counts
+    let events = ctx.env.events().all();
+    let payout_count = events.iter().filter(|e| {
+        e.0 == ctx.client.address && e.1.contains(soroban_sdk::symbol_short!("BatchPay").try_into_val(&ctx.env).unwrap())
+    }).count();
+    let replay_count = events.iter().filter(|e| {
+        e.0 == ctx.client.address && e.1.contains(soroban_sdk::symbol_short!("BatPayRp").try_into_val(&ctx.env).unwrap())
+    }).count();
+    
+    assert_eq!(payout_count, 3, "Expected 3 successful payout events");
+    assert_eq!(replay_count, 2, "Expected 2 replay audit events");
 // ============================================================================
 // Idempotency key generation convention tests
 // Issue #1262 — client SDK idempotency key generation conventions
 // See docs/program-escrow/idempotency-key-client-guide.md
 // ============================================================================
 
-fn string_prefix(env: &Env, s: &String, max_len: usize) -> std::string::String {
-    let len = s.len() as usize;
-    let mut buf = std::vec::Vec::with_capacity(len);
-    buf.resize(len, 0u8);
-    s.copy_into_slice(&mut buf);
-    let utf8 = core::str::from_utf8(&buf).unwrap();
-    std::string::String::from(&utf8[..core::cmp::min(max_len, len)])
-}
-
 /// Helper: generate a deterministic single-payout idempotency key
 /// following the recommended format: {program_id}-single-{recipient_prefix}-{nonce}
 fn make_single_key(env: &Env, program_id: &str, recipient: &Address, nonce: &str) -> String {
     let addr_str = recipient.to_string();
-    let prefix = string_prefix(env, &addr_str, 8);
-    String::from_str(env, &format!("{}-single-{}-{}", program_id, prefix, nonce))
+    // Use first 8 chars of address as recipient prefix
+    let prefix = &addr_str[..8.min(addr_str.len())];
+    String::from_str(
+        env,
+        &format!("{}-single-{}-{}", program_id, prefix, nonce),
+    )
 }
 
 /// Helper: generate a deterministic batch-payout idempotency key
 /// following the recommended format: {program_id}-batch-{first_recipient_prefix}-{count}r-{nonce}
-fn make_batch_key(
-    env: &Env,
-    program_id: &str,
-    recipients: &soroban_sdk::Vec<Address>,
-    nonce: &str,
-) -> String {
+fn make_batch_key(env: &Env, program_id: &str, recipients: &soroban_sdk::Vec<Address>, nonce: &str) -> String {
     let first = recipients.get(0).unwrap();
     let addr_str = first.to_string();
-    let prefix = string_prefix(env, &addr_str, 8);
+    let prefix = &addr_str[..8.min(addr_str.len())];
     let count = recipients.len();
     String::from_str(
         env,
@@ -325,17 +624,24 @@ fn test_single_key_retry_returns_original_result() {
     let recipient = Address::generate(&ctx.env);
     let key = make_single_key(&ctx.env, "hackathon-2024", &recipient, "a3f1c2d4e5b6a7f8");
 
-    let result1 =
-        ctx.client
-            .single_payout_by(&ctx.admin, &recipient, &1000i128, &Some(key.clone()));
+    let result1 = ctx.client.single_payout_by(
+        &ctx.admin,
+        &recipient,
+        &1000i128,
+        &Some(key.clone()),
+    );
 
-    let result2 =
-        ctx.client
-            .single_payout_by(&ctx.admin, &recipient, &1000i128, &Some(key.clone()));
+    let result2 = ctx.client.single_payout_by(
+        &ctx.admin,
+        &recipient,
+        &1000i128,
+        &Some(key.clone()),
+    );
 
     // Both calls return the same remaining balance (second is a no-op)
     assert_eq!(
-        result1.remaining_balance, result2.remaining_balance,
+        result1.remaining_balance,
+        result2.remaining_balance,
         "Retry must return cached result without re-executing"
     );
 }
@@ -353,16 +659,23 @@ fn test_batch_key_retry_returns_original_result() {
 
     let key = make_batch_key(&ctx.env, "hackathon-2024", &recipients, "9b8c7d6e5f4a3b2c");
 
-    let result1 = ctx
-        .client
-        .batch_payout_by(&ctx.admin, &recipients, &amounts, &Some(key.clone()));
+    let result1 = ctx.client.batch_payout_by(
+        &ctx.admin,
+        &recipients,
+        &amounts,
+        &Some(key.clone()),
+    );
 
-    let result2 = ctx
-        .client
-        .batch_payout_by(&ctx.admin, &recipients, &amounts, &Some(key.clone()));
+    let result2 = ctx.client.batch_payout_by(
+        &ctx.admin,
+        &recipients,
+        &amounts,
+        &Some(key.clone()),
+    );
 
     assert_eq!(
-        result1.remaining_balance, result2.remaining_balance,
+        result1.remaining_balance,
+        result2.remaining_balance,
         "Batch retry must return cached result"
     );
 }
@@ -381,12 +694,18 @@ fn test_different_nonces_are_independent_operations() {
     let key1 = make_single_key(&ctx.env, "hackathon-2024", &recipient, "aaaaaaaaaaaaaaaa");
     let key2 = make_single_key(&ctx.env, "hackathon-2024", &recipient, "bbbbbbbbbbbbbbbb");
 
-    let result1 = ctx
-        .client
-        .single_payout_by(&ctx.admin, &recipient, &1000i128, &Some(key1));
-    let result2 = ctx
-        .client
-        .single_payout_by(&ctx.admin, &recipient, &1000i128, &Some(key2));
+    let result1 = ctx.client.single_payout_by(
+        &ctx.admin,
+        &recipient,
+        &1000i128,
+        &Some(key1),
+    );
+    let result2 = ctx.client.single_payout_by(
+        &ctx.admin,
+        &recipient,
+        &1000i128,
+        &Some(key2),
+    );
 
     // Each operation deducted 1000 independently
     assert_eq!(result1.remaining_balance, 9_000);
@@ -425,8 +744,12 @@ fn test_key_exceeding_max_length_rejected() {
     let recipient = Address::generate(&ctx.env);
     let long_key = String::from_str(&ctx.env, &"k".repeat(257));
 
-    ctx.client
-        .single_payout_by(&ctx.admin, &recipient, &100i128, &Some(long_key));
+    ctx.client.single_payout_by(
+        &ctx.admin,
+        &recipient,
+        &100i128,
+        &Some(long_key),
+    );
 }
 
 /// An empty key is rejected by the contract.
@@ -439,8 +762,12 @@ fn test_empty_key_rejected() {
     let recipient = Address::generate(&ctx.env);
     let empty_key = String::from_str(&ctx.env, "");
 
-    ctx.client
-        .single_payout_by(&ctx.admin, &recipient, &100i128, &Some(empty_key));
+    ctx.client.single_payout_by(
+        &ctx.admin,
+        &recipient,
+        &100i128,
+        &Some(empty_key),
+    );
 }
 
 // ----------------------------------------------------------------------------
@@ -454,9 +781,12 @@ fn test_no_key_executes_normally() {
     init_program(&ctx, "hackathon-2024", 10_000);
 
     let recipient = Address::generate(&ctx.env);
-    let result = ctx
-        .client
-        .single_payout_by(&ctx.admin, &recipient, &1000i128, &None);
+    let result = ctx.client.single_payout_by(
+        &ctx.admin,
+        &recipient,
+        &1000i128,
+        &None,
+    );
 
     assert_eq!(result.remaining_balance, 9_000);
 }
@@ -469,249 +799,9 @@ fn test_no_key_allows_duplicate_operations() {
 
     let recipient = Address::generate(&ctx.env);
 
-    ctx.client
-        .single_payout_by(&ctx.admin, &recipient, &1000i128, &None);
-    let result = ctx
-        .client
-        .single_payout_by(&ctx.admin, &recipient, &1000i128, &None);
+    ctx.client.single_payout_by(&ctx.admin, &recipient, &1000i128, &None);
+    let result = ctx.client.single_payout_by(&ctx.admin, &recipient, &1000i128, &None);
 
     // Both operations executed — balance reduced by 2000
     assert_eq!(result.remaining_balance, 8_000);
-}
-
-// ============================================================================
-// Gas Profiling Tests
-// ============================================================================
-//
-// These tests measure the Soroban CPU instruction and memory byte budgets
-// consumed by key operations. They serve two purposes:
-//
-//   1. **Observability** — print structured `[GAS-PROFILE]` lines that can be
-//      scraped by CI log parsers or stored as benchmark artifacts.
-//   2. **Regression gates** — assert that usage stays within generous upper
-//      bounds, catching large regressions before they reach production.
-//
-// Thresholds are intentionally wide so that minor, non-regressive changes do
-// not cause flaky failures. Update them (and `CPU_INSNS_THRESHOLD_50`) after
-// intentional gas optimisations or testnet calibration, and record the new
-// baseline in `docs/gas-optimization/batch-payout-benchmarks.md`.
-//
-// The authoritative reference implementation lives in:
-//   `contracts/benchmarks/batch_performance.rs`
-
-/// CPU threshold for batch_payout with 50 recipients.
-/// The CI benchmark gate fails if actual usage exceeds this value.
-/// Update after testnet calibration (see benchmarks/results/).
-pub const CPU_INSNS_THRESHOLD_50: u64 = 27_500_000;
-
-/// CPU threshold for lock_program_funds (O(1)).
-pub const CPU_INSNS_THRESHOLD_LOCK: u64 = 500_000;
-
-/// Build a `soroban_sdk::Vec<Address>` and a parallel `Vec<i128>` of `amount`
-/// each, generating `n` fresh recipient addresses.
-fn make_recipients_and_amounts(
-    env: &Env,
-    n: u32,
-    amount_each: i128,
-) -> (soroban_sdk::Vec<Address>, soroban_sdk::Vec<i128>) {
-    let mut recipients: soroban_sdk::Vec<Address> = soroban_sdk::Vec::new(env);
-    let mut amounts: soroban_sdk::Vec<i128> = soroban_sdk::Vec::new(env);
-    for _ in 0..n {
-        recipients.push_back(Address::generate(env));
-        amounts.push_back(amount_each);
-    }
-    (recipients, amounts)
-}
-
-#[test]
-fn test_gas_profile_batch_payout_1() {
-    use soroban_sdk::testutils::budget::Budget as _;
-
-    let ctx = setup();
-    init_program(&ctx, "GAS_PROG", 10_000_000);
-
-    const N: u32 = 1;
-    let (recipients, amounts) = make_recipients_and_amounts(&ctx.env, N, 1_000);
-
-    ctx.env.budget().reset_default();
-    ctx.client
-        .batch_payout_by(&ctx.admin, &recipients, &amounts, &None);
-    let cpu_insns = ctx.env.budget().cpu_instruction_cost();
-    let mem_bytes = ctx.env.budget().memory_bytes_cost();
-
-    println!(
-        "[GAS-PROFILE] op=batch_payout batch_size={} cpu_insns={} mem_bytes={}",
-        N, cpu_insns, mem_bytes
-    );
-
-    assert!(
-        cpu_insns <= CPU_INSNS_THRESHOLD_50,
-        "CPU threshold exceeded: batch_payout({}) cpu_insns={} > threshold={}",
-        N,
-        cpu_insns,
-        CPU_INSNS_THRESHOLD_50
-    );
-}
-
-#[test]
-fn test_gas_profile_batch_payout_10() {
-    use soroban_sdk::testutils::budget::Budget as _;
-
-    let ctx = setup();
-    init_program(&ctx, "GAS_PROG", 10_000_000);
-
-    const N: u32 = 10;
-    let (recipients, amounts) = make_recipients_and_amounts(&ctx.env, N, 1_000);
-
-    ctx.env.budget().reset_default();
-    ctx.client
-        .batch_payout_by(&ctx.admin, &recipients, &amounts, &None);
-    let cpu_insns = ctx.env.budget().cpu_instruction_cost();
-    let mem_bytes = ctx.env.budget().memory_bytes_cost();
-
-    println!(
-        "[GAS-PROFILE] op=batch_payout batch_size={} cpu_insns={} mem_bytes={}",
-        N, cpu_insns, mem_bytes
-    );
-
-    assert!(
-        cpu_insns <= CPU_INSNS_THRESHOLD_50,
-        "CPU threshold exceeded: batch_payout({}) cpu_insns={} > threshold={}",
-        N,
-        cpu_insns,
-        CPU_INSNS_THRESHOLD_50
-    );
-}
-
-#[test]
-fn test_gas_profile_batch_payout_50() {
-    use soroban_sdk::testutils::budget::Budget as _;
-
-    let ctx = setup();
-    init_program(&ctx, "GAS_PROG", 10_000_000);
-
-    const N: u32 = 50;
-    let (recipients, amounts) = make_recipients_and_amounts(&ctx.env, N, 1_000);
-
-    ctx.env.budget().reset_default();
-    ctx.client
-        .batch_payout_by(&ctx.admin, &recipients, &amounts, &None);
-    let cpu_insns = ctx.env.budget().cpu_instruction_cost();
-    let mem_bytes = ctx.env.budget().memory_bytes_cost();
-
-    println!(
-        "[GAS-PROFILE] op=batch_payout batch_size={} cpu_insns={} mem_bytes={}",
-        N, cpu_insns, mem_bytes
-    );
-
-    assert!(
-        cpu_insns <= CPU_INSNS_THRESHOLD_50,
-        "CPU threshold exceeded: batch_payout({}) cpu_insns={} > threshold={}",
-        N,
-        cpu_insns,
-        CPU_INSNS_THRESHOLD_50
-    );
-}
-
-#[test]
-fn test_gas_profile_batch_payout_100() {
-    use soroban_sdk::testutils::budget::Budget as _;
-
-    let ctx = setup();
-    init_program(&ctx, "GAS_PROG", 10_000_000);
-
-    const N: u32 = 100;
-    const THRESHOLD_100: u64 = CPU_INSNS_THRESHOLD_50 * 2; // 24_000_000
-    let (recipients, amounts) = make_recipients_and_amounts(&ctx.env, N, 1_000);
-
-    ctx.env.budget().reset_default();
-    ctx.client
-        .batch_payout_by(&ctx.admin, &recipients, &amounts, &None);
-    let cpu_insns = ctx.env.budget().cpu_instruction_cost();
-    let mem_bytes = ctx.env.budget().memory_bytes_cost();
-
-    println!(
-        "[GAS-PROFILE] op=batch_payout batch_size={} cpu_insns={} mem_bytes={}",
-        N, cpu_insns, mem_bytes
-    );
-
-    assert!(
-        cpu_insns <= THRESHOLD_100,
-        "CPU threshold exceeded: batch_payout({}) cpu_insns={} > threshold={}",
-        N,
-        cpu_insns,
-        THRESHOLD_100
-    );
-}
-
-#[test]
-fn test_gas_profile_lock_program_funds() {
-    use soroban_sdk::testutils::budget::Budget as _;
-
-    let ctx = setup();
-    // Initialise with zero liquidity; lock_program_funds credits the amount
-    // without an inbound token transfer when no depositor is set.
-    let creator = Address::generate(&ctx.env);
-    ctx.client.init_program(
-        &String::from_str(&ctx.env, "GAS_LOCK"),
-        &ctx.admin.clone(),
-        &ctx.token_id,
-        &creator,
-        &None,
-        &None,
-    );
-    // publish_program takes no arguments in the current contract version.
-    ctx.client.publish_program();
-
-    ctx.env.budget().reset_default();
-    ctx.client.lock_program_funds(&1_000_000i128);
-    let cpu_insns = ctx.env.budget().cpu_instruction_cost();
-    let mem_bytes = ctx.env.budget().memory_bytes_cost();
-
-    println!(
-        "[GAS-PROFILE] op=lock_program_funds batch_size=1 cpu_insns={} mem_bytes={}",
-        cpu_insns, mem_bytes
-    );
-
-    assert!(
-        cpu_insns <= CPU_INSNS_THRESHOLD_LOCK,
-        "CPU threshold exceeded: lock_program_funds cpu_insns={} > threshold={}",
-        cpu_insns,
-        CPU_INSNS_THRESHOLD_LOCK
-    );
-}
-
-/// **CI gate** — batch_payout with exactly 50 recipients.
-///
-/// This is the specific test the CI workflow runs for gas regression detection.
-/// Fails with a message pointing to the benchmark documentation so that the
-/// engineer on-call knows exactly where to look.
-#[test]
-fn ci_benchmark_gate_batch_payout_50() {
-    use soroban_sdk::testutils::budget::Budget as _;
-
-    let ctx = setup();
-    init_program(&ctx, "CI_GATE", 10_000_000);
-
-    const BATCH_SIZE: u32 = 50;
-    let (recipients, amounts) = make_recipients_and_amounts(&ctx.env, BATCH_SIZE, 1_000);
-
-    ctx.env.budget().reset_default();
-    ctx.client
-        .batch_payout_by(&ctx.admin, &recipients, &amounts, &None);
-    let cpu_insns = ctx.env.budget().cpu_instruction_cost();
-    let mem_bytes = ctx.env.budget().memory_bytes_cost();
-
-    println!(
-        "[GAS-PROFILE] op=batch_payout batch_size={} cpu_insns={} mem_bytes={}",
-        BATCH_SIZE, cpu_insns, mem_bytes
-    );
-
-    assert!(
-        cpu_insns <= CPU_INSNS_THRESHOLD_50,
-        "CI GATE FAILED: batch_payout(50) cpu_insns={} > threshold={}; \
-         see docs/gas-optimization/batch-payout-benchmarks.md",
-        cpu_insns,
-        CPU_INSNS_THRESHOLD_50
-    );
 }

@@ -1,131 +1,82 @@
-# Pause Management — `program-escrow`
+# Program Escrow Pause Management
+
+This document describes the three granular pause flags used by `contracts/program-escrow` and the security expectations they enforce.
 
 ## Overview
 
-The `ProgramEscrowContract` supports granular pause controls for three operation classes:
+The contract exposes three independent pause booleans:
 
-| Flag | Blocks |
-|------|--------|
-| `lock_paused` | `lock_program_funds` |
-| `release_paused` | `single_payout`, `batch_payout`, `trigger_scheduled_releases` |
-| `refund_paused` | `refund_program` |
+- `lock_paused`
+- `release_paused`
+- `refund_paused`
 
-Only the contract admin can toggle pause flags via `set_paused`.
+These flags are intentionally **orthogonal**. Pausing one operation family must not accidentally pause or unpause another.
 
----
+## Operation Mapping
 
-## `set_paused` Function
+### `lock_paused`
+Blocks only inbound fund-locking operations.
 
-```rust
-pub fn set_paused(
-    env: Env,
-    lock: Option<bool>,
-    release: Option<bool>,
-    refund: Option<bool>,
-    reason: Option<String>,
-)
+- `lock_program_funds` → blocked when `lock_paused = true`
+
+### `release_paused`
+Blocks operations that authorize or execute fund release from escrow.
+
+- `single_payout` → blocked when `release_paused = true`
+- `create_pending_claim` → blocked when `release_paused = true`
+- `execute_claim` → blocked when `release_paused = true`
+- `trigger_program_releases` → blocked when `release_paused = true`
+
+### `refund_paused`
+Blocks only refund-path operations.
+
+- `cancel_claim` → blocked when `refund_paused = true`
+
+## Exhaustive 8-Combination Matrix
+
+| lock_paused | release_paused | refund_paused | lock_program_funds | single_payout | create_pending_claim | execute_claim | trigger_program_releases | cancel_claim |
+|-------------|----------------|---------------|--------------------|---------------|----------------------|---------------|--------------------------|--------------|
+| false | false | false | allow | allow | allow | allow | allow | allow |
+| true  | false | false | block | allow | allow | allow | allow | allow |
+| false | true  | false | allow | block | block | block | block | allow |
+| false | false | true  | allow | allow | allow | allow | allow | block |
+| true  | true  | false | block | block | block | block | block | allow |
+| true  | false | true  | block | allow | allow | allow | allow | block |
+| false | true  | true  | allow | block | block | block | block | block |
+| true  | true  | true  | block | block | block | block | block | block |
+
+## Security Notes
+
+1. **Flag isolation is a security property**  
+   A partial unpause must mutate only the explicitly targeted flag. For example, clearing `release_paused` must not clear `lock_paused` or `refund_paused`.
+
+2. **Release-path protection must cover both direct and deferred execution**  
+   `release_paused` is not limited to direct payouts. It also blocks claim creation, claim execution, and scheduled-release triggering so operators can halt all outbound fund movement with one control.
+
+3. **Refund-path protection remains independent**  
+   `refund_paused` controls claim cancellation without affecting lock or release behavior. This supports incident response where outbound releases may resume while refunds remain frozen, or vice versa.
+
+4. **Read-only and maintenance controls are separate layers**  
+   Pause flags are targeted operational controls. They should be reasoned about independently from broader maintenance or read-only modes.
+
+5. **Exhaustive tests are required to prevent regressions**  
+   Combinatorial bugs often appear when one flag is cleared while others remain set. The test suite therefore covers all eight boolean combinations and includes a focused partial-unpause regression test.
+
+## Code References
+
+- Contract logic: `contracts/program-escrow/src/lib.rs`
+- Exhaustive tests: `contracts/program-escrow/src/test_granular_pause.rs`
+
+## Validation
+
+Run the package tests with:
+
+```sh
+cargo test -p program-escrow
 ```
 
-### Parameters
+If the environment cannot complete a full build, at minimum verify that:
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `lock` | `Option<bool>` | `Some(true)` pauses lock operations; `Some(false)` unpauses. `None` leaves unchanged. |
-| `release` | `Option<bool>` | `Some(true)` pauses release/payout operations; `Some(false)` unpauses. `None` leaves unchanged. |
-| `refund` | `Option<bool>` | `Some(true)` pauses refund operations; `Some(false)` unpauses. `None` leaves unchanged. |
-| `reason` | `Option<String>` | Optional human-readable reason string. **Bounded to 256 characters.** |
-
-### Authorization
-
-Requires the contract admin to authorize the call.
-
-### Reason String Bound
-
-The `reason` parameter is bounded to **256 characters** (`PAUSE_REASON_MAX_LEN = 256`) to prevent storage abuse. Providing a reason longer than 256 characters will cause the transaction to panic.
-
----
-
-## Events
-
-### `PauseStateChanged` (V1)
-
-Emitted for backward compatibility. Contains:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `operation` | `Symbol` | `"lock"`, `"release"`, or `"refund"` |
-| `paused` | `bool` | New pause state |
-| `admin` | `Address` | Admin address that triggered the change |
-| `reason` | `Option<String>` | Optional reason string |
-| `timestamp` | `u64` | Ledger timestamp |
-| `receipt_id` | `u64` | Monotonic receipt ID |
-
-### `PauseStateChangedV2` (V2) — Preferred
-
-Emitted alongside V1 for every `set_paused` call. Adds audit trail fields:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `version` | `u32` | Event schema version (`EVENT_VERSION_V2`) |
-| `operation` | `Symbol` | `"lock"`, `"release"`, or `"refund"` |
-| `previous_paused` | `bool` | Pause state **before** this call |
-| `paused` | `bool` | New pause state |
-| `actor` | `Address` | **The address that triggered the pause state change** |
-| `reason` | `Option<String>` | Optional human-readable reason, bounded to 256 chars |
-| `timestamp` | `u64` | Ledger timestamp |
-| `receipt_id` | `u64` | Monotonic receipt ID |
-
-#### Topics
-
-```
-(PAUSE_STATE_CHANGED_V2, operation_symbol)
-```
-
-#### Security Notes
-
-- `actor` is always the authenticated admin address — it cannot be spoofed.
-- `previous_paused` is read from storage **before** the mutation, accurately reflecting the old → new transition.
-- `reason` is bounded to 256 characters to prevent storage abuse.
-
----
-
-## Audit Trail
-
-The V2 event provides a complete audit trail for incident post-mortems:
-
-- **Who** paused: `actor` field
-- **What** was paused: `operation` field
-- **Why**: `reason` field
-- **When**: `timestamp` field
-- **State transition**: `previous_paused` → `paused`
-
-Indexers should prefer `PauseStateChangedV2` over `PauseStateChanged` for new integrations.
-
----
-
-## Example
-
-```rust
-// Pause lock operations with a reason
-contract.set_paused(
-    &Some(true),   // pause lock
-    &None,         // leave release unchanged
-    &None,         // leave refund unchanged
-    &Some(String::from_str(&env, "Security incident — investigating")),
-);
-```
-
-This emits a `PauseStateChangedV2` event with:
-- `actor` = admin address
-- `operation` = `"lock"`
-- `previous_paused` = `false`
-- `paused` = `true`
-- `reason` = `Some("Security incident — investigating")`
-
----
-
-## Constants
-
-| Constant | Value | Description |
-|----------|-------|-------------|
-| `PAUSE_REASON_MAX_LEN` | `256` | Maximum characters allowed in a pause reason string |
+- `contracts/program-escrow/src/lib.rs` has no parser diagnostics
+- the granular pause module is compiled by `lib.rs`
+- the eight matrix cases in `test_granular_pause.rs` remain aligned with the operation mapping above

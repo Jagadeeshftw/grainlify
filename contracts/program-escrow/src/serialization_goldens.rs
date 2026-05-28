@@ -244,4 +244,28 @@ pub const EXPECTED: &[(&str, &str)] = &[
             "0000000a"
         ),
     ),
+    // ── Delegate revocation events (Issue #1273) ───────────────────────────────
+    // Field order (alphabetical, as Soroban XDR maps are sorted):
+    //   delegate | emergency | program_id | revoked_by | timestamp | version
+    //
+    // To regenerate run:
+    //   GRAINLIFY_PRINT_SERIALIZATION_GOLDENS=1 cargo test \
+    //       --lib serialization_compatibility_public_types_and_events \
+    //       -- --nocapture
+    // and copy the printed values here.
+    (
+        "ProgramDelegateRevokedEvent",
+        // REGENERATE: run with GRAINLIFY_PRINT_SERIALIZATION_GOLDENS=1 to obtain the XDR hex
+        "REGENERATE_GOLDEN",
+    ),
+    (
+        "ProgramDelegateRevokedEvent::Emergency",
+        // REGENERATE: run with GRAINLIFY_PRINT_SERIALIZATION_GOLDENS=1 to obtain the XDR hex
+        "REGENERATE_GOLDEN",
+    ),
+    (
+        "ProgramDelegateSetEvent",
+        // REGENERATE: run with GRAINLIFY_PRINT_SERIALIZATION_GOLDENS=1 to obtain the XDR hex
+        "REGENERATE_GOLDEN",
+    ),
 ];

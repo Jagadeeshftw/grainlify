@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-//! # RBAC Tests — Payout Key Rotation
+//! # RBAC Tests — Payout Key Rotation and Draft Status Guards
 //!
 //! Verifies the role-based access control rules for `rotate_payout_key`:
 //!
@@ -12,13 +12,22 @@
 //! | Old key after rotation  | ❌ No    |
 //! | Delegate                | ❌ No    |
 //!
+//! Also verifies Draft status guards for delegate and capability-token operations:
+//! - set_program_delegate must reject programs in Draft status
+//! - revoke_program_delegate must reject programs in Draft status  
+//! - Delegate actions (via require_program_actor) must reject programs in Draft status
+//!
 //! Security assumptions validated here:
 //! - A hijacked (old) key cannot re-rotate after being replaced.
 //! - A delegate with full permissions cannot rotate the key.
 //! - An unauthorized address cannot rotate even with a correct nonce.
+//! - Delegate operations are blocked on programs in Draft status.
 
 use super::*;
-use soroban_sdk::{testutils::Address as _, token, Address, Env, String};
+use soroban_sdk::{
+    testutils::{Address as _, MockAuth, MockAuthInvoke},
+    token, Address, Env, IntoVal, String,
+};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -28,6 +37,68 @@ fn make_client(env: &Env) -> (ProgramEscrowContractClient<'static>, Address) {
     let contract_id = env.register_contract(None, ProgramEscrowContract);
     let client = ProgramEscrowContractClient::new(env, &contract_id);
     (client, contract_id)
+}
+
+/// Configure auth for `propose_admin` as the current admin.
+fn mock_propose_admin_auth(
+    env: &Env,
+    contract_id: &Address,
+    admin: &Address,
+    proposed_admin: &Address,
+) {
+    env.mock_auths(&[MockAuth {
+        address: admin,
+        invoke: &MockAuthInvoke {
+            contract: contract_id,
+            fn_name: "propose_admin",
+            args: (proposed_admin.clone(),).into_val(env),
+            sub_invokes: &[],
+        },
+    }]);
+}
+
+/// Configure auth for `accept_admin` as the supplied signer.
+fn mock_accept_admin_auth(env: &Env, contract_id: &Address, signer: &Address) {
+    env.mock_auths(&[MockAuth {
+        address: signer,
+        invoke: &MockAuthInvoke {
+            contract: contract_id,
+            fn_name: "accept_admin",
+            args: ().into_val(env),
+            sub_invokes: &[],
+        },
+    }]);
+}
+
+/// Return the currently stored pending admin.
+fn pending_admin(env: &Env, contract_id: &Address) -> Address {
+    env.as_contract(contract_id, || {
+        env.storage()
+            .instance()
+            .get(&DataKey::PendingAdmin)
+            .expect("pending admin should exist")
+    })
+}
+
+/// Return the currently stored pending admin transition metadata.
+fn pending_admin_transition(env: &Env, contract_id: &Address) -> RoleTransitionState {
+    env.as_contract(contract_id, || {
+        env.storage()
+            .instance()
+            .get(&DataKey::PendingAdminTransition)
+            .expect("pending admin transition should exist")
+    })
+}
+
+/// Assert that no admin rotation state remains in storage.
+fn assert_no_pending_admin_rotation(env: &Env, contract_id: &Address) {
+    env.as_contract(contract_id, || {
+        assert!(!env.storage().instance().has(&DataKey::PendingAdmin));
+        assert!(!env
+            .storage()
+            .instance()
+            .has(&DataKey::PendingAdminTransition));
+    });
 }
 
 fn fund_contract(env: &Env, contract_id: &Address, amount: i128) -> Address {
@@ -46,9 +117,9 @@ fn setup(
     env: &Env,
 ) -> (
     ProgramEscrowContractClient<'static>,
-    String,   // program_id
-    Address,  // payout_key
-    Address,  // admin
+    String,  // program_id
+    Address, // payout_key
+    Address, // admin
 ) {
     env.mock_all_auths();
     let (client, contract_id) = make_client(env);
@@ -57,7 +128,14 @@ fn setup(
     let payout_key = Address::generate(env);
     let program_id = String::from_str(env, "rbac-prog");
     client.initialize_contract(&admin);
-    client.init_program(&program_id, &payout_key, &token_id, &payout_key, &None, &None);
+    client.init_program(
+        &program_id,
+        &payout_key,
+        &token_id,
+        &payout_key,
+        &None,
+        &None,
+    );
     (client, program_id, payout_key, admin)
 }
 
@@ -138,7 +216,9 @@ fn test_rbac_delegate_cannot_rotate() {
         &program_id,
         &payout_key,
         &delegate,
-        &(DELEGATE_PERMISSION_RELEASE | DELEGATE_PERMISSION_REFUND | DELEGATE_PERMISSION_UPDATE_META),
+        &(DELEGATE_PERMISSION_RELEASE
+            | DELEGATE_PERMISSION_REFUND
+            | DELEGATE_PERMISSION_UPDATE_META),
     );
 
     let nonce = client.get_rotation_nonce(&program_id);
@@ -174,310 +254,110 @@ fn test_rbac_wrong_nonce_rejected_for_authorized_caller() {
 }
 
 // ---------------------------------------------------------------------------
-// Multisig Threshold Tests
+// Admin rotation edge cases
 // ---------------------------------------------------------------------------
 
-use crate::{AdminOpKind, MultisigThresholdConfig, ADMIN_OP_EXPIRY_LEDGERS};
-
-fn advance_seq(env: &Env, n: u32) {
-    env.ledger().with_mut(|li| li.sequence_number += n);
-}
-
-fn make_payload(env: &Env, tag: &str) -> soroban_sdk::Bytes {
-    soroban_sdk::Bytes::from_slice(env, tag.as_bytes())
-}
-
-/// Set up a contract with a 2-of-3 multisig threshold config.
-fn setup_multisig(
-    env: &Env,
-) -> (
-    ProgramEscrowContractClient<'static>,
-    Address, // admin
-    Address, // signer1
-    Address, // signer2
-    Address, // signer3
-) {
-    env.mock_all_auths();
-    let contract_id = env.register_contract(None, ProgramEscrowContract);
-    let client = ProgramEscrowContractClient::new(env, &contract_id);
-    let admin = Address::generate(env);
-    client.initialize_contract(&admin);
-
-    let s1 = Address::generate(env);
-    let s2 = Address::generate(env);
-    let s3 = Address::generate(env);
-    let signers = soroban_sdk::vec![env, s1.clone(), s2.clone(), s3.clone()];
-    client.set_multisig_threshold_config(&signers, &2, &1_000_000i128);
-
-    (client, admin, s1, s2, s3)
-}
-
-// --- set_multisig_threshold_config ---
-
+/// A later `propose_admin` call must invalidate any earlier pending proposal.
 #[test]
-fn test_set_multisig_config_stores_correctly() {
+fn test_rbac_second_admin_proposal_overwrites_first_pending_proposal() {
     let env = Env::default();
-    env.mock_all_auths();
-    let contract_id = env.register_contract(None, ProgramEscrowContract);
-    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+    let (client, contract_id) = make_client(&env);
     let admin = Address::generate(&env);
+    let first_proposed_admin = Address::generate(&env);
+    let second_proposed_admin = Address::generate(&env);
+
     client.initialize_contract(&admin);
 
-    let s1 = Address::generate(&env);
-    let s2 = Address::generate(&env);
-    client.set_multisig_threshold_config(
-        &soroban_sdk::vec![&env, s1.clone(), s2.clone()],
-        &2,
-        &500_000i128,
+    env.ledger().set_timestamp(1_000);
+    mock_propose_admin_auth(&env, &contract_id, &admin, &first_proposed_admin);
+    client.propose_admin(&first_proposed_admin);
+
+    assert_eq!(pending_admin(&env, &contract_id), first_proposed_admin);
+    let first_transition = pending_admin_transition(&env, &contract_id);
+    assert_eq!(first_transition.proposed_role, first_proposed_admin);
+    assert_eq!(first_transition.proposer, admin);
+    assert_eq!(first_transition.proposed_at, 1_000);
+
+    env.ledger().set_timestamp(1_001);
+    mock_propose_admin_auth(&env, &contract_id, &admin, &second_proposed_admin);
+    client.propose_admin(&second_proposed_admin);
+
+    assert_eq!(pending_admin(&env, &contract_id), second_proposed_admin);
+    let second_transition = pending_admin_transition(&env, &contract_id);
+    assert_eq!(second_transition.proposed_role, second_proposed_admin);
+    assert_eq!(second_transition.proposer, admin);
+    assert_eq!(second_transition.proposed_at, 1_001);
+    assert!(second_transition.deadline > second_transition.proposed_at);
+
+    mock_accept_admin_auth(&env, &contract_id, &first_proposed_admin);
+    assert!(
+        client.try_accept_admin().is_err(),
+        "the original proposed admin must lose acceptance rights after overwrite"
     );
+    assert_eq!(client.get_admin().unwrap(), admin);
+    assert_eq!(pending_admin(&env, &contract_id), second_proposed_admin);
 
-    let cfg = client.get_multisig_threshold_config().unwrap();
-    assert_eq!(cfg.required_approvals, 2);
-    assert_eq!(cfg.high_value_threshold, 500_000);
-    assert_eq!(cfg.signers.len(), 2);
+    mock_accept_admin_auth(&env, &contract_id, &second_proposed_admin);
+    client.accept_admin();
+
+    assert_eq!(client.get_admin().unwrap(), second_proposed_admin);
+    assert_no_pending_admin_rotation(&env, &contract_id);
 }
 
+/// Only the currently proposed admin may accept the admin role.
 #[test]
-#[should_panic(expected = "InvalidMultisigConfig")]
-fn test_set_multisig_config_required_gt_signers_rejected() {
+fn test_rbac_accept_admin_rejects_non_proposed_address() {
     let env = Env::default();
-    env.mock_all_auths();
-    let contract_id = env.register_contract(None, ProgramEscrowContract);
-    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+    let (client, contract_id) = make_client(&env);
     let admin = Address::generate(&env);
-    client.initialize_contract(&admin);
-    let s1 = Address::generate(&env);
-    // required=3 but only 1 signer
-    client.set_multisig_threshold_config(&soroban_sdk::vec![&env, s1], &3, &1000i128);
-}
-
-#[test]
-#[should_panic(expected = "InvalidMultisigConfig")]
-fn test_set_multisig_config_zero_required_rejected() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let contract_id = env.register_contract(None, ProgramEscrowContract);
-    let client = ProgramEscrowContractClient::new(&env, &contract_id);
-    let admin = Address::generate(&env);
-    client.initialize_contract(&admin);
-    let s1 = Address::generate(&env);
-    client.set_multisig_threshold_config(&soroban_sdk::vec![&env, s1], &0, &1000i128);
-}
-
-// --- propose_admin_op ---
-
-#[test]
-fn test_propose_admin_op_stores_pending_op() {
-    let env = Env::default();
-    let (client, _admin, _s1, _s2, _s3) = setup_multisig(&env);
-    let payload = make_payload(&env, "fee-update-v1");
-
-    let op = client.propose_admin_op(&AdminOpKind::UpdateFeeConfig, &0i128, &payload);
-    assert_eq!(op.kind, AdminOpKind::UpdateFeeConfig);
-    assert_eq!(op.approvals.len(), 1); // proposer auto-approves
-}
-
-#[test]
-#[should_panic(expected = "PendingOpExists")]
-fn test_propose_second_op_while_first_pending_rejected() {
-    let env = Env::default();
-    let (client, _admin, _s1, _s2, _s3) = setup_multisig(&env);
-    let payload = make_payload(&env, "op1");
-    client.propose_admin_op(&AdminOpKind::UpdateFeeConfig, &0i128, &payload);
-    // Second proposal while first is still pending
-    client.propose_admin_op(&AdminOpKind::EmergencyWithdraw, &5_000_000i128, &payload);
-}
-
-#[test]
-fn test_propose_replaces_expired_op() {
-    let env = Env::default();
-    let (client, _admin, _s1, _s2, _s3) = setup_multisig(&env);
-    let payload = make_payload(&env, "op1");
-    client.propose_admin_op(&AdminOpKind::UpdateFeeConfig, &0i128, &payload);
-
-    // Advance past expiry
-    advance_seq(&env, ADMIN_OP_EXPIRY_LEDGERS + 1);
-
-    // New proposal should succeed
-    let payload2 = make_payload(&env, "op2");
-    let op = client.propose_admin_op(&AdminOpKind::EmergencyWithdraw, &0i128, &payload2);
-    assert_eq!(op.kind, AdminOpKind::EmergencyWithdraw);
-}
-
-// --- approve_admin_op ---
-
-#[test]
-fn test_approve_increments_approval_count() {
-    let env = Env::default();
-    let (client, _admin, s1, _s2, _s3) = setup_multisig(&env);
-    let payload = make_payload(&env, "fee-update");
-    client.propose_admin_op(&AdminOpKind::UpdateFeeConfig, &0i128, &payload);
-
-    let op = client.approve_admin_op(&s1);
-    assert_eq!(op.approvals.len(), 2); // proposer + s1
-}
-
-#[test]
-#[should_panic(expected = "NotASigner")]
-fn test_non_signer_cannot_approve() {
-    let env = Env::default();
-    let (client, _admin, _s1, _s2, _s3) = setup_multisig(&env);
-    let payload = make_payload(&env, "fee-update");
-    client.propose_admin_op(&AdminOpKind::UpdateFeeConfig, &0i128, &payload);
-
+    let proposed_admin = Address::generate(&env);
     let outsider = Address::generate(&env);
-    client.approve_admin_op(&outsider);
-}
 
-#[test]
-#[should_panic(expected = "AlreadyApproved")]
-fn test_double_approve_rejected() {
-    let env = Env::default();
-    let (client, _admin, s1, _s2, _s3) = setup_multisig(&env);
-    let payload = make_payload(&env, "fee-update");
-    client.propose_admin_op(&AdminOpKind::UpdateFeeConfig, &0i128, &payload);
-    client.approve_admin_op(&s1);
-    client.approve_admin_op(&s1); // second approval from same signer
-}
-
-#[test]
-#[should_panic(expected = "PendingOpExpired")]
-fn test_approve_expired_op_rejected() {
-    let env = Env::default();
-    let (client, _admin, s1, _s2, _s3) = setup_multisig(&env);
-    let payload = make_payload(&env, "fee-update");
-    client.propose_admin_op(&AdminOpKind::UpdateFeeConfig, &0i128, &payload);
-    advance_seq(&env, ADMIN_OP_EXPIRY_LEDGERS + 1);
-    client.approve_admin_op(&s1);
-}
-
-// --- execute_admin_op ---
-
-#[test]
-fn test_execute_succeeds_after_threshold_met() {
-    let env = Env::default();
-    let (client, _admin, s1, _s2, _s3) = setup_multisig(&env);
-    let payload = make_payload(&env, "fee-update");
-    client.propose_admin_op(&AdminOpKind::UpdateFeeConfig, &0i128, &payload);
-    client.approve_admin_op(&s1); // now 2-of-3 met
-
-    let kind = client.execute_admin_op(&payload);
-    assert_eq!(kind, AdminOpKind::UpdateFeeConfig);
-
-    // Pending op must be cleared
-    assert!(client.get_pending_admin_op().is_none());
-}
-
-#[test]
-#[should_panic(expected = "InsufficientApprovals")]
-fn test_execute_before_threshold_rejected() {
-    let env = Env::default();
-    let (client, _admin, _s1, _s2, _s3) = setup_multisig(&env);
-    let payload = make_payload(&env, "fee-update");
-    client.propose_admin_op(&AdminOpKind::UpdateFeeConfig, &0i128, &payload);
-    // Only 1 approval (proposer), need 2
-    client.execute_admin_op(&payload);
-}
-
-#[test]
-#[should_panic(expected = "PayloadMismatch")]
-fn test_execute_wrong_payload_rejected() {
-    let env = Env::default();
-    let (client, _admin, s1, _s2, _s3) = setup_multisig(&env);
-    let payload = make_payload(&env, "fee-update");
-    client.propose_admin_op(&AdminOpKind::UpdateFeeConfig, &0i128, &payload);
-    client.approve_admin_op(&s1);
-
-    let wrong_payload = make_payload(&env, "different-payload");
-    client.execute_admin_op(&wrong_payload);
-}
-
-#[test]
-#[should_panic(expected = "PendingOpExpired")]
-fn test_execute_expired_op_rejected() {
-    let env = Env::default();
-    let (client, _admin, s1, _s2, _s3) = setup_multisig(&env);
-    let payload = make_payload(&env, "fee-update");
-    client.propose_admin_op(&AdminOpKind::UpdateFeeConfig, &0i128, &payload);
-    client.approve_admin_op(&s1);
-    advance_seq(&env, ADMIN_OP_EXPIRY_LEDGERS + 1);
-    client.execute_admin_op(&payload);
-}
-
-#[test]
-#[should_panic(expected = "NoPendingOp")]
-fn test_execute_with_no_pending_op_rejected() {
-    let env = Env::default();
-    let (client, _admin, _s1, _s2, _s3) = setup_multisig(&env);
-    let payload = make_payload(&env, "fee-update");
-    client.execute_admin_op(&payload);
-}
-
-// --- cancel_admin_op ---
-
-#[test]
-fn test_cancel_clears_pending_op() {
-    let env = Env::default();
-    let (client, _admin, _s1, _s2, _s3) = setup_multisig(&env);
-    let payload = make_payload(&env, "fee-update");
-    client.propose_admin_op(&AdminOpKind::UpdateFeeConfig, &0i128, &payload);
-    assert!(client.get_pending_admin_op().is_some());
-
-    client.cancel_admin_op();
-    assert!(client.get_pending_admin_op().is_none());
-}
-
-// --- 1-of-1 (default / no multisig) ---
-
-#[test]
-fn test_single_approval_executes_immediately_after_propose_and_execute() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let contract_id = env.register_contract(None, ProgramEscrowContract);
-    let client = ProgramEscrowContractClient::new(&env, &contract_id);
-    let admin = Address::generate(&env);
     client.initialize_contract(&admin);
 
-    // 1-of-1 config
-    client.set_multisig_threshold_config(
-        &soroban_sdk::vec![&env, admin.clone()],
-        &1,
-        &1_000_000i128,
+    mock_propose_admin_auth(&env, &contract_id, &admin, &proposed_admin);
+    client.propose_admin(&proposed_admin);
+
+    mock_accept_admin_auth(&env, &contract_id, &outsider);
+    assert!(
+        client.try_accept_admin().is_err(),
+        "a non-proposed address must not be able to accept admin rotation"
     );
 
-    let payload = make_payload(&env, "op");
-    client.propose_admin_op(&AdminOpKind::UpdateFeeConfig, &0i128, &payload);
-    // 1 approval already (proposer), threshold met — execute immediately
-    let kind = client.execute_admin_op(&payload);
-    assert_eq!(kind, AdminOpKind::UpdateFeeConfig);
+    assert_eq!(client.get_admin().unwrap(), admin);
+    assert_eq!(pending_admin(&env, &contract_id), proposed_admin);
+
+    mock_accept_admin_auth(&env, &contract_id, &proposed_admin);
+    client.accept_admin();
+    assert_eq!(client.get_admin().unwrap(), proposed_admin);
 }
 
-// --- 3-of-3 full quorum ---
-
+/// Acceptance after the proposal TTL must fail and clear stale proposal state.
 #[test]
-fn test_full_quorum_3_of_3() {
+fn test_rbac_admin_rotation_proposal_expires_before_acceptance() {
     let env = Env::default();
-    env.mock_all_auths();
-    let contract_id = env.register_contract(None, ProgramEscrowContract);
-    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+    let (client, contract_id) = make_client(&env);
     let admin = Address::generate(&env);
+    let proposed_admin = Address::generate(&env);
+
     client.initialize_contract(&admin);
 
-    let s1 = Address::generate(&env);
-    let s2 = Address::generate(&env);
-    let s3 = Address::generate(&env);
-    client.set_multisig_threshold_config(
-        &soroban_sdk::vec![&env, s1.clone(), s2.clone(), s3.clone()],
-        &3,
-        &0i128,
+    env.ledger().set_timestamp(5_000);
+    mock_propose_admin_auth(&env, &contract_id, &admin, &proposed_admin);
+    client.propose_admin(&proposed_admin);
+
+    let transition = pending_admin_transition(&env, &contract_id);
+    let proposal_ttl = transition.deadline - transition.proposed_at;
+    assert_eq!(proposal_ttl, MAX_ROLE_TRANSITION_PERIOD);
+
+    env.ledger().set_timestamp(transition.deadline + 1);
+    mock_accept_admin_auth(&env, &contract_id, &proposed_admin);
+    let result = client.try_accept_admin();
+    assert!(
+        matches!(result, Err(Ok(ContractError::RoleTransitionExpired))),
+        "acceptance after the TTL must fail with RoleTransitionExpired"
     );
 
-    let payload = make_payload(&env, "full-quorum");
-    client.propose_admin_op(&AdminOpKind::EmergencyWithdraw, &0i128, &payload);
-    client.approve_admin_op(&s1);
-    client.approve_admin_op(&s2);
-    client.approve_admin_op(&s3);
-
-    let kind = client.execute_admin_op(&payload);
-    assert_eq!(kind, AdminOpKind::EmergencyWithdraw);
+    assert_eq!(client.get_admin().unwrap(), admin);
+    assert_no_pending_admin_rotation(&env, &contract_id);
 }

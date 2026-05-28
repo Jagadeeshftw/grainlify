@@ -330,7 +330,10 @@ fn transition_to_half_open_timeout(env: &Env) {
     // Emit event indicating automatic timeout transition
     env.events().publish(
         (symbol_short!("circuit"), symbol_short!("cb_tmout")),
-        (symbol_short!("auto_half"), env.ledger().timestamp()),
+        (
+            symbol_short!("auto_half"),
+            env.ledger().timestamp(),
+        ),
     );
 }
 

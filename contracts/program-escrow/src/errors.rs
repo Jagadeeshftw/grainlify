@@ -666,15 +666,13 @@ pub enum ContractError {
     InvalidRoleProposal = 1207,
     RoleRotationNotAllowed = 1208,
 
-    // =========================================================================
-    // Idempotency Key Errors (1300-1399)
-    // =========================================================================
-
-    /// Duplicate idempotency key — already used and still within TTL.
-    DuplicateIdempotencyKey = 1300,
-
-    /// Expired idempotency key — TTL has passed.
-    ExpiredIdempotencyKey = 1301,
+    /// Rotation timelock has not yet expired.
+    ///
+    /// This error occurs when `accept_admin` or `accept_controller` is called
+    /// before the mandatory 24-hour delay since the proposal has elapsed.
+    /// The caller must wait until `proposed_at + ROTATION_TIMELOCK_DELAY` seconds
+    /// have passed before accepting the role.
+    RotationTimelockActive = 1209,
 }
 
 #[soroban_sdk::contracterror]

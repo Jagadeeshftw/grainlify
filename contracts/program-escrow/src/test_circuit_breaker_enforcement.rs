@@ -118,7 +118,7 @@ fn test_pause_wins_over_open_circuit_single_payout() {
     open_circuit(&env);
 
     // Also pause release operations
-    client.set_paused(&Some(false), &Some(true), &Some(false), &None);
+    client.set_paused(&Some(false), &Some(true), &Some(false), &None, &None);
 
     // Attempt a single payout — should fail with "Funds Paused", NOT "Circuit breaker is OPEN"
     client.single_payout_by(&payout_key, &recipient, &100i128, &None);
@@ -138,7 +138,7 @@ fn test_pause_wins_over_open_circuit_batch_payout() {
     } = setup();
 
     open_circuit(&env);
-    client.set_paused(&Some(false), &Some(true), &Some(false), &None);
+    client.set_paused(&Some(false), &Some(true), &Some(false), &None, &None);
 
     let recipients = vec![&env, recipient];
     let amounts = vec![&env, 100i128];
@@ -160,7 +160,7 @@ fn test_pause_wins_over_open_circuit_lock() {
     } = setup();
 
     open_circuit(&env);
-    client.set_paused(&Some(true), &Some(false), &Some(false), &None);
+    client.set_paused(&Some(true), &Some(false), &Some(false), &None, &None);
 
     client.lock_program_funds(&1000i128);
 }
@@ -186,7 +186,7 @@ fn test_all_three_active_pause_wins_single_payout() {
     // Activate all three layers
     open_circuit(&env);
     client.set_read_only_mode(&true, &None);
-    client.set_paused(&Some(false), &Some(true), &Some(false), &None);
+    client.set_paused(&Some(false), &Some(true), &Some(false), &None, &None);
 
     // Pause must win
     client.single_payout_by(&payout_key, &recipient, &100i128, &None);
@@ -208,7 +208,7 @@ fn test_all_three_active_pause_wins_batch_payout() {
 
     open_circuit(&env);
     client.set_read_only_mode(&true, &None);
-    client.set_paused(&Some(false), &Some(true), &Some(false), &None);
+    client.set_paused(&Some(false), &Some(true), &Some(false), &None, &None);
 
     let recipients = vec![&env, recipient];
     let amounts = vec![&env, 100i128];
@@ -234,7 +234,7 @@ fn test_circuit_open_fires_when_pause_inactive_single_payout() {
 
     open_circuit(&env);
     // Explicitly confirm pause is off
-    client.set_paused(&Some(false), &Some(false), &Some(false), &None);
+    client.set_paused(&Some(false), &Some(false), &Some(false), &None, &None);
 
     client.single_payout_by(&payout_key, &recipient, &100i128, &None);
 }
@@ -252,7 +252,7 @@ fn test_circuit_open_fires_when_pause_inactive_batch_payout() {
     } = setup();
 
     open_circuit(&env);
-    client.set_paused(&Some(false), &Some(false), &Some(false), &None);
+    client.set_paused(&Some(false), &Some(false), &Some(false), &None, &None);
 
     let recipients = vec![&env, recipient];
     let amounts = vec![&env, 100i128];
@@ -278,10 +278,10 @@ fn test_unpause_reveals_open_circuit() {
 
     // Start: both active
     open_circuit(&env);
-    client.set_paused(&Some(false), &Some(true), &Some(false), &None);
+    client.set_paused(&Some(false), &Some(true), &Some(false), &None, &None);
 
     // Unpause, circuit stays open
-    client.set_paused(&Some(false), &Some(false), &Some(false), &None);
+    client.set_paused(&Some(false), &Some(false), &Some(false), &None, &None);
 
     client.single_payout_by(&payout_key, &recipient, &100i128, &None);
 }
@@ -360,7 +360,7 @@ fn test_release_pause_does_not_block_lock_when_circuit_open() {
 
     open_circuit(&env);
     // Only lock is paused — release is not
-    client.set_paused(&Some(true), &Some(false), &Some(false), &None);
+    client.set_paused(&Some(true), &Some(false), &Some(false), &None, &None);
 
     // Payout should fail with circuit error (release not paused)
     client.single_payout_by(&payout_key, &recipient, &100i128, &None);
@@ -387,7 +387,7 @@ fn test_no_protection_layers_active_reaches_business_logic() {
 
     // Ensure all protection layers are inactive
     assert_circuit_closed(&env);
-    client.set_paused(&Some(false), &Some(false), &Some(false), &None);
+    client.set_paused(&Some(false), &Some(false), &Some(false), &None, &None);
 
     // No funds locked → should reach balance check
     client.single_payout_by(&payout_key, &recipient, &1i128, &None);

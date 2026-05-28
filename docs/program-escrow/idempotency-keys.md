@@ -1,85 +1,156 @@
-# Idempotency Keys for Batch Payouts
+# Idempotency Keys for `batch_payout`
 
 ## Overview
 
-The `program-escrow` contract supports optional idempotency keys on batch payout
-operations. An idempotency key is a caller-supplied string that uniquely identifies
-a payout batch. The contract stores the key on-chain and rejects any subsequent
-submission of the same key while it is still valid, preventing accidental double-pays.
+The `batch_payout_idempotent` and `batch_payout_idempotent_by` entrypoints let
+callers attach a **caller-supplied idempotency key** to every batch payout.
+If the backend retries a payout (e.g. after a network timeout), the contract
+detects the duplicate key and returns the current state **without transferring
+funds again**.
 
-## How It Works
+This is the primary defence against double-payment caused by retry storms or
+at-least-once delivery semantics in the Grainlify backend.
 
-### Submitting a payout with a key
+---
 
-Use `batch_payout_with_key` instead of `batch_payout_by`:
+## Entrypoints
 
+### `batch_payout_idempotent`
+
+```rust
+pub fn batch_payout_idempotent(
+    env: Env,
+    idempotency_key: String,   // unique caller-supplied key
+    recipients: Vec<Address>,
+    amounts: Vec<i128>,
+) -> ProgramData
 ```
-batch_payout_with_key(caller, idempotency_key, recipients, amounts)
+
+### `batch_payout_idempotent_by` (delegate variant)
+
+```rust
+pub fn batch_payout_idempotent_by(
+    env: Env,
+    idempotency_key: String,
+    caller: Address,           // delegate address
+    recipients: Vec<Address>,
+    amounts: Vec<i128>,
+) -> ProgramData
 ```
 
-On the first call the contract:
-1. Checks that the key does not already exist in storage.
-2. Stores a `PayoutIdempotencyKey` record with `expires_at = current_ledger + 100_000`.
-3. Executes the payout normally.
+Both functions share identical idempotency semantics.
 
-### Rejection behaviour
+---
 
-| Scenario | Error |
+## Behaviour
+
+| Scenario | Outcome |
 |---|---|
-| Key exists and `current_ledger <= expires_at` | `DuplicateIdempotencyKey` (1100) |
-| Key exists and `current_ledger > expires_at` | `ExpiredIdempotencyKey` (1101) |
+| Key is **new** | Payout executes; key is stored; `BatchPayoutEvent` emitted |
+| Key was **already consumed** | No funds transferred; `BatchPayoutReplayedEvent` emitted; current `ProgramData` returned |
 
-The two error codes are intentionally distinct so callers can tell whether a
-rejection is a true duplicate (safe to discard) or an expired re-use (may need
-investigation).
+### Key lifecycle
 
-### TTL
+1. On the **first** call the key is absent from storage → payout proceeds.
+2. The key is written to persistent storage **only after** all transfers
+   succeed (write-after-success prevents a failed payout from consuming the
+   key).
+3. On any **subsequent** call with the same key the contract emits
+   `BatchPayoutReplayedEvent` and returns immediately.
 
-Keys expire after **100,000 ledgers** (~7 days at 5 s/ledger). The constant is
-exported as `IDEMPOTENCY_KEY_TTL_LEDGERS`.
+---
 
-## Storage Layout
+## Audit Events
 
-| Key | Type | Description |
-|---|---|---|
-| `IdempotencyKey(program_id, key)` | `PayoutIdempotencyKey` | Per-key record |
-| `IdempotencyKeyIndex(program_id)` | `Vec<String>` | Ordered list of keys for pruning |
+### `BatchPayoutEvent` (normal payout)
 
-Both use **instance storage** (same lifetime as the contract instance).
+Emitted on every successful first-time execution.
 
-## Pruning Stale Keys
-
-High-throughput programs accumulate expired key records over time. The admin can
-call `prune_idempotency_keys` to reclaim storage:
-
+```rust
+pub struct BatchPayoutEvent {
+    pub version: u32,           // always 2
+    pub program_id: String,
+    pub recipient_count: u32,
+    pub total_amount: i128,
+    pub remaining_balance: i128,
+    pub idempotency_key: Option<String>, // the key that triggered this payout (if any)
+}
 ```
-prune_idempotency_keys(program_id, max_prune) -> u32
+
+### `BatchPayoutReplayedEvent` (replay detected)
+
+Emitted instead of `BatchPayoutEvent` when a duplicate key is detected.
+Auditors can use this event to confirm that **no double-payment occurred**.
+
+```rust
+pub struct BatchPayoutReplayedEvent {
+    pub version: u32,           // always 2
+    pub program_id: String,
+    pub idempotency_key: String, // the key that was replayed
+}
 ```
 
-- `max_prune` caps the number of deletions per transaction to bound compute cost.
-- Returns the number of keys actually removed.
-- Only removes keys whose `expires_at` ledger has already passed.
-- Emits an `IdemPrn` event with the count of pruned keys.
+Event topic symbol: `BatPayRp`
 
-### Recommended pruning cadence
+---
 
-Call `prune_idempotency_keys` periodically (e.g., once per day) with a
-`max_prune` of 50–200 depending on throughput. Multiple calls are safe and
-idempotent.
+## Storage
 
-## Security Notes
+| Key | Type | Location | Description |
+|---|---|---|---|
+| `PayIdem` | `Vec<String>` | Persistent | Set of consumed idempotency keys |
 
-- Idempotency keys are **optional**. Callers using `batch_payout` or
-  `batch_payout_by` are unaffected.
-- The key check runs **after authorization**, so an unauthorized caller cannot
-  probe the key store.
-- Expired keys are rejected with a distinct error to prevent silent re-use after
-  TTL rollover.
-- The prune function is **admin-only** to prevent griefing.
+Keys are never expired or pruned. This is intentional: the storage cost is
+bounded by the number of distinct batch payouts ever executed, which is small
+relative to the escrow lifetime.
 
-## Error Codes
+---
 
-| Code | Name | Meaning |
-|---|---|---|
-| 1100 | `DuplicateIdempotencyKey` | Key already used and still within TTL |
-| 1101 | `ExpiredIdempotencyKey` | Key was used before but TTL has passed |
+## Choosing an Idempotency Key
+
+The key must be **unique per logical payout batch**. Recommended strategies:
+
+- **UUID v4** generated by the backend before the first attempt.
+- **Content hash** of `(program_id, sorted_recipients, amounts, timestamp)`.
+
+The key must be ≤ 64 bytes (Soroban `String` limit for this contract).
+
+---
+
+## Security Assumptions
+
+1. **Replay detection is pre-transfer.** The key lookup happens before any
+   token transfer, so a replay can never partially execute.
+2. **Write-after-success.** The key is persisted only after all transfers
+   complete. A mid-batch failure leaves the key unconsumed, allowing a safe
+   retry.
+3. **No key expiry.** Keys are permanent. Callers must not reuse keys across
+   logically distinct payouts.
+4. **Authorization unchanged.** Idempotency wraps the existing
+   `batch_payout_internal` which enforces the same authorization, pause, and
+   circuit-breaker checks.
+
+---
+
+## Test Coverage
+
+All tests live in
+`contracts/program-escrow/src/test_batch_operations.rs`.
+
+| Test | What it verifies |
+|---|---|
+| `test_idempotent_batch_payout_first_call_succeeds` | Fresh key executes payout and reduces balance |
+| `test_idempotent_batch_payout_replay_no_double_payment` | Replay returns same balance; no extra transfer |
+| `test_idempotent_batch_payout_replay_emits_audit_event` | Replay emits `BatchPayoutReplayedEvent` with correct key |
+| `test_idempotent_batch_payout_audit_trail_integrity` | Verifies full audit trail: BATCH_PAYOUT only on first call, BatPayRp on replay |
+| `test_idempotent_batch_payout_distinct_keys_all_execute` | Three distinct keys each execute independently |
+| `test_idempotent_batch_payout_partial_overlap` | Mix of new and duplicate keys; only new keys transfer |
+| `test_idempotent_batch_payout_complex_retry_interleaving` | Complex mix of unique and replayed keys maintains state integrity |
+| `test_idempotent_replay_does_not_grow_payout_history` | Replays never append to `payout_history` |
+| `test_idempotent_batch_payout_by_replay_no_double_payment` | Delegate variant respects idempotency |
+
+Run with:
+
+```bash
+cargo test -p program-escrow test_idempotent
+```
