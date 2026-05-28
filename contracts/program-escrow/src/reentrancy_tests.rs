@@ -970,3 +970,203 @@ fn test_reentrancy_guard_model_documentation() {
         env.deployer().register_wasm(&token_wasm, ())
     }
 }
+
+// ============================================================================
+// Schedule Release Reentrancy Tests (manual and automatic paths)
+// ============================================================================
+
+#[test]
+#[should_panic(expected = "Reentrancy detected")]
+fn test_release_program_schedule_manual_blocks_reentrancy() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+
+    let authorized_key = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let program_id = String::from_str(&env, "test-program");
+    let amount = 500_0000000i128;
+    let release_timestamp = 1000u64;
+
+    let token_client = create_token_contract(&env, &authorized_key);
+    let token_admin = token::StellarAssetClient::new(&env, &token_client.address);
+    token_admin.mint(&authorized_key, &amount);
+
+    client.init_program(
+        &program_id,
+        &authorized_key,
+        &token_client.address,
+        &authorized_key,
+        &None,
+    );
+    token_client.transfer(&authorized_key, &contract_id, &amount);
+    client.lock_program_funds(&amount);
+
+    let schedule = client.create_program_release_schedule(&amount, &release_timestamp, &recipient);
+
+    // Simulate a concurrent call already holding the guard
+    crate::reentrancy_guard::set_entered(&env);
+
+    // Should panic: guard is already held
+    client.release_program_schedule_manual(&schedule.schedule_id);
+}
+
+#[test]
+fn test_release_program_schedule_manual_normal_execution() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+
+    let authorized_key = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let program_id = String::from_str(&env, "test-program");
+    let amount = 500_0000000i128;
+    let release_timestamp = 1000u64;
+
+    let token_client = create_token_contract(&env, &authorized_key);
+    let token_admin = token::StellarAssetClient::new(&env, &token_client.address);
+    token_admin.mint(&authorized_key, &amount);
+
+    client.init_program(
+        &program_id,
+        &authorized_key,
+        &token_client.address,
+        &authorized_key,
+        &None,
+    );
+    token_client.transfer(&authorized_key, &contract_id, &amount);
+    client.lock_program_funds(&amount);
+
+    let schedule = client.create_program_release_schedule(&amount, &release_timestamp, &recipient);
+
+    // Guard must be clear before and after a successful call
+    assert!(!crate::reentrancy_guard::is_entered(&env));
+    client.release_program_schedule_manual(&schedule.schedule_id);
+    assert!(!crate::reentrancy_guard::is_entered(&env));
+
+    // Recipient should have received the funds
+    assert_eq!(token_client.balance(&recipient), amount);
+}
+
+#[test]
+#[should_panic(expected = "Reentrancy detected")]
+fn test_release_prog_schedule_automatic_blocks_reentrancy() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+
+    let authorized_key = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let program_id = String::from_str(&env, "test-program");
+    let amount = 500_0000000i128;
+    let release_timestamp = 1000u64;
+
+    let token_client = create_token_contract(&env, &authorized_key);
+    let token_admin = token::StellarAssetClient::new(&env, &token_client.address);
+    token_admin.mint(&authorized_key, &amount);
+
+    client.init_program(
+        &program_id,
+        &authorized_key,
+        &token_client.address,
+        &authorized_key,
+        &None,
+    );
+    token_client.transfer(&authorized_key, &contract_id, &amount);
+    client.lock_program_funds(&amount);
+
+    let schedule = client.create_program_release_schedule(&amount, &release_timestamp, &recipient);
+
+    // Advance time so the schedule is due
+    env.ledger().set_timestamp(release_timestamp + 1);
+
+    // Simulate a concurrent call already holding the guard
+    crate::reentrancy_guard::set_entered(&env);
+
+    // Should panic: guard is already held
+    client.release_prog_schedule_automatic(&schedule.schedule_id);
+}
+
+#[test]
+fn test_release_prog_schedule_automatic_normal_execution() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+
+    let authorized_key = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let program_id = String::from_str(&env, "test-program");
+    let amount = 500_0000000i128;
+    let release_timestamp = 1000u64;
+
+    let token_client = create_token_contract(&env, &authorized_key);
+    let token_admin = token::StellarAssetClient::new(&env, &token_client.address);
+    token_admin.mint(&authorized_key, &amount);
+
+    client.init_program(
+        &program_id,
+        &authorized_key,
+        &token_client.address,
+        &authorized_key,
+        &None,
+    );
+    token_client.transfer(&authorized_key, &contract_id, &amount);
+    client.lock_program_funds(&amount);
+
+    let schedule = client.create_program_release_schedule(&amount, &release_timestamp, &recipient);
+
+    // Advance time so the schedule is due
+    env.ledger().set_timestamp(release_timestamp + 1);
+
+    // Guard must be clear before and after a successful call
+    assert!(!crate::reentrancy_guard::is_entered(&env));
+    client.release_prog_schedule_automatic(&schedule.schedule_id);
+    assert!(!crate::reentrancy_guard::is_entered(&env));
+
+    // Recipient should have received the funds
+    assert_eq!(token_client.balance(&recipient), amount);
+}
+
+#[test]
+#[should_panic(expected = "Reentrancy detected")]
+fn test_cross_function_schedule_manual_to_single_payout_blocked() {
+    // Guard acquired by release_program_schedule_manual must block single_payout
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+
+    let authorized_key = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let program_id = String::from_str(&env, "test-program");
+    let amount = 1000_0000000i128;
+
+    let token_client = create_token_contract(&env, &authorized_key);
+    let token_admin = token::StellarAssetClient::new(&env, &token_client.address);
+    token_admin.mint(&authorized_key, &amount);
+
+    client.init_program(
+        &program_id,
+        &authorized_key,
+        &token_client.address,
+        &authorized_key,
+        &None,
+    );
+    token_client.transfer(&authorized_key, &contract_id, &amount);
+    client.lock_program_funds(&amount);
+
+    // Simulate being inside release_program_schedule_manual
+    crate::reentrancy_guard::set_entered(&env);
+
+    // single_payout must be blocked by the shared guard
+    client.single_payout(&recipient, &(amount / 2));
+}
