@@ -683,3 +683,150 @@ fn test_rbac_emergency_withdraw_ignores_release_and_refund_pause() {
     // Should still fail because lock is not paused
     contract_client.emergency_withdraw(&target);
 }
+
+// =========================================================================
+// ISSUE #1267: actor+reason metadata in PauseStateChangedV2 event
+// =========================================================================
+
+/// V2 event includes `actor` field (the admin address that triggered the pause).
+#[test]
+fn test_pause_v2_event_includes_actor() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, admin) = setup_with_admin(&env);
+
+    env.ledger().with_mut(|li| li.timestamp = 5000);
+    contract.set_paused(&Some(true), &None, &None, &None);
+
+    let events = env.events().all();
+    let v2_event = events
+        .iter()
+        .find(|e| {
+            if let Some(t0) = e.1.get(0) {
+                let sym: Symbol = t0.into_val(&env);
+                sym == Symbol::new(&env, "PauseStV2")
+            } else {
+                false
+            }
+        })
+        .expect("PauseStateChangedV2 event must be emitted");
+
+    let data = PauseStateChangedV2::try_from_val(&env, &v2_event.2).unwrap();
+    assert_eq!(data.actor, admin, "actor must be the admin address");
+}
+
+/// V2 event includes `reason` when provided.
+#[test]
+fn test_pause_v2_event_includes_reason() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, _admin) = setup_with_admin(&env);
+
+    let reason = String::from_str(&env, "Security incident detected");
+    contract.set_paused(&Some(true), &None, &None, &Some(reason.clone()));
+
+    let events = env.events().all();
+    let v2_event = events
+        .iter()
+        .find(|e| {
+            if let Some(t0) = e.1.get(0) {
+                let sym: Symbol = t0.into_val(&env);
+                sym == Symbol::new(&env, "PauseStV2")
+            } else {
+                false
+            }
+        })
+        .expect("PauseStateChangedV2 event must be emitted");
+
+    let data = PauseStateChangedV2::try_from_val(&env, &v2_event.2).unwrap();
+    assert_eq!(data.reason, Some(reason), "reason must be included in V2 event");
+}
+
+/// V2 event has `reason = None` when no reason is provided.
+#[test]
+fn test_pause_v2_event_reason_none_when_omitted() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, _admin) = setup_with_admin(&env);
+
+    contract.set_paused(&Some(true), &None, &None, &None);
+
+    let events = env.events().all();
+    let v2_event = events
+        .iter()
+        .find(|e| {
+            if let Some(t0) = e.1.get(0) {
+                let sym: Symbol = t0.into_val(&env);
+                sym == Symbol::new(&env, "PauseStV2")
+            } else {
+                false
+            }
+        })
+        .expect("PauseStateChangedV2 event must be emitted");
+
+    let data = PauseStateChangedV2::try_from_val(&env, &v2_event.2).unwrap();
+    assert_eq!(data.reason, None, "reason must be None when not provided");
+}
+
+/// Reason at exactly 256 characters is accepted.
+#[test]
+fn test_pause_reason_at_max_length_accepted() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, _admin) = setup_with_admin(&env);
+
+    // Build a 256-character string
+    let reason_str: std::string::String = "a".repeat(256);
+    let reason = String::from_str(&env, &reason_str);
+    // Should not panic
+    contract.set_paused(&Some(true), &None, &None, &Some(reason));
+    let flags = contract.get_pause_flags();
+    assert_eq!(flags.lock_paused, true);
+}
+
+/// Reason exceeding 256 characters is rejected.
+#[test]
+#[should_panic(expected = "Pause reason exceeds maximum length of 256 characters")]
+fn test_pause_reason_exceeds_max_length_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, _admin) = setup_with_admin(&env);
+
+    // Build a 257-character string
+    let reason_str: std::string::String = "a".repeat(257);
+    let reason = String::from_str(&env, &reason_str);
+    contract.set_paused(&Some(true), &None, &None, &Some(reason));
+}
+
+/// All three operations (lock, release, refund) emit V2 events with correct actor.
+#[test]
+fn test_pause_v2_events_emitted_for_all_operations() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract, admin) = setup_with_admin(&env);
+
+    let reason = String::from_str(&env, "Maintenance");
+    contract.set_paused(&Some(true), &Some(true), &Some(true), &Some(reason.clone()));
+
+    let events = env.events().all();
+    let v2_events: std::vec::Vec<_> = events
+        .iter()
+        .filter(|e| {
+            if let Some(t0) = e.1.get(0) {
+                let sym: Symbol = t0.into_val(&env);
+                sym == Symbol::new(&env, "PauseStV2")
+            } else {
+                false
+            }
+        })
+        .collect();
+
+    assert_eq!(v2_events.len(), 3, "Must emit one V2 event per operation");
+
+    for event in &v2_events {
+        let data = PauseStateChangedV2::try_from_val(&env, &event.2).unwrap();
+        assert_eq!(data.actor, admin, "actor must be admin in all V2 events");
+        assert_eq!(data.reason, Some(reason.clone()), "reason must be present in all V2 events");
+        assert_eq!(data.paused, true);
+    }
+}

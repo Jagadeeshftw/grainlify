@@ -617,3 +617,322 @@ fn test_enforcement_disabled_boundary_empty_list() {
     let program_id = String::from_str(&env, "test-prog");
     assert!(client.program_exists_by_id(&program_id));
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DECIMAL NORMALIZATION TESTS  (issue #1295)
+// ─────────────────────────────────────────────────────────────────────────────
+
+use crate::{AllowedTokenEntry, MAX_TOKEN_DECIMALS};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Register a SAC token and return its address.
+fn make_token_dec(env: &Env) -> Address {
+    let admin = Address::generate(env);
+    env.register_stellar_asset_contract_v2(admin).address()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 14. add_allowed_token_with_decimals — happy path
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_add_token_with_decimals_stores_entry() {
+    let env = Env::default();
+    let (client, _) = setup_contract(&env);
+    let token = make_token_dec(&env);
+
+    client.add_allowed_token_with_decimals(&token, &6u32);
+
+    let list = client.get_allowed_tokens_with_decimals();
+    assert_eq!(list.len(), 1);
+    let entry = list.get(0).unwrap();
+    assert_eq!(entry.token, token);
+    assert_eq!(entry.decimals, 6);
+}
+
+#[test]
+fn test_get_token_decimals_returns_stored_value() {
+    let env = Env::default();
+    let (client, _) = setup_contract(&env);
+    let token = make_token_dec(&env);
+
+    client.add_allowed_token_with_decimals(&token, &18u32);
+    assert_eq!(client.get_token_decimals(&token), 18u32);
+}
+
+#[test]
+fn test_get_token_decimals_returns_zero_for_legacy_token() {
+    let env = Env::default();
+    let (client, _) = setup_contract(&env);
+    let token = make_token_dec(&env);
+
+    // add via legacy path (no decimals)
+    client.add_allowed_token(&token);
+    assert_eq!(client.get_token_decimals(&token), 0u32);
+}
+
+#[test]
+fn test_add_token_with_decimals_also_appears_in_v1_list() {
+    let env = Env::default();
+    let (client, _) = setup_contract(&env);
+    let token = make_token_dec(&env);
+
+    client.add_allowed_token_with_decimals(&token, &6u32);
+
+    // V1 list must also contain the token for backward compat
+    let v1 = client.get_allowed_tokens();
+    assert_eq!(v1.len(), 1);
+    assert_eq!(v1.get(0).unwrap(), token);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 15. Two tokens with different decimals in the same program
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_two_tokens_different_decimals_both_allowed() {
+    let env = Env::default();
+    let (client, _) = setup_contract(&env);
+
+    let usdc = make_token_dec(&env);   // 6 decimals (like USDC)
+    let custom = make_token_dec(&env); // 18 decimals (custom token)
+
+    client.add_allowed_token_with_decimals(&usdc, &6u32);
+    client.add_allowed_token_with_decimals(&custom, &18u32);
+
+    assert!(client.is_token_allowed(&usdc));
+    assert!(client.is_token_allowed(&custom));
+
+    let list = client.get_allowed_tokens_with_decimals();
+    assert_eq!(list.len(), 2);
+
+    // Verify each entry has the correct decimals
+    let mut found_usdc = false;
+    let mut found_custom = false;
+    for entry in list.iter() {
+        if entry.token == usdc {
+            assert_eq!(entry.decimals, 6, "USDC must have 6 decimals");
+            found_usdc = true;
+        }
+        if entry.token == custom {
+            assert_eq!(entry.decimals, 18, "custom token must have 18 decimals");
+            found_custom = true;
+        }
+    }
+    assert!(found_usdc, "USDC entry must be present");
+    assert!(found_custom, "custom token entry must be present");
+}
+
+#[test]
+fn test_decimals_stored_independently_per_token() {
+    let env = Env::default();
+    let (client, _) = setup_contract(&env);
+
+    let t6  = make_token_dec(&env);
+    let t7  = make_token_dec(&env);
+    let t18 = make_token_dec(&env);
+
+    client.add_allowed_token_with_decimals(&t6,  &6u32);
+    client.add_allowed_token_with_decimals(&t7,  &7u32);
+    client.add_allowed_token_with_decimals(&t18, &18u32);
+
+    assert_eq!(client.get_token_decimals(&t6),  6u32);
+    assert_eq!(client.get_token_decimals(&t7),  7u32);
+    assert_eq!(client.get_token_decimals(&t18), 18u32);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 16. Validation guards
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+#[should_panic(expected = "Decimals exceed maximum (18)")]
+fn test_add_token_decimals_above_max_panics() {
+    let env = Env::default();
+    let (client, _) = setup_contract(&env);
+    let token = make_token_dec(&env);
+    client.add_allowed_token_with_decimals(&token, &19u32);
+}
+
+#[test]
+fn test_add_token_with_max_decimals_succeeds() {
+    let env = Env::default();
+    let (client, _) = setup_contract(&env);
+    let token = make_token_dec(&env);
+    client.add_allowed_token_with_decimals(&token, &MAX_TOKEN_DECIMALS);
+    assert_eq!(client.get_token_decimals(&token), MAX_TOKEN_DECIMALS);
+}
+
+#[test]
+fn test_add_token_with_zero_decimals_succeeds() {
+    let env = Env::default();
+    let (client, _) = setup_contract(&env);
+    let token = make_token_dec(&env);
+    client.add_allowed_token_with_decimals(&token, &0u32);
+    assert_eq!(client.get_token_decimals(&token), 0u32);
+}
+
+#[test]
+#[should_panic(expected = "Token already on allowlist")]
+fn test_add_token_with_decimals_duplicate_panics() {
+    let env = Env::default();
+    let (client, _) = setup_contract(&env);
+    let token = make_token_dec(&env);
+    client.add_allowed_token_with_decimals(&token, &6u32);
+    client.add_allowed_token_with_decimals(&token, &6u32); // must panic
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 17. Remove clears decimal cache
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_remove_token_clears_decimal_cache() {
+    let env = Env::default();
+    let (client, _) = setup_contract(&env);
+    let token = make_token_dec(&env);
+
+    client.add_allowed_token_with_decimals(&token, &6u32);
+    assert_eq!(client.get_token_decimals(&token), 6u32);
+
+    client.remove_allowed_token(&token);
+
+    // After removal, decimal cache must be cleared (returns 0)
+    assert_eq!(client.get_token_decimals(&token), 0u32);
+    assert_eq!(client.get_allowed_tokens_with_decimals().len(), 0);
+}
+
+#[test]
+fn test_remove_one_of_two_tokens_preserves_other_decimals() {
+    let env = Env::default();
+    let (client, _) = setup_contract(&env);
+    let t1 = make_token_dec(&env);
+    let t2 = make_token_dec(&env);
+
+    client.add_allowed_token_with_decimals(&t1, &6u32);
+    client.add_allowed_token_with_decimals(&t2, &18u32);
+
+    client.remove_allowed_token(&t1);
+
+    assert_eq!(client.get_token_decimals(&t2), 18u32);
+    let list = client.get_allowed_tokens_with_decimals();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list.get(0).unwrap().decimals, 18u32);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 18. Event fields include decimals
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_add_token_with_decimals_event_has_correct_decimals_field() {
+    let env = Env::default();
+    let (client, admin) = setup_contract(&env);
+    let token = make_token_dec(&env);
+
+    env.ledger().with_mut(|li| li.timestamp = 100_000);
+    client.add_allowed_token_with_decimals(&token, &6u32);
+
+    let events = env.events().all();
+    let ev = events.iter().find(|e| {
+        if let Some(t0) = e.1.get(0) {
+            let sym: Result<Symbol, _> = t0.try_into_val(&env);
+            sym.map(|s| s == Symbol::new(&env, "TkAllow")).unwrap_or(false)
+        } else {
+            false
+        }
+    });
+
+    assert!(ev.is_some(), "TokenAllowlistUpdatedEvent must be emitted");
+    let payload: TokenAllowlistUpdatedEvent = ev.unwrap().2.try_into_val(&env).unwrap();
+    assert_eq!(payload.token, token);
+    assert!(payload.added);
+    assert_eq!(payload.decimals, 6u32);
+    assert_eq!(payload.updated_by, admin);
+    assert_eq!(payload.timestamp, 100_000);
+}
+
+#[test]
+fn test_remove_token_event_decimals_field_is_zero() {
+    let env = Env::default();
+    let (client, _) = setup_contract(&env);
+    let token = make_token_dec(&env);
+
+    client.add_allowed_token_with_decimals(&token, &6u32);
+    client.remove_allowed_token(&token);
+
+    let events = env.events().all();
+    let ev = events.iter().rev().find(|e| {
+        if let Some(t0) = e.1.get(0) {
+            let sym: Result<Symbol, _> = t0.try_into_val(&env);
+            sym.map(|s| s == Symbol::new(&env, "TkAllow")).unwrap_or(false)
+        } else {
+            false
+        }
+    });
+
+    assert!(ev.is_some());
+    let payload: TokenAllowlistUpdatedEvent = ev.unwrap().2.try_into_val(&env).unwrap();
+    assert!(!payload.added);
+    assert_eq!(payload.decimals, 0u32);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 19. get_allowed_tokens_with_decimals snapshot
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_get_allowed_tokens_with_decimals_snapshot() {
+    let env = Env::default();
+    let (client, _) = setup_contract(&env);
+
+    assert_eq!(client.get_allowed_tokens_with_decimals().len(), 0);
+
+    let t1 = make_token_dec(&env);
+    let t2 = make_token_dec(&env);
+
+    client.add_allowed_token_with_decimals(&t1, &6u32);
+    client.add_allowed_token_with_decimals(&t2, &18u32);
+
+    let list = client.get_allowed_tokens_with_decimals();
+    assert_eq!(list.len(), 2);
+
+    client.remove_allowed_token(&t1);
+    let list2 = client.get_allowed_tokens_with_decimals();
+    assert_eq!(list2.len(), 1);
+    assert_eq!(list2.get(0).unwrap().token, t2);
+    assert_eq!(list2.get(0).unwrap().decimals, 18u32);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 20. Backward compat: legacy add_allowed_token still works
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_legacy_add_allowed_token_still_works_with_v2_list() {
+    let env = Env::default();
+    let (client, _) = setup_contract(&env);
+    let t_legacy = make_token_dec(&env);
+    let t_new    = make_token_dec(&env);
+
+    // Add one via legacy path, one via new path
+    client.add_allowed_token(&t_legacy);
+    client.add_allowed_token_with_decimals(&t_new, &6u32);
+
+    assert!(client.is_token_allowed(&t_legacy));
+    assert!(client.is_token_allowed(&t_new));
+
+    let v2 = client.get_allowed_tokens_with_decimals();
+    assert_eq!(v2.len(), 2);
+
+    // Legacy token has decimals = 0
+    let legacy_entry = v2.iter().find(|e| e.token == t_legacy).unwrap();
+    assert_eq!(legacy_entry.decimals, 0u32);
+
+    // New token has decimals = 6
+    let new_entry = v2.iter().find(|e| e.token == t_new).unwrap();
+    assert_eq!(new_entry.decimals, 6u32);
+}

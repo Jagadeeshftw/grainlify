@@ -7,7 +7,7 @@ use soroban_sdk::{testutils::Address as _, token, vec, Address, Env, String, Try
 
 use crate::{
     BatchError, LockItem, ProgramData, ProgramEscrowContract, ProgramEscrowContractClient,
-    ReleaseItem,
+    ReleaseItem, IDEMPOTENCY_KEY_TTL_LEDGERS,
 };
 
 pub struct Ctx<'a> {
