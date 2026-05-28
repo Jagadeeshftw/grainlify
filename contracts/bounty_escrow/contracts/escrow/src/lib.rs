@@ -6,7 +6,8 @@ mod invariants;
 mod multitoken_invariants;
 mod reentrancy_guard;
 // Pre-existing broken test modules excluded from compilation until their referenced types/methods are implemented:
-// #[cfg(test)] mod test_boundary_edge_cases;
+#[cfg(test)]
+mod test_boundary_edge_cases; // Issue #1294: PartiallyRefunded accounting tests
 // #[cfg(test)] mod test_cross_contract_interface; // pre-existing breakage: references unimplemented methods
 // #[cfg(test)] mod test_deterministic_randomness;
 // #[cfg(test)] mod test_multi_region_treasury;
@@ -17,6 +18,8 @@ mod reentrancy_guard;
 mod traits;
 pub mod upgrade_safety;
 
+#[cfg(test)]
+mod test_fee_on_transfer;
 #[cfg(test)]
 mod test_filter_pagination;
 // #[cfg(test)] mod test_frozen_balance; // pre-existing SDK/API drift blocks filtered test builds
