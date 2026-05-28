@@ -862,6 +862,48 @@ pub struct IdempotencySchemaVersionSet {
 
 // Constants for idempotency key validation
 pub const IDEMPOTENCY_KEY_MAX_LENGTH: u32 = 256;
+// ── Multisig threshold ────────────────────────────────────────────────────────
+pub const ADMIN_OP_EXPIRY_LEDGERS: u32 = 17_280;
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MultisigThresholdConfig {
+    pub signers: soroban_sdk::Vec<Address>,
+    pub required_approvals: u32,
+    pub high_value_threshold: i128,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AdminOpKind { UpdateFeeConfig, UpdateMultisigConfig, EmergencyWithdraw }
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingAdminOp {
+    pub kind: AdminOpKind,
+    pub value: i128,
+    pub proposed_by: Address,
+    pub proposed_at: u32,
+    pub expires_at: u32,
+    pub approvals: soroban_sdk::Vec<Address>,
+    pub payload_hash: soroban_sdk::Bytes,
+}
+
+const ADMIN_OP_PROPOSED: Symbol = symbol_short!("AdmProp");
+const ADMIN_OP_APPROVED: Symbol = symbol_short!("AdmAppr");
+const ADMIN_OP_EXECUTED: Symbol = symbol_short!("AdmExec");
+const ADMIN_OP_EXPIRED:  Symbol = symbol_short!("AdmExp");
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminOpProposedEvent { pub version: u32, pub kind: AdminOpKind, pub proposed_by: Address, pub expires_at: u32, pub required_approvals: u32 }
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminOpApprovedEvent { pub version: u32, pub kind: AdminOpKind, pub approved_by: Address, pub approvals_so_far: u32, pub required_approvals: u32 }
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminOpExecutedEvent { pub version: u32, pub kind: AdminOpKind, pub executed_by: Address }
+
 pub const IDEMPOTENCY_SCHEMA_VERSION_V1: u32 = 1;
 
 // Event symbols for dispute lifecycle
@@ -931,6 +973,37 @@ pub struct ProgramSpendingState {
 // TOKEN ALLOWLIST TYPES & EVENTS
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// An entry in the token allowlist that stores both the token address and its
+/// decimal precision.
+///
+/// Storing decimals at allowlist-add time avoids a cross-contract call on every
+/// payout and ensures the normalization factor is admin-controlled and auditable.
+///
+/// # Decimal Normalization
+///
+/// All payout `amount` parameters are expressed in **base units** (the smallest
+/// indivisible unit of the token, e.g. 1 = 0.000001 USDC for a 6-decimal token).
+/// The contract does **not** re-scale amounts — callers must supply amounts
+/// already denominated in the token's own base units.
+///
+/// The `decimals` field is stored for off-chain tooling and event emission so
+/// that indexers can display human-readable values without additional RPC calls.
+///
+/// # Upgrade Safety
+///
+/// Stored under `DataKey::TokenAllowlistV2`. Legacy entries under
+/// `DataKey::TokenAllowlist` (plain `Vec<Address>`) are still readable via
+/// `get_allowed_tokens()` for backward compatibility.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AllowedTokenEntry {
+    /// Token contract address.
+    pub token: Address,
+    /// Number of decimal places for this token (e.g. 6 for USDC, 7 for XLM).
+    /// Range: 0–18.
+    pub decimals: u32,
+}
+
 /// Event emitted when the token allowlist is updated (token added or removed).
 ///
 /// ### Topics
@@ -952,6 +1025,8 @@ pub struct TokenAllowlistUpdatedEvent {
     pub updated_by: Address,
     /// Ledger timestamp.
     pub timestamp: u64,
+    /// Decimal precision stored for this token (0 when `added = false`).
+    pub decimals: u32,
 }
 
 /// Event emitted when a program initialization is rejected because the
@@ -999,6 +1074,12 @@ const TOKEN_ALLOWLIST_SCHEMA: Symbol = symbol_short!("TkAlSch");
 ///
 /// Increment whenever the allowlist storage layout changes in a breaking way.
 pub const TOKEN_ALLOWLIST_SCHEMA_VERSION_V1: u32 = 1;
+
+/// Maximum allowed token decimal places.
+///
+/// Tokens with more than 18 decimals are rejected at allowlist-add time.
+/// This prevents overflow in normalization arithmetic.
+pub const MAX_TOKEN_DECIMALS: u32 = 18;
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1108,11 +1189,16 @@ pub struct PauseStateChanged {
 /// ### Topics
 /// `(PAUSE_STATE_CHANGED_V2, operation_symbol)`
 ///
+/// ### Fields
+/// - `actor`: The address that triggered the pause state change (admin or authorized caller).
+/// - `reason`: Optional human-readable reason string, bounded to 256 characters.
+///
 /// ### Security notes
 /// - `previous_paused` is read from storage **before** the mutation so the
 ///   event accurately reflects the transition (old → new).
 /// - `invariant_ok` is always `true` on-chain; a `false` value would indicate
 ///   a storage corruption bug.
+/// - `reason` is bounded to [`PAUSE_REASON_MAX_LEN`] characters to prevent storage abuse.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PauseStateChangedV2 {
@@ -1120,11 +1206,18 @@ pub struct PauseStateChangedV2 {
     pub operation: Symbol,
     pub previous_paused: bool,
     pub paused: bool,
-    pub admin: Address,
+    /// The address that triggered the pause state change.
+    pub actor: Address,
+    /// Optional human-readable reason, bounded to 256 characters.
     pub reason: Option<String>,
     pub timestamp: u64,
     pub receipt_id: u64,
 }
+
+/// Maximum allowed length (in characters) for a pause reason string.
+///
+/// Enforced in [`ProgramEscrowContract::set_paused`] to prevent storage abuse.
+pub const PAUSE_REASON_MAX_LEN: u32 = 256;
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3543,7 +3636,21 @@ impl ProgramEscrowContract {
             .unwrap_or_else(|| Vec::new(&env))
     }
 
-    /// Update pause flags (admin only)
+    /// Update pause flags (admin only).
+    ///
+    /// ### Parameters
+    /// - `lock`: If `Some(true)`, pause lock operations; `Some(false)` unpauses.
+    /// - `release`: If `Some(true)`, pause release operations; `Some(false)` unpauses.
+    /// - `refund`: If `Some(true)`, pause refund operations; `Some(false)` unpauses.
+    /// - `reason`: Optional human-readable reason string, bounded to [`PAUSE_REASON_MAX_LEN`] (256) characters.
+    ///
+    /// ### Events
+    /// Emits [`PauseStateChanged`] and [`PauseStateChangedV2`] for each flag that changes.
+    /// The V2 event includes `actor` (the admin address) and `reason` for full audit trail.
+    ///
+    /// ### Errors
+    /// Panics if the contract is not initialized or the caller is not the admin.
+    /// Panics if `reason` exceeds 256 characters.
     pub fn set_paused(
         env: Env,
         lock: Option<bool>,
@@ -3557,6 +3664,13 @@ impl ProgramEscrowContract {
 
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         admin.require_auth();
+
+        // Enforce 256-character bound on reason to prevent storage abuse.
+        if let Some(ref r) = reason {
+            if r.len() > PAUSE_REASON_MAX_LEN {
+                panic!("Pause reason exceeds maximum length of 256 characters");
+            }
+        }
 
         let mut flags = Self::get_pause_flags(&env);
         let timestamp = env.ledger().timestamp();
@@ -3587,7 +3701,7 @@ impl ProgramEscrowContract {
                     operation: symbol_short!("lock"),
                     previous_paused,
                     paused,
-                    admin: admin.clone(),
+                    actor: admin.clone(),
                     reason: reason.clone(),
                     timestamp,
                     receipt_id,
@@ -3617,7 +3731,7 @@ impl ProgramEscrowContract {
                     operation: symbol_short!("release"),
                     previous_paused,
                     paused,
-                    admin: admin.clone(),
+                    actor: admin.clone(),
                     reason: reason.clone(),
                     timestamp,
                     receipt_id,
@@ -3647,7 +3761,7 @@ impl ProgramEscrowContract {
                     operation: symbol_short!("refund"),
                     previous_paused,
                     paused,
-                    admin: admin.clone(),
+                    actor: admin.clone(),
                     reason: reason.clone(),
                     timestamp,
                     receipt_id,
@@ -4398,10 +4512,10 @@ impl ProgramEscrowContract {
     }
 
     // ========================================================================
-    // Token Allowlist
+    // Token Allowlist  (issue #1295 — decimal normalization)
     // ========================================================================
 
-    /// Internal helper: read the current allowlist (empty Vec = enforcement off).
+    /// Internal: read the legacy V1 allowlist (plain `Vec<Address>`).
     fn get_token_allowlist_internal(env: &Env) -> soroban_sdk::Vec<Address> {
         env.storage()
             .instance()
@@ -4409,25 +4523,39 @@ impl ProgramEscrowContract {
             .unwrap_or(Vec::new(env))
     }
 
-    /// Internal helper: enforce the token allowlist.
+    /// Internal: read the V2 allowlist (`Vec<AllowedTokenEntry>`).
     ///
-    /// When the allowlist is **non-empty**, `token_address` must be present.
-    /// When the allowlist is **empty**, any token is accepted (enforcement off).
-    ///
-    /// Emits [`TokenRejectedEvent`] and panics on rejection so the event is
-    /// always visible on-chain before any state mutation.
-    fn enforce_token_allowlist(env: &Env, token_address: &Address, program_id: &String) {
-        let allowlist = Self::get_token_allowlist_internal(env);
-        if allowlist.is_empty() {
-            // Allowlist is empty → enforcement disabled, accept any token.
-            return;
+    /// Falls back to the V1 list (addresses only, decimals = 0) when no V2
+    /// entry exists so legacy deployments continue to work unchanged.
+    fn get_token_allowlist_v2_internal(env: &Env) -> soroban_sdk::Vec<AllowedTokenEntry> {
+        if let Some(v2) = env
+            .storage()
+            .instance()
+            .get::<DataKey, soroban_sdk::Vec<AllowedTokenEntry>>(&DataKey::TokenAllowlistV2)
+        {
+            return v2;
         }
-        for allowed in allowlist.iter() {
-            if allowed == *token_address {
-                return; // Token is permitted.
+        // Upgrade path: promote V1 entries with decimals = 0.
+        let v1 = Self::get_token_allowlist_internal(env);
+        let mut out: soroban_sdk::Vec<AllowedTokenEntry> = Vec::new(env);
+        for addr in v1.iter() {
+            out.push_back(AllowedTokenEntry { token: addr, decimals: 0 });
+        }
+        out
+    }
+
+    /// Internal: enforce the token allowlist.
+    fn enforce_token_allowlist(env: &Env, token_address: &Address, program_id: &String) {
+        // Check V2 first; fall back to V1.
+        let v2 = Self::get_token_allowlist_v2_internal(env);
+        if v2.is_empty() {
+            return; // Enforcement disabled.
+        }
+        for entry in v2.iter() {
+            if entry.token == *token_address {
+                return; // Permitted.
             }
         }
-        // Token not found — emit rejection event then panic.
         env.events().publish(
             (TOKEN_REJECTED,),
             TokenRejectedEvent {
@@ -4440,32 +4568,67 @@ impl ProgramEscrowContract {
         panic!("Token not on allowlist");
     }
 
-    /// Add a token contract address to the allowlist (admin only).
+    /// Internal: look up stored decimals for a token (0 if not found).
     ///
-    /// Once at least one token is on the allowlist, `init_program` /
-    /// `initialize_program` will reject any token not present in the list.
-    /// Adding the first token implicitly enables enforcement.
+    /// Returns the value stored by `add_allowed_token_with_decimals`.
+    /// Returns `0` for tokens added via the legacy `add_allowed_token` path.
+    fn get_token_decimals_internal(env: &Env, token: &Address) -> u32 {
+        env.storage()
+            .instance()
+            .get(&DataKey::TokenDecimals(token.clone()))
+            .unwrap_or(0u32)
+    }
+
+    /// Add a token to the allowlist **with its decimal precision** (admin only).
+    ///
+    /// This is the preferred entrypoint for new deployments.  Storing decimals
+    /// at add-time means payout callers can supply amounts in the token's own
+    /// base units and the contract records the precision for off-chain tooling.
+    ///
+    /// # Parameters
+    /// - `token`    — token contract address
+    /// - `decimals` — number of decimal places (0–18)
     ///
     /// # Errors
-    /// Panics with `"Token already on allowlist"` if the token is already present.
+    /// - Panics `"Token already on allowlist"` if already present.
+    /// - Panics `"Decimals exceed maximum (18)"` if `decimals > 18`.
     ///
     /// # Events
-    /// Emits [`TokenAllowlistUpdatedEvent`] with `added = true`.
-    pub fn add_allowed_token(env: Env, token: Address) {
+    /// Emits [`TokenAllowlistUpdatedEvent`] with `added = true` and the stored
+    /// `decimals` value.
+    pub fn add_allowed_token_with_decimals(env: Env, token: Address, decimals: u32) {
         let admin = Self::require_admin(&env);
-        let mut allowlist = Self::get_token_allowlist_internal(&env);
 
-        // Idempotency guard: reject duplicates explicitly.
-        for existing in allowlist.iter() {
-            if existing == token {
+        if decimals > MAX_TOKEN_DECIMALS {
+            panic!("Decimals exceed maximum (18)");
+        }
+
+        let mut v2 = Self::get_token_allowlist_v2_internal(&env);
+
+        for entry in v2.iter() {
+            if entry.token == token {
                 panic!("Token already on allowlist");
             }
         }
 
-        allowlist.push_back(token.clone());
+        v2.push_back(AllowedTokenEntry { token: token.clone(), decimals });
+
+        // Write V2 list.
         env.storage()
             .instance()
-            .set(&DataKey::TokenAllowlist, &allowlist);
+            .set(&DataKey::TokenAllowlistV2, &v2);
+
+        // Also write the per-token decimal cache for O(1) lookup.
+        env.storage()
+            .instance()
+            .set(&DataKey::TokenDecimals(token.clone()), &decimals);
+
+        // Keep V1 list in sync for backward-compatible readers.
+        let mut v1 = Self::get_token_allowlist_internal(&env);
+        v1.push_back(token.clone());
+        env.storage()
+            .instance()
+            .set(&DataKey::TokenAllowlist, &v1);
 
         env.events().publish(
             (TOKEN_ALLOWLIST_UPDATED,),
@@ -4475,42 +4638,63 @@ impl ProgramEscrowContract {
                 added: true,
                 updated_by: admin,
                 timestamp: env.ledger().timestamp(),
+                decimals,
             },
         );
     }
 
-    /// Remove a token contract address from the allowlist (admin only).
+    /// Add a token to the allowlist without specifying decimals (admin only).
     ///
-    /// If removing the last token, the allowlist becomes empty and enforcement
-    /// is disabled — all tokens are accepted again.
+    /// Decimals default to `0`.  Prefer `add_allowed_token_with_decimals` for
+    /// new programs that need accurate decimal metadata.
     ///
     /// # Errors
-    /// Panics with `"Token not in allowlist"` if the token is not present.
+    /// Panics `"Token already on allowlist"` if already present.
+    pub fn add_allowed_token(env: Env, token: Address) {
+        // Delegate to the decimals variant with decimals = 0.
+        Self::add_allowed_token_with_decimals(env, token, 0);
+    }
+
+    /// Remove a token from the allowlist (admin only).
     ///
-    /// # Events
-    /// Emits [`TokenAllowlistUpdatedEvent`] with `added = false`.
+    /// Removes from both V2 and V1 lists and clears the decimal cache.
     pub fn remove_allowed_token(env: Env, token: Address) {
         let admin = Self::require_admin(&env);
-        let allowlist = Self::get_token_allowlist_internal(&env);
 
-        let mut new_list: soroban_sdk::Vec<Address> = Vec::new(&env);
+        // Remove from V2.
+        let v2 = Self::get_token_allowlist_v2_internal(&env);
+        let mut new_v2: soroban_sdk::Vec<AllowedTokenEntry> = Vec::new(&env);
         let mut found = false;
-        for existing in allowlist.iter() {
-            if existing == token {
+        for entry in v2.iter() {
+            if entry.token == token {
                 found = true;
-                // Skip — effectively removes it.
             } else {
-                new_list.push_back(existing);
+                new_v2.push_back(entry);
             }
         }
-
         if !found {
             panic!("Token not in allowlist");
         }
-
         env.storage()
             .instance()
-            .set(&DataKey::TokenAllowlist, &new_list);
+            .set(&DataKey::TokenAllowlistV2, &new_v2);
+
+        // Remove from V1.
+        let v1 = Self::get_token_allowlist_internal(&env);
+        let mut new_v1: soroban_sdk::Vec<Address> = Vec::new(&env);
+        for addr in v1.iter() {
+            if addr != token {
+                new_v1.push_back(addr);
+            }
+        }
+        env.storage()
+            .instance()
+            .set(&DataKey::TokenAllowlist, &new_v1);
+
+        // Clear decimal cache.
+        env.storage()
+            .instance()
+            .remove(&DataKey::TokenDecimals(token.clone()));
 
         env.events().publish(
             (TOKEN_ALLOWLIST_UPDATED,),
@@ -4520,32 +4704,38 @@ impl ProgramEscrowContract {
                 added: false,
                 updated_by: admin,
                 timestamp: env.ledger().timestamp(),
+                decimals: 0,
             },
         );
     }
 
-    /// Returns `true` if `token` is on the allowlist **or** the allowlist is
-    /// empty (enforcement disabled).
-    ///
-    /// This is a pure view — no auth required.
+    /// Returns `true` if `token` is on the allowlist or the list is empty.
     pub fn is_token_allowed(env: Env, token: Address) -> bool {
-        let allowlist = Self::get_token_allowlist_internal(&env);
-        if allowlist.is_empty() {
-            return true; // Enforcement off.
+        let v2 = Self::get_token_allowlist_v2_internal(&env);
+        if v2.is_empty() {
+            return true;
         }
-        for existing in allowlist.iter() {
-            if existing == token {
+        for entry in v2.iter() {
+            if entry.token == token {
                 return true;
             }
         }
         false
     }
 
-    /// Returns the full token allowlist.
-    ///
-    /// An empty Vec means enforcement is disabled (any token is accepted).
+    /// Returns the full token allowlist as plain addresses (V1-compatible).
     pub fn get_allowed_tokens(env: Env) -> soroban_sdk::Vec<Address> {
         Self::get_token_allowlist_internal(&env)
+    }
+
+    /// Returns the full token allowlist with decimal metadata (V2).
+    pub fn get_allowed_tokens_with_decimals(env: Env) -> soroban_sdk::Vec<AllowedTokenEntry> {
+        Self::get_token_allowlist_v2_internal(&env)
+    }
+
+    /// Returns the stored decimal precision for `token`, or `0` if not found.
+    pub fn get_token_decimals(env: Env, token: Address) -> u32 {
+        Self::get_token_decimals_internal(&env, &token)
     }
 
     /// Returns the token-allowlist storage schema version written during init.
@@ -5849,6 +6039,93 @@ impl ProgramEscrowContract {
     /// Return the admin address.
     pub fn get_admin(env: Env) -> Option<Address> {
         env.storage().instance().get(&DataKey::Admin)
+
+    // ── Multisig threshold for high-value admin operations ───────────────────
+
+    pub fn set_multisig_threshold_config(
+        env: Env,
+        signers: soroban_sdk::Vec<Address>,
+        required_approvals: u32,
+        high_value_threshold: i128,
+    ) {
+        Self::require_admin(&env);
+        if signers.is_empty() { panic!("InvalidMultisigConfig: signers must not be empty"); }
+        if required_approvals == 0 || required_approvals > signers.len() as u32 {
+            panic!("InvalidMultisigConfig: required_approvals out of range");
+        }
+        if high_value_threshold < 0 { panic!("InvalidMultisigConfig: threshold must be non-negative"); }
+        env.storage().instance().set(
+            &DataKey::MultisigThresholdConfig,
+            &MultisigThresholdConfig { signers, required_approvals, high_value_threshold },
+        );
+    }
+
+    pub fn get_multisig_threshold_config(env: Env) -> Option<MultisigThresholdConfig> {
+        env.storage().instance().get(&DataKey::MultisigThresholdConfig)
+    }
+
+    pub fn propose_admin_op(env: Env, kind: AdminOpKind, value: i128, payload_hash: soroban_sdk::Bytes) -> PendingAdminOp {
+        let admin = Self::require_admin(&env);
+        if let Some(existing) = env.storage().instance().get::<DataKey, PendingAdminOp>(&DataKey::PendingAdminOp) {
+            if env.ledger().sequence() <= existing.expires_at { panic!("PendingOpExists"); }
+        }
+        let cfg: MultisigThresholdConfig = env.storage().instance().get(&DataKey::MultisigThresholdConfig)
+            .unwrap_or(MultisigThresholdConfig { signers: vec![&env, admin.clone()], required_approvals: 1, high_value_threshold: i128::MAX });
+        let cur = env.ledger().sequence();
+        let expires_at = cur.checked_add(ADMIN_OP_EXPIRY_LEDGERS).unwrap_or(u32::MAX);
+        let mut approvals: soroban_sdk::Vec<Address> = Vec::new(&env);
+        approvals.push_back(admin.clone());
+        let op = PendingAdminOp { kind: kind.clone(), value, proposed_by: admin.clone(), proposed_at: cur, expires_at, approvals, payload_hash };
+        env.storage().instance().set(&DataKey::PendingAdminOp, &op);
+        env.events().publish((ADMIN_OP_PROPOSED,), AdminOpProposedEvent { version: EVENT_VERSION_V2, kind, proposed_by: admin, expires_at, required_approvals: cfg.required_approvals });
+        op
+    }
+
+    pub fn approve_admin_op(env: Env, signer: Address) -> PendingAdminOp {
+        signer.require_auth();
+        let cfg: MultisigThresholdConfig = env.storage().instance().get(&DataKey::MultisigThresholdConfig)
+            .unwrap_or_else(|| panic!("NoPendingOp: multisig not configured"));
+        let mut is_signer = false;
+        for s in cfg.signers.iter() { if s == signer { is_signer = true; break; } }
+        if !is_signer { panic!("NotASigner"); }
+        let mut op: PendingAdminOp = env.storage().instance().get(&DataKey::PendingAdminOp)
+            .unwrap_or_else(|| panic!("NoPendingOp"));
+        if env.ledger().sequence() > op.expires_at { panic!("PendingOpExpired"); }
+        for e in op.approvals.iter() { if e == signer { panic!("AlreadyApproved"); } }
+        op.approvals.push_back(signer.clone());
+        env.storage().instance().set(&DataKey::PendingAdminOp, &op);
+        env.events().publish((ADMIN_OP_APPROVED,), AdminOpApprovedEvent { version: EVENT_VERSION_V2, kind: op.kind.clone(), approved_by: signer, approvals_so_far: op.approvals.len() as u32, required_approvals: cfg.required_approvals });
+        op
+    }
+
+    pub fn execute_admin_op(env: Env, payload_hash: soroban_sdk::Bytes) -> AdminOpKind {
+        let admin = Self::require_admin(&env);
+        let op: PendingAdminOp = env.storage().instance().get(&DataKey::PendingAdminOp)
+            .unwrap_or_else(|| panic!("NoPendingOp"));
+        if env.ledger().sequence() > op.expires_at {
+            env.storage().instance().remove(&DataKey::PendingAdminOp);
+            env.events().publish((ADMIN_OP_EXPIRED,), op.kind.clone());
+            panic!("PendingOpExpired");
+        }
+        if op.payload_hash != payload_hash { panic!("PayloadMismatch"); }
+        let cfg: MultisigThresholdConfig = env.storage().instance().get(&DataKey::MultisigThresholdConfig)
+            .unwrap_or(MultisigThresholdConfig { signers: vec![&env, admin.clone()], required_approvals: 1, high_value_threshold: i128::MAX });
+        if (op.approvals.len() as u32) < cfg.required_approvals { panic!("InsufficientApprovals"); }
+        let kind = op.kind.clone();
+        env.storage().instance().remove(&DataKey::PendingAdminOp);
+        env.events().publish((ADMIN_OP_EXECUTED,), AdminOpExecutedEvent { version: EVENT_VERSION_V2, kind: kind.clone(), executed_by: admin });
+        kind
+    }
+
+    pub fn get_pending_admin_op(env: Env) -> Option<PendingAdminOp> {
+        env.storage().instance().get(&DataKey::PendingAdminOp)
+    }
+
+    pub fn cancel_admin_op(env: Env) {
+        Self::require_admin(&env);
+        env.storage().instance().remove(&DataKey::PendingAdminOp);
+    }
+
     }
 
     // ========================================================================
@@ -5960,3 +6237,7 @@ mod rbac_tests;
 #[cfg(test)]
 mod test_batch_receipts;
 #[cfg(test)] mod test_circuit_breaker_enforcement;
+#[cfg(test)]
+mod storage_collision_tests;
+#[cfg(test)]
+mod test_token_allowlist;

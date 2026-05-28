@@ -821,6 +821,8 @@ mod test_version_helpers;
 #[cfg(test)]
 mod test_strict_mode;
 #[cfg(test)]
+mod test_timelock_boundary;
+#[cfg(test)]
 mod test_contract_registry;
 #[cfg(test)]
 mod test_config_change_timelock;

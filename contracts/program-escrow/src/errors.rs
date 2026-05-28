@@ -652,8 +652,9 @@ pub enum ContractError {
     TokenAlreadyAllowed = 1101,
     TokenNotInAllowlist = 1102,
 
+    // =================================================================
     // =========================================================================
-    // Role Management Errors (1200-1299)
+    // Multisig Admin Op Errors (1300-1399)
     // =========================================================================
 
     AdminRotationInProgress = 1200,

@@ -4244,7 +4244,7 @@ fn test_pause_state_changed_v2_event_on_pause() {
         "previous_paused must be false before first pause"
     );
     assert_eq!(data.paused, true);
-    assert_eq!(data.admin, admin);
+    assert_eq!(data.actor, admin);
     assert_eq!(data.timestamp, 99_999);
     assert!(data.receipt_id > 0);
 }
