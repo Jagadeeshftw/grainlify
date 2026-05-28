@@ -62,7 +62,7 @@ mod test {
             token_client,
         }
     }
-}
+
     fn open_circuit_at_time(setup: &TimeoutTestSetup, timestamp: u64) {
         setup.env.ledger().set_timestamp(timestamp);
         setup.env.as_contract(&setup.client.address, || {
