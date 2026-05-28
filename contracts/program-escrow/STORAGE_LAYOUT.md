@@ -4,6 +4,8 @@ This document defines the definitive storage layout for the `program-escrow` con
 
 ## Storage Schema Version: 1
 
+Circuit breaker storage uses its own marker: `CIRCUIT_BREAKER_SCHEMA_VERSION_V2 = 2`.
+
 Below are all storage keys utilized by the contract.
 
 | Key | Variant/Constant | Tier | Type | Notes |
@@ -30,6 +32,8 @@ Below are all storage keys utilized by the contract.
 | `AUTH_KEY_INDEX` | (Symbol) | Instance | `Vec<Address>` | Auth key index |
 | `FEE_CONFIG` | (Symbol) | Instance | `FeeConfig` | Fee configuration |
 | `PROGRAM_REGISTRY` | (Symbol) | Instance | `Vec<String>` | Registry of program ids |
+| `CircuitBreakerKey::ErrorLog` | `ErrorLog` | Persistent | `Vec<ErrorEntry>` | Hot circuit failure log capped at 50 entries |
+| `CircuitBreakerKey::ErrorArchive(String)` | `ErrorArchive(program_id)` | Persistent | `CompactFailureArchive` | Per-program compact archive of pruned failure timestamps, error codes, and failure counts |
 
 ## Migration Rules
 - When a type definition changes, the `STORAGE_SCHEMA_VERSION` constant within `lib.rs` MUST be incremented.

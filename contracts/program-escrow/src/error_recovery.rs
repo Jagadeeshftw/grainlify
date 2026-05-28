@@ -21,7 +21,11 @@
 // All circuit breaker state is stored in persistent storage keyed by
 // `CircuitBreakerKey::*`.
 
-use soroban_sdk::{contracttype, symbol_short, Address, Env, String};
+use soroban_sdk::{contracttype, symbol_short, Address, Env, String, Vec};
+
+/// Maximum number of full failure records retained in hot contract storage.
+/// Older records are moved into compact per-program archives.
+pub const MAX_FAILURE_LOG_SIZE: u32 = 50;
 
 // ─────────────────────────────────────────────────────────
 // Types
@@ -59,6 +63,8 @@ pub enum CircuitBreakerKey {
     Config,
     /// Operation-level error log (last N errors)
     ErrorLog,
+    /// Per-program compact archive of pruned failure timestamps
+    ErrorArchive(String),
 }
 
 /// Configuration for the circuit breaker.
@@ -80,7 +86,7 @@ impl CircuitBreakerConfig {
         CircuitBreakerConfig {
             failure_threshold: 3,
             success_threshold: 1,
-            max_error_log: 10,
+            max_error_log: MAX_FAILURE_LOG_SIZE,
             recovery_window: 300, // 5 minutes default recovery window
         }
     }
@@ -95,6 +101,25 @@ pub struct ErrorEntry {
     pub error_code: u32,
     pub timestamp: u64,
     pub failure_count_at_time: u32,
+}
+
+/// Compact archive for failure records pruned out of the hot error log.
+///
+/// Timestamps are delta-packed as u32 offsets from `timestamp_base`. This keeps
+/// the recent log reviewable while preserving old failure timing at lower cost.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompactFailureArchive {
+    pub program_id: String,
+    pub archived_count: u32,
+    pub timestamp_base: u64,
+    pub timestamp_offsets: Vec<u32>,
+    pub error_codes: Vec<u32>,
+    pub failure_counts: Vec<u32>,
+    pub first_timestamp: u64,
+    pub last_timestamp: u64,
+    pub overflow_count: u32,
+    pub last_archived_at: u64,
 }
 
 /// Snapshot of the circuit breaker's current status (returned by `get_status`).
@@ -139,20 +164,26 @@ pub fn get_config(env: &Env) -> CircuitBreakerConfig {
 /// Sets the circuit breaker configuration. Admin only (caller must enforce auth).
 pub fn set_config(env: &Env, config: CircuitBreakerConfig) {
     let prev_config = get_config(env);
+    let normalized = CircuitBreakerConfig {
+        failure_threshold: config.failure_threshold,
+        success_threshold: config.success_threshold,
+        max_error_log: normalize_error_log_limit(config.max_error_log),
+        recovery_window: config.recovery_window,
+    };
     env.storage()
         .persistent()
-        .set(&CircuitBreakerKey::Config, &config);
+        .set(&CircuitBreakerKey::Config, &normalized);
 
     // Emit audit event for config change
     env.events().publish(
         (symbol_short!("circuit"), symbol_short!("cb_cfg")),
         (
             prev_config.failure_threshold,
-            config.failure_threshold,
+            normalized.failure_threshold,
             prev_config.success_threshold,
-            config.success_threshold,
+            normalized.success_threshold,
             prev_config.recovery_window,
-            config.recovery_window,
+            normalized.recovery_window,
             env.ledger().timestamp(),
         ),
     );
@@ -213,7 +244,7 @@ pub fn get_status(env: &Env) -> CircuitBreakerStatus {
 pub fn check_and_allow(env: &Env) -> Result<(), u32> {
     // Check for automatic timeout transitions first
     check_timeout_transitions(env);
-    
+
     match get_state(env) {
         CircuitState::Open => {
             emit_circuit_event(env, symbol_short!("cb_reject"), get_failure_count(env));
@@ -294,7 +325,7 @@ pub fn record_success(env: &Env) {
 pub fn check_timeout_transitions(env: &Env) {
     let state = get_state(env);
     let now = env.ledger().timestamp();
-    
+
     match state {
         CircuitState::Open => {
             let opened_at: u64 = env
@@ -302,7 +333,7 @@ pub fn check_timeout_transitions(env: &Env) {
                 .persistent()
                 .get(&CircuitBreakerKey::OpenedAt)
                 .unwrap_or(0);
-            
+
             if opened_at > 0 {
                 let config = get_config(env);
                 if now >= opened_at + config.recovery_window {
@@ -330,10 +361,7 @@ fn transition_to_half_open_timeout(env: &Env) {
     // Emit event indicating automatic timeout transition
     env.events().publish(
         (symbol_short!("circuit"), symbol_short!("cb_timeout")),
-        (
-            symbol_short!("auto_half"),
-            env.ledger().timestamp(),
-        ),
+        (symbol_short!("auto_half"), env.ledger().timestamp()),
     );
 }
 
@@ -374,10 +402,11 @@ pub fn record_failure(
     };
     log.push_back(entry);
 
-    // Trim to max
-    while log.len() > config.max_error_log {
-        log.remove(0);
-    }
+    prune_error_log(
+        env,
+        &mut log,
+        normalize_error_log_limit(config.max_error_log),
+    );
     env.storage()
         .persistent()
         .set(&CircuitBreakerKey::ErrorLog, &log);
@@ -522,9 +551,140 @@ pub fn get_error_log(env: &Env) -> soroban_sdk::Vec<ErrorEntry> {
         .unwrap_or(soroban_sdk::Vec::new(env))
 }
 
+/// Archive all hot failure records for `program_id` into compact storage.
+///
+/// This is intended for admin cleanup of long-running programs. The circuit
+/// admin must authorize the call.
+pub fn archive_circuit_breaker_logs(env: &Env, program_id: String) -> CompactFailureArchive {
+    let admin = get_circuit_admin(env).expect("Circuit admin not set");
+    admin.require_auth();
+
+    let mut log = get_error_log(env);
+    let mut retained = Vec::new(env);
+    let mut archived = Vec::new(env);
+
+    while log.len() > 0 {
+        let entry = log.remove(0);
+        if entry.program_id == program_id {
+            archived.push_back(entry);
+        } else {
+            retained.push_back(entry);
+        }
+    }
+
+    archive_entries(env, program_id.clone(), &archived);
+    env.storage()
+        .persistent()
+        .set(&CircuitBreakerKey::ErrorLog, &retained);
+
+    let archive = get_failure_archive(env, program_id.clone());
+    env.events().publish(
+        (symbol_short!("circuit"), symbol_short!("cb_arch")),
+        (
+            program_id,
+            archived.len(),
+            archive.archived_count,
+            env.ledger().timestamp(),
+        ),
+    );
+    archive
+}
+
+/// Return the compact failure archive for a program.
+pub fn get_failure_archive(env: &Env, program_id: String) -> CompactFailureArchive {
+    env.storage()
+        .persistent()
+        .get(&CircuitBreakerKey::ErrorArchive(program_id.clone()))
+        .unwrap_or(empty_failure_archive(env, program_id))
+}
+
 // ─────────────────────────────────────────────────────────
 // Retry logic
 // ─────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod circuit_log_archive_tests {
+    use super::*;
+    use crate::ProgramEscrowContract;
+    use soroban_sdk::{
+        symbol_short,
+        testutils::{Address as _, Ledger},
+        Address,
+    };
+
+    fn with_contract(env: &Env) -> soroban_sdk::Address {
+        env.register_contract(None, ProgramEscrowContract)
+    }
+
+    #[test]
+    fn record_failure_rotates_old_entries_into_compact_archive() {
+        let env = Env::default();
+        let contract_id = with_contract(&env);
+        let program_id = String::from_str(&env, "program-a");
+
+        env.as_contract(&contract_id, || {
+            set_config(
+                &env,
+                CircuitBreakerConfig {
+                    failure_threshold: 100,
+                    success_threshold: 1,
+                    max_error_log: 100,
+                    recovery_window: 300,
+                },
+            );
+
+            for i in 0..55u32 {
+                env.ledger().set_timestamp(1_000 + i as u64);
+                record_failure(&env, program_id.clone(), symbol_short!("payout"), 5_000 + i);
+            }
+
+            let log = get_error_log(&env);
+            assert_eq!(log.len(), MAX_FAILURE_LOG_SIZE);
+            assert_eq!(log.get(0).unwrap().timestamp, 1_005);
+
+            let archive = get_failure_archive(&env, program_id.clone());
+            assert_eq!(archive.archived_count, 5);
+            assert_eq!(archive.timestamp_base, 1_000);
+            assert_eq!(archive.timestamp_offsets.len(), 5);
+            assert_eq!(archive.timestamp_offsets.get(0).unwrap(), 0);
+            assert_eq!(archive.timestamp_offsets.get(4).unwrap(), 4);
+            assert_eq!(archive.error_codes.get(4).unwrap(), 5_004);
+            assert_eq!(archive.overflow_count, 0);
+        });
+    }
+
+    #[test]
+    fn admin_cleanup_archives_only_requested_program_logs() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = with_contract(&env);
+        let admin = Address::generate(&env);
+        let program_a = String::from_str(&env, "program-a");
+        let program_b = String::from_str(&env, "program-b");
+
+        env.as_contract(&contract_id, || {
+            set_circuit_admin(&env, admin, None);
+
+            env.ledger().set_timestamp(2_000);
+            record_failure(&env, program_a.clone(), symbol_short!("payout"), 7);
+            env.ledger().set_timestamp(2_001);
+            record_failure(&env, program_b.clone(), symbol_short!("refund"), 8);
+            env.ledger().set_timestamp(2_002);
+            record_failure(&env, program_a.clone(), symbol_short!("payout"), 9);
+
+            let archive = archive_circuit_breaker_logs(&env, program_a.clone());
+            assert_eq!(archive.archived_count, 2);
+            assert_eq!(archive.timestamp_offsets.get(0).unwrap(), 0);
+            assert_eq!(archive.timestamp_offsets.get(1).unwrap(), 2);
+
+            let log = get_error_log(&env);
+            assert_eq!(log.len(), 1);
+            let retained = log.get(0).unwrap();
+            assert_eq!(retained.program_id, program_b);
+            assert_eq!(retained.error_code, 8);
+        });
+    }
+}
 
 /// Retry configuration.
 #[contracttype]
@@ -677,6 +837,84 @@ where
 // ─────────────────────────────────────────────────────────
 // Internal helpers
 // ─────────────────────────────────────────────────────────
+
+fn normalize_error_log_limit(requested: u32) -> u32 {
+    if requested == 0 {
+        1
+    } else if requested > MAX_FAILURE_LOG_SIZE {
+        MAX_FAILURE_LOG_SIZE
+    } else {
+        requested
+    }
+}
+
+fn prune_error_log(env: &Env, log: &mut Vec<ErrorEntry>, max_entries: u32) {
+    while log.len() > max_entries {
+        let entry = log.remove(0);
+        let mut archived = Vec::new(env);
+        let program_id = entry.program_id.clone();
+        archived.push_back(entry);
+        archive_entries(env, program_id, &archived);
+    }
+}
+
+fn archive_entries(env: &Env, program_id: String, entries: &Vec<ErrorEntry>) {
+    if entries.len() == 0 {
+        return;
+    }
+
+    let mut archive = get_failure_archive(env, program_id.clone());
+    for entry in entries.iter() {
+        append_archive_entry(env, &mut archive, &entry);
+    }
+
+    env.storage()
+        .persistent()
+        .set(&CircuitBreakerKey::ErrorArchive(program_id), &archive);
+}
+
+fn append_archive_entry(env: &Env, archive: &mut CompactFailureArchive, entry: &ErrorEntry) {
+    if archive.archived_count == 0 {
+        archive.timestamp_base = entry.timestamp;
+        archive.first_timestamp = entry.timestamp;
+    }
+
+    if entry.timestamp >= archive.timestamp_base {
+        let delta = entry.timestamp - archive.timestamp_base;
+        if delta <= u32::MAX as u64 {
+            archive.timestamp_offsets.push_back(delta as u32);
+        } else {
+            archive.timestamp_offsets.push_back(u32::MAX);
+            archive.overflow_count += 1;
+        }
+    } else {
+        archive.timestamp_offsets.push_back(0);
+        archive.overflow_count += 1;
+    }
+
+    archive.error_codes.push_back(entry.error_code);
+    archive
+        .failure_counts
+        .push_back(entry.failure_count_at_time);
+    archive.archived_count += 1;
+    archive.last_timestamp = entry.timestamp;
+    archive.last_archived_at = env.ledger().timestamp();
+}
+
+fn empty_failure_archive(env: &Env, program_id: String) -> CompactFailureArchive {
+    CompactFailureArchive {
+        program_id,
+        archived_count: 0,
+        timestamp_base: 0,
+        timestamp_offsets: Vec::new(env),
+        error_codes: Vec::new(env),
+        failure_counts: Vec::new(env),
+        first_timestamp: 0,
+        last_timestamp: 0,
+        overflow_count: 0,
+        last_archived_at: 0,
+    }
+}
 
 fn emit_circuit_event(env: &Env, event_type: soroban_sdk::Symbol, value: u32) {
     env.events().publish(
