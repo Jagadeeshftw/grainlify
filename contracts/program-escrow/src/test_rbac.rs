@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-//! # RBAC Tests — Payout Key Rotation
+//! # RBAC Tests — Payout Key Rotation and Draft Status Guards
 //!
 //! Verifies the role-based access control rules for `rotate_payout_key`:
 //!
@@ -12,10 +12,16 @@
 //! | Old key after rotation  | ❌ No    |
 //! | Delegate                | ❌ No    |
 //!
+//! Also verifies Draft status guards for delegate and capability-token operations:
+//! - set_program_delegate must reject programs in Draft status
+//! - revoke_program_delegate must reject programs in Draft status  
+//! - Delegate actions (via require_program_actor) must reject programs in Draft status
+//!
 //! Security assumptions validated here:
 //! - A hijacked (old) key cannot re-rotate after being replaced.
 //! - A delegate with full permissions cannot rotate the key.
 //! - An unauthorized address cannot rotate even with a correct nonce.
+//! - Delegate operations are blocked on programs in Draft status.
 
 use super::*;
 use soroban_sdk::{testutils::Address as _, token, Address, Env, String};
