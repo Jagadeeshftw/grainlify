@@ -147,6 +147,7 @@ use soroban_sdk::{
 
 mod errors;
 pub use errors::BatchPayoutError;
+use errors::ContractError;
 
 // Event types
 const PROGRAM_INITIALIZED: Symbol = symbol_short!("PrgInit");
@@ -158,6 +159,7 @@ const PAYOUT: Symbol = symbol_short!("Payout");
 const EVENT_VERSION_V2: u32 = 2;
 const PAUSE_STATE_CHANGED: Symbol = symbol_short!("PauseSt");
 const PAUSE_STATE_CHANGED_V2: Symbol = symbol_short!("PauseStV2");
+const AUTO_UNPAUSE: Symbol = symbol_short!("AutoUnpse");
 const MAINTENANCE_MODE_CHANGED: Symbol = symbol_short!("MaintSt");
 const PROGRAM_RISK_FLAGS_UPDATED: Symbol = symbol_short!("pr_risk");
 const PROGRAM_REGISTRY: Symbol = symbol_short!("ProgReg");
@@ -184,11 +186,20 @@ const PROGRAM_INDEX: Symbol = symbol_short!("ProgIdx");
 const AUTH_KEY_INDEX: Symbol = symbol_short!("AuthIdx");
 const FEE_CONFIG: Symbol = symbol_short!("FeeCfg");
 const FEE_COLLECTED: Symbol = symbol_short!("FeeCol");
+/// Storage key for the set of consumed idempotency keys (batch payout).
+const PAYOUT_IDEM_KEYS: Symbol = symbol_short!("PayIdem");
+/// Event symbol emitted when a batch_payout replay is detected.
+const BATCH_PAYOUT_REPLAYED: Symbol = symbol_short!("BatPayRp");
 
 // Fee rate is stored in basis points (1 basis point = 0.01%)
 // Example: 100 basis points = 1%, 1000 basis points = 10%
 const BASIS_POINTS: i128 = 10_000;
 const MAX_FEE_RATE: i128 = 1_000; // Maximum 10% fee
+
+/// Bitmask flag for [`FeeConfig::fee_waivers`]: skip fees for [`PayoutType::Single`] payouts.
+pub const FEE_WAIVER_SINGLE: u32 = 1 << 0;
+/// Bitmask flag for [`FeeConfig::fee_waivers`]: skip fees for [`PayoutType::Batch`] payouts.
+pub const FEE_WAIVER_BATCH: u32 = 1 << 1;
 
 pub const RISK_FLAG_HIGH_RISK: u32 = 1 << 0;
 pub const RISK_FLAG_UNDER_REVIEW: u32 = 1 << 1;
@@ -251,6 +262,11 @@ pub struct FeeConfig {
     pub payout_fixed_fee: i128, // Flat fee per payout (token units), capped to gross payout
     pub fee_recipient: Address, // Address to receive fees
     pub fee_enabled: bool,      // Global fee enable/disable flag
+    /// Per-PayoutType fee waiver bitmask.  Set bits suppress fee deduction for that
+    /// payout variant regardless of `fee_enabled`.
+    ///   bit 0 (`FEE_WAIVER_SINGLE`): waive fees for `PayoutType::Single`
+    ///   bit 1 (`FEE_WAIVER_BATCH`):  waive fees for `PayoutType::Batch(_)`
+    pub fee_waivers: u32,
 }
 
 #[contracttype]
@@ -412,6 +428,20 @@ pub struct BatchPayoutEvent {
     pub recipient_count: u32,
     pub total_amount: i128,
     pub remaining_balance: i128,
+    /// Optional idempotency key for auditing.
+    pub idempotency_key: Option<String>,
+}
+
+/// Emitted when a `batch_payout_idempotent` call is rejected because the
+/// supplied idempotency key was already consumed by a prior successful payout.
+/// Auditors can use this event to confirm that no double-payment occurred.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BatchPayoutReplayedEvent {
+    pub version: u32,
+    pub program_id: String,
+    /// The idempotency key that was replayed.
+    pub idempotency_key: String,
 }
 
 #[contracttype]
@@ -487,8 +517,11 @@ pub struct ProgramDelegateSetEvent {
 pub struct ProgramDelegateRevokedEvent {
     pub version: u32,
     pub program_id: String,
+    pub delegate: Address,
     pub revoked_by: Address,
     pub timestamp: u64,
+    /// `true` when revoked via `emergency_revoke_delegate`; `false` for normal revocation.
+    pub emergency: bool,
 }
 
 #[contracttype]
@@ -854,6 +887,48 @@ pub struct IdempotencySchemaVersionSet {
 
 // Constants for idempotency key validation
 pub const IDEMPOTENCY_KEY_MAX_LENGTH: u32 = 256;
+// ── Multisig threshold ────────────────────────────────────────────────────────
+pub const ADMIN_OP_EXPIRY_LEDGERS: u32 = 17_280;
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MultisigThresholdConfig {
+    pub signers: soroban_sdk::Vec<Address>,
+    pub required_approvals: u32,
+    pub high_value_threshold: i128,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AdminOpKind { UpdateFeeConfig, UpdateMultisigConfig, EmergencyWithdraw }
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingAdminOp {
+    pub kind: AdminOpKind,
+    pub value: i128,
+    pub proposed_by: Address,
+    pub proposed_at: u32,
+    pub expires_at: u32,
+    pub approvals: soroban_sdk::Vec<Address>,
+    pub payload_hash: soroban_sdk::Bytes,
+}
+
+const ADMIN_OP_PROPOSED: Symbol = symbol_short!("AdmProp");
+const ADMIN_OP_APPROVED: Symbol = symbol_short!("AdmAppr");
+const ADMIN_OP_EXECUTED: Symbol = symbol_short!("AdmExec");
+const ADMIN_OP_EXPIRED:  Symbol = symbol_short!("AdmExp");
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminOpProposedEvent { pub version: u32, pub kind: AdminOpKind, pub proposed_by: Address, pub expires_at: u32, pub required_approvals: u32 }
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminOpApprovedEvent { pub version: u32, pub kind: AdminOpKind, pub approved_by: Address, pub approvals_so_far: u32, pub required_approvals: u32 }
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminOpExecutedEvent { pub version: u32, pub kind: AdminOpKind, pub executed_by: Address }
+
 pub const IDEMPOTENCY_SCHEMA_VERSION_V1: u32 = 1;
 
 // Event symbols for dispute lifecycle
@@ -867,6 +942,35 @@ const SPEND_LIMIT_EXCEEDED: Symbol = symbol_short!("SpLimExc");
 const SPEND_LIMIT_SCHEMA: Symbol = symbol_short!("SpLimSch");
 const IDEMPOTENCY_SCHEMA: Symbol = symbol_short!("IdempSch");
 const IDEMPOTENCY_KEY_USED: Symbol = symbol_short!("IdempUsed");
+
+/// Validate idempotency key format and constraints.
+///
+/// Allowed characters: ASCII letters, digits, hyphen (`-`), and underscore (`_`).
+/// Keys must be between 1 and 256 bytes long.
+fn validate_idempotency_key(key: &str) -> Result<(), BatchError> {
+    let key_len = key.len();
+    if key_len < MIN_IDEMPOTENCY_KEY_LENGTH || key_len > MAX_IDEMPOTENCY_KEY_LENGTH {
+        return Err(BatchError::IdempotencyKeyInvalid);
+    }
+
+    let bytes = key.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        let valid_char = (b >= b'a' && b <= b'z')
+            || (b >= b'A' && b <= b'Z')
+            || (b >= b'0' && b <= b'9')
+            || b == b'-'
+            || b == b'_';
+        if !valid_char {
+            return Err(BatchError::IdempotencyKeyInvalid);
+        }
+        i += 1;
+    }
+
+    Ok(())
+}
+
 const ROLE_MANAGEMENT_SCHEMA: Symbol = symbol_short!("RoleMgmtSch");
 
 // Event symbol for per-window program spend limit enforcement
@@ -923,6 +1027,37 @@ pub struct ProgramSpendingState {
 // TOKEN ALLOWLIST TYPES & EVENTS
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// An entry in the token allowlist that stores both the token address and its
+/// decimal precision.
+///
+/// Storing decimals at allowlist-add time avoids a cross-contract call on every
+/// payout and ensures the normalization factor is admin-controlled and auditable.
+///
+/// # Decimal Normalization
+///
+/// All payout `amount` parameters are expressed in **base units** (the smallest
+/// indivisible unit of the token, e.g. 1 = 0.000001 USDC for a 6-decimal token).
+/// The contract does **not** re-scale amounts — callers must supply amounts
+/// already denominated in the token's own base units.
+///
+/// The `decimals` field is stored for off-chain tooling and event emission so
+/// that indexers can display human-readable values without additional RPC calls.
+///
+/// # Upgrade Safety
+///
+/// Stored under `DataKey::TokenAllowlistV2`. Legacy entries under
+/// `DataKey::TokenAllowlist` (plain `Vec<Address>`) are still readable via
+/// `get_allowed_tokens()` for backward compatibility.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AllowedTokenEntry {
+    /// Token contract address.
+    pub token: Address,
+    /// Number of decimal places for this token (e.g. 6 for USDC, 7 for XLM).
+    /// Range: 0–18.
+    pub decimals: u32,
+}
+
 /// Event emitted when the token allowlist is updated (token added or removed).
 ///
 /// ### Topics
@@ -944,6 +1079,8 @@ pub struct TokenAllowlistUpdatedEvent {
     pub updated_by: Address,
     /// Ledger timestamp.
     pub timestamp: u64,
+    /// Decimal precision stored for this token (0 when `added = false`).
+    pub decimals: u32,
 }
 
 /// Event emitted when a program initialization is rejected because the
@@ -992,6 +1129,12 @@ const TOKEN_ALLOWLIST_SCHEMA: Symbol = symbol_short!("TkAlSch");
 /// Increment whenever the allowlist storage layout changes in a breaking way.
 pub const TOKEN_ALLOWLIST_SCHEMA_VERSION_V1: u32 = 1;
 
+/// Maximum allowed token decimal places.
+///
+/// Tokens with more than 18 decimals are rejected at allowlist-add time.
+/// This prevents overflow in normalization arithmetic.
+pub const MAX_TOKEN_DECIMALS: u32 = 18;
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
@@ -1014,61 +1157,88 @@ pub enum DataKey {
     DisputeRecord(String),           // DisputeRecord (single active dispute per contract)
     PayoutIdempotency(String),       // idempotency_key -> PayoutIdempotencyKey
     HistoryPaginationConfig,         // HistoryPaginationConfig
-    /// Upgrade-safe schema version marker for spend-limit threshold storage.
-    /// Written on init; increment when `MultisigConfig` layout changes.
     SpendLimitSchemaVersion,
-    /// Upgrade-safe schema version marker for pause flags storage.
-    /// Written on init; increment when `PauseFlags` layout changes.
     PauseSchemaVersion,
-    /// Token allowlist: Vec<Address> of permitted token contract addresses.
-    /// When the list is non-empty, only listed tokens may be used in
-    /// `init_program` / `initialize_program`. An empty list means
-    /// enforcement is disabled (any token is accepted).
     TokenAllowlist,
-    /// Upgrade-safe schema version marker for token-allowlist storage.
-    /// Written on init; increment when the allowlist storage layout changes.
     TokenAllowlistSchemaVersion,
-    /// Spending configuration for program-level spend limits.
     SpendingConfig(String),
-    /// Spending state tracking for program-level spend limits.
     SpendingState(String),
-    /// Read-only mode flag. When true, all state-mutating operations are blocked.
     ReadOnlyMode,
-    /// Per-program metadata stored separately for upgrade-safe XDR compatibility.
     Metadata(String),
-    /// Per-program payout-key rotation nonce for replay protection.
     RotationNonce(String),
-    /// Upgrade-safe schema version marker for release trigger execution.
-    /// Tracks deterministic ordering, error reporting, and trigger statistics.
     ReleaseTriggerSchemaVersion,
-    /// Reentrancy guard flag (u32: 1 = NOT_ENTERED, 2 = ENTERED).
     ReentrancyGuard,
-    /// Idempotency key record — keyed by the caller-supplied string key.
-    /// Stores an `IdempotencyRecord` on success or failure for replay detection.
     IdempotencyKey(String),
-    /// Upgrade-safe schema version marker for idempotency key storage.
-    /// Written on init; increment when `IdempotencyRecord` layout changes.
     IdempotencySchemaVersion,
-    /// Upgrade-safe schema version marker for batch payout storage.
-    /// Written on init; increment when batch payout storage layout changes.
     BatchPayoutSchemaVersion,
-    /// Upgrade-safe schema version marker for circuit breaker storage.
-    /// Written on init; increment when circuit breaker storage layout changes.
     CircuitBreakerSchemaVersion,
-    /// Batch receipt keyed by receipt ID.
     BatchReceipt(u64),
-    /// Pending admin address for two-step admin rotation (step 1).
     PendingAdmin,
     /// Pending admin transition metadata used to invalidate replaced or expired proposals.
     PendingAdminTransition,
     /// Pending controller address for two-step controller rotation (step 1).
     PendingController(String),
+    /// Full transition state for pending controller rotation (proposed_at, deadline, nonce).
+    /// Stored alongside PendingController to enable timelock enforcement in accept_controller.
+    PendingControllerState(String),
     /// Upgrade-safe schema version marker for role management storage.
     /// Written on init; increment when role management layout changes.
     RoleManagementSchemaVersion,
-    /// Role management configuration for deterministic behavior.
     RoleManagementConfig,
+    /// Anonymous resolver for a program — maps program_id to AnonymousResolver.
+    AnonymousResolver(String),
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ANONYMIZATION TYPES (Issue #1291)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Resolver address used to anonymize payout recipients for a program.
+///
+/// When set, the resolver acts as an intermediary: the contract pays the
+/// resolver instead of the real recipient, and the resolver is responsible
+/// for forwarding funds off-chain. This keeps recipient identities off-chain
+/// while preserving on-chain auditability of total amounts.
+///
+/// ### Security notes
+/// - Only the admin can set or update the resolver.
+/// - The resolver address is stored per-program so different programs can
+///   use different resolvers.
+/// - Setting the resolver to `None` disables anonymization for that program.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AnonymousResolver {
+    /// The resolver address that receives anonymized payouts.
+    pub resolver: Address,
+    /// Admin that set this resolver.
+    pub set_by: Address,
+    /// Ledger timestamp when the resolver was last updated.
+    pub updated_at: u64,
+}
+
+/// Event emitted when an anonymous resolver is set or updated for a program.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AnonymousResolverSetEvent {
+    pub version: u32,
+    pub program_id: String,
+    pub resolver: Address,
+    pub set_by: Address,
+    pub timestamp: u64,
+}
+
+/// Event emitted when an anonymous resolver is removed from a program.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AnonymousResolverRemovedEvent {
+    pub version: u32,
+    pub program_id: String,
+    pub removed_by: Address,
+    pub timestamp: u64,
+}
+
+const ANONYMOUS_RESOLVER_SET: Symbol = symbol_short!("AnonRslvS");
+const ANONYMOUS_RESOLVER_REMOVED: Symbol = symbol_short!("AnonRslvR");
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1078,6 +1248,12 @@ pub struct PauseFlags {
     pub refund_paused: bool,
     pub pause_reason: Option<String>,
     pub paused_at: u64,
+    /// Ledger timestamp after which lock_paused is automatically cleared (None = manual-only).
+    pub lock_unpause_at: Option<u64>,
+    /// Ledger timestamp after which release_paused is automatically cleared (None = manual-only).
+    pub release_unpause_at: Option<u64>,
+    /// Ledger timestamp after which refund_paused is automatically cleared (None = manual-only).
+    pub refund_unpause_at: Option<u64>,
 }
 
 #[contracttype]
@@ -1101,11 +1277,16 @@ pub struct PauseStateChanged {
 /// ### Topics
 /// `(PAUSE_STATE_CHANGED_V2, operation_symbol)`
 ///
+/// ### Fields
+/// - `actor`: The address that triggered the pause state change (admin or authorized caller).
+/// - `reason`: Optional human-readable reason string, bounded to 256 characters.
+///
 /// ### Security notes
 /// - `previous_paused` is read from storage **before** the mutation so the
 ///   event accurately reflects the transition (old → new).
 /// - `invariant_ok` is always `true` on-chain; a `false` value would indicate
 ///   a storage corruption bug.
+/// - `reason` is bounded to [`PAUSE_REASON_MAX_LEN`] characters to prevent storage abuse.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PauseStateChangedV2 {
@@ -1113,9 +1294,34 @@ pub struct PauseStateChangedV2 {
     pub operation: Symbol,
     pub previous_paused: bool,
     pub paused: bool,
-    pub admin: Address,
+    /// The address that triggered the pause state change.
+    pub actor: Address,
+    /// Optional human-readable reason, bounded to 256 characters.
     pub reason: Option<String>,
     pub timestamp: u64,
+    pub receipt_id: u64,
+}
+
+/// Emitted when a pause mode is automatically cleared because its TTL expired.
+///
+/// ### Topics
+/// `(AUTO_UNPAUSE, operation_symbol)`
+///
+/// ### Security notes
+/// - `actor` is always "system" — triggered by guard logic, not a user call.
+/// - Emitted at most once per mode per guard invocation (not per repeated call).
+/// - Only emitted when `current_ledger_timestamp > unpause_at` (strictly greater).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AutoUnpauseEvent {
+    pub version: u32,
+    pub operation: Symbol,
+    /// Always "system" — the auto-unpause was triggered by the guard, not an admin.
+    pub actor: String,
+    /// The TTL threshold that was exceeded.
+    pub unpause_at: u64,
+    /// The ledger timestamp at which auto-unpause was triggered.
+    pub triggered_at: u64,
     pub receipt_id: u64,
 }
 
@@ -1345,8 +1551,8 @@ pub enum BatchError {
     IdempotencyKeyConflict = 410,
     IdempotencyKeyInvalid = 411,
     InvalidMerkleRoot = 409,
-    BatchReceiptNotFound = 410,
-    InvalidPaginationLimit = 411,
+    BatchReceiptNotFound = 414,
+    InvalidPaginationLimit = 415,
     PaginationLimitExceeded = 412,
     InvalidPaginationOffset = 413,
 }
@@ -1378,6 +1584,12 @@ const MIN_IDEMPOTENCY_KEY_LENGTH: u32 = 1; // Minimum 1 character (non-empty)
 // Constants for program scheduling
 const BASE_FEE: i128 = 100;
 const MIN_INCREMENT: u64 = 86400; // 1 day in seconds
+
+/// Mandatory delay (in seconds) between proposing and accepting an admin/controller rotation.
+///
+/// Set to 24 hours (86 400 seconds). During this window the current admin can cancel
+/// the proposal if the proposer key was compromised.
+pub const ROTATION_TIMELOCK_DELAY: u64 = 86_400; // 24 hours in seconds
 const MAX_SLOTS: usize = 1000;
 /// Current release schedule storage schema version.
 ///
@@ -1478,7 +1690,8 @@ mod token_math;
 
 // #[cfg(test)] mod reentrancy_guard_standalone_test; // pre-existing breakage
 // #[cfg(test)] mod malicious_reentrant; // pre-existing breakage
-// #[cfg(test)] mod test_granular_pause; // pre-existing breakage
+#[cfg(test)]
+mod test_granular_pause;
 // #[cfg(test)] mod test_lifecycle; // pre-existing breakage
 // #[cfg(test)] mod test_full_lifecycle; // pre-existing breakage
 
@@ -1544,9 +1757,9 @@ impl ProgramEscrowContract {
         Ok(())
     }
 
-    fn validate_pagination(env: &Env, limit: u32) -> Result<(), Error> {
+    fn validate_pagination(env: &Env, limit: u32) -> Result<(), BatchError> {
         if limit == 0 {
-            return Err(Error::InvalidPaginationLimit);
+            return Err(BatchError::InvalidPaginationLimit);
         }
 
         // Validate schema version for upgrade safety
@@ -1554,7 +1767,7 @@ impl ProgramEscrowContract {
 
         let cfg = Self::get_history_pagination_config(env);
         if limit > cfg.max_limit {
-            return Err(Error::PaginationLimitExceeded);
+            return Err(BatchError::PaginationLimitExceeded);
         }
         Ok(())
     }
@@ -1596,6 +1809,41 @@ impl ProgramEscrowContract {
         }
 
         Ok(results)
+    }
+
+    /// Admin-only immediate circuit breaker reset.
+    ///
+    /// Resets the circuit breaker to the `Closed` state and clears the
+    /// failure counters. This is an immediate/hard reset intended for use
+    /// by the contract admin after an incident has been resolved.
+    ///
+    /// Security: caller must be the contract admin (reads `DataKey::Admin` and
+    /// requires that address to sign the transaction). Emits an audit event
+    /// `(circuit, admin_reset)` with `(program_id, admin, timestamp)`.
+    pub fn reset_circuit_breaker(env: Env, program_id: String) -> Result<(), Error> {
+        // Read admin from instance storage and require its auth
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .map_err(|_| Error::Unauthorized)?;
+        admin.require_auth();
+
+        // Close circuit and clear counters (close_circuit resets counts and opened_at)
+        crate::error_recovery::close_circuit(&env);
+
+        // Ensure failure count is cleared as well (defensive)
+        env.storage()
+            .persistent()
+            .set(&crate::error_recovery::CircuitBreakerKey::FailureCount, &0u32);
+
+        // Emit admin reset audit event with program context
+        env.events().publish(
+            (symbol_short!("circuit"), symbol_short!("admin_reset")),
+            (program_id, admin, env.ledger().timestamp()),
+        );
+
+        Ok(())
     }
 
     fn order_batch_lock_items(env: &Env, items: &Vec<LockItem>) -> soroban_sdk::Vec<LockItem> {
@@ -1664,11 +1912,9 @@ impl ProgramEscrowContract {
 
     /// Validate idempotency key format and constraints
     fn validate_idempotency_key(idempotency_key: &String) {
-        if idempotency_key.is_empty() {
-            panic!("Idempotency key cannot be empty");
-        }
-        if idempotency_key.len() > IDEMPOTENCY_KEY_MAX_LENGTH {
-            panic!("Idempotency key exceeds maximum length");
+        let key_str = idempotency_key.as_str();
+        if validate_idempotency_key(key_str).is_err() {
+            panic!("IdempotencyKeyInvalid");
         }
     }
 
@@ -1852,6 +2098,7 @@ impl ProgramEscrowContract {
                     payout_fixed_fee: 0,
                     fee_recipient: authorized_payout_key.clone(),
                     fee_enabled: false,
+                    fee_waivers: 0,
                 },
             );
         }
@@ -1958,6 +2205,7 @@ impl ProgramEscrowContract {
                     payout_fixed_fee: 0,
                     fee_recipient: authorized_payout_key.clone(),
                     fee_enabled: false,
+                    fee_waivers: 0,
                 },
             );
         }
@@ -1982,6 +2230,9 @@ impl ProgramEscrowContract {
                     refund_paused: false,
                     pause_reason: None,
                     paused_at: 0,
+                    lock_unpause_at: None,
+                    release_unpause_at: None,
+                    refund_unpause_at: None,
                 },
             );
         }
@@ -2247,6 +2498,7 @@ impl ProgramEscrowContract {
                     payout_fixed_fee: 0,
                     fee_recipient: authorized_payout_key.clone(),
                     fee_enabled: false,
+                    fee_waivers: 0,
                 };
                 env.storage().instance().set(&FEE_CONFIG, &fee_config);
             }
@@ -2527,6 +2779,20 @@ impl ProgramEscrowContract {
         pct.saturating_add(fixed).min(amount).max(0)
     }
 
+    /// Return `true` if `payout_type` has a fee waiver set in `fee_waivers`.
+    ///
+    /// Matches on the PayoutType variant — `Batch(u32)` waives all batch payouts
+    /// regardless of the batch-index payload.
+    ///
+    /// Time complexity: O(1).  Space complexity: O(1).
+    fn is_fee_waived(fee_waivers: u32, payout_type: &PayoutType) -> bool {
+        let bit = match payout_type {
+            PayoutType::Single => FEE_WAIVER_SINGLE,
+            PayoutType::Batch(_) => FEE_WAIVER_BATCH,
+        };
+        fee_waivers & bit != 0
+    }
+
     fn emit_fee_collected(
         env: &Env,
         operation: Symbol,
@@ -2564,6 +2830,7 @@ impl ProgramEscrowContract {
                 payout_fixed_fee: 0,
                 fee_recipient: env.current_contract_address(),
                 fee_enabled: false,
+                fee_waivers: 0,
             })
     }
 
@@ -2783,6 +3050,9 @@ impl ProgramEscrowContract {
                 refund_paused: false,
                 pause_reason: None,
                 paused_at: 0,
+                lock_unpause_at: None,
+                release_unpause_at: None,
+                refund_unpause_at: None,
             },
         );
         Self::ensure_history_pagination_config(&env);
@@ -3108,7 +3378,7 @@ impl ProgramEscrowContract {
     }
 
     /// Get role management schema version for testing.
-    pub fn get_role_management_schema_version(env: Env) -> u32 {
+    pub fn get_role_mgmt_schema_ver(env: Env) -> u32 {
         env.storage()
             .instance()
             .get(&DataKey::RoleManagementSchemaVersion)
@@ -3199,6 +3469,11 @@ impl ProgramEscrowContract {
     ) -> Address {
         caller.require_auth();
 
+        // Reject delegate actions on programs in Draft status
+        if program_data.status == ProgramStatus::Draft {
+            panic!("Cannot perform delegate actions on program in Draft status");
+        }
+
         if *caller == program_data.authorized_payout_key {
             return caller.clone();
         }
@@ -3264,6 +3539,12 @@ impl ProgramEscrowContract {
         Self::validate_delegate_permissions(permissions);
 
         let mut program_data = Self::get_program_data_by_id(&env, &program_id);
+        
+        // Reject delegate operations on programs in Draft status
+        if program_data.status == ProgramStatus::Draft {
+            panic!("Cannot set delegate on program in Draft status");
+        }
+        
         let updated_by = Self::require_program_owner_or_admin(&env, &program_data, &caller);
 
         if delegate == program_data.authorized_payout_key {
@@ -3291,7 +3572,14 @@ impl ProgramEscrowContract {
 
     pub fn revoke_program_delegate(env: Env, program_id: String, caller: Address) -> ProgramData {
         let mut program_data = Self::get_program_data_by_id(&env, &program_id);
+        
+        // Reject delegate operations on programs in Draft status
+        if program_data.status == ProgramStatus::Draft {
+            panic!("Cannot revoke delegate on program in Draft status");
+        }
+        
         let revoked_by = Self::require_program_owner_or_admin(&env, &program_data, &caller);
+        let delegate = program_data.delegate.clone().unwrap_or(revoked_by.clone());
 
         program_data.delegate = None;
         program_data.delegate_permissions = 0;
@@ -3302,8 +3590,75 @@ impl ProgramEscrowContract {
             ProgramDelegateRevokedEvent {
                 version: EVENT_VERSION_V2,
                 program_id,
+                delegate,
                 revoked_by,
                 timestamp: env.ledger().timestamp(),
+                emergency: false,
+            },
+        );
+
+        program_data
+    }
+
+    /// Emergency revocation of a delegate — admin only.
+    ///
+    /// ## Purpose
+    ///
+    /// Provides a fast-path for removing a compromised or malicious delegate
+    /// without requiring the delegate's cooperation or a two-step rotation.
+    /// The admin can call this at any time, even if the delegate is
+    /// unresponsive or acting adversarially.
+    ///
+    /// ## Authorization
+    ///
+    /// Only the contract-level admin (set via `initialize_contract`) may call
+    /// this function.  The payout-key owner and delegates are **not** permitted —
+    /// this separation ensures the function remains available even when the
+    /// payout-key itself may be compromised.
+    ///
+    /// ## Security Invariants
+    ///
+    /// 1. **Immediate effect** — permissions are zeroed atomically in the same
+    ///    ledger as the call; there is no delay or grace period.
+    /// 2. **Idempotent** — calling when no delegate is set is a no-op (does not
+    ///    panic) and still emits the event so the call is auditable.
+    /// 3. **Event flag** — `ProgramDelegateRevokedEvent::emergency = true`
+    ///    distinguishes this path from normal revocation in indexers and alerts.
+    ///
+    /// ## Arguments
+    /// * `program_id` — Target program whose delegate is being revoked.
+    /// * `delegate`   — Address of the compromised delegate to revoke.
+    ///
+    /// ## Panics
+    /// * `"Not initialized"` — admin key not set.
+    /// * `"Unauthorized"` — caller is not the contract admin.
+    /// * `"Program not found"` — `program_id` does not exist.
+    pub fn emergency_revoke_delegate(
+        env: Env,
+        program_id: String,
+        delegate: Address,
+    ) -> ProgramData {
+        // Only the contract-level admin may call this function.
+        let admin = Self::require_admin(&env);
+
+        let mut program_data = Self::get_program_data_by_id(&env, &program_id);
+
+        // Zero out delegate permissions regardless of whether the stored
+        // delegate matches `delegate` — a compromised key scenario may
+        // involve the delegate field already being cleared by another path.
+        program_data.delegate = None;
+        program_data.delegate_permissions = 0;
+        Self::store_program_data(&env, &program_id, &program_data);
+
+        env.events().publish(
+            (PROGRAM_DELEGATE_REVOKED, program_id.clone()),
+            ProgramDelegateRevokedEvent {
+                version: EVENT_VERSION_V2,
+                program_id,
+                delegate,
+                revoked_by: admin,
+                timestamp: env.ledger().timestamp(),
+                emergency: true,
             },
         );
 
@@ -3377,6 +3732,16 @@ impl ProgramEscrowContract {
 
     /// Accept the proposed controller role for a program (step 2).
     /// The proposed controller must authorize. Returns explicit errors for deterministic behavior.
+    ///
+    /// ### Timelock
+    /// A mandatory 24-hour delay (`ROTATION_TIMELOCK_DELAY`) must elapse between
+    /// `propose_controller` and `accept_controller`. This gives the current admin/controller
+    /// time to cancel a proposal made by a compromised key.
+    ///
+    /// ### Errors
+    /// - `NoControllerRotationInProgress` — no pending proposal exists for this program.
+    /// - `RotationTimelockActive` — the 24-hour delay has not yet elapsed.
+    /// - `InvalidControllerRotationState` — storage is inconsistent.
     pub fn accept_controller(env: Env, program_id: String) -> Result<ProgramData, ContractError> {
         // Check if there's a pending rotation
         let proposed: Address = env
@@ -3536,13 +3901,18 @@ impl ProgramEscrowContract {
             .unwrap_or_else(|| Vec::new(&env))
     }
 
-    /// Update pause flags (admin only)
+    /// Update pause flags (admin only).
+    ///
+    /// `unpause_at` is an optional ledger timestamp (seconds since epoch) after which the
+    /// pause modes being set to `true` in this call will be automatically cleared by the
+    /// guard logic. Pass `None` for permanent (manual-only) pause.
     pub fn set_paused(
         env: Env,
         lock: Option<bool>,
         release: Option<bool>,
         refund: Option<bool>,
         reason: Option<String>,
+        unpause_at: Option<u64>,
     ) {
         if !env.storage().instance().has(&DataKey::Admin) {
             panic!("Not initialized");
@@ -3550,6 +3920,13 @@ impl ProgramEscrowContract {
 
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         admin.require_auth();
+
+        // Enforce 256-character bound on reason to prevent storage abuse.
+        if let Some(ref r) = reason {
+            if r.len() > PAUSE_REASON_MAX_LEN {
+                panic!("Pause reason exceeds maximum length of 256 characters");
+            }
+        }
 
         let mut flags = Self::get_pause_flags(&env);
         let timestamp = env.ledger().timestamp();
@@ -3561,6 +3938,8 @@ impl ProgramEscrowContract {
         if let Some(paused) = lock {
             let previous_paused = flags.lock_paused;
             flags.lock_paused = paused;
+            // Store or clear TTL for this mode.
+            flags.lock_unpause_at = if paused { unpause_at } else { None };
             let receipt_id = Self::increment_receipt_id(&env);
             env.events().publish(
                 (PAUSE_STATE_CHANGED,),
@@ -3580,7 +3959,7 @@ impl ProgramEscrowContract {
                     operation: symbol_short!("lock"),
                     previous_paused,
                     paused,
-                    admin: admin.clone(),
+                    actor: admin.clone(),
                     reason: reason.clone(),
                     timestamp,
                     receipt_id,
@@ -3591,6 +3970,7 @@ impl ProgramEscrowContract {
         if let Some(paused) = release {
             let previous_paused = flags.release_paused;
             flags.release_paused = paused;
+            flags.release_unpause_at = if paused { unpause_at } else { None };
             let receipt_id = Self::increment_receipt_id(&env);
             env.events().publish(
                 (PAUSE_STATE_CHANGED,),
@@ -3610,7 +3990,7 @@ impl ProgramEscrowContract {
                     operation: symbol_short!("release"),
                     previous_paused,
                     paused,
-                    admin: admin.clone(),
+                    actor: admin.clone(),
                     reason: reason.clone(),
                     timestamp,
                     receipt_id,
@@ -3621,6 +4001,7 @@ impl ProgramEscrowContract {
         if let Some(paused) = refund {
             let previous_paused = flags.refund_paused;
             flags.refund_paused = paused;
+            flags.refund_unpause_at = if paused { unpause_at } else { None };
             let receipt_id = Self::increment_receipt_id(&env);
             env.events().publish(
                 (PAUSE_STATE_CHANGED,),
@@ -3640,7 +4021,7 @@ impl ProgramEscrowContract {
                     operation: symbol_short!("refund"),
                     previous_paused,
                     paused,
-                    admin: admin.clone(),
+                    actor: admin.clone(),
                     reason: reason.clone(),
                     timestamp,
                     receipt_id,
@@ -3752,6 +4133,9 @@ impl ProgramEscrowContract {
                 refund_paused: false,
                 pause_reason: None,
                 paused_at: 0,
+                lock_unpause_at: None,
+                release_unpause_at: None,
+                refund_unpause_at: None,
             })
     }
 
@@ -3778,20 +4162,109 @@ impl ProgramEscrowContract {
             .unwrap_or(0)
     }
 
-    /// Check if an operation is paused
+    /// Check if an operation is paused, applying TTL-based auto-unpause if needed.
+    ///
+    /// If a pause mode has `unpause_at` set and the current ledger timestamp strictly
+    /// exceeds that value, the mode is automatically cleared, storage is updated, and
+    /// an `AUTO_UNPAUSE` event is emitted with `actor = "system"`. This is an O(1)
+    /// check with no iteration. Repeated calls after clearing do NOT re-emit.
     fn check_paused(env: &Env, operation: Symbol) -> bool {
         if Self::is_maintenance_mode(env.clone()) && operation == symbol_short!("lock") {
             return true;
         }
-        let flags = Self::get_pause_flags(env);
-        if operation == symbol_short!("lock") {
-            return flags.lock_paused;
-        } else if operation == symbol_short!("release") {
-            return flags.release_paused;
-        } else if operation == symbol_short!("refund") {
-            return flags.refund_paused;
+
+        let mut flags = Self::get_pause_flags(env);
+        let current_time = env.ledger().timestamp();
+        let mut flags_changed = false;
+
+        // TTL check for lock mode.
+        if flags.lock_paused {
+            if let Some(unpause_at) = flags.lock_unpause_at {
+                if current_time > unpause_at {
+                    flags.lock_paused = false;
+                    flags.lock_unpause_at = None;
+                    flags_changed = true;
+                    let receipt_id = Self::increment_receipt_id(env);
+                    env.events().publish(
+                        (AUTO_UNPAUSE, symbol_short!("lock")),
+                        AutoUnpauseEvent {
+                            version: EVENT_VERSION_V2,
+                            operation: symbol_short!("lock"),
+                            actor: String::from_str(env, "system"),
+                            unpause_at,
+                            triggered_at: current_time,
+                            receipt_id,
+                        },
+                    );
+                }
+            }
         }
-        false
+
+        // TTL check for release mode.
+        if flags.release_paused {
+            if let Some(unpause_at) = flags.release_unpause_at {
+                if current_time > unpause_at {
+                    flags.release_paused = false;
+                    flags.release_unpause_at = None;
+                    flags_changed = true;
+                    let receipt_id = Self::increment_receipt_id(env);
+                    env.events().publish(
+                        (AUTO_UNPAUSE, symbol_short!("release")),
+                        AutoUnpauseEvent {
+                            version: EVENT_VERSION_V2,
+                            operation: symbol_short!("release"),
+                            actor: String::from_str(env, "system"),
+                            unpause_at,
+                            triggered_at: current_time,
+                            receipt_id,
+                        },
+                    );
+                }
+            }
+        }
+
+        // TTL check for refund mode.
+        if flags.refund_paused {
+            if let Some(unpause_at) = flags.refund_unpause_at {
+                if current_time > unpause_at {
+                    flags.refund_paused = false;
+                    flags.refund_unpause_at = None;
+                    flags_changed = true;
+                    let receipt_id = Self::increment_receipt_id(env);
+                    env.events().publish(
+                        (AUTO_UNPAUSE, symbol_short!("refund")),
+                        AutoUnpauseEvent {
+                            version: EVENT_VERSION_V2,
+                            operation: symbol_short!("refund"),
+                            actor: String::from_str(env, "system"),
+                            unpause_at,
+                            triggered_at: current_time,
+                            receipt_id,
+                        },
+                    );
+                }
+            }
+        }
+
+        if flags_changed {
+            // Clear shared pause metadata if all modes are now unpaused.
+            let any_paused = flags.lock_paused || flags.release_paused || flags.refund_paused;
+            if !any_paused {
+                flags.pause_reason = None;
+                flags.paused_at = 0;
+            }
+            env.storage().instance().set(&DataKey::PauseFlags, &flags);
+        }
+
+        if operation == symbol_short!("lock") {
+            flags.lock_paused
+        } else if operation == symbol_short!("release") {
+            flags.release_paused
+        } else if operation == symbol_short!("refund") {
+            flags.refund_paused
+        } else {
+            false
+        }
     }
 
     // --- Circuit Breaker & Rate Limit ---
@@ -4091,15 +4564,13 @@ impl ProgramEscrowContract {
     /// Validate and check idempotency key
     /// If key already exists, returns the stored payout record (for idempotent replay)
     /// If key is new, returns None (caller should proceed with payout)
-    fn validate_idempotency_key(
+    fn validate_and_get_idempotency_key(
         env: &Env,
         idempotency_key: &Option<String>,
     ) -> Option<PayoutIdempotencyKey> {
         match idempotency_key {
             Some(key) => {
-                // Validate key length
-                let key_len = key.len();
-                if key_len < MIN_IDEMPOTENCY_KEY_LENGTH || key_len > MAX_IDEMPOTENCY_KEY_LENGTH {
+                if validate_idempotency_key(key.as_str()).is_err() {
                     panic!("IdempotencyKeyInvalid");
                 }
 
@@ -4109,14 +4580,11 @@ impl ProgramEscrowContract {
         }
     }
 
-    /// Validate idempotency key format without checking storage
-    /// Returns Ok(()) if valid, panics with explicit error if invalid
+    /// Validate idempotency key format without checking storage.
+    ///
+    /// This helper is kept for explicit format assertions in internal code.
     fn validate_idempotency_key_format(key: &String) {
-        let key_len = key.len();
-        if key_len < MIN_IDEMPOTENCY_KEY_LENGTH {
-            panic!("IdempotencyKeyInvalid");
-        }
-        if key_len > MAX_IDEMPOTENCY_KEY_LENGTH {
+        if validate_idempotency_key(key.as_str()).is_err() {
             panic!("IdempotencyKeyInvalid");
         }
     }
@@ -4125,6 +4593,18 @@ impl ProgramEscrowContract {
     /// Only the program's `authorized_payout_key` may call this.
     ///
     /// # Arguments
+    /// * `recipients` - Vector of winner addresses.
+    /// * `amounts` - Vector of prize amounts (must match recipients length).
+    ///
+    /// # Returns
+    /// The updated `ProgramData` reflecting the new balance and payout history.
+    ///
+    /// # Security
+    /// - Requires authorization from the `authorized_payout_key`.
+    /// - Protected by reentrancy guard.
+    /// - Respects circuit breaker and threshold limits.
+    pub fn batch_payout(env: Env, recipients: soroban_sdk::Vec<Address>, amounts: soroban_sdk::Vec<i128>) -> ProgramData {
+        Self::batch_payout_internal(env, None, None, recipients, amounts)
     /// * `program_id`   - Program to configure.
     /// * `window_size`  - Window length in seconds (must be > 0).
     /// * `max_amount`   - Max total releasable in one window (must be >= 0).
@@ -4159,6 +4639,101 @@ impl ProgramEscrowContract {
     /// Return the spending limit configuration for a program, if set.
     pub fn get_program_spending_limit(
         env: Env,
+        caller: Address,
+        recipients: soroban_sdk::Vec<Address>,
+        amounts: soroban_sdk::Vec<i128>,
+    ) -> ProgramData {
+        Self::batch_payout_internal(env, Some(caller), None, recipients, amounts)
+    }
+
+    /// Execute a batch payout guarded by an idempotency key.
+    ///
+    /// If `idempotency_key` has already been consumed by a prior successful
+    /// call, the function emits a [`BatchPayoutReplayedEvent`] and returns the
+    /// current [`ProgramData`] **without** transferring any funds.  This makes
+    /// the operation safe to retry from the backend without risk of
+    /// double-payment.
+    ///
+    /// # Arguments
+    /// * `idempotency_key` – Caller-supplied unique string (e.g. UUID or
+    ///   content-hash of the payout batch).  Must be ≤ 64 bytes.
+    /// * `recipients` / `amounts` – Same semantics as [`batch_payout`].
+    ///
+    /// # Security
+    /// - Idempotency keys are stored in persistent storage and never expire.
+    /// - A key is only marked consumed **after** all transfers succeed.
+    /// - Replay detection runs before any state mutation.
+    pub fn batch_payout_idempotent(
+        env: Env,
+        idempotency_key: String,
+        recipients: soroban_sdk::Vec<Address>,
+        amounts: soroban_sdk::Vec<i128>,
+    ) -> ProgramData {
+        Self::batch_payout_idempotent_internal(env, idempotency_key, None, recipients, amounts)
+    }
+
+    /// Delegate variant of [`batch_payout_idempotent`].
+    pub fn batch_payout_idempotent_by(
+        env: Env,
+        idempotency_key: String,
+        caller: Address,
+        recipients: soroban_sdk::Vec<Address>,
+        amounts: soroban_sdk::Vec<i128>,
+    ) -> ProgramData {
+        Self::batch_payout_idempotent_internal(
+            env,
+            idempotency_key,
+            Some(caller),
+            recipients,
+            amounts,
+        )
+    }
+
+    fn batch_payout_idempotent_internal(
+        env: Env,
+        idempotency_key: String,
+        caller: Option<Address>,
+        recipients: soroban_sdk::Vec<Address>,
+        amounts: soroban_sdk::Vec<i128>,
+    ) -> ProgramData {
+        // Load current program data for the replay-event payload.
+        let program_data: ProgramData = env
+            .storage()
+            .instance()
+            .get(&PROGRAM_DATA)
+            .unwrap_or_else(|| panic!("Program not initialized"));
+
+        // Load the set of consumed keys (Vec<String> stored persistently).
+        let mut used_keys: soroban_sdk::Vec<String> = env
+            .storage()
+            .persistent()
+            .get(&PAYOUT_IDEM_KEYS)
+            .unwrap_or_else(|| soroban_sdk::Vec::new(&env));
+
+        // Replay detection: scan for the key.
+        for k in used_keys.iter() {
+            if k == idempotency_key {
+                // Emit audit event so auditors can confirm no double-payment.
+                env.events().publish(
+                    (BATCH_PAYOUT_REPLAYED,),
+                    BatchPayoutReplayedEvent {
+                        version: EVENT_VERSION_V2,
+                        program_id: program_data.program_id.clone(),
+                        idempotency_key: idempotency_key.clone(),
+                    },
+                );
+                return program_data;
+            }
+        }
+
+        // Key is fresh — execute the real payout.
+        let result = Self::batch_payout_internal(env.clone(), caller, Some(idempotency_key.clone()), recipients, amounts);
+
+        // Mark key as consumed only after successful execution.
+        used_keys.push_back(idempotency_key);
+        env.storage().persistent().set(&PAYOUT_IDEM_KEYS, &used_keys);
+
+        result
         program_id: String,
     ) -> Option<ProgramSpendingConfig> {
         env.storage()
@@ -4169,6 +4744,18 @@ impl ProgramEscrowContract {
     /// Return the current window state for a program's spending limit, if any.
     pub fn get_program_spending_state(
         env: Env,
+        caller: Option<Address>,
+        idempotency_key: Option<String>,
+        recipients: soroban_sdk::Vec<Address>,
+        amounts: soroban_sdk::Vec<i128>,
+    ) -> ProgramData {
+        // Validation precedence (deterministic ordering):
+        // 1. Reentrancy guard
+        // 2. Contract initialized
+        // 3. Paused (operational state)
+        // 4. Authorization
+        // 6. Business logic (sufficient balance)
+        // 7. Circuit breaker check
         program_id: String,
     ) -> Option<ProgramSpendingState> {
         env.storage()
@@ -4382,10 +4969,10 @@ impl ProgramEscrowContract {
     }
 
     // ========================================================================
-    // Token Allowlist
+    // Token Allowlist  (issue #1295 — decimal normalization)
     // ========================================================================
 
-    /// Internal helper: read the current allowlist (empty Vec = enforcement off).
+    /// Internal: read the legacy V1 allowlist (plain `Vec<Address>`).
     fn get_token_allowlist_internal(env: &Env) -> soroban_sdk::Vec<Address> {
         env.storage()
             .instance()
@@ -4393,25 +4980,39 @@ impl ProgramEscrowContract {
             .unwrap_or(Vec::new(env))
     }
 
-    /// Internal helper: enforce the token allowlist.
+    /// Internal: read the V2 allowlist (`Vec<AllowedTokenEntry>`).
     ///
-    /// When the allowlist is **non-empty**, `token_address` must be present.
-    /// When the allowlist is **empty**, any token is accepted (enforcement off).
-    ///
-    /// Emits [`TokenRejectedEvent`] and panics on rejection so the event is
-    /// always visible on-chain before any state mutation.
-    fn enforce_token_allowlist(env: &Env, token_address: &Address, program_id: &String) {
-        let allowlist = Self::get_token_allowlist_internal(env);
-        if allowlist.is_empty() {
-            // Allowlist is empty → enforcement disabled, accept any token.
-            return;
+    /// Falls back to the V1 list (addresses only, decimals = 0) when no V2
+    /// entry exists so legacy deployments continue to work unchanged.
+    fn get_token_allowlist_v2_internal(env: &Env) -> soroban_sdk::Vec<AllowedTokenEntry> {
+        if let Some(v2) = env
+            .storage()
+            .instance()
+            .get::<DataKey, soroban_sdk::Vec<AllowedTokenEntry>>(&DataKey::TokenAllowlistV2)
+        {
+            return v2;
         }
-        for allowed in allowlist.iter() {
-            if allowed == *token_address {
-                return; // Token is permitted.
+        // Upgrade path: promote V1 entries with decimals = 0.
+        let v1 = Self::get_token_allowlist_internal(env);
+        let mut out: soroban_sdk::Vec<AllowedTokenEntry> = Vec::new(env);
+        for addr in v1.iter() {
+            out.push_back(AllowedTokenEntry { token: addr, decimals: 0 });
+        }
+        out
+    }
+
+    /// Internal: enforce the token allowlist.
+    fn enforce_token_allowlist(env: &Env, token_address: &Address, program_id: &String) {
+        // Check V2 first; fall back to V1.
+        let v2 = Self::get_token_allowlist_v2_internal(env);
+        if v2.is_empty() {
+            return; // Enforcement disabled.
+        }
+        for entry in v2.iter() {
+            if entry.token == *token_address {
+                return; // Permitted.
             }
         }
-        // Token not found — emit rejection event then panic.
         env.events().publish(
             (TOKEN_REJECTED,),
             TokenRejectedEvent {
@@ -4424,32 +5025,67 @@ impl ProgramEscrowContract {
         panic!("Token not on allowlist");
     }
 
-    /// Add a token contract address to the allowlist (admin only).
+    /// Internal: look up stored decimals for a token (0 if not found).
     ///
-    /// Once at least one token is on the allowlist, `init_program` /
-    /// `initialize_program` will reject any token not present in the list.
-    /// Adding the first token implicitly enables enforcement.
+    /// Returns the value stored by `add_allowed_token_with_decimals`.
+    /// Returns `0` for tokens added via the legacy `add_allowed_token` path.
+    fn get_token_decimals_internal(env: &Env, token: &Address) -> u32 {
+        env.storage()
+            .instance()
+            .get(&DataKey::TokenDecimals(token.clone()))
+            .unwrap_or(0u32)
+    }
+
+    /// Add a token to the allowlist **with its decimal precision** (admin only).
+    ///
+    /// This is the preferred entrypoint for new deployments.  Storing decimals
+    /// at add-time means payout callers can supply amounts in the token's own
+    /// base units and the contract records the precision for off-chain tooling.
+    ///
+    /// # Parameters
+    /// - `token`    — token contract address
+    /// - `decimals` — number of decimal places (0–18)
     ///
     /// # Errors
-    /// Panics with `"Token already on allowlist"` if the token is already present.
+    /// - Panics `"Token already on allowlist"` if already present.
+    /// - Panics `"Decimals exceed maximum (18)"` if `decimals > 18`.
     ///
     /// # Events
-    /// Emits [`TokenAllowlistUpdatedEvent`] with `added = true`.
-    pub fn add_allowed_token(env: Env, token: Address) {
+    /// Emits [`TokenAllowlistUpdatedEvent`] with `added = true` and the stored
+    /// `decimals` value.
+    pub fn add_allowed_token_with_decimals(env: Env, token: Address, decimals: u32) {
         let admin = Self::require_admin(&env);
-        let mut allowlist = Self::get_token_allowlist_internal(&env);
 
-        // Idempotency guard: reject duplicates explicitly.
-        for existing in allowlist.iter() {
-            if existing == token {
+        if decimals > MAX_TOKEN_DECIMALS {
+            panic!("Decimals exceed maximum (18)");
+        }
+
+        let mut v2 = Self::get_token_allowlist_v2_internal(&env);
+
+        for entry in v2.iter() {
+            if entry.token == token {
                 panic!("Token already on allowlist");
             }
         }
 
-        allowlist.push_back(token.clone());
+        v2.push_back(AllowedTokenEntry { token: token.clone(), decimals });
+
+        // Write V2 list.
         env.storage()
             .instance()
-            .set(&DataKey::TokenAllowlist, &allowlist);
+            .set(&DataKey::TokenAllowlistV2, &v2);
+
+        // Also write the per-token decimal cache for O(1) lookup.
+        env.storage()
+            .instance()
+            .set(&DataKey::TokenDecimals(token.clone()), &decimals);
+
+        // Keep V1 list in sync for backward-compatible readers.
+        let mut v1 = Self::get_token_allowlist_internal(&env);
+        v1.push_back(token.clone());
+        env.storage()
+            .instance()
+            .set(&DataKey::TokenAllowlist, &v1);
 
         env.events().publish(
             (TOKEN_ALLOWLIST_UPDATED,),
@@ -4459,77 +5095,109 @@ impl ProgramEscrowContract {
                 added: true,
                 updated_by: admin,
                 timestamp: env.ledger().timestamp(),
+                decimals,
             },
         );
     }
 
-    /// Remove a token contract address from the allowlist (admin only).
+    /// Add a token to the allowlist without specifying decimals (admin only).
     ///
-    /// If removing the last token, the allowlist becomes empty and enforcement
-    /// is disabled — all tokens are accepted again.
+    /// Decimals default to `0`.  Prefer `add_allowed_token_with_decimals` for
+    /// new programs that need accurate decimal metadata.
     ///
     /// # Errors
-    /// Panics with `"Token not in allowlist"` if the token is not present.
+    /// Panics `"Token already on allowlist"` if already present.
+    pub fn add_allowed_token(env: Env, token: Address) {
+        // Delegate to the decimals variant with decimals = 0.
+        Self::add_allowed_token_with_decimals(env, token, 0);
+    }
+
+    /// Remove a token from the allowlist (admin only).
     ///
-    /// # Events
-    /// Emits [`TokenAllowlistUpdatedEvent`] with `added = false`.
+    /// Removes from both V2 and V1 lists and clears the decimal cache.
     pub fn remove_allowed_token(env: Env, token: Address) {
         let admin = Self::require_admin(&env);
-        let allowlist = Self::get_token_allowlist_internal(&env);
 
-        let mut new_list: soroban_sdk::Vec<Address> = Vec::new(&env);
+        // Remove from V2.
+        let v2 = Self::get_token_allowlist_v2_internal(&env);
+        let mut new_v2: soroban_sdk::Vec<AllowedTokenEntry> = Vec::new(&env);
         let mut found = false;
-        for existing in allowlist.iter() {
-            if existing == token {
+        for entry in v2.iter() {
+            if entry.token == token {
                 found = true;
-                // Skip — effectively removes it.
             } else {
-                new_list.push_back(existing);
+                new_v2.push_back(entry);
             }
         }
-
         if !found {
             panic!("Token not in allowlist");
         }
-
         env.storage()
             .instance()
-            .set(&DataKey::TokenAllowlist, &new_list);
+            .set(&DataKey::TokenAllowlistV2, &new_v2);
+
+        // Remove from V1.
+        let v1 = Self::get_token_allowlist_internal(&env);
+        let mut new_v1: soroban_sdk::Vec<Address> = Vec::new(&env);
+        for addr in v1.iter() {
+            if addr != token {
+                new_v1.push_back(addr);
+            }
+        }
+        env.storage()
+            .instance()
+            .set(&DataKey::TokenAllowlist, &new_v1);
+
+        // Clear decimal cache.
+        env.storage()
+            .instance()
+            .remove(&DataKey::TokenDecimals(token.clone()));
 
         env.events().publish(
             (TOKEN_ALLOWLIST_UPDATED,),
             TokenAllowlistUpdatedEvent {
                 version: EVENT_VERSION_V2,
+                program_id: updated_data.program_id.clone(),
+                recipient_count: recipients.len() as u32,
+                total_amount: total_payout,
+                remaining_balance: updated_data.remaining_balance,
+                idempotency_key,
                 token,
                 added: false,
                 updated_by: admin,
                 timestamp: env.ledger().timestamp(),
+                decimals: 0,
             },
         );
     }
 
-    /// Returns `true` if `token` is on the allowlist **or** the allowlist is
-    /// empty (enforcement disabled).
-    ///
-    /// This is a pure view — no auth required.
+    /// Returns `true` if `token` is on the allowlist or the list is empty.
     pub fn is_token_allowed(env: Env, token: Address) -> bool {
-        let allowlist = Self::get_token_allowlist_internal(&env);
-        if allowlist.is_empty() {
-            return true; // Enforcement off.
+        let v2 = Self::get_token_allowlist_v2_internal(&env);
+        if v2.is_empty() {
+            return true;
         }
-        for existing in allowlist.iter() {
-            if existing == token {
+        for entry in v2.iter() {
+            if entry.token == token {
                 return true;
             }
         }
         false
     }
 
-    /// Returns the full token allowlist.
-    ///
-    /// An empty Vec means enforcement is disabled (any token is accepted).
+    /// Returns the full token allowlist as plain addresses (V1-compatible).
     pub fn get_allowed_tokens(env: Env) -> soroban_sdk::Vec<Address> {
         Self::get_token_allowlist_internal(&env)
+    }
+
+    /// Returns the full token allowlist with decimal metadata (V2).
+    pub fn get_allowed_tokens_with_decimals(env: Env) -> soroban_sdk::Vec<AllowedTokenEntry> {
+        Self::get_token_allowlist_v2_internal(&env)
+    }
+
+    /// Returns the stored decimal precision for `token`, or `0` if not found.
+    pub fn get_token_decimals(env: Env, token: Address) -> u32 {
+        Self::get_token_decimals_internal(&env, &token)
     }
 
     /// Returns the token-allowlist storage schema version written during init.
@@ -4640,11 +5308,13 @@ impl ProgramEscrowContract {
             level = next_level;
         }
         level.get(0).unwrap()
+
     }
 
     fn batch_payout_internal(
         env: Env,
         caller: Option<Address>,
+        idempotency_key: Option<String>,
         recipients: soroban_sdk::Vec<Address>,
         amounts: soroban_sdk::Vec<i128>,
         idempotency_key: Option<String>,
@@ -4778,16 +5448,21 @@ impl ProgramEscrowContract {
         //    This guarantees atomicity: if any fee would consume an entire payout
         //    the whole batch is rejected with no state changes.
         let cfg = Self::get_fee_config_internal(&env);
+        let batch_fee_waived = Self::is_fee_waived(cfg.fee_waivers, &PayoutType::Batch(0));
         let mut net_amounts: soroban_sdk::Vec<i128> = soroban_sdk::Vec::new(&env);
         let mut fee_amounts: soroban_sdk::Vec<i128> = soroban_sdk::Vec::new(&env);
         for i in 0..recipients.len() {
             let gross = amounts.get(i).unwrap();
-            let pay_fee = Self::combined_fee_amount(
-                gross,
-                cfg.payout_fee_rate,
-                cfg.payout_fixed_fee,
-                cfg.fee_enabled,
-            );
+            let pay_fee = if batch_fee_waived {
+                0
+            } else {
+                Self::combined_fee_amount(
+                    gross,
+                    cfg.payout_fee_rate,
+                    cfg.payout_fixed_fee,
+                    cfg.fee_enabled,
+                )
+            };
             let net = match gross.checked_sub(pay_fee) {
                 Some(v) if v > 0 => v,
                 _ => panic!("Payout fee consumes entire payout"),
@@ -4927,7 +5602,9 @@ impl ProgramEscrowContract {
         idempotency_key: Option<String>,
     ) -> ProgramData {
         // Check if idempotency key already exists
-        if let Some(existing_record) = Self::validate_idempotency_key(&env, &idempotency_key) {
+        if let Some(existing_record) =
+            Self::validate_and_get_idempotency_key(&env, &idempotency_key)
+        {
             // Key already used - return existing state without re-executing
             // This ensures idempotent behavior
             let program_data: ProgramData = env
@@ -5129,12 +5806,16 @@ impl ProgramEscrowContract {
         let contract_address = env.current_contract_address();
         let token_client = token::Client::new(&env, &program_data.token_address);
         let cfg = Self::get_fee_config_internal(&env);
-        let pay_fee = Self::combined_fee_amount(
-            amount,
-            cfg.payout_fee_rate,
-            cfg.payout_fixed_fee,
-            cfg.fee_enabled,
-        );
+        let pay_fee = if Self::is_fee_waived(cfg.fee_waivers, &PayoutType::Single) {
+            0
+        } else {
+            Self::combined_fee_amount(
+                amount,
+                cfg.payout_fee_rate,
+                cfg.payout_fixed_fee,
+                cfg.fee_enabled,
+            )
+        };
         let net = amount.checked_sub(pay_fee).unwrap_or(0);
         if net <= 0 {
             panic!("Payout fee consumes entire payout");
@@ -5255,7 +5936,9 @@ impl ProgramEscrowContract {
         idempotency_key: Option<String>,
     ) -> ProgramData {
         // Check if idempotency key already exists
-        if let Some(existing_record) = Self::validate_idempotency_key(&env, &idempotency_key) {
+        if let Some(existing_record) =
+            Self::validate_and_get_idempotency_key(&env, &idempotency_key)
+        {
             // Key already used - return existing state without re-executing
             // This ensures idempotent behavior
             let program_data: ProgramData = env

@@ -1,0 +1,12 @@
+{
+  "contract": "program-escrow",
+  "network": "testnet",
+  "gates": {
+    "batch_payout": {
+      "50": {
+        "max_actual_fee_charged_stroops": 250000,
+        "notes": "Provisional threshold for CI wiring. Replace with a baseline-derived value after the first successful testnet capture."
+      }
+    }
+  }
+}
