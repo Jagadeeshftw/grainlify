@@ -247,6 +247,46 @@ fn fee_monotonic_with_amount() {
 }
 
 // ===========================================================================
+// 8. Property-based tests
+// ===========================================================================
+
+#[test]
+fn prop_split_invariant_1_to_10000() {
+    for amount in 1..=10_000 {
+        let (fee, net) = token_math::split_amount(amount, 500); // 5%
+        assert_eq!(fee + net, amount, "Invariant failed for amount {}", amount);
+    }
+}
+
+#[test]
+fn test_rounding_at_10_percent() {
+    // 10% fee rate = 1000 basis points
+    let fee_rate = 1000;
+    
+    // For 9 units, 10% fee is 0.9, floored to 0. Fee = 0.
+    // Invariant: fee + net == amount -> 0 + 9 == 9.
+    let (fee1, net1) = token_math::split_amount(9, fee_rate);
+    assert_eq!(fee1, 0);
+    assert_eq!(net1, 9);
+    
+    // For 10 units, 10% fee is 1.0, floored to 1. Fee = 1.
+    // Invariant: fee + net == amount -> 1 + 9 == 10.
+    let (fee2, net2) = token_math::split_amount(10, fee_rate);
+    assert_eq!(fee2, 1);
+    assert_eq!(net2, 9);
+}
+
+#[test]
+#[should_panic(expected = "Fee calculation overflow")]
+fn test_overflow_near_max_i128() {
+    // Max i128 is ~1.7e38
+    // If we take a large amount, fee calculation should panic on overflow.
+    let amount = i128::MAX;
+    let fee_rate = 1000;
+    token_math::calculate_fee(amount, fee_rate);
+}
+
+// ===========================================================================
 // 7. safe_add, safe_sub, safe_mul
 // ===========================================================================
 
