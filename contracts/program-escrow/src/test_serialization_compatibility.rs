@@ -322,6 +322,45 @@ fn serialization_compatibility_public_types_and_events() {
             }
             .into_val(&env),
         ),
+        // ── Delegate events (Issue #1273 — emergency revocation) ──────────────
+        // `emergency: false` for normal revocation path.
+        (
+            "ProgramDelegateRevokedEvent",
+            ProgramDelegateRevokedEvent {
+                version: EVENT_VERSION_V2,
+                program_id: program_id.clone(),
+                delegate: recipient.clone(),
+                revoked_by: authorized.clone(),
+                timestamp: 100,
+                emergency: false,
+            }
+            .into_val(&env),
+        ),
+        // `emergency: true` distinguishes the fast-path used by emergency_revoke_delegate.
+        (
+            "ProgramDelegateRevokedEvent::Emergency",
+            ProgramDelegateRevokedEvent {
+                version: EVENT_VERSION_V2,
+                program_id: program_id.clone(),
+                delegate: recipient.clone(),
+                revoked_by: admin.clone(),
+                timestamp: 200,
+                emergency: true,
+            }
+            .into_val(&env),
+        ),
+        (
+            "ProgramDelegateSetEvent",
+            ProgramDelegateSetEvent {
+                version: EVENT_VERSION_V2,
+                program_id: program_id.clone(),
+                delegate: recipient.clone(),
+                permissions: DELEGATE_PERMISSION_MASK,
+                updated_by: authorized.clone(),
+                timestamp: 50,
+            }
+            .into_val(&env),
+        ),
     ];
 
     assert_roundtrip(&env, &ClaimStatus::Pending);

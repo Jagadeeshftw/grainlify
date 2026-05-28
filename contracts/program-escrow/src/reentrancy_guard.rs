@@ -74,3 +74,15 @@ pub fn check_not_entered(env: &Env) {
         panic!("Reentrancy detected");
     }
 }
+
+/// Returns `true` if the guard is currently held (ENTERED).
+/// Useful in tests to assert the guard is cleared after a successful call.
+#[inline(always)]
+pub fn is_entered(env: &Env) -> bool {
+    let status: u32 = env
+        .storage()
+        .instance()
+        .get(&DataKey::ReentrancyGuard)
+        .unwrap_or(NOT_ENTERED);
+    status == ENTERED
+}

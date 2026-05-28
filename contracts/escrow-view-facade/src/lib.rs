@@ -227,4 +227,6 @@ impl EscrowViewFacade {
 
 #[cfg(test)]
 mod test;
+#[cfg(test)]
+mod test_cross_contract_safety;
 

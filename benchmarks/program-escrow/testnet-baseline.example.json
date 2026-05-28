@@ -1,0 +1,91 @@
+{
+  "contract": "program-escrow",
+  "network": "testnet",
+  "status": "complete",
+  "captured_at": "2026-05-27T00:00:00Z",
+  "commit": "<git-sha>",
+  "wasm_sha256": "<wasm-sha256>",
+  "threshold_source": "benchmarks/program-escrow/thresholds.json",
+  "results": [
+    {
+      "operation": "batch_payout",
+      "batch_size": 1,
+      "simulation_latest_ledger": 123456,
+      "inclusion_ledger": 123457,
+      "actual_fee_charged_stroops": 10000,
+      "min_resource_fee_stroops": 8000,
+      "cpu_instructions": 123456,
+      "notes": "Populate with real testnet numbers only."
+    },
+    {
+      "operation": "batch_payout",
+      "batch_size": 10,
+      "simulation_latest_ledger": 123458,
+      "inclusion_ledger": 123459,
+      "actual_fee_charged_stroops": 25000,
+      "min_resource_fee_stroops": 22000,
+      "cpu_instructions": 456789,
+      "notes": "Populate with real testnet numbers only."
+    },
+    {
+      "operation": "batch_payout",
+      "batch_size": 50,
+      "simulation_latest_ledger": 123460,
+      "inclusion_ledger": 123461,
+      "actual_fee_charged_stroops": 75000,
+      "min_resource_fee_stroops": 71000,
+      "cpu_instructions": 999999,
+      "notes": "Populate with real testnet numbers only."
+    },
+    {
+      "operation": "batch_payout",
+      "batch_size": 100,
+      "simulation_latest_ledger": 123462,
+      "inclusion_ledger": 123463,
+      "actual_fee_charged_stroops": 140000,
+      "min_resource_fee_stroops": 133000,
+      "cpu_instructions": 1800000,
+      "notes": "Populate with real testnet numbers only."
+    },
+    {
+      "operation": "lock_program_funds",
+      "batch_size": 1,
+      "simulation_latest_ledger": 123464,
+      "inclusion_ledger": 123465,
+      "actual_fee_charged_stroops": 9000,
+      "min_resource_fee_stroops": 7000,
+      "cpu_instructions": 110000,
+      "notes": "Populate with real testnet numbers only."
+    },
+    {
+      "operation": "lock_program_funds",
+      "batch_size": 10,
+      "simulation_latest_ledger": 123466,
+      "inclusion_ledger": 123467,
+      "actual_fee_charged_stroops": 9000,
+      "min_resource_fee_stroops": 7000,
+      "cpu_instructions": 110000,
+      "notes": "Populate with real testnet numbers only."
+    },
+    {
+      "operation": "lock_program_funds",
+      "batch_size": 50,
+      "simulation_latest_ledger": 123468,
+      "inclusion_ledger": 123469,
+      "actual_fee_charged_stroops": 9000,
+      "min_resource_fee_stroops": 7000,
+      "cpu_instructions": 110000,
+      "notes": "Populate with real testnet numbers only. If this operation remains scalar, document the harness semantics used for the size dimension."
+    },
+    {
+      "operation": "lock_program_funds",
+      "batch_size": 100,
+      "simulation_latest_ledger": 123470,
+      "inclusion_ledger": 123471,
+      "actual_fee_charged_stroops": 9000,
+      "min_resource_fee_stroops": 7000,
+      "cpu_instructions": 110000,
+      "notes": "Populate with real testnet numbers only."
+    }
+  ]
+}
