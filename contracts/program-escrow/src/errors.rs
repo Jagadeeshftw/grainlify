@@ -648,132 +648,54 @@ pub enum ContractError {
     // Token Allowlist Errors (1100-1199)
     // =========================================================================
 
-    /// Token is not on the allowlist.
-    ///
-    /// This error occurs when a program initialization is attempted with a
-    /// token contract address that has not been added to the contract's
-    /// token allowlist. When the allowlist is non-empty, only explicitly
-    /// permitted tokens may be used.
-    ///
-    /// Resolution: ask the contract admin to add the token via
-    /// `add_allowed_token`, or use a token that is already on the list.
     TokenNotAllowed = 1100,
-
-    /// Token is already on the allowlist.
-    ///
-    /// This error occurs when attempting to add a token that is already
-    /// present in the allowlist.
     TokenAlreadyAllowed = 1101,
-
-    /// Token is not on the allowlist and cannot be removed.
-    ///
-    /// This error occurs when attempting to remove a token that is not
-    /// present in the allowlist.
     TokenNotInAllowlist = 1102,
 
+    // =================================================================
     // =========================================================================
-    // Role Management Errors (1200-1299)
+    // Multisig Admin Op Errors (1300-1399)
     // =========================================================================
 
-    /// Admin rotation already in progress.
-    ///
-    /// This error occurs when attempting to start a new admin rotation
-    /// while another rotation is already pending.
     AdminRotationInProgress = 1200,
-
-    /// No admin rotation in progress.
-    ///
-    /// This error occurs when attempting to accept or cancel an admin
-    /// rotation when no rotation is pending.
     NoAdminRotationInProgress = 1201,
-
-    /// Invalid admin rotation state.
-    ///
-    /// This error occurs when admin rotation state is inconsistent
-    /// or corrupted.
     InvalidAdminRotationState = 1202,
-
-    /// Controller rotation already in progress.
-    ///
-    /// This error occurs when attempting to start a new controller rotation
-    /// while another rotation is already pending for the same program.
     ControllerRotationInProgress = 1203,
-
-    /// No controller rotation in progress.
-    ///
-    /// This error occurs when attempting to accept or cancel a controller
-    /// rotation when no rotation is pending.
     NoControllerRotationInProgress = 1204,
-
-    /// Invalid controller rotation state.
-    ///
-    /// This error occurs when controller rotation state is inconsistent
-    /// or corrupted.
     InvalidControllerRotationState = 1205,
-
-    /// Role transition period expired.
-    ///
-    /// This error occurs when attempting to complete a role rotation
-    /// after the allowed transition period has expired.
     RoleTransitionExpired = 1206,
-
-    /// Invalid role proposal.
-    ///
-    /// This error occurs when the proposed role is invalid
-    /// (e.g., same as current, zero address, etc.).
     InvalidRoleProposal = 1207,
-
-    /// Role rotation not allowed.
-    ///
-    /// This error occurs when role rotation is temporarily disabled
-    /// due to contract state (e.g., emergency mode, dispute, etc.).
     RoleRotationNotAllowed = 1208,
+
+    /// Rotation timelock has not yet expired.
+    ///
+    /// This error occurs when `accept_admin` or `accept_controller` is called
+    /// before the mandatory 24-hour delay since the proposal has elapsed.
+    /// The caller must wait until `proposed_at + ROTATION_TIMELOCK_DELAY` seconds
+    /// have passed before accepting the role.
+    RotationTimelockActive = 1209,
 }
 
-/// Explicit error enum for all batch payout failure modes.
-///
-/// Used as the `Err` variant of `batch_payout` / `batch_payout_by` so callers
-/// receive a typed, stable error code instead of an opaque panic string.
-///
-/// ## Error Code Ranges
-/// Codes 3100–3199 are reserved for batch-payout errors.
-///
-/// ## Upgrade Safety
-/// Codes are stable. New variants may be added; existing codes will not change.
 #[soroban_sdk::contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum BatchPayoutError {
-    /// Program storage has not been initialized.
     NotInitialized = 3100,
-    /// Release operations are paused.
     Paused = 3101,
-    /// A dispute is open; payouts are blocked.
     DisputeOpen = 3102,
-    /// Caller is not the authorized payout key, admin, or a permitted delegate.
     Unauthorized = 3103,
-    /// `recipients` and `amounts` vectors have different lengths.
     LengthMismatch = 3104,
-    /// Batch contains zero entries.
     EmptyBatch = 3105,
-    /// At least one amount is zero or negative.
     ZeroAmount = 3106,
-    /// Summing amounts would overflow `i128`.
     AmountOverflow = 3107,
-    /// Batch total exceeds the per-program spend threshold.
     SpendLimitExceeded = 3108,
-    /// Batch total exceeds the program's remaining balance.
     InsufficientBalance = 3109,
-    /// Circuit breaker is open.
     CircuitBreakerOpen = 3110,
-    /// Batch contains duplicate recipient addresses.
     DuplicateRecipient = 3111,
-    /// A payout fee would consume an entire individual payout.
     FeeConsumesAmount = 3112,
 }
 
 impl BatchPayoutError {
-    /// Returns a stable, human-readable description (no sensitive data).
     pub fn description(self) -> &'static str {
         match self {
             BatchPayoutError::NotInitialized => "Program not initialized",
@@ -791,7 +713,6 @@ impl BatchPayoutError {
             BatchPayoutError::FeeConsumesAmount => "Payout fee consumes entire payout",
         }
     }
-}
 
 impl ContractError {
     /// Returns a human-readable description of the error.
@@ -918,7 +839,7 @@ impl ContractError {
             ContractError::TokenNotAllowed => "Token is not on the allowlist",
             ContractError::TokenAlreadyAllowed => "Token is already on the allowlist",
             ContractError::TokenNotInAllowlist => "Token is not on the allowlist and cannot be removed",
-            
+
             // Role Management Errors
             ContractError::AdminRotationInProgress => "Admin rotation already in progress",
             ContractError::NoAdminRotationInProgress => "No admin rotation in progress",
@@ -929,11 +850,10 @@ impl ContractError {
             ContractError::RoleTransitionExpired => "Role transition period expired",
             ContractError::InvalidRoleProposal => "Invalid role proposal",
             ContractError::RoleRotationNotAllowed => "Role rotation not allowed",
-            
-            // Release Trigger / Schedule Errors
-            ContractError::ReleaseTriggerFailed => "Release trigger failed",
-            ContractError::NoSchedulesDue => "No schedules are due for release",
-            ContractError::DeterminismViolation => "Determinism violation detected",
+
+            // Idempotency Key Errors
+            ContractError::DuplicateIdempotencyKey => "Idempotency key already used",
+            ContractError::ExpiredIdempotencyKey => "Idempotency key has expired",
         }
     }
     
