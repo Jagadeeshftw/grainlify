@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-//! # RBAC Tests — Payout Key Rotation
+//! # RBAC Tests — Payout Key Rotation and Draft Status Guards
 //!
 //! Verifies the role-based access control rules for `rotate_payout_key`:
 //!
@@ -12,10 +12,16 @@
 //! | Old key after rotation  | ❌ No    |
 //! | Delegate                | ❌ No    |
 //!
+//! Also verifies Draft status guards for delegate and capability-token operations:
+//! - set_program_delegate must reject programs in Draft status
+//! - revoke_program_delegate must reject programs in Draft status  
+//! - Delegate actions (via require_program_actor) must reject programs in Draft status
+//!
 //! Security assumptions validated here:
 //! - A hijacked (old) key cannot re-rotate after being replaced.
 //! - A delegate with full permissions cannot rotate the key.
 //! - An unauthorized address cannot rotate even with a correct nonce.
+//! - Delegate operations are blocked on programs in Draft status.
 
 use super::*;
 use soroban_sdk::{testutils::Address as _, token, Address, Env, String};
@@ -171,4 +177,97 @@ fn test_rbac_wrong_nonce_rejected_for_authorized_caller() {
     let new_key = Address::generate(&env);
     // Supply nonce=99 when stored nonce is 0.
     client.rotate_payout_key(&program_id, &payout_key, &new_key, &99);
+}
+
+// ---------------------------------------------------------------------------
+// Draft Status Guard Tests
+// ---------------------------------------------------------------------------
+
+/// set_program_delegate must reject programs in Draft status.
+#[test]
+#[should_panic(expected = "Cannot set delegate on program in Draft status")]
+fn test_set_delegate_rejected_on_draft_program() {
+    let env = Env::default();
+    let (client, program_id, payout_key, _admin) = setup(&env);
+    let delegate = Address::generate(&env);
+    
+    // Program is in Draft status by default after init_program
+    client.set_program_delegate(
+        &program_id,
+        &payout_key,
+        &delegate,
+        &DELEGATE_PERMISSION_RELEASE,
+    );
+}
+
+/// revoke_program_delegate must reject programs in Draft status.
+#[test]
+#[should_panic(expected = "Cannot revoke delegate on program in Draft status")]
+fn test_revoke_delegate_rejected_on_draft_program() {
+    let env = Env::default();
+    let (client, program_id, payout_key, _admin) = setup(&env);
+    
+    // Program is in Draft status by default after init_program
+    client.revoke_program_delegate(&program_id, &payout_key);
+}
+
+/// update_program_metadata by delegate must reject programs in Draft status.
+#[test]
+#[should_panic(expected = "Cannot perform delegate actions on program in Draft status")]
+fn test_delegate_update_metadata_rejected_on_draft_program() {
+    let env = Env::default();
+    let (client, program_id, payout_key, _admin) = setup(&env);
+    
+    // First publish the program to set a delegate
+    client.publish_program();
+    let delegate = Address::generate(&env);
+    client.set_program_delegate(
+        &program_id,
+        &payout_key,
+        &delegate,
+        &DELEGATE_PERMISSION_UPDATE_META,
+    );
+    
+    // Now create a new draft program to test delegate action rejection
+    let draft_program_id = String::from_str(&env, "draft-prog");
+    let token_id = fund_contract(&env, &client.address, 0);
+    client.init_program(&draft_program_id, &payout_key, &token_id, &payout_key, &None, &None);
+    
+    // Try to update metadata on draft program as delegate - should fail
+    let metadata = ProgramMetadata::empty(&env);
+    client.update_program_metadata(&draft_program_id, &delegate, &metadata);
+}
+
+/// Delegate operations work after program is published.
+#[test]
+fn test_delegate_operations_work_after_publish() {
+    let env = Env::default();
+    let (client, program_id, payout_key, _admin) = setup(&env);
+    
+    // Publish the program first
+    client.publish_program();
+    
+    let delegate = Address::generate(&env);
+    
+    // Now delegate operations should work
+    client.set_program_delegate(
+        &program_id,
+        &payout_key,
+        &delegate,
+        &DELEGATE_PERMISSION_UPDATE_META,
+    );
+    
+    let program_data = client.get_program_info();
+    assert_eq!(program_data.delegate, Some(delegate.clone()));
+    assert_eq!(program_data.delegate_permissions, DELEGATE_PERMISSION_UPDATE_META);
+    
+    // Delegate should be able to update metadata
+    let metadata = ProgramMetadata::empty(&env);
+    client.update_program_metadata(&program_id, &delegate, &metadata);
+    
+    // Revoke should also work
+    client.revoke_program_delegate(&program_id, &payout_key);
+    let program_data = client.get_program_info();
+    assert_eq!(program_data.delegate, None);
+    assert_eq!(program_data.delegate_permissions, 0);
 }
