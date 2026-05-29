@@ -714,6 +714,7 @@ impl BatchPayoutError {
             BatchPayoutError::FeeConsumesAmount => "Payout fee consumes entire payout",
         }
     }
+}
 
 impl ContractError {
     /// Returns a human-readable description of the error.

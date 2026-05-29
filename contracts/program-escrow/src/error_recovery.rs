@@ -359,10 +359,12 @@ fn transition_to_half_open_timeout(env: &Env) {
         .set(&CircuitBreakerKey::SuccessCount, &0u32);
 
 // Emit event indicating automatic timeout transition
-env.events().publish(
-    (symbol_short!("circuit"), symbol_short!("cb_timeout")),
-    (symbol_short!("auto_half"), env.ledger().timestamp()),
-);
+    env.events().publish(
+        (symbol_short!("circuit"), symbol_short!("cb_timeout")),
+        (symbol_short!("auto_half"), env.ledger().timestamp()),
+    );
+}
+
 /// **Call this after a FAILED protected operation.**
 ///
 /// Increments the failure counter and opens the circuit if the threshold
