@@ -226,6 +226,28 @@ fn test_rbac_delegate_cannot_rotate() {
     client.rotate_payout_key(&program_id, &delegate, &new_key, &nonce);
 }
 
+#[test]
+fn test_query_all_delegates_reflects_set_and_revoke_sequence() {
+    let env = Env::default();
+    let (client, program_id, payout_key, _admin) = setup(&env);
+    let delegate = Address::generate(&env);
+    let permissions = DELEGATE_PERMISSION_RELEASE | DELEGATE_PERMISSION_UPDATE_META;
+
+    client.set_program_delegate(&program_id, &payout_key, &delegate, &permissions);
+
+    let delegates = ProgramEscrowContract::query_all_delegates(env.clone(), program_id.clone());
+    assert_eq!(delegates.len(), 1);
+    let info = delegates.get(0).unwrap();
+    assert_eq!(info.program_id, program_id);
+    assert_eq!(info.delegate, Some(delegate));
+    assert_eq!(info.permissions, permissions);
+
+    client.revoke_program_delegate(&program_id, &payout_key);
+
+    let delegates_after_revoke = ProgramEscrowContract::query_all_delegates(env.clone(), program_id.clone());
+    assert_eq!(delegates_after_revoke.len(), 0);
+}
+
 /// Rotation on a non-existent program must panic.
 #[test]
 #[should_panic(expected = "Program not found")]
