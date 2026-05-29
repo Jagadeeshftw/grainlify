@@ -358,11 +358,13 @@ fn transition_to_half_open_timeout(env: &Env) {
         .persistent()
         .set(&CircuitBreakerKey::SuccessCount, &0u32);
 
-// Emit event indicating automatic timeout transition
-env.events().publish(
-    (symbol_short!("circuit"), symbol_short!("cb_timeout")),
-    (symbol_short!("auto_half"), env.ledger().timestamp()),
-);
+    // Emit event indicating automatic timeout transition
+    env.events().publish(
+        (symbol_short!("circuit"), symbol_short!("cb_timeout")),
+        (symbol_short!("auto_half"), env.ledger().timestamp()),
+    );
+}
+
 /// **Call this after a FAILED protected operation.**
 ///
 /// Increments the failure counter and opens the circuit if the threshold
@@ -644,7 +646,7 @@ mod circuit_log_archive_tests {
 
             for i in 0..55u32 {
                 env.ledger().set_timestamp(1_000 + i as u64);
-                record_failure(&env, program_id.clone(), symbol_short!("payout"), 5_000 + i);
+                record_failure(&env, program_id.clone(), symbol_short!("payout"), 5_000 + i, None);
             }
 
             let log = get_error_log(&env);
@@ -675,11 +677,11 @@ mod circuit_log_archive_tests {
             set_circuit_admin(&env, admin, None);
 
             env.ledger().set_timestamp(2_000);
-            record_failure(&env, program_a.clone(), symbol_short!("payout"), 7);
+            record_failure(&env, program_a.clone(), symbol_short!("payout"), 7, None);
             env.ledger().set_timestamp(2_001);
-            record_failure(&env, program_b.clone(), symbol_short!("refund"), 8);
+            record_failure(&env, program_b.clone(), symbol_short!("refund"), 8, None);
             env.ledger().set_timestamp(2_002);
-            record_failure(&env, program_a.clone(), symbol_short!("payout"), 9);
+            record_failure(&env, program_a.clone(), symbol_short!("payout"), 9, None);
 
             let archive = archive_circuit_breaker_logs(&env, program_a.clone());
             assert_eq!(archive.archived_count, 2);
