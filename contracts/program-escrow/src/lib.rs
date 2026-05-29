@@ -1372,6 +1372,8 @@ pub struct PauseStateChangedV2 {
     pub reason: Option<String>,
     pub timestamp: u64,
     pub receipt_id: u64,
+    /// Storage schema version for pause-related data (written at init).
+    pub schema_version: u32,
 }
 
 /// Emitted when a pause mode is automatically cleared because its TTL expired.
@@ -4060,6 +4062,7 @@ impl ProgramEscrowContract {
                     reason: reason.clone(),
                     timestamp,
                     receipt_id,
+                    schema_version: PAUSE_SCHEMA_VERSION_V1,
                 },
             );
         }
@@ -4091,6 +4094,7 @@ impl ProgramEscrowContract {
                     reason: reason.clone(),
                     timestamp,
                     receipt_id,
+                    schema_version: PAUSE_SCHEMA_VERSION_V1,
                 },
             );
         }
@@ -4122,6 +4126,7 @@ impl ProgramEscrowContract {
                     reason: reason.clone(),
                     timestamp,
                     receipt_id,
+                    schema_version: PAUSE_SCHEMA_VERSION_V1,
                 },
             );
         }
