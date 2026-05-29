@@ -141,8 +141,8 @@
 
 use soroban_sdk::xdr::ToXdr;
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, token, vec, Address, BytesN,
-    Env, String, Symbol, Vec,
+    contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short, token, vec,
+    Address, BytesN, Env, String, Symbol, Vec,
 };
 
 mod errors;
@@ -2856,15 +2856,16 @@ impl ProgramEscrowContract {
     ) {
         Self::require_admin(&env);
         let mut cfg = Self::get_fee_config_internal(&env);
+
         if let Some(r) = lock_fee_rate {
-            if !(0..=MAX_FEE_RATE).contains(&r) {
-                panic!("Invalid lock fee rate");
+            if r > MAX_FEE_RATE {
+                panic_with_error!(&env, ContractError::InvalidFeeRate);
             }
             cfg.lock_fee_rate = r;
         }
         if let Some(r) = payout_fee_rate {
-            if !(0..=MAX_FEE_RATE).contains(&r) {
-                panic!("Invalid payout fee rate");
+            if r > MAX_FEE_RATE {
+                panic_with_error!(&env, ContractError::InvalidFeeRate);
             }
             cfg.payout_fee_rate = r;
         }
