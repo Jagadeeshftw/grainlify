@@ -29,7 +29,7 @@ fn setup_program(
 
     let program_id = String::from_str(env, "hack-2026");
     client.init_program(&program_id, &admin, &token_id, &admin, &None, &None);
-    client.publish_program();
+    client.publish_program(&program_id, &admin);
 
     if initial_amount > 0 {
         token_admin_client.mint(&client.address, &initial_amount);
@@ -129,7 +129,7 @@ fn test_program_published_event_contains_required_fields() {
 
     client.init_program(&program_id, &admin, &token_id, &admin, &None, &None);
     let before = env.events().all().len();
-    client.publish_program();
+    client.publish_program(&program_id, &admin);
 
     let events = env.events().all();
     let (_, topics, data) = events.get(before).expect("publish event should be emitted");
@@ -541,7 +541,7 @@ fn test_full_lifecycle_multi_program_batch_payouts() {
         &None,
         &None,
     );
-    client_a.publish_program();
+    client_a.publish_program(&program_id_a, &auth_key_a);
     assert_eq!(prog_a.total_funds, 0);
     assert_eq!(prog_a.remaining_balance, 0);
 
@@ -559,7 +559,7 @@ fn test_full_lifecycle_multi_program_batch_payouts() {
         &None,
         &None,
     );
-    client_b.publish_program();
+    client_b.publish_program(&program_id_b, &auth_key_b);
     assert_eq!(prog_b.total_funds, 0);
 
     // ── Phase 1: Lock funds in multiple steps ───────────────────────────
@@ -742,7 +742,7 @@ fn test_multi_token_balance_accounting_isolated_across_program_instances() {
         &None,
         &None,
     );
-    client_a.publish_program();
+    client_a.publish_program(program_id_a.clone(), payout_key_a.clone());
 
     let program_id_b = String::from_str(&env, "multi-token-b");
     client_b.init_program(
@@ -753,7 +753,7 @@ fn test_multi_token_balance_accounting_isolated_across_program_instances() {
         &None,
         &None,
     );
-    client_b.publish_program();
+    client_b.publish_program(program_id_b.clone(), payout_key_b.clone());
 
     token_admin_client_a.mint(&client_a.address, &500_000);
     token_admin_client_b.mint(&client_b.address, &300_000);
@@ -1872,11 +1872,11 @@ fn test_multi_tenant_no_cross_program_balance_or_analytics() {
 
     let program_id_a = String::from_str(&env, "prog-isolation-a");
     client_a.init_program(&program_id_a, &admin_a, &token_id, &creator, &None, &None);
-    client_a.publish_program();
+    client_a.publish_program(program_id_a.clone(), admin_a.clone());
 
     let program_id_b = String::from_str(&env, "prog-isolation-b");
     client_b.init_program(&program_id_b, &admin_b, &token_id, &creator, &None, &None);
-    client_b.publish_program();
+    client_b.publish_program(program_id_b.clone(), admin_b.clone());
 
     token_sac.mint(&client_a.address, &500_000);
     token_sac.mint(&client_b.address, &300_000);

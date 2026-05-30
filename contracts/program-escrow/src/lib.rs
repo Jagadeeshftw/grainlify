@@ -2430,19 +2430,31 @@ impl ProgramEscrowContract {
         }
     }
 
-    pub fn publish_program(env: Env) -> ProgramData {
-        if !env.storage().instance().has(&PROGRAM_DATA) {
-            panic!("Program not initialized");
-        }
-        let mut program_data: ProgramData = env.storage().instance().get(&PROGRAM_DATA).unwrap();
-        program_data.authorized_payout_key.require_auth();
+    /// Publish a program, transitioning it from Draft to Active status.
+    /// Only the contract admin or the program's authorized_payout_key (controller) may call this.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment.
+    /// * `program_id` - The unique identifier of the program to publish.
+    /// * `caller` - The address of the caller (admin or controller) that must authorize.
+    ///
+    /// # Returns
+    /// The updated ProgramData.
+    ///
+    /// # Panics
+    /// Panics if the program is not initialized, if the caller is not authorized,
+    /// or if the program is already in Active status.
+    pub fn publish_program(env: Env, program_id: String, caller: Address) -> ProgramData {
+        let mut program_data = Self::get_program_data_by_id(&env, &program_id);
+        // Authorization: caller must be either admin or authorized_payout_key.
+        Self::require_program_owner_or_admin(&env, &program_data, &caller);
 
         if program_data.status != ProgramStatus::Draft {
             panic!("Program already published");
         }
 
         program_data.status = ProgramStatus::Active;
-        env.storage().instance().set(&PROGRAM_DATA, &program_data);
+        Self::store_program_data(&env, &program_id, &program_data);
 
         // Emit ProgramPublished after the status write so indexers only see committed transitions.
         env.events().publish(
@@ -2450,7 +2462,7 @@ impl ProgramEscrowContract {
             ProgramPublishedEvent {
                 version: EVENT_VERSION_V2,
                 program_id: program_data.program_id.clone(),
-                publisher: program_data.authorized_payout_key.clone(),
+                publisher: caller.clone(),
                 timestamp: env.ledger().timestamp(),
             },
         );
