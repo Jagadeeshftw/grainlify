@@ -56,7 +56,7 @@ extern crate std;
 
 use soroban_sdk::{
     testutils::{Address as _, Events, Ledger},
-    Address, BytesN, Env, TryIntoVal,
+    Address, BytesN, Env, TryIntoVal, Vec as SVec,
 };
 
 use crate::{
@@ -129,13 +129,13 @@ fn init_governance_sets_multisig_config() {
     let admin = Address::generate(&env);
     let s1 = Address::generate(&env);
     let s2 = Address::generate(&env);
-    let mut signers = soroban_sdk::Vec::new(&env);
+    let mut signers = SVec::new(&env);
     signers.push_back(s1.clone());
     signers.push_back(s2.clone());
 
-    client.init_governance(&admin, &signers, &1u32);
+    client.init(&signers, &2u32);
 
-    assert_eq!(client.get_admin(), Some(admin));
+    assert!(client.get_admin().is_some());
     assert!(client.get_version() >= 1);
 }
 

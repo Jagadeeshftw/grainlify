@@ -187,12 +187,22 @@ fn test_set_timelock_14d_succeeds() {
 fn propose_and_approve(
     client: &GrainlifyContractClient,
     env: &Env,
-    admin: &Address,
+    signer: &Address,
 ) -> u64 {
     let wasm = fake_wasm(env);
-    let proposal_id = client.propose_upgrade(admin, &wasm);
-    client.approve_upgrade(admin, &proposal_id);
+    let proposal_id = client.propose_upgrade(signer, &wasm, &0u64);
+    client.approve_upgrade(&proposal_id, signer);
     proposal_id
+}
+
+fn setup_multisig_with_timelock(env: &Env, delay: u64) -> (GrainlifyContractClient<'_>, Address) {
+    let id = env.register_contract(None, GrainlifyContract);
+    let client = GrainlifyContractClient::new(env, &id);
+    let admin = Address::generate(env);
+    env.mock_all_auths();
+    client.init_admin(&admin);
+    client.set_timelock_delay(&delay);
+    (client, admin)
 }
 
 #[test]
@@ -201,19 +211,8 @@ fn test_execute_upgrade_before_timelock_expiry_panics() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let id = env.register_contract(None, GrainlifyContract);
-    let client = GrainlifyContractClient::new(&env, &id);
-    let admin = Address::generate(&env);
-    let signer = Address::generate(&env);
-
-    // Init with 1-of-1 multisig
-    let mut signers = soroban_sdk::Vec::new(&env);
-    signers.push_back(signer.clone());
-    client.init_governance(&admin, &signers, &1u32);
-
-    // Set timelock to 1 h
-    client.set_timelock_delay(&MIN_TIMELOCK);
-
+    let (client, admin) = setup_multisig_with_timelock(&env, MIN_TIMELOCK);
+    let signer = admin;
     // Propose + approve at t=0
     env.ledger().with_mut(|li| li.timestamp = 0);
     let proposal_id = propose_and_approve(&client, &env, &signer);
@@ -228,18 +227,8 @@ fn test_execute_upgrade_exactly_at_timelock_expiry_succeeds() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let id = env.register_contract(None, GrainlifyContract);
-    let client = GrainlifyContractClient::new(&env, &id);
-    let admin = Address::generate(&env);
-    let signer = Address::generate(&env);
-
-    let mut signers = soroban_sdk::Vec::new(&env);
-    signers.push_back(signer.clone());
-    client.init_governance(&admin, &signers, &1u32);
-
-    // Set timelock to 1 h
-    client.set_timelock_delay(&MIN_TIMELOCK);
-
+    let (client, admin) = setup_multisig_with_timelock(&env, MIN_TIMELOCK);
+    let signer = admin;
     // Propose + approve at t=0
     env.ledger().with_mut(|li| li.timestamp = 0);
     let proposal_id = propose_and_approve(&client, &env, &signer);
@@ -266,16 +255,8 @@ fn test_execute_upgrade_after_timelock_expiry_succeeds() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let id = env.register_contract(None, GrainlifyContract);
-    let client = GrainlifyContractClient::new(&env, &id);
-    let admin = Address::generate(&env);
-    let signer = Address::generate(&env);
-
-    let mut signers = soroban_sdk::Vec::new(&env);
-    signers.push_back(signer.clone());
-    client.init_governance(&admin, &signers, &1u32);
-
-    client.set_timelock_delay(&MIN_TIMELOCK);
+    let (client, admin) = setup_multisig_with_timelock(&env, MIN_TIMELOCK);
+    let signer = admin;
 
     env.ledger().with_mut(|li| li.timestamp = 1_000);
     let proposal_id = propose_and_approve(&client, &env, &signer);
@@ -296,18 +277,10 @@ fn test_execute_upgrade_1s_before_30d_timelock_panics() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let id = env.register_contract(None, GrainlifyContract);
-    let client = GrainlifyContractClient::new(&env, &id);
-    let admin = Address::generate(&env);
-    let signer = Address::generate(&env);
+    let (client, admin) = setup_multisig_with_timelock(&env, MAX_TIMELOCK);
+    let signer = admin;
 
-    let mut signers = soroban_sdk::Vec::new(&env);
-    signers.push_back(signer.clone());
-    client.init_governance(&admin, &signers, &1u32);
-
-    // Set timelock to 30 days
-    client.set_timelock_delay(&MAX_TIMELOCK);
-
+    // Propose + approve at t=0
     env.ledger().with_mut(|li| li.timestamp = 0);
     let proposal_id = propose_and_approve(&client, &env, &signer);
 
@@ -333,16 +306,8 @@ fn test_timelock_status_shows_remaining_seconds() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let id = env.register_contract(None, GrainlifyContract);
-    let client = GrainlifyContractClient::new(&env, &id);
-    let admin = Address::generate(&env);
-    let signer = Address::generate(&env);
-
-    let mut signers = soroban_sdk::Vec::new(&env);
-    signers.push_back(signer.clone());
-    client.init_governance(&admin, &signers, &1u32);
-
-    client.set_timelock_delay(&MIN_TIMELOCK); // 3 600 s
+    let (client, admin) = setup_multisig_with_timelock(&env, MIN_TIMELOCK);
+    let signer = admin;
 
     env.ledger().with_mut(|li| li.timestamp = 0);
     let proposal_id = propose_and_approve(&client, &env, &signer);
@@ -372,17 +337,8 @@ fn test_updated_delay_applies_to_new_proposals() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let id = env.register_contract(None, GrainlifyContract);
-    let client = GrainlifyContractClient::new(&env, &id);
-    let admin = Address::generate(&env);
-    let signer = Address::generate(&env);
-
-    let mut signers = soroban_sdk::Vec::new(&env);
-    signers.push_back(signer.clone());
-    client.init_governance(&admin, &signers, &1u32);
-
-    // Start with 2 h delay
-    client.set_timelock_delay(&7_200u64);
+    let (client, admin) = setup_multisig_with_timelock(&env, 7_200u64);
+    let signer = admin;
 
     env.ledger().with_mut(|li| li.timestamp = 0);
     let p1 = propose_and_approve(&client, &env, &signer);
