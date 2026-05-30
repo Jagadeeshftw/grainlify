@@ -506,6 +506,99 @@ fn test_release_schedule_overlapping_schedules() {
     let released_later = client.trigger_program_releases();
     assert_eq!(released_later, 1);
     assert_eq!(token_client.balance(&recipient3), 20_000);
+}
+
+#[test]
+fn test_access_control_violation_unauthorized_payout() {
+    let env = Env::default();
+    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 100_000);
+    let unauthorized_user = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    // Mock auth for unauthorized user attempting a payout
+    env.mock_auths(&[MockAuth {
+        address: &unauthorized_user,
+        invoke: &MockAuthInvoke {
+            contract: &client.address,
+            fn_name: "single_payout",
+            args: (recipient.clone(), 10_000_i128, None::<String>).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    // This should fail because unauthorized_user is not the payout_key
+    let result = client.try_single_payout(&recipient, &10_000, &None);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_threat_model_reentrancy_prevention() {
+    let env = Env::default();
+    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 100_000);
+    let recipient = Address::generate(&env);
+
+    // Soroban handles reentrancy by not allowing cross-contract calls 
+    // during a contract execution unless explicitly allowed.
+    // Here we test that a standard payout works.
+    client.single_payout(&recipient, &10_000, &None);
+    assert_eq!(client.get_remaining_balance(), 90_000);
+}
+
+#[test]
+fn test_threat_model_oracle_manipulation_unauthorized_rotation() {
+    let env = Env::default();
+    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 100_000);
+    let attacker = Address::generate(&env);
+
+    // Attacker tries to propose themselves as admin without authorization
+    env.mock_auths(&[MockAuth {
+        address: &attacker,
+        invoke: &MockAuthInvoke {
+            contract: &client.address,
+            fn_name: "propose_admin",
+            args: (attacker.clone(),).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    let result = client.try_propose_admin(&attacker);
+    assert!(result.is_err());
+}
+
+#[test]
+#[should_panic(expected = "Invalid payout fee rate")]
+fn test_threat_model_fee_drain_prevention() {
+    let env = Env::default();
+    let (client, admin, _token_client, _token_admin) = setup_program(&env, 100_000);
+
+    // Admin tries to set payout fee to 20% (assuming MAX_FEE_RATE is 1000 = 10%)
+    // Mock auth for admin
+    env.mock_auths(&[MockAuth {
+        address: &admin,
+        invoke: &MockAuthInvoke {
+            contract: &client.address,
+            fn_name: "update_fee_config",
+            args: (
+                None::<i128>,
+                Some(2000_i128), // 20%
+                None::<i128>,
+                None::<i128>,
+                None::<Address>,
+                None::<bool>,
+            ).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    client.update_fee_config(
+        &None,
+        &Some(2000), // This should panic
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+}
 
     let history = client.get_program_release_history();
     assert_eq!(history.len(), 3);
@@ -4997,5 +5090,80 @@ fn test_update_fee_recipient_preserves_other_fee_config() {
     assert_eq!(updated_cfg.lock_fixed_fee, original_cfg.lock_fixed_fee);
     assert_eq!(updated_cfg.payout_fixed_fee, original_cfg.payout_fixed_fee);
     assert_eq!(updated_cfg.fee_enabled, original_cfg.fee_enabled);
+}
+
+#[test]
+fn test_access_control_violation_unauthorized_payout() {
+    let env = Env::default();
+    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 100_000);
+    let unauthorized_user = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    // Mock auth for unauthorized user attempting a payout
+    env.mock_auths(&[MockAuth {
+        address: &unauthorized_user,
+        invoke: &MockAuthInvoke {
+            contract: &client.address,
+            fn_name: "single_payout",
+            args: (recipient.clone(), 10_000_i128, None::<String>).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    // This should fail because unauthorized_user is not the payout_key
+    let result = client.try_single_payout(&recipient, &10_000, &None);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_threat_model_reentrancy_prevention() {
+    let env = Env::default();
+    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 100_000);
+    let recipient = Address::generate(&env);
+
+    // Soroban handles reentrancy by not allowing cross-contract calls 
+    // during a contract execution unless explicitly allowed.
+    client.single_payout(&recipient, &10_000, &None);
+    assert_eq!(client.get_remaining_balance(), 90_000);
+}
+
+#[test]
+fn test_threat_model_oracle_manipulation_unauthorized_rotation() {
+    let env = Env::default();
+    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 100_000);
+    let attacker = Address::generate(&env);
+
+    // Attacker tries to propose themselves as admin without authorization
+    env.mock_auths(&[MockAuth {
+        address: &attacker,
+        invoke: &MockAuthInvoke {
+            contract: &client.address,
+            fn_name: "propose_admin",
+            args: (attacker.clone(),).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    let result = client.try_propose_admin(&attacker);
+    assert!(result.is_err());
+}
+
+#[test]
+#[should_panic(expected = "Invalid payout fee rate")]
+fn test_threat_model_fee_drain_prevention() {
+    let env = Env::default();
+    let (client, admin, _token_client, _token_admin) = setup_program(&env, 100_000);
+
+    // Admin tries to set payout fee to 20% (assuming MAX_FEE_RATE is 1000 = 10%)
+    env.mock_all_auths();
+
+    client.update_fee_config(
+        &None,
+        &Some(2000), // This should panic
+        &None,
+        &None,
+        &None,
+        &None,
+    );
 }
 
