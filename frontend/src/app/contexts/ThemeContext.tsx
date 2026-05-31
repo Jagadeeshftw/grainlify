@@ -34,11 +34,11 @@ export const DARK_MODE_TOKENS = {
     glassLight: "rgba(255, 255, 255, 0.06)",
   },
   text: {
-    primary: '#f5f5f5',
-    secondary: '#d4d4d4',
-    tertiary: '#b8a898',
-    muted: '#9b8d7f',
-    disabled: '#978e82'
+    primary: "#f5f5f5",
+    secondary: "#d4d4d4",
+    tertiary: "#b8a898",
+    muted: "#9b8d7f",
+    disabled: "#978e82",
   },
   border: {
     subtle: "rgba(255, 255, 255, 0.08)",

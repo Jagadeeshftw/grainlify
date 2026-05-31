@@ -33,7 +33,7 @@ export const DARK_MODE_TOKENS = {
     glassMedium: "rgba(255, 255, 255, 0.08)",
     glassLight: "rgba(255, 255, 255, 0.06)",
   },
-    "text": {
+  text: {
     primary: "#f5f5f5", // Headings, primary text (15.5:1)
     secondary: "#d4d4d4", // Body text, descriptions (12.8:1)
     tertiary: "#b8a898", // Subtitles, hints (9.1:1)
