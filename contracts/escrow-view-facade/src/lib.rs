@@ -6,6 +6,10 @@ mod bounty_escrow {
     include!("bounty_escrow_bindings.rs");
 }
 
+mod program_escrow {
+    include!("program_escrow_bindings.rs");
+}
+
 /// Represents the status of an escrow in the underlying contract.
 /// Must match `EscrowStatus` in BountyEscrow.
 #[contracttype]
@@ -221,6 +225,27 @@ impl EscrowViewFacade {
         UserPortfolio {
             as_depositor,
             as_beneficiary,
+        }
+    }
+
+    /// Query all current delegate assignments for a program escrow.
+    ///
+    /// Returns a list of delegate audit records for the requested program. If
+    /// the target program has no active delegate or the query fails for any
+    /// reason, this function returns an empty vector to preserve the facade's
+    /// read-only auditing semantics.
+    pub fn query_all_delegates(
+        env: Env,
+        program_contract: Address,
+        program_id: String,
+    ) -> Vec<program_escrow::ProgramDelegateInfo> {
+        let client = program_escrow::Client::new(&env, &program_contract);
+        let delegates_res = client.try_query_all_delegates(&program_id);
+
+        if let Ok(Ok(delegates)) = delegates_res {
+            delegates
+        } else {
+            Vec::new(&env)
         }
     }
 }
