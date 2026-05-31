@@ -63,7 +63,7 @@ fn simulate_failures(env: &Env, contract_id: &Address, n: u32) {
     let op = symbol_short!("op");
     env.as_contract(contract_id, || {
         for _ in 0..n {
-            record_failure(env, prog.clone(), op.clone(), ERR_TRANSFER_FAILED);
+            record_failure(env, prog.clone(), op.clone(), ERR_TRANSFER_FAILED, None);
         }
     });
 }
@@ -199,8 +199,8 @@ fn test_additional_failures_after_open_do_not_change_state() {
     env.as_contract(&contract_id, || {
         let prog = String::from_str(&env, "TestProg");
         let op = symbol_short!("op");
-        record_failure(&env, prog.clone(), op.clone(), ERR_TRANSFER_FAILED);
-        record_failure(&env, prog, op, ERR_TRANSFER_FAILED);
+        record_failure(&env, prog.clone(), op.clone(), ERR_TRANSFER_FAILED, None);
+        record_failure(&env, prog, op, ERR_TRANSFER_FAILED, None);
         assert_eq!(get_state(&env), CircuitState::Open);
     });
 }
@@ -333,7 +333,7 @@ fn test_failure_in_half_open_reopens_circuit() {
         reset_circuit_breaker(&env, &admin);
         assert_eq!(get_state(&env), CircuitState::HalfOpen);
         let prog = String::from_str(&env, "TestProg");
-        record_failure(&env, prog, symbol_short!("op"), ERR_TRANSFER_FAILED);
+        record_failure(&env, prog, symbol_short!("op"), ERR_TRANSFER_FAILED, None);
         assert_eq!(get_state(&env), CircuitState::Open);
     });
 }
@@ -345,7 +345,7 @@ fn test_reopen_after_half_open_failure_rejects_immediately() {
     env.as_contract(&contract_id, || {
         reset_circuit_breaker(&env, &admin);
         let prog = String::from_str(&env, "TestProg");
-        record_failure(&env, prog, symbol_short!("op"), ERR_TRANSFER_FAILED);
+        record_failure(&env, prog, symbol_short!("op"), ERR_TRANSFER_FAILED, None);
         assert_eq!(check_and_allow(&env), Err(ERR_CIRCUIT_OPEN));
     });
 }
@@ -357,7 +357,7 @@ fn test_half_open_can_be_reset_again_after_reopen() {
     env.as_contract(&contract_id, || {
         reset_circuit_breaker(&env, &admin);
         let prog = String::from_str(&env, "TestProg");
-        record_failure(&env, prog, symbol_short!("op"), ERR_TRANSFER_FAILED);
+        record_failure(&env, prog, symbol_short!("op"), ERR_TRANSFER_FAILED, None);
         assert_eq!(get_state(&env), CircuitState::Open);
     });
     env.as_contract(&contract_id, || {
@@ -406,7 +406,7 @@ fn test_error_log_populated_on_failure() {
     env.as_contract(&contract_id, || {
         let prog = String::from_str(&env, "TestProg");
         let op = symbol_short!("op");
-        record_failure(&env, prog, op, ERR_TRANSFER_FAILED);
+        record_failure(&env, prog, op, ERR_TRANSFER_FAILED, None);
         let log = get_error_log(&env);
         assert_eq!(log.len(), 1);
         let entry = log.get(0).unwrap();
@@ -432,7 +432,7 @@ fn test_error_log_capped_at_max() {
         let prog = String::from_str(&env, "TestProg");
         let op = symbol_short!("op");
         for _ in 0..7 {
-            record_failure(&env, prog.clone(), op.clone(), ERR_TRANSFER_FAILED);
+            record_failure(&env, prog.clone(), op.clone(), ERR_TRANSFER_FAILED, None);
         }
         let log = get_error_log(&env);
         assert_eq!(log.len(), 3, "Log should be capped at max_error_log=3");
@@ -456,7 +456,7 @@ fn test_error_log_contains_latest_errors_when_capped() {
         let prog = String::from_str(&env, "TestProg");
         let op = symbol_short!("op");
         for _ in 0..5 {
-            record_failure(&env, prog.clone(), op.clone(), ERR_TRANSFER_FAILED);
+            record_failure(&env, prog.clone(), op.clone(), ERR_TRANSFER_FAILED, None);
         }
         let log = get_error_log(&env);
         assert_eq!(log.len(), 2);
@@ -612,7 +612,7 @@ fn test_config_change_threshold_takes_effect() {
             },
         );
         let prog = String::from_str(&env, "TestProg");
-        record_failure(&env, prog, symbol_short!("op"), ERR_TRANSFER_FAILED);
+        record_failure(&env, prog, symbol_short!("op"), ERR_TRANSFER_FAILED, None);
         assert_eq!(get_state(&env), CircuitState::Open);
     });
 }
@@ -688,7 +688,7 @@ fn test_full_circuit_breaker_lifecycle() {
     env.as_contract(&contract_id, || {
         // Phase 5: Failure in HalfOpen
         let prog = String::from_str(&env, "TestProg");
-        record_failure(&env, prog.clone(), symbol_short!("op"), ERR_TRANSFER_FAILED);
+        record_failure(&env, prog.clone(), symbol_short!("op"), ERR_TRANSFER_FAILED, None);
         assert_eq!(get_state(&env), CircuitState::Open);
         assert_eq!(check_and_allow(&env), Err(ERR_CIRCUIT_OPEN));
     });
@@ -895,13 +895,13 @@ fn test_interleaved_failures_and_successes_do_not_open_if_never_hit_threshold() 
         let prog = String::from_str(&env, "TestProg");
         let op = symbol_short!("op");
 
-        record_failure(&env, prog.clone(), op.clone(), ERR_TRANSFER_FAILED);
+        record_failure(&env, prog.clone(), op.clone(), ERR_TRANSFER_FAILED, None);
         assert_eq!(get_failure_count(&env), 1);
 
         record_success(&env);
         assert_eq!(get_failure_count(&env), 0);
 
-        record_failure(&env, prog.clone(), op.clone(), ERR_TRANSFER_FAILED);
+        record_failure(&env, prog.clone(), op.clone(), ERR_TRANSFER_FAILED, None);
         assert_eq!(get_failure_count(&env), 1);
 
         record_success(&env);
