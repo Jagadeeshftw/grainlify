@@ -53,6 +53,78 @@
         "600": "#dc2626",
         "700": "#b91c1c"
       }
+    },
+    "darkMode": {
+      "background": {
+        "surfacePrimary": "#1a1714",
+        "surfaceSecondary": "#2d2820",
+        "surfaceTertiary": "#3a3428",
+        "overlayHard": "#1a1714",
+        "overlayMedium": "rgba(26, 23, 20, 0.8)",
+        "overlaySoft": "rgba(26, 23, 20, 0.5)",
+        "glassStrong": "rgba(255, 255, 255, 0.12)",
+        "glassMedium": "rgba(255, 255, 255, 0.08)",
+        "glassLight": "rgba(255, 255, 255, 0.06)"
+      },
+      "text": {
+        "primary": "#f5f5f5",
+        "secondary": "#d4d4d4",
+        "tertiary": "#b8a898",
+        "muted": "#8b7a6a",
+        "disabled": "#6b5d4d"
+      },
+      "border": {
+        "subtle": "rgba(255, 255, 255, 0.08)",
+        "default": "rgba(255, 255, 255, 0.10)",
+        "prominent": "rgba(255, 255, 255, 0.15)",
+        "interactive": "rgba(255, 255, 255, 0.20)"
+      },
+      "interactive": {
+        "hover": "rgba(255, 255, 255, 0.10)",
+        "active": "rgba(255, 255, 255, 0.15)",
+        "focusRing": "#f1b400",
+        "disabled": "rgba(255, 255, 255, 0.05)"
+      },
+      "accent": {
+        "primary": "#c9983a",
+        "primaryHover": "#e8c77f",
+        "lightVariant": "#e8c77f",
+        "darkVariant": "#a67c2e"
+      }
+    }
+  },
+  "darkMode": {
+    "background": {
+      "surfacePrimary": "#1a1714",
+      "surfaceSecondary": "#2d2820",
+      "surfaceTertiary": "#3a3428",
+      "overlay": "rgba(26,23,20,0.5)",
+      "glass": "rgba(255,255,255,0.06)"
+    },
+    "text": {
+      "primary": "#f5f5f5",
+      "secondary": "#d4d4d4",
+      "tertiary": "#b8a898",
+      "muted": "#9b8d7f",
+      "disabled": "#978e82"
+    },
+    "border": {
+      "subtle": "rgba(255,255,255,0.10)",
+      "prominent": "rgba(255,255,255,0.15)",
+      "interactive": "rgba(255,255,255,0.20)"
+    },
+    "semantic": {
+      "accentPrimary": "#c9983a",
+      "accentHover": "#e8c77f",
+      "success": "#22c55e",
+      "warning": "#f59e0b",
+      "error": "#ef4444"
+    },
+    "interactive": {
+      "hover": "rgba(255,255,255,0.10)",
+      "active": "rgba(255,255,255,0.15)",
+      "focusRing": "rgba(201,152,58,0.28)",
+      "disabled": "rgba(255,255,255,0.05)"
     }
   },
   "typography": {
