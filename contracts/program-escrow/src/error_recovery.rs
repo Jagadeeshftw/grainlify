@@ -369,11 +369,19 @@ fn transition_to_half_open_timeout(env: &Env) {
 ///
 /// Increments the failure counter and opens the circuit if the threshold
 /// is exceeded. Records error log entry.
+///
+/// # Arguments
+/// * `env` - Soroban environment
+/// * `program_id` - Program identifier for logging
+/// * `operation` - Operation that failed
+/// * `error_code` - Error code that occurred
+/// * `threshold_override` - Optional per-program threshold. If None, uses global config.
 pub fn record_failure(
     env: &Env,
     program_id: String,
     operation: soroban_sdk::Symbol,
     error_code: u32,
+    threshold_override: Option<u32>,
 ) {
     let config = get_config(env);
     let failures = get_failure_count(env) + 1;
@@ -420,8 +428,11 @@ pub fn record_failure(
         Some(error_code),
     );
 
+    // Use override if provided, otherwise use global config threshold
+    let threshold = threshold_override.unwrap_or(config.failure_threshold);
+
     // Open circuit if threshold exceeded
-    if failures >= config.failure_threshold {
+    if failures >= threshold {
         open_circuit_internal(env, symbol_short!("auto"));
     }
 }
@@ -635,7 +646,7 @@ mod circuit_log_archive_tests {
 
             for i in 0..55u32 {
                 env.ledger().set_timestamp(1_000 + i as u64);
-                record_failure(&env, program_id.clone(), symbol_short!("payout"), 5_000 + i);
+                record_failure(&env, program_id.clone(), symbol_short!("payout"), 5_000 + i, None);
             }
 
             let log = get_error_log(&env);
@@ -666,11 +677,11 @@ mod circuit_log_archive_tests {
             set_circuit_admin(&env, admin, None);
 
             env.ledger().set_timestamp(2_000);
-            record_failure(&env, program_a.clone(), symbol_short!("payout"), 7);
+            record_failure(&env, program_a.clone(), symbol_short!("payout"), 7, None);
             env.ledger().set_timestamp(2_001);
-            record_failure(&env, program_b.clone(), symbol_short!("refund"), 8);
+            record_failure(&env, program_b.clone(), symbol_short!("refund"), 8, None);
             env.ledger().set_timestamp(2_002);
-            record_failure(&env, program_a.clone(), symbol_short!("payout"), 9);
+            record_failure(&env, program_a.clone(), symbol_short!("payout"), 9, None);
 
             let archive = archive_circuit_breaker_logs(&env, program_a.clone());
             assert_eq!(archive.archived_count, 2);
@@ -779,6 +790,7 @@ pub fn execute_with_retry<F>(
     config: &RetryConfig,
     program_id: String,
     operation: soroban_sdk::Symbol,
+    threshold_override: Option<u32>,
     mut op: F,
 ) -> RetryResult
 where
@@ -821,7 +833,7 @@ where
             }
             Err(code) => {
                 last_error = code;
-                record_failure(env, program_id.clone(), operation.clone(), code);
+                record_failure(env, program_id.clone(), operation.clone(), code, threshold_override);
             }
         }
     }

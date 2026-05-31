@@ -57,6 +57,14 @@ mod dummy_escrow {
         pub escrow: Escrow,
     }
 
+    #[contracttype]
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct ProgramDelegateInfo {
+        pub program_id: String,
+        pub delegate: Option<Address>,
+        pub permissions: u32,
+    }
+
     #[contract]
     pub struct DummyEscrow;
 
@@ -125,6 +133,17 @@ mod dummy_escrow {
                     schema_version: 1,
                 }
              });
+            result
+        }
+
+        pub fn query_all_delegates(env: Env, program_id: String) -> Vec<ProgramDelegateInfo> {
+            let mut result = Vec::new(&env);
+            let delegate = Address::generate(&env);
+            result.push_back(ProgramDelegateInfo {
+                program_id,
+                delegate: Some(delegate),
+                permissions: 0x3,
+            });
             result
         }
     }
@@ -201,4 +220,20 @@ fn test_get_user_portfolio() {
     
     // Beneficiary lists are empty out-of-the-box until tickets are aggregated
     assert_eq!(portfolio.as_beneficiary.len(), 0);
+}
+
+#[test]
+fn test_query_all_delegates_via_facade() {
+    let env = Env::default();
+    let escrow_contract = env.register_contract(None, dummy_escrow::DummyEscrow);
+    let facade_contract = env.register_contract(None, EscrowViewFacade);
+    let facade_client = EscrowViewFacadeClient::new(&env, &facade_contract);
+    let program_id = String::from_str(&env, "program-audit");
+
+    let delegates = facade_client.query_all_delegates(&escrow_contract, &program_id);
+    assert_eq!(delegates.len(), 1);
+    let info = delegates.get(0).unwrap();
+    assert_eq!(info.program_id, program_id);
+    assert!(info.delegate.is_some());
+    assert_eq!(info.permissions, 0x3);
 }

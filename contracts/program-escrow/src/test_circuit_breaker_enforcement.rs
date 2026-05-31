@@ -76,6 +76,7 @@ fn open_circuit(env: &Env) {
         failure_threshold: 1,
         success_threshold: 1,
         max_error_log: 10,
+        recovery_window: 0,
     };
     error_recovery::set_config(env, cfg);
     error_recovery::record_failure(
@@ -83,6 +84,7 @@ fn open_circuit(env: &Env) {
         String::from_str(env, "test-program"),
         symbol_short!("test"),
         1001,
+        None,
     );
     assert_eq!(error_recovery::get_state(env), CircuitState::Open);
 }
@@ -94,6 +96,80 @@ fn assert_circuit_closed(env: &Env) {
         CircuitState::Closed,
         "Expected circuit to be Closed"
     );
+}
+
+/// Force the circuit breaker into Open state with a custom recovery window.
+/// This allows tests to advance ledger time and validate Open→HalfOpen behavior.
+fn open_circuit_with_recovery_window(env: &Env, recovery_window: u64) {
+    let cfg = CircuitBreakerConfig {
+        failure_threshold: 1,
+        success_threshold: 1,
+        max_error_log: 10,
+        recovery_window,
+    };
+    error_recovery::set_config(env, cfg);
+    error_recovery::record_failure(
+        env,
+        String::from_str(env, "test-program"),
+        symbol_short!("test"),
+        1001,
+        None,
+    );
+    assert_eq!(error_recovery::get_state(env), CircuitState::Open);
+}
+
+/// When the Open circuit has timed out, a probe operation should advance
+/// the breaker into HalfOpen instead of rejecting immediately.
+#[test]
+fn test_open_circuit_transitions_to_halfopen_after_timeout() {
+    let TestSetup { env, .. } = setup();
+
+    open_circuit_with_recovery_window(&env, 100);
+    env.ledger().set_timestamp(env.ledger().timestamp() + 101);
+
+    assert_eq!(error_recovery::check_and_allow(&env), Ok(()));
+    assert_eq!(error_recovery::get_state(&env), CircuitState::HalfOpen);
+}
+
+/// A successful probe while in HalfOpen should close the circuit.
+#[test]
+fn test_halfopen_probe_success_closes_circuit() {
+    let TestSetup { env, .. } = setup();
+
+    open_circuit_with_recovery_window(&env, 100);
+    env.ledger().set_timestamp(env.ledger().timestamp() + 101);
+    assert_eq!(error_recovery::check_and_allow(&env), Ok(()));
+    assert_eq!(error_recovery::get_state(&env), CircuitState::HalfOpen);
+
+    error_recovery::record_success(&env);
+    assert_eq!(error_recovery::get_state(&env), CircuitState::Closed);
+}
+
+/// A failed probe in HalfOpen should reopen the circuit and reset the open timer.
+#[test]
+fn test_halfopen_probe_failure_reopens_circuit_and_resets_timer() {
+    let TestSetup { env, .. } = setup();
+
+    open_circuit_with_recovery_window(&env, 100);
+    env.ledger().set_timestamp(env.ledger().timestamp() + 101);
+    assert_eq!(error_recovery::check_and_allow(&env), Ok(()));
+    assert_eq!(error_recovery::get_state(&env), CircuitState::HalfOpen);
+
+    let status_before = error_recovery::get_status(&env);
+    let opened_at_before = status_before.opened_at;
+
+    env.ledger().set_timestamp(env.ledger().timestamp() + 1);
+    error_recovery::record_failure(
+        &env,
+        String::from_str(&env, "test-program"),
+        symbol_short!("probe"),
+        1001,
+        None,
+    );
+
+    let status_after = error_recovery::get_status(&env);
+    assert_eq!(status_after.state, CircuitState::Open);
+    assert!(status_after.opened_at > opened_at_before, "OpenedAt should reset on failed probe");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

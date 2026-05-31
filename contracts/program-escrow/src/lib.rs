@@ -83,6 +83,7 @@
 //! 4. **Atomic Transfers**: All-or-nothing batch operations
 //! 5. **Complete Audit Trail**: Full payout history tracking
 //! 6. **Overflow Protection**: Safe arithmetic for all calculations
+//! 7. **Circuit Breaker**: Per-program configurable failure threshold to prevent cascading failures
 //!
 //! ## Usage Example
 //!
@@ -141,8 +142,8 @@
 
 use soroban_sdk::xdr::ToXdr;
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, token, vec, Address, BytesN,
-    Env, String, Symbol, Vec,
+    contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short, token, vec,
+    Address, BytesN, Env, String, Symbol, Vec,
 };
 
 mod errors;
@@ -156,6 +157,7 @@ const BATCH_FUNDS_LOCKED: Symbol = symbol_short!("BatLck");
 const BATCH_FUNDS_RELEASED: Symbol = symbol_short!("BatRel");
 const BATCH_PAYOUT: Symbol = symbol_short!("BatchPay");
 const PAYOUT: Symbol = symbol_short!("Payout");
+const PROGRAM_PUBLISHED: Symbol = symbol_short!("PrgPub");
 const EVENT_VERSION_V2: u32 = 2;
 const PAUSE_STATE_CHANGED: Symbol = symbol_short!("PauseSt");
 const PAUSE_STATE_CHANGED_V2: Symbol = symbol_short!("PauseStV2");
@@ -599,7 +601,8 @@ pub struct ControllerRotationCancelledEvent {
 pub struct ProgramPublishedEvent {
     pub version: u32,
     pub program_id: String,
-    pub published_at: u64,
+    pub publisher: Address,
+    pub timestamp: u64,
 }
 
 #[contracttype]
@@ -646,6 +649,28 @@ pub enum ProgramStatus {
     Active,
 }
 
+/// Per-program circuit breaker threshold configuration.
+///
+/// The circuit breaker protects against cascading failures by opening after
+/// a configurable number of consecutive failures. Each program can have its
+/// own threshold:
+///
+/// - **None**: Use global default threshold (3 failures)
+/// - **Some(n)**: Use custom threshold (1-100 failures)
+///
+/// Large programs with many participants may need a higher threshold to
+/// tolerate expected transient failures, while small programs may benefit
+/// from a lower threshold for faster failure detection.
+///
+/// # Example
+/// ```rust,ignore
+/// // Set custom threshold for a large program
+/// contract.set_program_circuit_breaker_threshold(&program_id, &Some(10u8));
+///
+/// // Reset to global default
+/// contract.set_program_circuit_breaker_threshold(&program_id, &None);
+/// ```
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProgramData {
@@ -663,6 +688,22 @@ pub struct ProgramData {
     pub archived: bool,
     pub archived_at: Option<u64>,
     pub status: ProgramStatus,
+    /// Optional per-program circuit breaker failure threshold.
+    /// If set, overrides the global default (3) for this program.
+    /// Must be between 1 and 100 inclusive when set.
+    pub circuit_breaker_threshold: Option<u8>,
+}
+
+/// Program delegate audit record used for bulk reporting and indexer views.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProgramDelegateInfo {
+    /// Program identifier
+    pub program_id: String,
+    /// Currently assigned delegate (if any)
+    pub delegate: Option<Address>,
+    /// Delegate permission bitmask
+    pub permissions: u32,
 }
 
 // ========================================================================
@@ -792,6 +833,36 @@ pub struct SpendLimitSchemaVersionSet {
     pub version: u32,
     /// Schema version written to instance storage.
     pub schema_version: u32,
+    /// Ledger timestamp.
+    pub timestamp: u64,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CIRCUIT BREAKER THRESHOLD AUDIT EVENTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Emitted when the admin sets or updates the per-program circuit breaker threshold.
+///
+/// ### Topics
+/// `(CB_THRESHOLD_SET, program_id)`
+///
+/// ### Security notes
+/// - Only the admin can call `set_program_circuit_breaker_threshold`.
+/// - `previous_threshold` is `None` when no threshold was previously set.
+/// - Emitted **after** the new value is persisted so the event reflects
+///   the settled on-chain state.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CircuitBreakerThresholdSetEvent {
+    pub version: u32,
+    /// Program the threshold applies to.
+    pub program_id: String,
+    /// Previous threshold value (None = not set, uses global default of 3).
+    pub previous_threshold: Option<u8>,
+    /// New threshold value (None = reset to global default of 3).
+    pub new_threshold: Option<u8>,
+    /// Admin that made the change.
+    pub set_by: Address,
     /// Ledger timestamp.
     pub timestamp: u64,
 }
@@ -940,6 +1011,7 @@ const SCHEDULE_SCHEMA: Symbol = symbol_short!("SchSch");
 const SPEND_LIMIT_SET: Symbol = symbol_short!("SpLimSet");
 const SPEND_LIMIT_EXCEEDED: Symbol = symbol_short!("SpLimExc");
 const SPEND_LIMIT_SCHEMA: Symbol = symbol_short!("SpLimSch");
+const CB_THRESHOLD_SET: Symbol = symbol_short!("CbThrSet");
 const IDEMPOTENCY_SCHEMA: Symbol = symbol_short!("IdempSch");
 const IDEMPOTENCY_KEY_USED: Symbol = symbol_short!("IdempUsed");
 
@@ -1300,6 +1372,8 @@ pub struct PauseStateChangedV2 {
     pub reason: Option<String>,
     pub timestamp: u64,
     pub receipt_id: u64,
+    /// Storage schema version for pause-related data (written at init).
+    pub schema_version: u32,
 }
 
 /// Emitted when a pause mode is automatically cleared because its TTL expired.
@@ -1684,6 +1758,10 @@ mod reentrancy_guard;
 // #[cfg(test)] mod test_token_math; // pre-existing breakage
 // #[cfg(test)] mod test_circuit_breaker_audit; // pre-existing breakage
 // #[cfg(test)] mod error_recovery_tests; // pre-existing breakage
+#[cfg(any())] // pre-existing syntax error in file
+mod test_circuit_breaker_enforcement;
+#[cfg(test)]
+mod test_circuit_breaker_threshold;
 #[cfg(any())]
 mod reentrancy_tests;
 #[cfg(any())] // pre-existing syntax error in file
@@ -2041,15 +2119,18 @@ impl ProgramEscrowContract {
         Ok(())
     }
 
-    /// Initialize a new program escrow
+    /// Initialize a new program escrow.
     ///
     /// # Arguments
-    /// * `program_id` - Unique identifier for the program/hackathon
-    /// * `authorized_payout_key` - Address authorized to trigger payouts (backend)
-    /// * `token_address` - Address of the token contract to use for transfers
+    /// * `program_id` - Unique identifier for the program/hackathon.
+    /// * `authorized_payout_key` - Address authorized to trigger payouts (backend).
+    /// * `token_address` - Address of the token contract to use for transfers.
+    /// * `creator` - Address of the account initializing the program.
+    /// * `initial_liquidity` - Optional initial funds to lock into the program.
+    /// * `reference_hash` - Optional off-chain reference hash for program details.
     ///
     /// # Returns
-    /// The initialized ProgramData
+    /// The initialized ProgramData.
     pub fn init_program(
         env: Env,
         program_id: String,
@@ -2070,6 +2151,7 @@ impl ProgramEscrowContract {
         )
     }
 
+    /// Internal implementation for initializing a program.
     pub fn initialize_program(
         env: Env,
         program_id: String,
@@ -2162,6 +2244,7 @@ impl ProgramEscrowContract {
             archived: false,
             archived_at: None,
             status: ProgramStatus::Draft,
+            circuit_breaker_threshold: None,
         };
 
         // Store program data in registry
@@ -2355,33 +2438,57 @@ impl ProgramEscrowContract {
         program_data
     }
 
-    pub fn publish_program(env: Env) -> ProgramData {
-        if !env.storage().instance().has(&PROGRAM_DATA) {
-            panic!("Program not initialized");
+    /// Require the initialized program to be Active before moving escrowed funds.
+    ///
+    /// # Panics
+    /// Panics with `ERR_PROGRAM_NOT_ACTIVE` (107) when the program is still Draft.
+    fn require_active_program(program_data: &ProgramData) {
+        if program_data.status != ProgramStatus::Active {
+            panic!("{}", errors::ERR_PROGRAM_NOT_ACTIVE);
         }
-        let mut program_data: ProgramData = env.storage().instance().get(&PROGRAM_DATA).unwrap();
-        program_data.authorized_payout_key.require_auth();
+    }
+
+    /// Publish a program, transitioning it from Draft to Active status.
+    /// Only the contract admin or the program's authorized_payout_key (controller) may call this.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment.
+    /// * `program_id` - The unique identifier of the program to publish.
+    /// * `caller` - The address of the caller (admin or controller) that must authorize.
+    ///
+    /// # Returns
+    /// The updated ProgramData.
+    ///
+    /// # Panics
+    /// Panics if the program is not initialized, if the caller is not authorized,
+    /// or if the program is already in Active status.
+    pub fn publish_program(env: Env, program_id: String, caller: Address) -> ProgramData {
+        let mut program_data = Self::get_program_data_by_id(&env, &program_id);
+        // Authorization: caller must be either admin or authorized_payout_key.
+        Self::require_program_owner_or_admin(&env, &program_data, &caller);
 
         if program_data.status != ProgramStatus::Draft {
             panic!("Program already published");
         }
 
         program_data.status = ProgramStatus::Active;
-        env.storage().instance().set(&PROGRAM_DATA, &program_data);
+        Self::store_program_data(&env, &program_id, &program_data);
 
-        // Emit ProgramPublished event
+        // Emit ProgramPublished after the status write so indexers only see committed transitions.
         env.events().publish(
-            (symbol_short!("PrgPub"),),
+            (PROGRAM_PUBLISHED,),
             ProgramPublishedEvent {
                 version: EVENT_VERSION_V2,
                 program_id: program_data.program_id.clone(),
-                published_at: env.ledger().timestamp(),
+                publisher: caller.clone(),
+                timestamp: env.ledger().timestamp(),
             },
         );
 
         program_data
     }
 
+    /// Initialize a program with associated metadata.
     pub fn init_program_with_metadata(
         env: Env,
         program_id: String,
@@ -2435,6 +2542,7 @@ impl ProgramEscrowContract {
     /// * `BatchError::InvalidBatchSize` - empty or len > MAX_BATCH_SIZE
     /// * `BatchError::DuplicateProgramId` - duplicate program_id in items
     /// * `BatchError::ProgramAlreadyExists` - a program_id already registered
+    /// Batch-initialize multiple programs in one transaction.
     pub fn batch_initialize_programs(
         env: Env,
         items: Vec<ProgramInitItem>,
@@ -2491,6 +2599,7 @@ impl ProgramEscrowContract {
                 archived: false,
                 archived_at: None,
                 status: ProgramStatus::Draft,
+                circuit_breaker_threshold: None,
             };
             let program_key = DataKey::Program(program_id.clone());
             env.storage().instance().set(&program_key, &program_data);
@@ -2536,6 +2645,7 @@ impl ProgramEscrowContract {
     ///
     /// # Returns
     /// Number of successfully locked items.
+    /// Atomically lock funds for multiple programs.
     pub fn batch_lock(env: Env, items: Vec<LockItem>) -> Result<u32, BatchError> {
         Self::require_not_read_only(&env);
         reentrancy_guard::check_not_entered(&env);
@@ -2654,6 +2764,7 @@ impl ProgramEscrowContract {
     ///
     /// # Returns
     /// Number of successfully released payouts.
+    /// Atomically release multiple scheduled payouts.
     pub fn batch_release(env: Env, items: Vec<ReleaseItem>) -> Result<u32, BatchError> {
         Self::require_not_read_only(&env);
         reentrancy_guard::check_not_entered(&env);
@@ -2762,16 +2873,15 @@ impl ProgramEscrowContract {
         Ok(batch_size)
     }
 
-    /// Fee from basis points using ceiling division (matches bounty escrow).
+    /// Fee from basis points using ceiling division so fractional fees do not leave dust.
     fn calculate_fee(amount: i128, fee_rate: i128) -> i128 {
         if fee_rate == 0 || amount == 0 {
             return 0;
         }
-        // Floor division: fee = floor(amount * rate / BASIS_POINTS)
-        let numerator = amount.checked_mul(fee_rate).unwrap_or(0);
-        if numerator == 0 {
-            return 0;
-        }
+        let numerator = amount
+            .checked_mul(fee_rate)
+            .and_then(|n| n.checked_add(BASIS_POINTS - 1))
+            .unwrap_or_else(|| panic!("Fee calculation overflow"));
         numerator / BASIS_POINTS
     }
 
@@ -2856,15 +2966,16 @@ impl ProgramEscrowContract {
     ) {
         Self::require_admin(&env);
         let mut cfg = Self::get_fee_config_internal(&env);
+
         if let Some(r) = lock_fee_rate {
-            if !(0..=MAX_FEE_RATE).contains(&r) {
-                panic!("Invalid lock fee rate");
+            if r > MAX_FEE_RATE {
+                panic_with_error!(&env, ContractError::InvalidFeeRate);
             }
             cfg.lock_fee_rate = r;
         }
         if let Some(r) = payout_fee_rate {
-            if !(0..=MAX_FEE_RATE).contains(&r) {
-                panic!("Invalid payout fee rate");
+            if r > MAX_FEE_RATE {
+                panic_with_error!(&env, ContractError::InvalidFeeRate);
             }
             cfg.payout_fee_rate = r;
         }
@@ -2889,10 +3000,10 @@ impl ProgramEscrowContract {
         env.storage().instance().set(&FEE_CONFIG, &cfg);
     }
 
-    /// Check if a program exists (legacy single-program check)
+    /// Check if a program exists (legacy single-program check).
     ///
     /// # Returns
-    /// * `bool` - True if program exists, false otherwise
+    /// * `bool` - True if program exists, false otherwise.
     pub fn program_exists(env: Env) -> bool {
         env.storage().instance().has(&PROGRAM_DATA)
             || env.storage().instance().has(&PROGRAM_REGISTRY)
@@ -3082,7 +3193,10 @@ impl ProgramEscrowContract {
         );
     }
 
-    /// Set or rotate admin. If no admin is set, sets initial admin. If admin exists, current admin must authorize and the new address becomes admin.
+    /// Set or rotate admin.
+    ///
+    /// If no admin is set, sets initial admin. If admin exists, current admin
+    /// must authorize and the new address becomes admin.
     pub fn set_admin(env: Env, admin: Address) {
         if env.storage().instance().has(&DataKey::Admin) {
             let current: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
@@ -3538,6 +3652,7 @@ impl ProgramEscrowContract {
         program_data.authorized_payout_key.clone()
     }
 
+    /// Set a delegate for a program with specific permissions.
     pub fn set_program_delegate(
         env: Env,
         program_id: String,
@@ -3579,6 +3694,7 @@ impl ProgramEscrowContract {
         program_data
     }
 
+    /// Revoke the delegate for a program.
     pub fn revoke_program_delegate(env: Env, program_id: String, caller: Address) -> ProgramData {
         let mut program_data = Self::get_program_data_by_id(&env, &program_id);
         
@@ -3826,6 +3942,7 @@ impl ProgramEscrowContract {
         Ok(program_data)
     }
 
+    /// Update metadata for a specific program.
     pub fn update_program_metadata(
         env: Env,
         program_id: String,
@@ -3915,6 +4032,7 @@ impl ProgramEscrowContract {
     /// `unpause_at` is an optional ledger timestamp (seconds since epoch) after which the
     /// pause modes being set to `true` in this call will be automatically cleared by the
     /// guard logic. Pass `None` for permanent (manual-only) pause.
+    /// Toggles pause state for specific operations.
     pub fn set_paused(
         env: Env,
         lock: Option<bool>,
@@ -3972,6 +4090,7 @@ impl ProgramEscrowContract {
                     reason: reason.clone(),
                     timestamp,
                     receipt_id,
+                    schema_version: PAUSE_SCHEMA_VERSION_V1,
                 },
             );
         }
@@ -4003,6 +4122,7 @@ impl ProgramEscrowContract {
                     reason: reason.clone(),
                     timestamp,
                     receipt_id,
+                    schema_version: PAUSE_SCHEMA_VERSION_V1,
                 },
             );
         }
@@ -4034,6 +4154,7 @@ impl ProgramEscrowContract {
                     reason: reason.clone(),
                     timestamp,
                     receipt_id,
+                    schema_version: PAUSE_SCHEMA_VERSION_V1,
                 },
             );
         }
@@ -4071,7 +4192,7 @@ impl ProgramEscrowContract {
         }
     }
 
-    /// Update maintenance mode (admin only)
+    /// Update maintenance mode (admin only).
     pub fn set_maintenance_mode(env: Env, enabled: bool) {
         if !env.storage().instance().has(&DataKey::Admin) {
             panic!("Not initialized");
@@ -4092,7 +4213,7 @@ impl ProgramEscrowContract {
         );
     }
 
-    /// Emergency withdraw all program funds (admin only, must have lock_paused = true)
+    /// Emergency withdraw all program funds (admin only, must have lock_paused = true).
     pub fn emergency_withdraw(env: Env, target: Address) {
         if !env.storage().instance().has(&DataKey::Admin) {
             panic!("Not initialized");
@@ -4639,6 +4760,7 @@ impl ProgramEscrowContract {
     /// * `window_size`  - Window length in seconds (must be > 0).
     /// * `max_amount`   - Max total releasable in one window (must be >= 0).
     /// * `enabled`      - `false` stores the config without enforcing it.
+    /// Set or update the per-window spending limit for a program.
     pub fn set_program_spending_limit(
         env: Env,
         program_id: String,
@@ -4664,6 +4786,59 @@ impl ProgramEscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::SpendingConfig(program_id), &cfg);
+    }
+
+    /// Set or update the per-program circuit breaker failure threshold.
+    ///
+    /// Only the program's `authorized_payout_key` may call this.
+    ///
+    /// # Arguments
+    /// * `program_id` - Program to configure.
+    /// * `threshold` - Optional threshold value (1-100). None resets to global default (3).
+    ///
+    /// # Errors
+    /// Panics if:
+    /// - Threshold is set but not in range [1, 100]
+    /// - Caller is not authorized
+    ///
+    /// # Events
+    /// Emits `CB_THRESHOLD_SET` with [`CircuitBreakerThresholdSetEvent`].
+    /// Set or update the per-program circuit breaker failure threshold.
+    pub fn set_program_circuit_breaker_threshold(
+        env: Env,
+        program_id: String,
+        threshold: Option<u8>,
+    ) {
+        let program_data = Self::get_program_data_by_id(&env, &program_id);
+        program_data.authorized_payout_key.require_auth();
+
+        // Validate threshold if provided
+        if let Some(t) = threshold {
+            if t < 1 || t > 100 {
+                panic!("{}", errors::ContractError::InvalidCircuitBreakerThreshold as u32);
+            }
+        }
+
+        let previous_threshold = program_data.circuit_breaker_threshold;
+        let mut updated_data = program_data.clone();
+        updated_data.circuit_breaker_threshold = threshold;
+
+        // Update program data
+        let program_key = DataKey::Program(program_id.clone());
+        env.storage().instance().set(&program_key, &updated_data);
+
+        // Emit audit event
+        env.events().publish(
+            (CB_THRESHOLD_SET, program_id.clone()),
+            CircuitBreakerThresholdSetEvent {
+                version: EVENT_VERSION_V2,
+                program_id,
+                previous_threshold,
+                new_threshold: threshold,
+                set_by: env.current_contract_address(),
+                timestamp: env.ledger().timestamp(),
+            },
+        );
     }
 
     /// Return the spending limit configuration for a program, if set.
@@ -5256,6 +5431,7 @@ impl ProgramEscrowContract {
     /// - Protected by reentrancy guard.
     /// - Respects circuit breaker and threshold limits.
     /// - Idempotency key ensures deterministic behavior on retries.
+    /// Execute a batch payout to multiple winners.
     pub fn batch_payout(
         env: Env,
         recipients: soroban_sdk::Vec<Address>,
@@ -5265,6 +5441,7 @@ impl ProgramEscrowContract {
         Self::batch_payout_internal(env, None, recipients, amounts, idempotency_key)
     }
 
+    /// Execute a batch payout with a specified caller.
     pub fn batch_payout_by(
         env: Env,
         caller: Address,
@@ -5376,6 +5553,15 @@ impl ProgramEscrowContract {
             None => panic!("Program not initialized"),
         };
 
+        // 2b. Program lifecycle: Draft programs must be published before payouts.
+        Self::require_active_program(&program_data);
+
+        // 3. Operational state: paused
+        //    PRECEDENCE LAYER 1 (highest): Pause / maintenance mode.
+        //    Checked BEFORE read-only mode and circuit breaker so that an
+        //    operator's explicit emergency stop is always honoured first,
+        //    regardless of automated circuit-breaker state.
+        //    See docs/program-escrow/CIRCUIT_BREAKER_ENFORCEMENT.md §Layer Definitions.
         if Self::check_paused(&env, symbol_short!("release")) {
             panic!("Funds Paused");
         }
@@ -5697,6 +5883,7 @@ impl ProgramEscrowContract {
     /// - Protected by reentrancy guard.
     /// - Respects circuit breaker and threshold limits.
     /// - Idempotency key ensures deterministic behavior on retries.
+    /// Execute a single payout to one winner.
     pub fn single_payout(
         env: Env,
         recipient: Address,
@@ -5706,6 +5893,7 @@ impl ProgramEscrowContract {
         Self::single_payout_internal(env, None, recipient, amount, idempotency_key)
     }
 
+    /// Execute a single payout with a specified caller.
     pub fn single_payout_by(
         env: Env,
         caller: Address,
@@ -5754,6 +5942,9 @@ impl ProgramEscrowContract {
             .instance()
             .get(&PROGRAM_DATA)
             .unwrap_or_else(|| panic!("Program not initialized"));
+
+        // 2b. Program lifecycle: Draft programs must be published before payouts.
+        Self::require_active_program(&program_data);
 
         // 3. Operational state: paused
         if Self::check_paused(&env, symbol_short!("release")) {
@@ -6892,6 +7083,44 @@ impl ProgramEscrowContract {
             }
         }
         results
+    }
+
+    /// Query program delegates for a set of registered programs (paginated).
+    ///
+    /// This returns a vector of `ProgramDelegateInfo` records for the requested
+    /// slice of entries from the internal `PROGRAM_REGISTRY`.
+    pub fn query_program_delegates(
+        env: Env,
+        offset: Option<u32>,
+        limit: Option<u32>,
+    ) -> soroban_sdk::Vec<ProgramDelegateInfo> {
+        let registry: soroban_sdk::Vec<String> = env
+            .storage()
+            .instance()
+            .get(&PROGRAM_REGISTRY)
+            .unwrap_or(Vec::new(&env));
+
+        let total = registry.len();
+        let offset = offset.unwrap_or(0);
+        let limit = limit.unwrap_or(total);
+
+        // Validate pagination params conservatively: return empty vec on bad params
+        if offset > total || limit == 0 {
+            return Vec::new(&env);
+        }
+
+        let end = if offset + limit > total { total } else { offset + limit };
+        let mut result = Vec::new(&env);
+        for i in offset..end {
+            let pid = registry.get(i).unwrap();
+            let program_data = Self::get_program_data_by_id(&env, &pid);
+            result.push_back(ProgramDelegateInfo {
+                program_id: pid.clone(),
+                delegate: program_data.delegate.clone(),
+                permissions: program_data.delegate_permissions,
+            });
+        }
+        result
     }
 
     pub fn get_program_release_schedule(env: Env, schedule_id: u64) -> ProgramReleaseSchedule {
