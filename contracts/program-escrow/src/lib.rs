@@ -4846,11 +4846,11 @@ impl ProgramEscrowContract {
     /// Return the spending limit configuration for a program, if set.
     pub fn get_program_spending_limit(
         env: Env,
-        caller: Address,
-        recipients: soroban_sdk::Vec<Address>,
-        amounts: soroban_sdk::Vec<i128>,
-    ) -> ProgramData {
-        Self::batch_payout_internal(env, Some(caller), None, recipients, amounts)
+        program_id: String,
+    ) -> Option<ProgramSpendingConfig> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::SpendingConfig(program_id))
     }
 
     /// Execute a batch payout guarded by an idempotency key.
@@ -6665,7 +6665,6 @@ impl ProgramEscrowContract {
 
         program_data
     }
-} // end impl ProgramEscrowContract
 
     pub fn single_payout_v2(
         env: Env,
@@ -7136,46 +7135,6 @@ impl ProgramEscrowContract {
         result
     }
 
-    /// Query the currently assigned delegate(s) and permissions for a single program.
-    ///
-    /// This read-only helper is designed for compliance auditing and permission
-    /// reporting. It returns an empty vector when the program does not exist or
-    /// when there is no active delegate assigned to the requested program.
-    pub fn query_all_delegates(
-        env: Env,
-        program_id: String,
-    ) -> soroban_sdk::Vec<ProgramDelegateInfo> {
-        let program_key = DataKey::Program(program_id.clone());
-        let program_data_opt = if env.storage().instance().has(&program_key) {
-            Some(env.storage().instance().get(&program_key).unwrap())
-        } else if env.storage().instance().has(&PROGRAM_DATA) {
-            let program_data: ProgramData = env
-                .storage()
-                .instance()
-                .get(&PROGRAM_DATA)
-                .unwrap();
-            if program_data.program_id == program_id {
-                Some(program_data)
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        let mut result = Vec::new(&env);
-        if let Some(program_data) = program_data_opt {
-            if let Some(delegate) = program_data.delegate {
-                result.push_back(ProgramDelegateInfo {
-                    program_id,
-                    delegate: Some(delegate),
-                    permissions: program_data.delegate_permissions,
-                });
-            }
-        }
-        result
-    }
-
     pub fn get_program_release_schedule(env: Env, schedule_id: u64) -> ProgramReleaseSchedule {
         let schedules = Self::get_release_schedules(env);
         for s in schedules.iter() {
@@ -7634,6 +7593,8 @@ impl ProgramEscrowContract {
 
 // #[cfg(test)]
 // mod test;
+
+
 #[cfg(test)]
 // mod test_pagination;
 // Pre-existing broken test modules excluded until their referenced types/methods are implemented:

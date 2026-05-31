@@ -497,6 +497,8 @@ fn test_idempotent_batch_payout_complex_retry_interleaving() {
     
     assert_eq!(payout_count, 3, "Expected 3 successful payout events");
     assert_eq!(replay_count, 2, "Expected 2 replay audit events");
+}
+
 // ============================================================================
 // Idempotency key generation convention tests
 // Issue #1262 — client SDK idempotency key generation conventions
@@ -804,4 +806,103 @@ fn test_no_key_allows_duplicate_operations() {
 
     // Both operations executed — balance reduced by 2000
     assert_eq!(result.remaining_balance, 8_000);
+}
+
+// ============================================================================
+// MAX_BATCH_SIZE pre-flight rejection tests (issue #1264)
+// ============================================================================
+
+/// batch_payout with exactly MAX_BATCH_SIZE recipients succeeds.
+#[test]
+fn test_batch_payout_at_max_size_succeeds() {
+    let ctx = setup();
+    let per = 10_i128;
+    init_program(&ctx, "PROG_MAX", crate::MAX_BATCH_SIZE as i128 * per);
+
+    let recipients: soroban_sdk::Vec<Address> = (0..crate::MAX_BATCH_SIZE)
+        .fold(soroban_sdk::Vec::new(&ctx.env), |mut v, _| {
+            v.push_back(Address::generate(&ctx.env));
+            v
+        });
+    let amounts: soroban_sdk::Vec<i128> = (0..crate::MAX_BATCH_SIZE)
+        .fold(soroban_sdk::Vec::new(&ctx.env), |mut v, _| {
+            v.push_back(per);
+            v
+        });
+
+    let result = ctx.client.try_batch_payout(&recipients, &amounts, &None);
+    assert!(result.is_ok(), "batch at MAX_BATCH_SIZE must succeed");
+}
+
+/// batch_payout with MAX_BATCH_SIZE + 1 recipients returns BatchTooLarge (410).
+#[test]
+fn test_batch_payout_over_max_returns_batch_too_large() {
+    let ctx = setup();
+    let oversized = crate::MAX_BATCH_SIZE + 1;
+    init_program(&ctx, "PROG_OVER", oversized as i128 * 10);
+
+    let recipients: soroban_sdk::Vec<Address> = (0..oversized)
+        .fold(soroban_sdk::Vec::new(&ctx.env), |mut v, _| {
+            v.push_back(Address::generate(&ctx.env));
+            v
+        });
+    let amounts: soroban_sdk::Vec<i128> = (0..oversized)
+        .fold(soroban_sdk::Vec::new(&ctx.env), |mut v, _| {
+            v.push_back(10_i128);
+            v
+        });
+
+    let result = ctx.client.try_batch_payout(&recipients, &amounts, &None);
+    assert!(
+        matches!(result, Err(Ok(crate::BatchError::BatchTooLarge))),
+        "expected BatchError::BatchTooLarge, got: {:?}",
+        result
+    );
+}
+
+/// Pre-flight rejection must leave contract balance unchanged (no partial state).
+#[test]
+fn test_batch_too_large_leaves_balance_unchanged() {
+    let ctx = setup();
+    let oversized = crate::MAX_BATCH_SIZE + 1;
+    let initial: i128 = oversized as i128 * 10;
+    init_program(&ctx, "PROG_BAL", initial);
+
+    let recipients: soroban_sdk::Vec<Address> = (0..oversized)
+        .fold(soroban_sdk::Vec::new(&ctx.env), |mut v, _| {
+            v.push_back(Address::generate(&ctx.env));
+            v
+        });
+    let amounts: soroban_sdk::Vec<i128> = (0..oversized)
+        .fold(soroban_sdk::Vec::new(&ctx.env), |mut v, _| {
+            v.push_back(10_i128);
+            v
+        });
+
+    let _ = ctx.client.try_batch_payout(&recipients, &amounts, &None);
+
+    let prog = ctx.client.get_program_info_v2(&String::from_str(&ctx.env, "PROG_BAL"));
+    assert_eq!(prog.remaining_balance, initial, "balance must be unchanged after BatchTooLarge rejection");
+}
+
+/// batch_payout_by also rejects oversized batches with BatchTooLarge.
+#[test]
+fn test_batch_payout_by_over_max_returns_batch_too_large() {
+    let ctx = setup();
+    let oversized = crate::MAX_BATCH_SIZE + 1;
+    init_program(&ctx, "PROG_BY", oversized as i128 * 10);
+
+    let recipients: soroban_sdk::Vec<Address> = (0..oversized)
+        .fold(soroban_sdk::Vec::new(&ctx.env), |mut v, _| {
+            v.push_back(Address::generate(&ctx.env));
+            v
+        });
+    let amounts: soroban_sdk::Vec<i128> = (0..oversized)
+        .fold(soroban_sdk::Vec::new(&ctx.env), |mut v, _| {
+            v.push_back(10_i128);
+            v
+        });
+
+    let result = ctx.client.try_batch_payout_by(&ctx.admin, &recipients, &amounts, &None);
+    assert!(matches!(result, Err(Ok(crate::BatchError::BatchTooLarge))));
 }
