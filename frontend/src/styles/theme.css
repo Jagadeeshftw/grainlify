@@ -227,7 +227,21 @@
   --radius-3xl: 1.5rem;
   --radius-full: 9999px;
 
-  /* Elevation (Shadows) */
+  /* Five-level Elevation Shadows */
+  --elevation-0: none;
+  --elevation-1: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
+  --elevation-2: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.08);
+  --elevation-3: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+  --elevation-4: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.15);
+
+  /* Glassmorphism Specs (Light Theme) */
+  --glass-bg-opacity: 0.15;
+  --glass-bg: rgba(255, 255, 255, 0.15);
+  --glass-border-opacity: 0.25;
+  --glass-border: rgba(255, 255, 255, 0.25);
+  --glass-blur: 25px;
+
+  /* Legacy Shadows */
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
@@ -310,6 +324,19 @@
   --sidebar-accent-foreground: var(--color-neutral-50);
   --sidebar-border: var(--color-primary-700);
   --sidebar-ring: var(--color-primary-700);
+
+  /* Five-level Elevation Shadows (Dark Theme adjusted for contrast) */
+  --elevation-1: 0 1px 3px 0 rgba(0, 0, 0, 0.2), 0 1px 2px -1px rgba(0, 0, 0, 0.2);
+  --elevation-2: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
+  --elevation-3: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -4px rgba(0, 0, 0, 0.4);
+  --elevation-4: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+
+  /* Glassmorphism Specs (Dark Theme) */
+  --glass-bg-opacity: 0.08;
+  --glass-bg: rgba(255, 255, 255, 0.08);
+  --glass-border-opacity: 0.15;
+  --glass-border: rgba(255, 255, 255, 0.15);
+  --glass-blur: 25px;
 }
 
 @theme inline {
@@ -351,6 +378,13 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Five-level shadow utility mappings */
+  --shadow-elevation-0: var(--elevation-0);
+  --shadow-elevation-1: var(--elevation-1);
+  --shadow-elevation-2: var(--elevation-2);
+  --shadow-elevation-3: var(--elevation-3);
+  --shadow-elevation-4: var(--elevation-4);
 }
 
 /* Sidebar blur when modal is open */

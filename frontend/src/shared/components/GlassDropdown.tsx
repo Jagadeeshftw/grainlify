@@ -30,16 +30,14 @@ export function GlassDropdown<T extends string>({
     <div className="relative">
       {/* Dropdown Button */}
       <button 
-        className={`flex items-center gap-2 px-5 py-3 rounded-[14px] backdrop-blur-[25px] border transition-all ${
+        className={`flex items-center gap-2 px-5 py-3 rounded-[14px] backdrop-blur-[25px] border transition-all cursor-pointer shadow-elevation-1 hover:shadow-elevation-2 hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-[#c9983a]/40 active:scale-100 ${
           isDark
-            ? 'bg-white/[0.08] border-white/15 hover:bg-white/[0.12] hover:border-[#e8c571]/30'
-            : 'bg-white/[0.15] border-white/25 hover:bg-white/[0.2] hover:border-[#c9983a]/30'
+            ? 'bg-white/[0.08] border-white/15 hover:bg-white/[0.12] hover:border-[#e8c571]/30 text-[#e8dfd0]'
+            : 'bg-white/[0.15] border-white/25 hover:bg-white/[0.2] hover:border-[#c9983a]/30 text-[#2d2820]'
         }`}
         onClick={onToggle}
       >
-        <span className={`text-[14px] font-semibold ${
-          isDark ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
-        }`}>
+        <span className="text-[14px] font-semibold">
           {value}
         </span>
         <ChevronDown className={`w-4 h-4 transition-transform ${
@@ -57,19 +55,19 @@ export function GlassDropdown<T extends string>({
           />
           
           {/* Menu */}
-          <div className={`absolute top-full right-0 mt-2 w-48 rounded-[16px] border z-50 overflow-hidden ${
+          <div className={`absolute top-full right-0 mt-2 w-48 rounded-[16px] border z-50 overflow-hidden backdrop-blur-[25px] shadow-elevation-3 transition-all ${
             isDark
-              ? 'bg-[#3a3228] border-white/30'
-              : 'bg-[#d4c5b0] border-white/40'
+              ? 'bg-[#1c1917]/90 border-white/15'
+              : 'bg-[#fafaf9]/90 border-white/25'
           }`}>
             <div className="py-2">
               {options.map((option) => (
                 <button
                   key={option}
-                  className={`w-full px-5 py-2.5 text-left text-[13px] font-semibold transition-colors ${
+                  className={`w-full px-5 py-2.5 text-left text-[13px] font-semibold transition-colors focus:outline-none focus:bg-[#c9983a]/10 ${
                     isDark
-                      ? 'text-[#e8dfd0] hover:bg-[#4a3e30]'
-                      : 'text-[#2d2820] hover:bg-[#c9b8a0]'
+                      ? 'text-[#e8dfd0] hover:bg-white/[0.08] focus:text-[#e8c571]'
+                      : 'text-[#2d2820] hover:bg-black/[0.05] focus:text-[#c9983a]'
                   }`}
                   onClick={() => handleSelect(option)}
                 >

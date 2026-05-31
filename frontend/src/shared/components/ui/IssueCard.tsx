@@ -54,10 +54,10 @@ export function IssueCard({
     return (
       <div 
         onClick={onClick}
-        className={`backdrop-blur-[30px] rounded-[16px] border p-5 transition-all cursor-pointer ${
+        className={`backdrop-blur-[25px] rounded-[16px] border p-5 shadow-elevation-1 hover:shadow-elevation-2 hover:scale-[1.02] transition-all duration-300 cursor-pointer ${
           isDark
-            ? 'bg-white/[0.08] border-white/15 hover:bg-white/[0.12]'
-            : 'bg-white/[0.15] border-white/25 hover:bg-white/[0.2]'
+            ? 'bg-white/[0.08] border-white/15'
+            : 'bg-white/[0.15] border-white/25'
         }`}
       >
         <div className="flex items-start justify-between mb-2">
@@ -108,14 +108,14 @@ export function IssueCard({
   return (
     <button
       onClick={onClick}
-      className={`w-full p-3 rounded-[16px] backdrop-blur-[40px] border transition-all text-left ${
+      className={`w-full p-3 rounded-[16px] backdrop-blur-[25px] border shadow-elevation-1 hover:shadow-elevation-2 hover:scale-[1.02] transition-all duration-300 text-left ${
         isSelected
           ? isDark
             ? 'border-[#c9983a] bg-[#c9983a]/10'
             : 'border-2 border-[#c9983a] bg-gradient-to-br from-[#c9983a]/20 to-[#d4af37]/15 shadow-sm hover:from-[#c9983a]/25 hover:to-[#d4af37]/20'
           : isDark
-            ? 'bg-white/[0.12] border-white/20 hover:bg-white/[0.15]'
-            : 'bg-white/[0.12] border-white/20 hover:bg-white/[0.15]'
+            ? 'bg-white/[0.08] border-white/15'
+            : 'bg-white/[0.12] border-white/20'
       }`}
     >
       {/* Issue Header */}
