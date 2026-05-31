@@ -4754,11 +4754,15 @@ impl ProgramEscrowContract {
     /// - Respects circuit breaker and threshold limits.
     pub fn batch_payout(env: Env, recipients: soroban_sdk::Vec<Address>, amounts: soroban_sdk::Vec<i128>) -> ProgramData {
         Self::batch_payout_internal(env, None, None, recipients, amounts)
+    }
+
+    /// Set or update the per-window spending limit for a program.
+    ///
+    /// # Arguments
     /// * `program_id`   - Program to configure.
     /// * `window_size`  - Window length in seconds (must be > 0).
     /// * `max_amount`   - Max total releasable in one window (must be >= 0).
     /// * `enabled`      - `false` stores the config without enforcing it.
-    /// Set or update the per-window spending limit for a program.
     pub fn set_program_spending_limit(
         env: Env,
         program_id: String,
@@ -4937,6 +4941,11 @@ impl ProgramEscrowContract {
         env.storage().persistent().set(&PAYOUT_IDEM_KEYS, &used_keys);
 
         result
+    }
+
+    /// Return the spending config for a program.
+    pub fn get_program_spending_config(
+        env: Env,
         program_id: String,
     ) -> Option<ProgramSpendingConfig> {
         env.storage()
@@ -4947,18 +4956,6 @@ impl ProgramEscrowContract {
     /// Return the current window state for a program's spending limit, if any.
     pub fn get_program_spending_state(
         env: Env,
-        caller: Option<Address>,
-        idempotency_key: Option<String>,
-        recipients: soroban_sdk::Vec<Address>,
-        amounts: soroban_sdk::Vec<i128>,
-    ) -> ProgramData {
-        // Validation precedence (deterministic ordering):
-        // 1. Reentrancy guard
-        // 2. Contract initialized
-        // 3. Paused (operational state)
-        // 4. Authorization
-        // 6. Business logic (sufficient balance)
-        // 7. Circuit breaker check
         program_id: String,
     ) -> Option<ProgramSpendingState> {
         env.storage()
