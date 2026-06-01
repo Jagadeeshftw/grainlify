@@ -126,6 +126,19 @@
       "border": "1px solid rgba(255 255 255 / 0.2)"
     }
   },
+  "modal": {
+    "zIndexBase": 10000,
+    "overlayOpacity": {
+      "base": 0.5,
+      "nestedIncrement": 0.04,
+      "max": 0.62
+    },
+    "borderRadius": "1.5rem",
+    "shadow": "0 20px 60px rgba(0, 0, 0, 0.3)",
+    "maxHeight": "90vh",
+    "focusRing": "2px solid var(--color-primary-600)",
+    "animationDuration": "200ms"
+  },
   "animation": {
     "duration": {
       "fast": "150ms",

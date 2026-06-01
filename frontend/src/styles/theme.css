@@ -353,7 +353,11 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
-/* Sidebar blur when modal is open */
+/* Scroll lock and sidebar blur when modal is open */
+body.modal-open {
+  overflow: hidden;
+}
+
 body.modal-open aside {
   filter: blur(4px);
   opacity: 0.6;
