@@ -257,6 +257,49 @@
   --font-weight-semibold: 600;
   --font-weight-bold: 700;
 
+  /* Toast viewport and queue badge */
+  .grainlify-toast-viewport {
+    right: clamp(1rem, env(safe-area-inset-right), 1.5rem) !important;
+    bottom: clamp(1rem, env(safe-area-inset-bottom), 1.5rem) !important;
+    left: auto !important;
+    width: auto !important;
+    padding: 0 !important;
+  }
+
+  @media (max-width: 767px) {
+    .grainlify-toast-viewport {
+      left: 50% !important;
+      right: auto !important;
+      transform: translateX(-50%) !important;
+      width: min(92vw, 24rem) !important;
+    }
+  }
+
+  .grainlify-toast-queue-badge {
+    position: absolute;
+    top: -0.75rem;
+    right: -0.75rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2rem;
+    min-height: 2rem;
+    border-radius: 9999px;
+    background: var(--color-neutral-900);
+    color: var(--color-neutral-50);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
+    font-size: 0.75rem;
+    font-weight: 700;
+    pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .grainlify-toast-viewport .grainlify-toast {
+      transition: none !important;
+      animation: none !important;
+    }
+  }
+
   /* Animation */
   --duration-fast: 150ms;
   --duration-normal: 300ms;

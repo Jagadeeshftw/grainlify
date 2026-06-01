@@ -52,7 +52,37 @@
         "500": "#ef4444",
         "600": "#dc2626",
         "700": "#b91c1c"
+      },
+      "info": {
+        "50": "#eff6ff",
+        "500": "#3b82f6",
+        "600": "#2563eb",
+        "700": "#1d4ed8"
+      },
+      "loading": {
+        "50": "#eef2ff",
+        "500": "#6366f1",
+        "600": "#4f46e5",
+        "700": "#4338ca"
       }
+    }
+  },
+  "toast": {
+    "maxVisible": 3,
+    "position": {
+      "desktop": "bottom-right",
+      "mobile": "bottom-center"
+    },
+    "offset": {
+      "desktop": "clamp(1rem, env(safe-area-inset-bottom), 1.5rem)",
+      "mobile": "clamp(1rem, env(safe-area-inset-bottom), 1.25rem)"
+    },
+    "borderRadius": "1rem",
+    "shadow": "0 25px 50px rgba(0, 0, 0, 0.18)",
+    "duration": {
+      "default": 5000,
+      "error": 8000,
+      "action": 0
     }
   },
   "typography": {
