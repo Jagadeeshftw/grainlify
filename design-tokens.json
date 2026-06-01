@@ -126,6 +126,30 @@
       "border": "1px solid rgba(255 255 255 / 0.2)"
     }
   },
+  "notification": {
+    "badge": {
+      "background": "#ef4444",
+      "text": "#ffffff",
+      "border-light": "#ffffff",
+      "border-dark": "#2d2820",
+      "overflow": "99+"
+    },
+    "type": {
+      "bounty_awarded": { "color": "#f1b400", "icon": "Award" },
+      "submission_received": { "color": "#22c55e", "icon": "GitPullRequest" },
+      "pr_reviewed": { "color": "#c9983a", "icon": "GitMerge" },
+      "payout_confirmed": { "color": "#16a34a", "icon": "Wallet" },
+      "system_alert": { "color": "#f59e0b", "icon": "AlertTriangle" }
+    },
+    "group": {
+      "label": {
+        "today": "Today",
+        "yesterday": "Yesterday",
+        "this_week": "This Week",
+        "earlier": "Earlier"
+      }
+    }
+  },
   "animation": {
     "duration": {
       "fast": "150ms",

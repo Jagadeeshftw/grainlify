@@ -59,8 +59,57 @@
   animation: shimmer 1.5s linear infinite;
 }
 
+/* Badge scale-in animation */
+@keyframes badge-in {
+  from {
+    transform: scale(0);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.15);
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-badge-in {
+  animation: badge-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Notification slide-in for new items */
+@keyframes notify-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-notify-slide-in {
+  animation: notify-slide-in 0.2s ease-out;
+}
+
+/* Skeleton shimmer pulse variation */
+.animate-shimmer-fast {
+  animation: shimmer 1s linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-shimmer {
+    animation: none;
+  }
+  .animate-shimmer-fast {
+    animation: none;
+  }
+  .animate-badge-in {
+    animation: none;
+  }
+  .animate-notify-slide-in {
     animation: none;
   }
 }
