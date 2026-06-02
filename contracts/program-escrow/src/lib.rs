@@ -4756,11 +4756,13 @@ impl ProgramEscrowContract {
         Self::batch_payout_internal(env, None, None, recipients, amounts)
     }
 
+    /// Set or update the per-window spending limit for a program.
+    ///
+    /// # Arguments
     /// * `program_id`   - Program to configure.
     /// * `window_size`  - Window length in seconds (must be > 0).
     /// * `max_amount`   - Max total releasable in one window (must be >= 0).
     /// * `enabled`      - `false` stores the config without enforcing it.
-    /// Set or update the per-window spending limit for a program.
     pub fn set_program_spending_limit(
         env: Env,
         program_id: String,
@@ -4939,6 +4941,16 @@ impl ProgramEscrowContract {
         env.storage().persistent().set(&PAYOUT_IDEM_KEYS, &used_keys);
 
         result
+    }
+
+    /// Return the spending config for a program.
+    pub fn get_program_spending_config(
+        env: Env,
+        program_id: String,
+    ) -> Option<ProgramSpendingConfig> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::SpendingConfig(program_id))
     }
 
     /// Return the current window state for a program's spending limit, if any.

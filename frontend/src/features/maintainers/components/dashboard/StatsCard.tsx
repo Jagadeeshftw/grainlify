@@ -16,10 +16,10 @@ export function StatsCard({ stat, index }: StatsCardProps) {
 
   return (
     <div
-      className={`backdrop-blur-[40px] rounded-[18px] border p-6 hover:scale-105 transition-all duration-300 group relative overflow-hidden ${
+      className={`backdrop-blur-[25px] rounded-[18px] border p-6 transition-all duration-300 group relative overflow-hidden shadow-elevation-1 hover:shadow-elevation-2 hover:scale-[1.02] ${
         theme === 'dark'
-          ? 'bg-[#2d2820]/[0.4] border-white/10 hover:bg-[#2d2820]/[0.5]'
-          : 'bg-white/[0.15] border-white/25 hover:bg-white/[0.2]'
+          ? 'bg-white/[0.08] border-white/15'
+          : 'bg-white/[0.15] border-white/25'
       }`}
       style={{ animationDelay: `${index * 50}ms` }}
     >
@@ -30,12 +30,12 @@ export function StatsCard({ stat, index }: StatsCardProps) {
       <div className="relative flex items-start justify-between mb-4">
         <div className="flex-1">
           <h3 className={`text-[12px] font-bold uppercase tracking-wide mb-1 transition-colors ${
-            theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
+            theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#7a6b5a]'
           }`}>
             {stat.title}
           </h3>
           <p className={`text-[10px] transition-colors ${
-            theme === 'dark' ? 'text-[#9a8b7a]' : 'text-[#9a8b7a]'
+            theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
           }`}>{stat.subtitle}</p>
         </div>
         
@@ -62,8 +62,8 @@ export function StatsCard({ stat, index }: StatsCardProps) {
 
       {/* Value */}
       <div className="relative">
-        <div className={`text-[42px] font-black leading-none mb-2 group-hover:scale-105 transition-all origin-left ${
-          theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
+        <div className={`text-[42px] font-black leading-none mb-2 transition-all origin-left ${
+          theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
         }`}>
           {stat.value}
         </div>
@@ -72,10 +72,14 @@ export function StatsCard({ stat, index }: StatsCardProps) {
         <div className="flex items-center gap-2">
           <div className={`px-2.5 py-1 rounded-[6px] text-[11px] font-bold ${
             isPositive 
-              ? 'bg-green-500/20 text-green-700 border border-green-500/30' 
+              ? theme === 'dark' 
+                ? 'bg-green-500/10 text-green-400 border border-green-500/20' 
+                : 'bg-green-500/20 text-green-700 border border-green-500/30' 
               : isNegative 
-              ? 'bg-red-500/20 text-red-700 border border-red-500/30'
-              : 'bg-[#7a6b5a]/20 text-[#7a6b5a] border border-[#7a6b5a]/30'
+              ? theme === 'dark' 
+                ? 'bg-red-500/10 text-red-400 border border-red-500/20' 
+                : 'bg-red-500/20 text-red-700 border border-red-500/30'
+              : 'bg-[#7a6b5a]/20 text-[#b8a898] border border-[#7a6b5a]/30'
           }`}>
             {isPositive && '+'}{stat.change}%
           </div>
