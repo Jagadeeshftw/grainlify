@@ -23,6 +23,37 @@ const widthClasses = {
   xl: 'w-[95vw] sm:w-[650px]'
 };
 
+const MODAL_STACK: string[] = [];
+const MODAL_BASE_Z_INDEX = 10000;
+
+const getFocusableElements = (container: HTMLElement | null): HTMLElement[] => {
+  if (!container) return [];
+  const focusable = Array.from(
+    container.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter(
+    (element) =>
+      !element.hasAttribute('disabled') &&
+      element.getAttribute('aria-hidden') !== 'true' &&
+      element.tabIndex >= 0 &&
+      !element.hidden &&
+      element.offsetParent !== null,
+  );
+  return focusable;
+};
+
+const removeModalFromStack = (id: string) => {
+  const index = MODAL_STACK.indexOf(id);
+  if (index !== -1) {
+    MODAL_STACK.splice(index, 1);
+  }
+};
+
+const getBackdropOpacity = (stackIndex: number) => {
+  return Math.min(0.62, 0.5 + Math.max(0, stackIndex - 1) * 0.04);
+};
+
 export function Modal({
   isOpen,
   onClose,
@@ -37,31 +68,100 @@ export function Modal({
 }: ModalProps) {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
+  const [stackIndex, setStackIndex] = React.useState(1);
+  const modalRef = React.useRef<HTMLDivElement | null>(null);
+  const idRef = React.useRef(`modal-${Math.random().toString(36).slice(2)}`);
+  const titleIdRef = React.useRef(`modal-title-${Math.random().toString(36).slice(2)}`);
+  const lastFocusedElementRef = React.useRef<HTMLElement | null>(null);
 
   React.useEffect(() => {
-    if (isOpen) {
-      document.body.classList.add('modal-open');
-    } else {
-      document.body.classList.remove('modal-open');
+    if (!isOpen) return;
+
+    const previouslyFocused = document.activeElement;
+    lastFocusedElementRef.current = previouslyFocused instanceof HTMLElement ? previouslyFocused : null;
+
+    if (!MODAL_STACK.includes(idRef.current)) {
+      MODAL_STACK.push(idRef.current);
     }
+
+    setStackIndex(MODAL_STACK.length);
+    document.body.classList.add('modal-open');
+
+    const focusableElements = getFocusableElements(modalRef.current);
+    if (focusableElements.length > 0) {
+      focusableElements[0].focus();
+    } else {
+      modalRef.current?.focus();
+    }
+
     return () => {
-      document.body.classList.remove('modal-open');
+      removeModalFromStack(idRef.current);
+      if (MODAL_STACK.length === 0) {
+        document.body.classList.remove('modal-open');
+      }
+      lastFocusedElementRef.current?.focus();
     };
   }, [isOpen]);
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+      return;
+    }
+
+    if (event.key !== 'Tab') {
+      return;
+    }
+
+    const focusableElements = getFocusableElements(modalRef.current);
+    if (focusableElements.length === 0) {
+      event.preventDefault();
+      return;
+    }
+
+    const firstElement = focusableElements[0];
+    const lastElement = focusableElements[focusableElements.length - 1];
+    const activeElement = document.activeElement as HTMLElement | null;
+
+    if (event.shiftKey) {
+      if (activeElement === firstElement || activeElement === modalRef.current) {
+        event.preventDefault();
+        lastElement.focus();
+      }
+    } else {
+      if (activeElement === lastElement) {
+        event.preventDefault();
+        firstElement.focus();
+      }
+    }
+  };
 
   if (!isOpen) return null;
 
   return (
     <div
-      className={`fixed inset-0 ${dimBackdrop ? 'bg-black/50 backdrop-blur-sm' : 'bg-transparent'} flex items-center justify-center z-[10000] animate-in fade-in duration-200`}
+      className={`fixed inset-0 ${dimBackdrop ? 'flex items-center justify-center' : 'flex items-center justify-center'} `}
+      style={{
+        zIndex: MODAL_BASE_Z_INDEX + stackIndex * 20,
+        backgroundColor: dimBackdrop ? `rgba(0, 0, 0, ${getBackdropOpacity(stackIndex)})` : 'transparent'
+      }}
       onClick={onClose}
+      role="presentation"
     >
       <div
-        className={`rounded-[16px] md:rounded-[24px] border-2 shadow-[0_20px_60px_rgba(0,0,0,0.3)] ${widthClasses[width]} max-w-[95vw] sm:max-w-[90vw] max-h-[90vh] flex flex-col transition-all animate-in zoom-in-95 duration-200 ${isDark
+        ref={modalRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={title ? titleIdRef.current : undefined}
+        className={`rounded-[16px] md:rounded-[24px] border-2 shadow-[0_20px_60px_rgba(0,0,0,0.3)] ${widthClasses[width]} max-w-[95vw] sm:max-w-[90vw] ${maxHeight ? 'max-h-[90vh]' : ''} flex flex-col transition-all duration-200 animate-in zoom-in-95 ${isDark
           ? 'bg-[#3a3228] border-white/30'
           : 'bg-[#d4c5b0] border-white/40'
           }`}
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={handleKeyDown}
       >
         {(title || icon || showCloseButton) && (
           <div className="flex items-start justify-between p-4 md:p-6 pb-3 md:pb-4 flex-shrink-0 border-b border-white/10">
@@ -75,7 +175,7 @@ export function Modal({
                 </div>
               )}
               {title && (
-                <h3 className={`text-[16px] md:text-[18px] font-bold transition-colors ${isDark ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
+                <h3 id={titleIdRef.current} className={`text-[16px] md:text-[18px] font-bold transition-colors ${isDark ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
                   }`}>
                   {title}
                 </h3>
@@ -84,7 +184,7 @@ export function Modal({
             {showCloseButton && (
               <button
                 onClick={onClose}
-                className={`p-2 rounded-[10px] transition-all hover:scale-110 flex-shrink-0 ${isDark
+                className={`p-2 rounded-[10px] transition-all hover:scale-110 flex-shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600 ${isDark
                   ? 'hover:bg-white/[0.1] text-[#e8c571] hover:text-[#f5d98a]'
                   : 'hover:bg-black/[0.05] text-[#8b6f3a] hover:text-[#c9983a]'
                   }`}
@@ -96,7 +196,7 @@ export function Modal({
         )}
 
         {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-6 scrollbar-custom">
+        <div className={`flex-1 overflow-y-auto p-4 md:p-6 scrollbar-custom ${maxHeight ? '' : 'max-h-[calc(100vh-200px)]'}`}>
           {children}
         </div>
         {footer && (
