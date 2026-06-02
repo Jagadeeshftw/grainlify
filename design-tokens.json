@@ -140,3 +140,74 @@
     }
   }
 }
+,
+  "chart": {
+    "series": {
+      "new": "#c9983a",
+      "reactivated": "#d4af37",
+      "active-opacity": "0.7",
+      "churned": "#ff6b6b",
+      "trend": "#2d2820",
+      "rewarded-gradient-start": "#c9983a",
+      "rewarded-gradient-end": "#d4af37"
+    },
+    "tooltip": {
+      "background": "rgba(26, 20, 16, 0.95)",
+      "border": "rgba(255, 255, 255, 0.2)",
+      "border-width": "2px",
+      "border-radius": "12px",
+      "padding": "16px 20px",
+      "min-width": "200px",
+      "backdrop-blur": "30px"
+    },
+    "legend": {
+      "item-padding": "6px 12px",
+      "item-border-radius": "10px",
+      "item-border": "rgba(255, 255, 255, 0.25)",
+      "swatch-size": "12px",
+      "swatch-border-radius": "3px",
+      "inactive-opacity": "0.4",
+      "focus-ring": "#c9983a",
+      "focus-ring-width": "2px",
+      "focus-ring-offset": "2px"
+    },
+    "map": {
+      "highlighted-gradient-start": "rgba(201, 152, 58, 0.3)",
+      "highlighted-gradient-end": "rgba(201, 152, 58, 0.2)",
+      "default-fill": "rgba(255, 255, 255, 0.05)",
+      "hover-fill": "#d4af37",
+      "hover-stroke": "#ffffff",
+      "hover-stroke-width": "1.5px",
+      "marker-color": "#c9983a",
+      "marker-stroke": "#ffffff",
+      "connection-line": "rgba(201, 152, 58, 0.3)"
+    },
+    "export": {
+      "trigger-background": "rgba(255, 255, 255, 0.15)",
+      "trigger-border": "rgba(255, 255, 255, 0.25)",
+      "trigger-border-radius": "10px",
+      "panel-width": "220px",
+      "panel-border-radius": "12px",
+      "selected-background": "rgba(201, 152, 58, 0.1)",
+      "selected-border": "rgba(201, 152, 58, 0.3)",
+      "download-background": "#c9983a"
+    },
+    "container": {
+      "focus-ring": "#c9983a",
+      "focus-ring-width": "2px",
+      "focus-ring-offset": "2px",
+      "hover-border": "rgba(255, 255, 255, 0.3)",
+      "error-border": "rgba(201, 152, 58, 0.5)",
+      "empty-border-style": "dashed"
+    },
+    "grid": {
+      "stroke": "rgba(122, 107, 90, 0.1)",
+      "stroke-dasharray": "3 3"
+    },
+    "axis": {
+      "stroke": "#7a6b5a",
+      "tick-fill": "#7a6b5a",
+      "tick-font-size": "11px",
+      "tick-font-weight": "600"
+    }
+  }
