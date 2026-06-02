@@ -49,6 +49,7 @@ import { BlogPage } from "../blog/pages/BlogPage";
 import { SettingsPage } from "../settings/pages/SettingsPage";
 import { AdminPage } from "../admin/pages/AdminPage";
 import { SearchPage } from "./pages/SearchPage";
+import { NotificationsPage } from "../notifications/NotificationsPage";
 import { SettingsTabType } from "../settings/types";
 
 type RoleType = "contributor" | "maintainer" | "admin";
@@ -1323,6 +1324,8 @@ export function Dashboard() {
                     </div>
                   </div>
                 )}
+
+                {currentPage === "notifications" && <NotificationsPage />}
 
                 {currentPage === "search" && (
                   <SearchPage

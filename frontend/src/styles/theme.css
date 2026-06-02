@@ -59,8 +59,57 @@
   animation: shimmer 1.5s linear infinite;
 }
 
+/* Badge scale-in animation */
+@keyframes badge-in {
+  from {
+    transform: scale(0);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.15);
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-badge-in {
+  animation: badge-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Notification slide-in for new items */
+@keyframes notify-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-notify-slide-in {
+  animation: notify-slide-in 0.2s ease-out;
+}
+
+/* Skeleton shimmer pulse variation */
+.animate-shimmer-fast {
+  animation: shimmer 1s linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-shimmer {
+    animation: none;
+  }
+  .animate-shimmer-fast {
+    animation: none;
+  }
+  .animate-badge-in {
+    animation: none;
+  }
+  .animate-notify-slide-in {
     animation: none;
   }
 }
@@ -271,6 +320,49 @@
   --font-weight-semibold: 600;
   --font-weight-bold: 700;
 
+  /* Toast viewport and queue badge */
+  .grainlify-toast-viewport {
+    right: clamp(1rem, env(safe-area-inset-right), 1.5rem) !important;
+    bottom: clamp(1rem, env(safe-area-inset-bottom), 1.5rem) !important;
+    left: auto !important;
+    width: auto !important;
+    padding: 0 !important;
+  }
+
+  @media (max-width: 767px) {
+    .grainlify-toast-viewport {
+      left: 50% !important;
+      right: auto !important;
+      transform: translateX(-50%) !important;
+      width: min(92vw, 24rem) !important;
+    }
+  }
+
+  .grainlify-toast-queue-badge {
+    position: absolute;
+    top: -0.75rem;
+    right: -0.75rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2rem;
+    min-height: 2rem;
+    border-radius: 9999px;
+    background: var(--color-neutral-900);
+    color: var(--color-neutral-50);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
+    font-size: 0.75rem;
+    font-weight: 700;
+    pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .grainlify-toast-viewport .grainlify-toast {
+      transition: none !important;
+      animation: none !important;
+    }
+  }
+
   /* Animation */
   --duration-fast: 150ms;
   --duration-normal: 300ms;
@@ -387,7 +479,11 @@
   --shadow-elevation-4: var(--elevation-4);
 }
 
-/* Sidebar blur when modal is open */
+/* Scroll lock and sidebar blur when modal is open */
+body.modal-open {
+  overflow: hidden;
+}
+
 body.modal-open aside {
   filter: blur(4px);
   opacity: 0.6;

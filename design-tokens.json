@@ -52,7 +52,79 @@
         "500": "#ef4444",
         "600": "#dc2626",
         "700": "#b91c1c"
+      },
+      "info": {
+        "50": "#eff6ff",
+        "500": "#3b82f6",
+        "600": "#2563eb",
+        "700": "#1d4ed8"
+      },
+      "loading": {
+        "50": "#eef2ff",
+        "500": "#6366f1",
+        "600": "#4f46e5",
+        "700": "#4338ca"
       }
+    },
+    "formStates": {
+  "default": {
+    "border": "rgba(201, 152, 58, 0.2)",
+    "background": "rgba(255, 255, 255, 0.15)",
+    "backgroundDark": "rgba(61, 52, 44, 0.4)"
+  },
+  "hover": {
+    "border": "rgba(201, 152, 58, 0.4)",
+    "background": "rgba(255, 255, 255, 0.2)",
+    "backgroundDark": "rgba(61, 52, 44, 0.55)"
+  },
+  "focus": {
+    "border": "rgba(201, 152, 58, 0.8)",
+    "ring": "0 0 0 3px rgba(201, 152, 58, 0.35)",
+    "background": "rgba(255, 255, 255, 0.22)",
+    "backgroundDark": "rgba(61, 52, 44, 0.6)"
+  },
+  "error": {
+    "border": "#dc2626",
+    "ring": "0 0 0 3px rgba(220, 38, 38, 0.2)",
+    "background": "rgba(254, 242, 242, 0.15)",
+    "backgroundDark": "rgba(220, 38, 38, 0.08)",
+    "text": "#dc2626",
+    "textDark": "#fca5a5",
+    "icon": "#dc2626"
+  },
+  "success": {
+    "border": "#16a34a",
+    "ring": "0 0 0 3px rgba(22, 163, 74, 0.2)",
+    "icon": "#16a34a",
+    "text": "#16a34a",
+    "textDark": "#86efac"
+  },
+  "disabled": {
+    "border": "rgba(201, 152, 58, 0.1)",
+    "background": "rgba(255, 255, 255, 0.05)",
+    "backgroundDark": "rgba(61, 52, 44, 0.2)",
+    "text": "rgba(45, 40, 32, 0.4)",
+    "textDark": "rgba(245, 239, 229, 0.3)",
+    "cursor": "not-allowed"
+  }
+}
+  },
+  "toast": {
+    "maxVisible": 3,
+    "position": {
+      "desktop": "bottom-right",
+      "mobile": "bottom-center"
+    },
+    "offset": {
+      "desktop": "clamp(1rem, env(safe-area-inset-bottom), 1.5rem)",
+      "mobile": "clamp(1rem, env(safe-area-inset-bottom), 1.25rem)"
+    },
+    "borderRadius": "1rem",
+    "shadow": "0 25px 50px rgba(0, 0, 0, 0.18)",
+    "duration": {
+      "default": 5000,
+      "error": 8000,
+      "action": 0
     }
   },
   "typography": {
@@ -174,6 +246,30 @@
       }
     }
   },
+  "notification": {
+    "badge": {
+      "background": "#ef4444",
+      "text": "#ffffff",
+      "border-light": "#ffffff",
+      "border-dark": "#2d2820",
+      "overflow": "99+"
+    },
+    "type": {
+      "bounty_awarded": { "color": "#f1b400", "icon": "Award" },
+      "submission_received": { "color": "#22c55e", "icon": "GitPullRequest" },
+      "pr_reviewed": { "color": "#c9983a", "icon": "GitMerge" },
+      "payout_confirmed": { "color": "#16a34a", "icon": "Wallet" },
+      "system_alert": { "color": "#f59e0b", "icon": "AlertTriangle" }
+    },
+    "group": {
+      "label": {
+        "today": "Today",
+        "yesterday": "Yesterday",
+        "this_week": "This Week",
+        "earlier": "Earlier"
+      }
+    }
+  },
   "animation": {
     "duration": {
       "fast": "150ms",
@@ -186,5 +282,123 @@
       "ease-out": "cubic-bezier(0, 0, 0.2, 1)",
       "ease-in-out": "cubic-bezier(0.4, 0, 0.2, 1)"
     }
+  },
+  "navigation": {
+    "touchTarget": {
+      "min": "44px",
+      "comfortable": "48px",
+      "rationale": "WCAG 2.5.5 AA requires 44×44px minimum for all interactive controls"
+    },
+    "sidebar": {
+      "widthExpanded": "288px",
+      "widthCollapsed": "64px",
+      "collapseBreakpoint": "md (768px)",
+      "hoverExpandDelay": "0ms",
+      "collapseTransitionDuration": "200ms",
+      "collapseTransitionEasing": "cubic-bezier(0.4, 0, 0.2, 1)"
+    },
+    "drawer": {
+      "width": "320px",
+      "maxWidthVw": "85vw",
+      "slideInDuration": "300ms",
+      "slideInEasing": "cubic-bezier(0, 0, 0.2, 1)",
+      "slideOutDuration": "200ms",
+      "slideOutEasing": "cubic-bezier(0.4, 0, 1, 1)",
+      "overlayColor": "rgba(0, 0, 0, 0.5)",
+      "overlayFadeDuration": "200ms"
+    },
+    "zIndex": {
+      "sidebar": "20",
+      "mobileHeader": "30",
+      "drawerOverlay": "40",
+      "drawerPanel": "50",
+      "tooltip": "60"
+    },
+    "navItem": {
+      "paddingX": "1rem",
+      "paddingY": "0.625rem",
+      "minHeight": "44px",
+      "borderRadius": "0.375rem",
+      "gap": "0.75rem",
+      "iconSize": "20px",
+      "fontSize": "0.875rem",
+      "fontWeight": "500"
+    },
+    "collapsedNavItem": {
+      "size": "44px",
+      "iconSize": "20px",
+      "tooltipOffset": "8px"
+    }
   }
 }
+,
+  "chart": {
+    "series": {
+      "new": "#c9983a",
+      "reactivated": "#d4af37",
+      "active-opacity": "0.7",
+      "churned": "#ff6b6b",
+      "trend": "#2d2820",
+      "rewarded-gradient-start": "#c9983a",
+      "rewarded-gradient-end": "#d4af37"
+    },
+    "tooltip": {
+      "background": "rgba(26, 20, 16, 0.95)",
+      "border": "rgba(255, 255, 255, 0.2)",
+      "border-width": "2px",
+      "border-radius": "12px",
+      "padding": "16px 20px",
+      "min-width": "200px",
+      "backdrop-blur": "30px"
+    },
+    "legend": {
+      "item-padding": "6px 12px",
+      "item-border-radius": "10px",
+      "item-border": "rgba(255, 255, 255, 0.25)",
+      "swatch-size": "12px",
+      "swatch-border-radius": "3px",
+      "inactive-opacity": "0.4",
+      "focus-ring": "#c9983a",
+      "focus-ring-width": "2px",
+      "focus-ring-offset": "2px"
+    },
+    "map": {
+      "highlighted-gradient-start": "rgba(201, 152, 58, 0.3)",
+      "highlighted-gradient-end": "rgba(201, 152, 58, 0.2)",
+      "default-fill": "rgba(255, 255, 255, 0.05)",
+      "hover-fill": "#d4af37",
+      "hover-stroke": "#ffffff",
+      "hover-stroke-width": "1.5px",
+      "marker-color": "#c9983a",
+      "marker-stroke": "#ffffff",
+      "connection-line": "rgba(201, 152, 58, 0.3)"
+    },
+    "export": {
+      "trigger-background": "rgba(255, 255, 255, 0.15)",
+      "trigger-border": "rgba(255, 255, 255, 0.25)",
+      "trigger-border-radius": "10px",
+      "panel-width": "220px",
+      "panel-border-radius": "12px",
+      "selected-background": "rgba(201, 152, 58, 0.1)",
+      "selected-border": "rgba(201, 152, 58, 0.3)",
+      "download-background": "#c9983a"
+    },
+    "container": {
+      "focus-ring": "#c9983a",
+      "focus-ring-width": "2px",
+      "focus-ring-offset": "2px",
+      "hover-border": "rgba(255, 255, 255, 0.3)",
+      "error-border": "rgba(201, 152, 58, 0.5)",
+      "empty-border-style": "dashed"
+    },
+    "grid": {
+      "stroke": "rgba(122, 107, 90, 0.1)",
+      "stroke-dasharray": "3 3"
+    },
+    "axis": {
+      "stroke": "#7a6b5a",
+      "tick-fill": "#7a6b5a",
+      "tick-font-size": "11px",
+      "tick-font-weight": "600"
+    }
+  }

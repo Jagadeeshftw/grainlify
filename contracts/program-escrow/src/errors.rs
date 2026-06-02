@@ -720,7 +720,7 @@ impl BatchPayoutError {
             BatchPayoutError::InsufficientBalance => "Insufficient balance",
             BatchPayoutError::CircuitBreakerOpen => "Circuit breaker is OPEN",
             BatchPayoutError::DuplicateRecipient => "Duplicate recipient in batch",
-            BatchPayoutError::FeeConsumesAmount => "Payout fee consumes entire payout",
+BatchPayoutError::FeeConsumesAmount => "Payout fee consumes entire payout",
         }
     }
 }
