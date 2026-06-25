@@ -6,7 +6,8 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
-    "generate-favicon": "node scripts/generate-favicon.mjs"
+    "generate-favicon": "node scripts/generate-favicon.mjs",
+    "test": "vitest run"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
