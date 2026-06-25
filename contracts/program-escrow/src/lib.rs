@@ -2935,7 +2935,24 @@ impl ProgramEscrowContract {
 
     /// Get fee configuration (internal helper)
     fn get_fee_config_internal(env: &Env) -> FeeConfig {
-        env.storage()
+        // Check temporary (query-scoped) cache first to avoid repeated storage reads
+        let tmp = env.storage().temporary();
+        if tmp.has(&FEE_CONFIG) {
+            return tmp
+                .get(&FEE_CONFIG)
+                .unwrap_or_else(|| FeeConfig {
+                    lock_fee_rate: 0,
+                    payout_fee_rate: 0,
+                    lock_fixed_fee: 0,
+                    payout_fixed_fee: 0,
+                    fee_recipient: env.current_contract_address(),
+                    fee_enabled: false,
+                    fee_waivers: 0,
+                });
+        }
+
+        let cfg: FeeConfig = env
+            .storage()
             .instance()
             .get(&FEE_CONFIG)
             .unwrap_or_else(|| FeeConfig {
@@ -2946,7 +2963,11 @@ impl ProgramEscrowContract {
                 fee_recipient: env.current_contract_address(),
                 fee_enabled: false,
                 fee_waivers: 0,
-            })
+            });
+
+        // Populate temporary cache for subsequent query calls during this invocation
+        tmp.set(&FEE_CONFIG, &cfg);
+        cfg
     }
 
     /// Read fee configuration (view).
@@ -3522,14 +3543,27 @@ impl ProgramEscrowContract {
 
     fn get_program_data_by_id(env: &Env, program_id: &String) -> ProgramData {
         let program_key = DataKey::Program(program_id.clone());
-        if env.storage().instance().has(&program_key) {
-            return env
-                .storage()
-                .instance()
+
+        // Use temporary (query-scoped) cache first
+        let tmp = env.storage().temporary();
+        if tmp.has(&program_key) {
+            return tmp
                 .get(&program_key)
                 .unwrap_or_else(|| panic!("Program not found"));
         }
 
+        // Check instance-scoped storage for program-specific entry
+        if env.storage().instance().has(&program_key) {
+            let pd: ProgramData = env
+                .storage()
+                .instance()
+                .get(&program_key)
+                .unwrap_or_else(|| panic!("Program not found"));
+            tmp.set(&program_key, &pd);
+            return pd;
+        }
+
+        // Fall back to singleton PROGRAM_DATA if present and matching
         if env.storage().instance().has(&PROGRAM_DATA) {
             let program_data: ProgramData = env
                 .storage()
@@ -3537,6 +3571,7 @@ impl ProgramEscrowContract {
                 .get(&PROGRAM_DATA)
                 .unwrap_or_else(|| panic!("Program not initialized"));
             if &program_data.program_id == program_id {
+                tmp.set(&program_key, &program_data);
                 return program_data;
             }
         }
