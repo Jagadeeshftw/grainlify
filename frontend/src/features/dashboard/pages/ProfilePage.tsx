@@ -8,6 +8,11 @@ import { LanguageIcon } from '../../../shared/components/LanguageIcon';
 import { ContributionHeatmap } from '../components/ContributionHeatmap';
 import { RewardsChart } from '../components/RewardsChart';
 
+/**
+ * Design contract for the proposed ProfilePage skill endorsement UI.
+ * See: design/specs/skill-endorsement-ui.md
+ */
+
 interface ProfileData {
   contributions_count: number;
   languages: Array<{ language: string; contribution_count: number }>;
