@@ -20,4 +20,14 @@ export default defineConfig({
     },
     dedupe: ['react', 'react-dom'],
   },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: './src/test-setup.ts',
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json', 'html'],
+      include: ['src/shared/components/SearchModal.tsx'],
+    },
+  },
 })
