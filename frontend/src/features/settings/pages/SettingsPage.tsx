@@ -7,6 +7,7 @@ import { BillingTab } from '../components/billing/BillingTab';
 import { TermsTab } from '../components/terms/TermsTab';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
 import { BillingProfilesProvider } from '../contexts/BillingProfilesContext';
+import { RestartTutorialButton } from '../../onboarding';
 
 interface SettingsPageProps {
   initialTab?: SettingsTabType;
@@ -60,6 +61,9 @@ export function SettingsPage({ initialTab = 'profile' }: SettingsPageProps) {
         {activeTab === 'payout' && <PayoutTab />}
         {activeTab === 'billing' && <BillingTab />}
         {activeTab === 'terms' && <TermsTab />}
+
+        {/* Persistent onboarding re-entry point — visible on every tab */}
+        <RestartTutorialButton />
       </div>
     </BillingProfilesProvider>
   );
