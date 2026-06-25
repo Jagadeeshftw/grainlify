@@ -1,5 +1,5 @@
 // Tab types
-export type SettingsTabType = 'profile' | 'notifications' | 'payout' | 'billing' | 'terms';
+export type SettingsTabType = 'profile' | 'notifications' | 'payout' | 'billing' | 'terms' | 'tax-documents';
 
 // Billing Profile types
 export type BillingProfileStatus = 'verified' | 'missing-verification' | 'limit-reached';
@@ -101,4 +101,26 @@ export interface WalletAddresses {
     usdt: string;
     xlm: string;
   };
+}
+
+// Tax Document types
+export type TaxDocumentStatus = 'available' | 'pending' | 'not-applicable';
+
+export interface TaxDocument {
+  /** Calendar year this document covers, e.g. 2024 */
+  year: number;
+  status: TaxDocumentStatus;
+  /** ISO 8601 date string when the document was generated, null if not yet available */
+  generatedAt: string | null;
+  /** URL to the hosted PDF (pre-signed or static), null if not available */
+  pdfUrl: string | null;
+  /** Total earnings for the year in USD */
+  totalEarnings: number | null;
+  /** Stellar wallet address associated with the payouts */
+  stellarAddress: string | null;
+}
+
+export interface TaxDocumentYearRange {
+  from: number;
+  to: number;
 }

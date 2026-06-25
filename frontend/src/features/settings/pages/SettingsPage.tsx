@@ -5,6 +5,7 @@ import { NotificationsTab } from '../components/notifications/NotificationsTab';
 import { PayoutTab } from '../components/payout/PayoutTab';
 import { BillingTab } from '../components/billing/BillingTab';
 import { TermsTab } from '../components/terms/TermsTab';
+import { TaxDocumentsTab } from '../components/tax-documents/TaxDocumentsTab';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
 import { BillingProfilesProvider } from '../contexts/BillingProfilesContext';
 
@@ -22,6 +23,7 @@ export function SettingsPage({ initialTab = 'profile' }: SettingsPageProps) {
     { id: 'payout', label: 'Payout Preferences' },
     { id: 'billing', label: 'Billing Profiles' },
     { id: 'terms', label: 'Terms and Conditions' },
+    { id: 'tax-documents', label: 'Tax Documents' },
   ];
 
   return (
@@ -60,6 +62,7 @@ export function SettingsPage({ initialTab = 'profile' }: SettingsPageProps) {
         {activeTab === 'payout' && <PayoutTab />}
         {activeTab === 'billing' && <BillingTab />}
         {activeTab === 'terms' && <TermsTab />}
+        {activeTab === 'tax-documents' && <TaxDocumentsTab />}
       </div>
     </BillingProfilesProvider>
   );
