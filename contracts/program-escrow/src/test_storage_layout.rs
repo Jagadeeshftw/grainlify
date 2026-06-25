@@ -16,7 +16,7 @@ mod test {
 
     #[test]
     fn test_storage_schema_version_constant() {
-        assert_eq!(STORAGE_SCHEMA_VERSION, 1);
+        assert_eq!(STORAGE_SCHEMA_VERSION, 2);
     }
 
     #[test]
@@ -25,7 +25,7 @@ mod test {
         let (client, _admin) = setup_test(&env);
 
         let layout = client.verify_storage_layout();
-        assert_eq!(layout.schema_version, 1);
+        assert_eq!(layout.schema_version, 2);
         assert!(layout.admin_set);
         assert!(layout.pause_flags_set);
         assert!(layout.maintenance_mode_set);
