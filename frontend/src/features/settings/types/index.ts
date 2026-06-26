@@ -1,5 +1,5 @@
 // Tab types
-export type SettingsTabType = 'profile' | 'notifications' | 'payout' | 'billing' | 'terms';
+export type SettingsTabType = 'profile' | 'notifications' | 'payout' | 'billing' | 'terms' | 'referrals';
 
 // Billing Profile types
 export type BillingProfileStatus = 'verified' | 'missing-verification' | 'limit-reached';

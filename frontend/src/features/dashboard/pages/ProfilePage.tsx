@@ -7,6 +7,7 @@ import { SkeletonLoader } from '../../../shared/components/SkeletonLoader';
 import { LanguageIcon } from '../../../shared/components/LanguageIcon';
 import { ContributionHeatmap } from '../components/ContributionHeatmap';
 import { RewardsChart } from '../components/RewardsChart';
+import { ReferralLink } from '../components/ReferralLink';
 
 interface ProfileData {
   contributions_count: number;
@@ -859,6 +860,9 @@ export function ProfilePage({ viewingUserId, viewingUserLogin, onBack, onProject
           </div>
         </div>
       </div>
+
+      {/* Referral Link Section */}
+      {!viewingUserId && !viewingUserLogin && <ReferralLink />}
 
       {/* Projects Led / Most */}
       <div className="backdrop-blur-[40px] bg-white/[0.12] rounded-[24px] border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 relative overflow-hidden group/projects">
