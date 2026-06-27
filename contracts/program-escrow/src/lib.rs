@@ -177,6 +177,8 @@ const ADMIN_ROTATION_CANCELLED: Symbol = symbol_short!("AdmCanc");
 const CONTROLLER_PROPOSED: Symbol = symbol_short!("CtrlProp");
 const CONTROLLER_ACCEPTED: Symbol = symbol_short!("CtrlAcc");
 const CONTROLLER_ROTATION_CANCELLED: Symbol = symbol_short!("CtrlCanc");
+const FOT_ROUTER_SET: Symbol = symbol_short!("FotRtrS");
+const FOT_ROUTER_CLEARED: Symbol = symbol_short!("FotRtrC");
 
 // Storage keys
 const PROGRAM_DATA: Symbol = symbol_short!("ProgData");
@@ -671,6 +673,41 @@ pub enum ProgramStatus {
 /// contract.set_program_circuit_breaker_threshold(&program_id, &None);
 /// ```
 
+/// Configuration for fee-on-transfer (FoT) token routing via an AMM router.
+///
+/// When set, the contract queries the router for a quote before each payout
+/// transfer to compute the gross amount needed to deliver the intended net
+/// amount after any FoT deductions.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FotRouter {
+    /// Address of the router contract that implements `quote(Address, i128) -> i128`.
+    pub router_contract: Address,
+    /// Slippage tolerance in basis points (1 bp = 0.01%).
+    /// Applied as a buffer on top of the quoted amount.
+    pub slippage_bps: u32,
+}
+
+/// Event emitted when the FoT router configuration is set or updated.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FotRouterSetEvent {
+    pub version: u32,
+    pub router_contract: Address,
+    pub slippage_bps: u32,
+    pub set_by: Address,
+    pub timestamp: u64,
+}
+
+/// Event emitted when the FoT router configuration is cleared.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FotRouterClearedEvent {
+    pub version: u32,
+    pub set_by: Address,
+    pub timestamp: u64,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProgramData {
@@ -692,6 +729,10 @@ pub struct ProgramData {
     /// If set, overrides the global default (3) for this program.
     /// Must be between 1 and 100 inclusive when set.
     pub circuit_breaker_threshold: Option<u8>,
+    /// Optional fee-on-transfer router configuration.
+    /// When set, payouts query the router to compute gross amounts that
+    /// preserve the intended net payout after FoT deductions.
+    pub fot_router: Option<FotRouter>,
 }
 
 /// Program delegate audit record used for bulk reporting and indexer views.
@@ -1767,6 +1808,7 @@ mod reentrancy_tests;
 #[cfg(any())] // pre-existing syntax error in file
 mod test_circuit_breaker_enforcement;
 // #[cfg(test)] mod test_dispute_resolution; // pre-existing breakage
+mod fot_routing;
 mod threshold_monitor;
 mod token_math;
 
@@ -2245,6 +2287,7 @@ impl ProgramEscrowContract {
             archived_at: None,
             status: ProgramStatus::Draft,
             circuit_breaker_threshold: None,
+            fot_router: None,
         };
 
         // Store program data in registry
@@ -2600,6 +2643,7 @@ impl ProgramEscrowContract {
                 archived_at: None,
                 status: ProgramStatus::Draft,
                 circuit_breaker_threshold: None,
+                fot_router: None,
             };
             let program_key = DataKey::Program(program_id.clone());
             env.storage().instance().set(&program_key, &program_data);
@@ -4018,6 +4062,81 @@ impl ProgramEscrowContract {
         );
 
         program_data
+    }
+
+    /// Set the FoT router configuration for fee-on-transfer token support.
+    ///
+    /// When configured, the contract queries the router before each payout
+    /// transfer to compute the gross amount needed to deliver the intended
+    /// net amount after FoT deductions.
+    ///
+    /// # Arguments
+    /// * `router_contract` - Address of the AMM router contract implementing `quote`.
+    /// * `slippage_bps` - Slippage tolerance in basis points (0-500, i.e. 0-5%).
+    ///
+    /// # Panics
+    /// * If the contract is not initialized
+    /// * If caller is not the admin
+    /// * If `slippage_bps` exceeds 500 (5%)
+    pub fn set_fot_router(env: Env, router_contract: Address, slippage_bps: u32) {
+        let admin = Self::require_admin(&env);
+        if slippage_bps > 500 {
+            panic!("FoT router slippage exceeds maximum (500 bps = 5%)");
+        }
+
+        let mut program_data: ProgramData = env
+            .storage()
+            .instance()
+            .get(&PROGRAM_DATA)
+            .unwrap_or_else(|| panic!("Program not initialized"));
+
+        program_data.fot_router = Some(FotRouter {
+            router_contract: router_contract.clone(),
+            slippage_bps,
+        });
+
+        env.storage().instance().set(&PROGRAM_DATA, &program_data);
+
+        env.events().publish(
+            (FOT_ROUTER_SET,),
+            FotRouterSetEvent {
+                version: EVENT_VERSION_V2,
+                router_contract,
+                slippage_bps,
+                set_by: admin,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+    }
+
+    /// Clear the FoT router configuration, disabling fee-on-transfer routing.
+    ///
+    /// After clearing, payouts behave as before (no routing adjustment).
+    ///
+    /// # Panics
+    /// * If the contract is not initialized
+    /// * If caller is not the admin
+    pub fn clear_fot_router(env: Env) {
+        let admin = Self::require_admin(&env);
+
+        let mut program_data: ProgramData = env
+            .storage()
+            .instance()
+            .get(&PROGRAM_DATA)
+            .unwrap_or_else(|| panic!("Program not initialized"));
+
+        program_data.fot_router = None;
+
+        env.storage().instance().set(&PROGRAM_DATA, &program_data);
+
+        env.events().publish(
+            (FOT_ROUTER_CLEARED,),
+            FotRouterClearedEvent {
+                version: EVENT_VERSION_V2,
+                set_by: admin,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
     }
 
     pub fn get_program_release_schedules(env: Env) -> soroban_sdk::Vec<ProgramReleaseSchedule> {
@@ -5672,6 +5791,8 @@ impl ProgramEscrowContract {
         let batch_fee_waived = Self::is_fee_waived(cfg.fee_waivers, &PayoutType::Batch(0));
         let mut net_amounts: soroban_sdk::Vec<i128> = soroban_sdk::Vec::new(&env);
         let mut fee_amounts: soroban_sdk::Vec<i128> = soroban_sdk::Vec::new(&env);
+        let mut transfer_amounts: soroban_sdk::Vec<i128> = soroban_sdk::Vec::new(&env);
+        let mut total_actual_outflow: i128 = 0;
         for i in 0..recipients.len() {
             let gross = amounts.get(i).unwrap();
             let pay_fee = if batch_fee_waived {
@@ -5688,8 +5809,31 @@ impl ProgramEscrowContract {
                 Some(v) if v > 0 => v,
                 _ => panic!("Payout fee consumes entire payout"),
             };
+
+            // Apply FoT routing to compute actual transfer amount needed
+            // to deliver the intended net after fee-on-transfer deductions.
+            let transfer_amount = fot_routing::apply_fot_router(
+                &env,
+                &program_data.token_address,
+                net,
+                &program_data.fot_router,
+            );
+
+            let debit = pay_fee
+                .checked_add(transfer_amount)
+                .expect("Batch payout debit overflow");
+            total_actual_outflow = total_actual_outflow
+                .checked_add(debit)
+                .expect("Batch total outflow overflow");
+
             net_amounts.push_back(net);
             fee_amounts.push_back(pay_fee);
+            transfer_amounts.push_back(transfer_amount);
+        }
+
+        // Balance check uses the actual total outflow including FoT markup.
+        if total_actual_outflow > program_data.remaining_balance {
+            panic!("Insufficient balance");
         }
 
         // 9. Execute transfers — all pre-validation passed; this section must not fail.
@@ -5700,9 +5844,9 @@ impl ProgramEscrowContract {
 
         for i in 0..recipients.len() {
             let recipient = recipients.get(i).unwrap().clone();
-            let net = net_amounts.get(i).unwrap();
+            let transfer_amount = transfer_amounts.get(i).unwrap();
             let pay_fee = fee_amounts.get(i).unwrap();
-            let gross = amounts.get(i).unwrap();
+            let _gross = amounts.get(i).unwrap();
 
             if pay_fee > 0 {
                 token_client.transfer(&contract_address, &cfg.fee_recipient, &pay_fee);
@@ -5715,20 +5859,23 @@ impl ProgramEscrowContract {
                     cfg.fee_recipient.clone(),
                 );
             }
-            token_client.transfer(&contract_address, &recipient, &net);
+            token_client.transfer(&contract_address, &recipient, &transfer_amount);
             error_recovery::record_success(&env);
             threshold_monitor::record_operation_success(&env);
-            threshold_monitor::record_outflow(&env, gross);
+            threshold_monitor::record_outflow(&env, pay_fee + transfer_amount);
             updated_history.push_back(PayoutRecord {
                 recipient,
-                amount: net,
+                amount: transfer_amount,
                 timestamp,
             });
         }
 
         // Update program data atomically after all transfers succeed.
         let mut updated_data = program_data.clone();
-        updated_data.remaining_balance -= total_payout;
+        updated_data.remaining_balance = updated_data
+            .remaining_balance
+            .checked_sub(total_actual_outflow)
+            .expect("Remaining balance underflow");
         updated_data.payout_history = updated_history;
         env.storage().instance().set(&PROGRAM_DATA, &updated_data);
 
@@ -5739,7 +5886,7 @@ impl ProgramEscrowContract {
                 key,
                 symbol_short!("batchpay"),
                 updated_data.program_id.clone(),
-                total_payout,
+                total_actual_outflow,
                 recipients.len() as u32,
                 executor,
             );
@@ -5752,7 +5899,7 @@ impl ProgramEscrowContract {
                 version: EVENT_VERSION_V2,
                 program_id: updated_data.program_id.clone(),
                 recipient_count: recipients.len() as u32,
-                total_amount: total_payout,
+                total_amount: total_actual_outflow,
                 remaining_balance: updated_data.remaining_balance,
             },
         );
@@ -6025,10 +6172,6 @@ impl ProgramEscrowContract {
         // Per-window spending limit check (after per-payout threshold, before balance)
         Self::enforce_spending_window(&env, &program_data.program_id, amount);
 
-        if amount > program_data.remaining_balance {
-            panic!("Insufficient balance");
-        }
-
         let contract_address = env.current_contract_address();
         let token_client = token::Client::new(&env, &program_data.token_address);
         let cfg = Self::get_fee_config_internal(&env);
@@ -6047,6 +6190,25 @@ impl ProgramEscrowContract {
             panic!("Payout fee consumes entire payout");
         }
 
+        // Apply FoT routing to compute actual transfer amount needed
+        // to deliver the intended net after fee-on-transfer deductions.
+        let transfer_amount = fot_routing::apply_fot_router(
+            &env,
+            &program_data.token_address,
+            net,
+            &program_data.fot_router,
+        );
+
+        // Total debit from remaining_balance = protocol fee + routed transfer
+        let total_debit = pay_fee
+            .checked_add(transfer_amount)
+            .expect("Payout debit overflow");
+
+        // Balance check accounts for the actual outflow including FoT markup
+        if total_debit > program_data.remaining_balance {
+            panic!("Insufficient balance");
+        }
+
         if pay_fee > 0 {
             token_client.transfer(&contract_address, &cfg.fee_recipient, &pay_fee);
             Self::emit_fee_collected(
@@ -6059,16 +6221,17 @@ impl ProgramEscrowContract {
             );
         }
 
-        token_client.transfer(&contract_address, &recipient, &net);
+        token_client.transfer(&contract_address, &recipient, &transfer_amount);
 
         error_recovery::record_success(&env);
         threshold_monitor::record_operation_success(&env);
-        threshold_monitor::record_outflow(&env, amount);
+        // Record outflow using the amount debited from remaining_balance
+        threshold_monitor::record_outflow(&env, total_debit);
 
         let timestamp = env.ledger().timestamp();
         let payout_record = PayoutRecord {
             recipient: recipient.clone(),
-            amount: net,
+            amount: transfer_amount,
             timestamp,
         };
 
@@ -6076,7 +6239,10 @@ impl ProgramEscrowContract {
         updated_history.push_back(payout_record);
 
         let mut updated_data = program_data.clone();
-        updated_data.remaining_balance -= amount;
+        updated_data.remaining_balance = updated_data
+            .remaining_balance
+            .checked_sub(total_debit)
+            .expect("Remaining balance underflow");
         updated_data.payout_history = updated_history;
 
         env.storage().instance().set(&PROGRAM_DATA, &updated_data);
@@ -6100,7 +6266,7 @@ impl ProgramEscrowContract {
                 version: EVENT_VERSION_V2,
                 program_id: updated_data.program_id.clone(),
                 recipient: recipient.clone(),
-                amount: net,
+                amount: transfer_amount,
                 remaining_balance: updated_data.remaining_balance,
             },
         );
@@ -7612,3 +7778,6 @@ mod test_batch_receipts;
 mod test_circuit_breaker_enforcement;
 #[cfg(test)]
 mod test_rbac;
+
+#[cfg(test)]
+mod test_fot_routing;
