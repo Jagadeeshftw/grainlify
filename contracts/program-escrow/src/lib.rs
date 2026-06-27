@@ -1774,6 +1774,15 @@ mod token_math;
 // #[cfg(test)] mod malicious_reentrant; // pre-existing breakage
 #[cfg(test)]
 mod test_granular_pause;
+
+// ========================================================================
+// Property-based test suite — `src/tests/` submodule hierarchy
+// ========================================================================
+// Contains large property-based test surfaces (proptest) for the
+// fee-config rounding primitives.  All submodules are cfg(test)-gated
+// and live under `src/tests/`; see `src/tests/mod.rs` for the entry point.
+#[cfg(test)]
+mod tests;
 // #[cfg(test)] mod test_lifecycle; // pre-existing breakage
 // #[cfg(test)] mod test_full_lifecycle; // pre-existing breakage
 
