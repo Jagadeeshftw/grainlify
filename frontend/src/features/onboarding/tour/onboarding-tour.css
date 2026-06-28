@@ -1,0 +1,24 @@
+/*
+ * Onboarding tour — reduced-motion hardening.
+ *
+ * The core reduced-motion behaviour (border-highlight spotlight, no beacon,
+ * zero scroll animation) is driven from JS in `getTourTheme`. This file kills
+ * the remaining *CSS-driven* enter and pulse animations that Joyride / react-
+ * floater apply, so motion-sensitive users get a fully static experience
+ * (WCAG 2.3.3 Animation from Interactions, 2.2.2 Pause/Stop/Hide).
+ *
+ * Class names below are Joyride/react-floater public class hooks. They are a
+ * belt-and-suspenders layer: even if a hook name changes, the JS theme already
+ * delivers the required reduced-motion behaviour.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .react-joyride__beacon,
+  .react-joyride__beacon *,
+  .react-joyride__spotlight,
+  .react-joyride__overlay,
+  .__floater,
+  .__floater * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
