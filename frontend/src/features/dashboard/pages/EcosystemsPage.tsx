@@ -4,6 +4,11 @@ import { Search, Globe, Plus, ArrowUpRight, Sparkles, Send } from 'lucide-react'
 import { Modal, ModalFooter, ModalButton, ModalInput, ModalSelect } from '../../../shared/components/ui/Modal';
 import { getEcosystems } from '../../../shared/api/client';
 
+/**
+ * Design contract placeholder for ecosystem comparison selection and side-by-side metrics.
+ * See: design/specs/ecosystem-comparison-view.md
+ */
+
 interface EcosystemsPageProps {
   onEcosystemClick: (id: string, name: string, description?: string | null, logoUrl?: string | null) => void;
 }

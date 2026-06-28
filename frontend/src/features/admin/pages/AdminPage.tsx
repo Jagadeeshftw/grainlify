@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
-import { Shield, Globe, Plus, Sparkles, Trash2, ExternalLink, Calendar, Pencil, X } from 'lucide-react';
+import { Shield, Globe, Plus, Sparkles, Trash2, ExternalLink, Calendar, Pencil, X, Flag, History } from 'lucide-react';
 import { toast } from 'sonner';
 import { Modal, ModalFooter, ModalButton, ModalInput, ModalSelect } from '../../../shared/components/ui/Modal';
 import { DatePicker } from '../../../shared/components/ui/DatePicker';
 import { createEcosystem, getAdminEcosystems, getAdminEcosystem, deleteEcosystem, updateEcosystem, createOpenSourceWeekEvent, getAdminOpenSourceWeekEvents, deleteOpenSourceWeekEvent } from '../../../shared/api/client';
+import { ModerationQueue, ProgramModerationDrawer, BulkActionToolbar, ActionHistoryTable } from '../components';
+import type { ActionType, FlaggedProgram, AuditEntry } from '../components/types';
 
 interface EcosystemLink {
   label: string;
@@ -119,6 +121,77 @@ export function AdminPage() {
     endTime: '00:00',
   });
   const [oswErrors, setOswErrors] = useState<Record<string, string>>({});
+
+  const [activeTab, setActiveTab] = useState<"queue" | "history">("queue");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedProgram, setSelectedProgram] = useState<FlaggedProgram | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  const [flaggedPrograms] = useState<FlaggedProgram[]>([
+    {
+      id: "prog-1", name: "quantum-consensus", description: "A quantum-resistant consensus protocol for distributed systems",
+      severity: "critical", flagCount: 12, reason: "Multiple users reported suspicious activity and policy violations",
+      reportedBy: "community", reportedAt: "2026-06-24T14:30:00Z", riskScore: 92,
+      status: "pending", programUrl: "https://github.com/example/quantum-consensus",
+      owner: "quantum_labs", createdAt: "2025-11-15T08:00:00Z",
+      flagHistory: [
+        { id: "flag-1", reason: "Suspicious token distribution pattern detected", reportedBy: "automated-scanner", reportedAt: "2026-06-24T14:30:00Z", severity: "critical", automated: true },
+        { id: "flag-2", reason: "Community report: misleading documentation about rewards", reportedBy: "trusted_user_42", reportedAt: "2026-06-23T09:15:00Z", severity: "high", evidenceUrl: "https://example.com/evidence/1", automated: false },
+        { id: "flag-3", reason: "Possible rug pull indicators detected in smart contract", reportedBy: "security-bot", reportedAt: "2026-06-22T18:45:00Z", severity: "critical", evidenceUrl: "https://example.com/evidence/2", automated: true },
+      ],
+    },
+    {
+      id: "prog-2", name: "green-energy-dao", description: "Community-governed renewable energy investment platform",
+      severity: "high", flagCount: 5, reason: "Unverified third-party integrations pose security risks",
+      reportedBy: "security-bot", reportedAt: "2026-06-25T06:00:00Z", riskScore: 74,
+      status: "pending", programUrl: "https://github.com/example/green-energy-dao",
+      owner: "eco_blockchain", createdAt: "2026-01-20T10:00:00Z",
+      flagHistory: [
+        { id: "flag-4", reason: "Unverified oracle contract dependency", reportedBy: "automated-scanner", reportedAt: "2026-06-25T06:00:00Z", severity: "high", automated: true },
+        { id: "flag-5", reason: "Community report: unreleased audit report", reportedBy: "contributor_99", reportedAt: "2026-06-24T11:30:00Z", severity: "medium", evidenceUrl: "https://example.com/evidence/3", automated: false },
+      ],
+    },
+    {
+      id: "prog-3", name: "defi-lending-protocol", description: "Decentralized lending with cross-chain capabilities",
+      severity: "medium", flagCount: 3, reason: "Low test coverage and outdated dependencies flagged by CI",
+      reportedBy: "ci-bot", reportedAt: "2026-06-23T22:00:00Z", riskScore: 48,
+      status: "pending", programUrl: "https://github.com/example/defi-lending",
+      owner: "defi_team", createdAt: "2026-03-10T14:00:00Z",
+      flagHistory: [
+        { id: "flag-6", reason: "Test coverage dropped below 60% threshold", reportedBy: "ci-bot", reportedAt: "2026-06-23T22:00:00Z", severity: "medium", automated: true },
+        { id: "flag-7", reason: "Dependency vulnerability: lodash 4.17.20", reportedBy: "dependabot", reportedAt: "2026-06-22T15:00:00Z", severity: "medium", automated: true },
+      ],
+    },
+    {
+      id: "prog-4", name: "nft-marketplace-v2", description: "Second iteration of the community NFT marketplace",
+      severity: "low", flagCount: 1, reason: "Minor UI accessibility issues reported",
+      reportedBy: "contributor_alpha", reportedAt: "2026-06-20T10:00:00Z", riskScore: 15,
+      status: "pending", programUrl: "https://github.com/example/nft-marketplace",
+      owner: "nft_labs", createdAt: "2026-04-05T09:00:00Z",
+      flagHistory: [
+        { id: "flag-8", reason: "ARIA labels missing on action buttons", reportedBy: "contributor_alpha", reportedAt: "2026-06-20T10:00:00Z", severity: "low", evidenceUrl: "https://example.com/evidence/4", automated: false },
+      ],
+    },
+    {
+      id: "prog-5", name: "zk-rollup-explorer", description: "Block explorer for ZK-rollup transactions",
+      severity: "high", flagCount: 4, reason: "Reported data inconsistency in transaction history",
+      reportedBy: "validator_node", reportedAt: "2026-06-25T12:00:00Z", riskScore: 65,
+      status: "warned", programUrl: "https://github.com/example/zk-explorer",
+      owner: "zk_team", createdAt: "2025-09-01T16:00:00Z",
+      flagHistory: [
+        { id: "flag-9", reason: "Transaction hash mismatch detected for block 1,234,567", reportedBy: "validator_node", reportedAt: "2026-06-25T12:00:00Z", severity: "high", evidenceUrl: "https://example.com/evidence/5", automated: true },
+        { id: "flag-10", reason: "Community report: balance query returns stale data", reportedBy: "user_defi", reportedAt: "2026-06-24T08:20:00Z", severity: "medium", automated: false },
+      ],
+    },
+  ]);
+
+  const [auditLog] = useState<AuditEntry[]>([
+    { id: "audit-1", programName: "zk-rollup-explorer", action: "warn", performedBy: "admin_alice", performedAt: "2026-06-22T14:00:00Z", reason: "Data inconsistency issues require attention", programId: "prog-5" },
+    { id: "audit-2", programName: "defi-lending-protocol", action: "pause", performedBy: "admin_alice", performedAt: "2026-06-21T10:30:00Z", reason: "Critical vulnerability in smart contract", programId: "prog-3" },
+    { id: "audit-3", programName: "quantum-consensus", action: "terminate", performedBy: "admin_bob", performedAt: "2026-06-20T09:00:00Z", reason: "Confirmed malicious activity - rug pull indicators", programId: "prog-1" },
+    { id: "audit-4", programName: "green-energy-dao", action: "warn", performedBy: "admin_alice", performedAt: "2026-06-19T16:45:00Z", reason: "Unverified oracle dependencies", programId: "prog-2" },
+    { id: "audit-5", programName: "nft-marketplace-v2", action: "resolve", performedBy: "admin_bob", performedAt: "2026-06-18T11:20:00Z", reason: "Accessibility issues resolved after contributor fix", programId: "prog-4" },
+  ]);
 
   const validateOswTitle = (title: string): string | null => {
     if (!title.trim()) return 'Title is required';
@@ -583,6 +656,21 @@ export function AdminPage() {
     }
   };
 
+  const handleModerationAction = (action: ActionType, programId: string) => {
+    const program = flaggedPrograms.find((p) => p.id === programId);
+    if (!program) return;
+    const actionLabels: Record<ActionType, string> = { warn: "Warning sent", pause: "Program paused", terminate: "Program terminated" };
+    toast.success(`${actionLabels[action]} — ${program.name}`);
+    setDrawerOpen(false);
+    setSelectedProgram(null);
+  };
+
+  const handleBulkAction = (action: ActionType) => {
+    const actionLabels: Record<ActionType, string> = { warn: "warnings sent", pause: "programs paused", terminate: "programs terminated" };
+    toast.success(`${selectedIds.length} ${actionLabels[action]}`);
+    setSelectedIds([]);
+  };
+
   return (
     <div className="space-y-6">
       {/* Admin Header */}
@@ -943,6 +1031,93 @@ export function AdminPage() {
           </div>
         )}
       </div>
+
+      {/* Moderation Queue Section */}
+      <div className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${theme === 'dark'
+        ? 'bg-white/[0.08] border-white/10'
+        : 'bg-white/[0.15] border-white/20'
+        }`}>
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <div className="flex items-center gap-3 mb-1">
+              <div className="p-2 rounded-[10px] bg-gradient-to-br from-red-500/20 to-orange-500/10 border border-red-500/20">
+                <Flag className="w-5 h-5 text-red-400" />
+              </div>
+              <h2 className={`text-[24px] font-bold transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'}`}>Moderation Queue</h2>
+            </div>
+            <p className={`text-[14px] transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'}`}>
+              Review and manage programs flagged by community reports or automated risk scoring
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setActiveTab("queue")}
+              className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${
+                activeTab === "queue"
+                  ? theme === 'dark'
+                    ? "bg-[#c9983a]/20 text-[#e8c77f] border border-[#c9983a]/30"
+                    : "bg-[#c9983a]/15 text-[#a67c2e] border border-[#c9983a]/20"
+                  : theme === 'dark'
+                    ? "text-[#b8a898] hover:bg-white/[0.06] border border-transparent"
+                    : "text-[#7a6b5a] hover:bg-white/30 border border-transparent"
+              }`}
+            >
+              <Flag className="w-4 h-4 inline mr-1.5" />
+              Queue ({flaggedPrograms.filter((p) => p.status === "pending").length})
+            </button>
+            <button
+              onClick={() => setActiveTab("history")}
+              className={`px-4 py-2 rounded-[10px] text-[13px] font-semibold transition-all ${
+                activeTab === "history"
+                  ? theme === 'dark'
+                    ? "bg-[#c9983a]/20 text-[#e8c77f] border border-[#c9983a]/30"
+                    : "bg-[#c9983a]/15 text-[#a67c2e] border border-[#c9983a]/20"
+                  : theme === 'dark'
+                    ? "text-[#b8a898] hover:bg-white/[0.06] border border-transparent"
+                    : "text-[#7a6b5a] hover:bg-white/30 border border-transparent"
+              }`}
+            >
+              <History className="w-4 h-4 inline mr-1.5" />
+              Audit Log
+            </button>
+          </div>
+        </div>
+
+        {activeTab === "queue" && (
+          <div className="space-y-4">
+            <BulkActionToolbar
+              selectedCount={selectedIds.length}
+              totalCount={flaggedPrograms.length}
+              onSelectAll={() => setSelectedIds(flaggedPrograms.map((p) => p.id))}
+              onClearSelection={() => setSelectedIds([])}
+              onBulkAction={handleBulkAction}
+            />
+            <ModerationQueue
+              programs={flaggedPrograms}
+              onSelect={(id) => {
+                const program = flaggedPrograms.find((p) => p.id === id);
+                if (program) {
+                  setSelectedProgram(program);
+                  setDrawerOpen(true);
+                }
+              }}
+              onSelectMultiple={setSelectedIds}
+              selectedIds={selectedIds}
+            />
+          </div>
+        )}
+
+        {activeTab === "history" && (
+          <ActionHistoryTable entries={auditLog} />
+        )}
+      </div>
+
+      <ProgramModerationDrawer
+        program={selectedProgram}
+        open={drawerOpen}
+        onClose={() => { setDrawerOpen(false); setSelectedProgram(null); }}
+        onAction={handleModerationAction}
+      />
 
       {/* Add Ecosystem Modal */}
       <Modal

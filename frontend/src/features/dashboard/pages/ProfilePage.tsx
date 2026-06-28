@@ -7,6 +7,39 @@ import { SkeletonLoader } from '../../../shared/components/SkeletonLoader';
 import { LanguageIcon } from '../../../shared/components/LanguageIcon';
 import { ContributionHeatmap } from '../components/ContributionHeatmap';
 import { RewardsChart } from '../components/RewardsChart';
+import { ReferralLink } from '../components/ReferralLink';
+
+/**
+ * @notice Represents a badge minted to a contributor.
+ * @dev Retrieved from the badge contract indexer/API.
+ */
+export interface Badge {
+  id: string;
+  tokenId: string;
+
+  name: string;
+
+  description: string;
+
+  image: string;
+
+  rarity:
+    | "Common"
+    | "Rare"
+    | "Epic"
+    | "Legendary";
+
+  mintedAt: string;
+
+  txHash?: string;
+
+  ecosystem?: string;
+}
+
+/**
+ * Design contract for the proposed ProfilePage skill endorsement UI.
+ * See: design/specs/skill-endorsement-ui.md
+ */
 
 interface ProfileData {
   contributions_count: number;
@@ -29,6 +62,8 @@ interface ProfileData {
     tier_name: string;
     tier_color: string;
   };
+  farcaster?: string;
+  badges?: Badge[];
 }
 
 interface Project {
@@ -52,6 +87,56 @@ interface ProfilePageProps {
   onProjectClick?: (projectId: string) => void;
   onIssueClick?: (issueId: string, projectId: string) => void;
 }
+
+const mockBadges = [
+  {
+    id: "1",
+    name: "Top Contributor",
+    description: "Awarded for exceptional OSS contributions",
+    image:
+      "data:image/png;base64,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",
+    rarity: "Legendary",
+    mintedAt: "2026-01-15",
+  },
+  {
+    id: "2",
+    name: "100 PR Club",
+    description: "Merged over 100 pull requests",
+    image:
+      "https://images.unsplash.com/photo-1642104704074-907c0698cbd9?w=400",
+    rarity: "Epic",
+    mintedAt: "2026-02-01",
+  },
+  {
+    id: "3",
+    name: "Hackathon Winner",
+    description: "Won an ecosystem hackathon",
+    image:
+      "https://images.unsplash.com/photo-1622630998477-20aa696ecb05?w=400",
+    rarity: "Rare",
+    mintedAt: "2026-03-12",
+  },
+  {
+    id: "4",
+    name: "Core Maintainer",
+    description: "Maintained a major ecosystem project",
+    image:
+      "https://images.unsplash.com/photo-1639322537228-f710d846310a?w=400",
+    rarity: "Legendary",
+    mintedAt: "2026-04-08",
+  },
+  {
+    id: "5",
+    name: "Community Champion",
+    description: "Outstanding community engagement",
+    image:
+      "https://images.unsplash.com/photo-1640161704729-cbe966a08476?w=400",
+    rarity: "Epic",
+    mintedAt: "2026-05-19",
+  },
+];
+
+// const mockBadges = [];
 
 export function ProfilePage({ viewingUserId, viewingUserLogin, onBack, onProjectClick, onIssueClick }: ProfilePageProps) {
   const { theme } = useTheme();
@@ -82,6 +167,7 @@ export function ProfilePage({ viewingUserId, viewingUserLogin, onBack, onProject
   const [contributorModalOpen, setContributorModalOpen] = useState(false);
   const [leadModalOpen, setLeadModalOpen] = useState(false);
   const [showAllProjects, setShowAllProjects] = useState(false);
+  const [showAllBadges, setShowAllBadges] = useState(false);
   const [projectsLed, setProjectsLed] = useState<Project[]>([]);
   const [isLoadingProjectsLed, setIsLoadingProjectsLed] = useState(true);
 
@@ -346,15 +432,15 @@ export function ProfilePage({ viewingUserId, viewingUserLogin, onBack, onProject
       )}
 
       {/* Profile Header */}
-      <div className="backdrop-blur-[40px] bg-gradient-to-br from-white/[0.18] to-white/[0.10] rounded-[32px] border-2 border-white/30 shadow-[0_20px_60px_rgba(0,0,0,0.15),0_0_80px_rgba(201,152,58,0.08)] p-12 relative overflow-visible z-20 group">
+      <div className="backdrop-blur-[40px] bg-gradient-to-br from-white/[0.18] to-white/[0.10] rounded-[32px] border-2 border-white/30 shadow-[0_20px_60px_rgba(0,0,0,0.15),0_0_80px_rgba(201,152,58,0.08)] p-2 md:p-12 relative overflow-visible z-20 group">
         {/* Ambient Background Glow - Enhanced */}
         <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-gradient-to-br from-[#c9983a]/15 via-[#d4af37]/10 to-transparent rounded-full blur-3xl pointer-events-none group-hover:scale-110 transition-transform duration-1000" />
         <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-gradient-to-tr from-[#d4af37]/12 to-transparent rounded-full blur-3xl pointer-events-none group-hover:scale-110 transition-transform duration-1000" />
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[300px] bg-gradient-to-r from-[#c9983a]/5 via-transparent to-[#d4af37]/5 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="relative flex items-start justify-between gap-10">
+        <div className="relative flex flex-col md:flex-row items-center md:items-start justify-between gap-10">
           {/* Left Section - Profile Info */}
-          <div className="flex items-start gap-7">
+          <div className="flex flex-col items-start gap-7">
             {/* Avatar with Enhanced Effects */}
             <div className="relative group/avatar">
               {isLoadingProfile ? (
@@ -396,7 +482,7 @@ export function ProfilePage({ viewingUserId, viewingUserLogin, onBack, onProject
               {isLoadingProfile ? (
                 <SkeletonLoader variant="text" width="200px" height="42px" className="mb-3" />
               ) : (
-                <h1 className={`text-[42px] font-black mb-4 tracking-tight transition-colors ${theme === 'dark'
+                <h1 className={`text-[26px] md:text-[42px] font-black mb-4 tracking-tight transition-colors ${theme === 'dark'
                     ? 'text-[#f5f5f5]'
                     : 'bg-gradient-to-r from-[#1a1410] via-[#2d2820] to-[#4a3f2f] bg-clip-text text-transparent drop-shadow-[0_2px_4px_rgba(0,0,0,0.1)]'
                   }`}>
@@ -405,7 +491,7 @@ export function ProfilePage({ viewingUserId, viewingUserLogin, onBack, onProject
               )}
 
               {/* Bio and Website */}
-              {!isLoadingProfile && (profileData?.bio || profileData?.website) && (
+              {/* {!isLoadingProfile && (profileData?.bio || profileData?.website) && (
                 <div className="mb-4 space-y-3">
                   {profileData.bio && (
                     <p className={`text-[15px] leading-relaxed transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
@@ -428,11 +514,11 @@ export function ProfilePage({ viewingUserId, viewingUserLogin, onBack, onProject
                     </div>
                   )}
                 </div>
-              )}
+              )} */}
 
               {/* Social Media Links - Show all icons, dimmed if no link */}
               {!isLoadingProfile && (
-                <div className="flex items-center gap-3 flex-wrap mb-4">
+                <div className="flex items-center justify-center md:justify-start gap-1 md:gap-3 flex-wrap mb-4">
                   {/* GitHub - always enabled */}
                   <a
                     href={`https://github.com/${viewingUser?.login || user?.github?.login || ''}`}
@@ -583,6 +669,45 @@ export function ProfilePage({ viewingUserId, viewingUserLogin, onBack, onProject
                       }`} title="Discord">
                       <svg className={`w-4 h-4 ${theme === 'dark' ? 'fill-[#9ca3af]' : 'fill-[#6b7280]'}`} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                         <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.958a.076.076 0 0 0-.041-.039 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.039c.36.663.772 1.33 1.225 1.958a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z" />
+                      </svg>
+                    </div>
+                  )}
+                  {/* Farcaster */}
+                  {profileData?.farcaster ? (
+                    <a
+                      href={`https://warpcast.com/${profileData.farcaster.replace(/^@/, '')}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-8 h-8 rounded-full bg-gradient-to-br from-[#c9983a]/30 to-[#d4af37]/20 border-2 border-[#c9983a]/50 flex items-center justify-center hover:scale-110 hover:shadow-[0_4px_12px_rgba(201,152,58,0.4)] transition-all duration-300"
+                      title="Farcaster"
+                    >
+                      <svg
+                        className="w-4 h-4"
+                        fill="#c9983a"
+                        viewBox="0 0 256 256"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path d="M52 32h152v192h-32V96h-88v128H52V32zm32 32v32h88V64H84z" />
+                      </svg>
+                    </a>
+                  ) : (  <div
+                      className={`w-8 h-8 rounded-full border-2 flex items-center justify-center cursor-not-allowed ${
+                        theme === 'dark'
+                          ? 'bg-gradient-to-br from-gray-400/20 to-gray-500/10 border-gray-400/30 opacity-40'
+                          : 'bg-gradient-to-br from-gray-300/40 to-gray-400/30 border-gray-400/50 opacity-60'
+                      }`}
+                      title="Farcaster"
+                    >
+                      <svg
+                        className={`w-4 h-4 ${
+                          theme === 'dark'
+                            ? 'fill-[#9ca3af]'
+                            : 'fill-[#6b7280]'
+                        }`}
+                        viewBox="0 0 256 256"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path d="M52 32h152v192h-32V96h-88v128H52V32zm32 32v32h88V64H84z" />
                       </svg>
                     </div>
                   )}
@@ -860,6 +985,9 @@ export function ProfilePage({ viewingUserId, viewingUserLogin, onBack, onProject
         </div>
       </div>
 
+      {/* Referral Link Section */}
+      {!viewingUserId && !viewingUserLogin && <ReferralLink />}
+
       {/* Projects Led / Most */}
       <div className="backdrop-blur-[40px] bg-white/[0.12] rounded-[24px] border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 relative overflow-hidden group/projects">
         {/* Animated Background Glow */}
@@ -871,14 +999,14 @@ export function ProfilePage({ viewingUserId, viewingUserLogin, onBack, onProject
           <button
             type="button"
             onClick={() => setShowAllProjects((prev) => !prev)}
-            className="text-[13px] text-[#c9983a] hover:text-[#a67c2e] font-medium transition-all hover:scale-105 hover:translate-x-1 duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="text-[13px] text-[#c9983a] hover:text-[#a67c2e] cursor-pointer font-medium transition-all hover:scale-105 hover:translate-x-1 duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
             disabled={projects.length <= 3}
           >
             {showAllProjects ? 'Show less' : 'See all →'}
           </button>
         </div>
 
-        <div className={`relative grid gap-5 ${showAllProjects ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' : 'grid-cols-3'}`}>
+        <div className={`relative grid gap-5 ${showAllProjects ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' : 'grid-cols-1 md:grid-cols-3'}`}>
           {isLoadingProjects ? (
             // Skeleton loaders for projects
             Array.from({ length: 3 }).map((_, idx) => (
@@ -1011,7 +1139,7 @@ export function ProfilePage({ viewingUserId, viewingUserLogin, onBack, onProject
       </div>
 
       {/* Most active languages & ecosystems - Combined */}
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Most active languages */}
         <div className="backdrop-blur-[40px] bg-white/[0.12] rounded-[24px] border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-6">
           <div className="flex items-center gap-2 mb-5">
@@ -1137,6 +1265,218 @@ export function ProfilePage({ viewingUserId, viewingUserLogin, onBack, onProject
             )}
           </div>
         </div>
+      </div>
+
+      {/* NFT Badge Gallery */}
+      <div className="backdrop-blur-[40px] bg-white/[0.12] rounded-[24px] border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 relative overflow-hidden group/badges">
+
+      {/* Background Glow */}
+      <div className="absolute top-0 right-0 w-[300px] h-[300px] bg-gradient-to-bl from-[#c9983a]/10 to-transparent rounded-full blur-3xl pointer-events-none group-hover/badges:scale-125 transition-transform duration-1000" />
+
+        <div className="relative flex items-center justify-between mb-6">
+          <div>
+            <h2
+              className={`text-[20px] font-bold ${
+                theme === 'dark'
+                  ? 'text-[#f5f5f5]'
+                  : 'text-[#2d2820]'
+              }`}
+            >
+              NFT Badge Gallery
+            </h2>
+
+            <p
+              className={`text-[13px] mt-1 ${
+                theme === 'dark'
+                  ? 'text-[#a1a1aa]'
+                  : 'text-[#7a6b5a]'
+              }`}
+            >
+              Minted achievements earned across ecosystems
+            </p>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <div
+              className="
+              px-3 py-1
+              rounded-full
+              bg-[#c9983a]/15
+              border border-[#c9983a]/30
+              text-[#c9983a]
+              text-[12px]
+              font-semibold
+            "
+            >
+              {mockBadges.length} Badges
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowAllBadges((prev) => !prev)}
+              disabled={mockBadges.length <= 3}
+              className="
+                text-[13px]
+                text-[#c9983a]
+                hover:text-[#a67c2e]
+                cursor-pointer
+                font-medium
+                transition-all
+                hover:scale-105
+                hover:translate-x-1
+                duration-200
+                disabled:opacity-50
+                disabled:cursor-not-allowed
+              "
+            >
+              {showAllBadges ? 'Show less' : 'See all →'}
+            </button>
+          </div>
+        </div>
+
+
+        
+        <div className="space-y-3">
+            {isLoadingProfile ? (
+              // Skeleton loaders for ecosystems
+              Array.from({ length: 2 }).map((_, idx) => (
+                <div
+                  key={idx}
+                  className="backdrop-blur-[20px] bg-white/[0.15] rounded-[12px] border border-white/25 p-4"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <SkeletonLoader variant="circle" width="24px" height="24px" />
+                      <SkeletonLoader variant="text" width="100px" height="15px" />
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <SkeletonLoader variant="circle" width="10px" height="10px" />
+                      <SkeletonLoader variant="circle" width="10px" height="10px" />
+                      <SkeletonLoader variant="circle" width="10px" height="10px" />
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : mockBadges.length > 0 ? (
+                <div
+          className="
+          grid
+          grid-cols-1
+          sm:grid-cols-2
+          xl:grid-cols-3
+          gap-5
+        "
+        >
+          {(showAllBadges ? mockBadges : mockBadges.slice(0, 3)).map((badge) => (
+            <div
+              key={badge.id}
+              className={`
+              backdrop-blur-[20px]
+              rounded-[18px]
+              border
+              overflow-hidden
+              cursor-pointer
+              transition-all
+              duration-300
+              hover:scale-[1.03]
+              hover:-translate-y-1
+              hover:shadow-[0_12px_36px_rgba(0,0,0,0.15)]
+              ${
+                theme === 'dark'
+                  ? 'bg-white/[0.08] border-white/10'
+                  : 'bg-white/[0.15] border-white/20'
+              }
+            `}
+            >
+              {/* NFT Image */}
+              <div className="relative h-[180px] overflow-hidden">
+                <img
+                  src={badge.image}
+                  alt={badge.name}
+                  className="w-full h-full object-cover transition-transform duration-700 hover:scale-110"
+                />
+
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+
+                <div
+                  className="
+                  absolute
+                  top-3
+                  right-3
+                  px-2
+                  py-1
+                  rounded-full
+                  text-[11px]
+                  font-semibold
+                  bg-[#c9983a]/90
+                  text-white
+                "
+                >
+                  {badge.rarity}
+                </div>
+              </div>
+
+              {/* Badge Details */}
+              <div className="p-4">
+                <h3
+                  className={`font-bold text-[16px] mb-1 ${
+                    theme === 'dark'
+                      ? 'text-[#f5f5f5]'
+                      : 'text-[#2d2820]'
+                  }`}
+                >
+                  {badge.name}
+                </h3>
+
+                <p
+                  className={`text-[13px] mb-4 ${
+                    theme === 'dark'
+                      ? 'text-[#d4d4d4]'
+                      : 'text-[#7a6b5a]'
+                  }`}
+                >
+                  {badge.description}
+                </p>
+
+                <div className="flex items-center justify-between">
+                  <span
+                    className={`text-[12px] ${
+                      theme === 'dark'
+                        ? 'text-[#a1a1aa]'
+                        : 'text-[#8b7355]'
+                    }`}
+                  >
+                    Minted
+                  </span>
+
+                  <span
+                    className={`text-[12px] font-medium ${
+                      theme === 'dark'
+                        ? 'text-[#f5f5f5]'
+                        : 'text-[#2d2820]'
+                    }`}
+                  >
+                    {badge.mintedAt}
+                  </span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+            ) : (
+              <div className={`text-center py-4 ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'}`}>
+                No badges found
+              </div>
+            )}
+          </div>
+
+
+
+
+
+
+
+      
       </div>
 
       {/* Rewards Distribution - New Responsive Component */}

@@ -5,8 +5,10 @@ import { NotificationsTab } from '../components/notifications/NotificationsTab';
 import { PayoutTab } from '../components/payout/PayoutTab';
 import { BillingTab } from '../components/billing/BillingTab';
 import { TermsTab } from '../components/terms/TermsTab';
+import { ReferralLink } from '../../dashboard/components/ReferralLink';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
 import { BillingProfilesProvider } from '../contexts/BillingProfilesContext';
+import { RestartTutorialButton } from '../../onboarding';
 
 interface SettingsPageProps {
   initialTab?: SettingsTabType;
@@ -21,6 +23,7 @@ export function SettingsPage({ initialTab = 'profile' }: SettingsPageProps) {
     { id: 'notifications', label: 'Notifications' },
     { id: 'payout', label: 'Payout Preferences' },
     { id: 'billing', label: 'Billing Profiles' },
+    { id: 'referrals', label: 'Referrals' },
     { id: 'terms', label: 'Terms and Conditions' },
   ];
 
@@ -59,7 +62,11 @@ export function SettingsPage({ initialTab = 'profile' }: SettingsPageProps) {
         {activeTab === 'notifications' && <NotificationsTab />}
         {activeTab === 'payout' && <PayoutTab />}
         {activeTab === 'billing' && <BillingTab />}
+        {activeTab === 'referrals' && <ReferralLink />}
         {activeTab === 'terms' && <TermsTab />}
+
+        {/* Persistent onboarding re-entry point — visible on every tab */}
+        <RestartTutorialButton />
       </div>
     </BillingProfilesProvider>
   );
