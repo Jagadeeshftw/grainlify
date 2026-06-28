@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { getCurrentUser, getAuthToken, setAuthToken, removeAuthToken } from '../api/client';
+import { AUTH_BYPASS_ENABLED } from '../config/devAuth';
 
 export type UserRole = 'contributor' | 'maintainer' | 'admin' | null;
 
@@ -24,13 +25,35 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+/** Synthetic contributor used only while the DEV auth bypass is enabled. */
+const BYPASS_USER: User = {
+  id: 'dev-bypass-user',
+  role: 'contributor',
+  github: {
+    login: 'dev-contributor',
+    avatar_url: 'https://avatars.githubusercontent.com/u/0?v=4',
+  },
+};
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [userRole, setUserRole] = useState<UserRole>(null);
-  const [userId, setUserId] = useState<string | null>(null);
-  const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [userRole, setUserRole] = useState<UserRole>(AUTH_BYPASS_ENABLED ? 'contributor' : null);
+  const [userId, setUserId] = useState<string | null>(AUTH_BYPASS_ENABLED ? BYPASS_USER.id : null);
+  const [user, setUser] = useState<User | null>(AUTH_BYPASS_ENABLED ? BYPASS_USER : null);
+  const [isLoading, setIsLoading] = useState(!AUTH_BYPASS_ENABLED);
 
   const checkAuth = async () => {
+    // DEV-only: skip the real auth check and load a mock contributor.
+    if (AUTH_BYPASS_ENABLED) {
+      console.warn(
+        '[AuthContext] DEV auth bypass active (VITE_AUTH_BYPASS=true) — signed in as a mock contributor. This branch is stripped from production builds.',
+      );
+      setUser(BYPASS_USER);
+      setUserRole('contributor');
+      setUserId(BYPASS_USER.id);
+      setIsLoading(false);
+      return;
+    }
+
     const token = getAuthToken();
     console.log('AuthContext - Checking authentication on mount');
     console.log('AuthContext - Token found:', token ? 'Yes' : 'No');
@@ -143,7 +166,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         userRole,
         userId,
         user,
-        isAuthenticated: !!user && !!getAuthToken(),
+        isAuthenticated: AUTH_BYPASS_ENABLED || (!!user && !!getAuthToken()),
         isLoading,
         login,
         logout,
