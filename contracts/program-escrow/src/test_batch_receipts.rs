@@ -21,7 +21,7 @@ fn test_batch_payout_with_receipt() {
 
     let program_id = String::from_str(&env, "hack-merkle-06");
     client.init_program(&program_id, &admin, &token_id, &admin, &None, &None);
-    client.publish_program();
+    client.publish_program(&program_id, &admin);
 
     token_admin_client.mint(&client.address, &10_000_000);
     client.lock_program_funds_v2(&program_id, &10_000_000);

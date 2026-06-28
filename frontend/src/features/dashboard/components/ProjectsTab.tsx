@@ -1,5 +1,6 @@
 import { Github, ChevronDown } from "lucide-react";
 import { useTheme } from "../../../shared/contexts/ThemeContext";
+import { EmptyState } from "../../../shared/components/EmptyState";
 
 export function ProjectsTab() {
   const { theme } = useTheme();
@@ -90,6 +91,12 @@ export function ProjectsTab() {
     },
   ];
 
+  // Temporary: set to [] to test, restore projects array after
+  const projectsToRender = projects; // change to [] to force empty state
+
+  if (projectsToRender.length >= 0) {
+    return <EmptyState variant="no-contributions" ctaLabel="Browse projects" onCta={() => {}} />;
+  }
   return (
     <>
       {/* Desktop Table View - Hidden on Mobile */}
@@ -172,48 +179,23 @@ export function ProjectsTab() {
             </thead>
             <tbody>
               {projects.map((project, idx) => (
-                <tr
-                  key={project.id}
-                  className={`border-b border-white/10 hover:bg-white/[0.05] transition-colors ${
-                    idx % 2 === 0 ? "bg-white/[0.02]" : ""
-                  }`}
-                >
+                <tr key={project.id} className={`border-b border-white/10 hover:bg-white/[0.05] transition-colors ${idx % 2 === 0 ? "bg-white/[0.02]" : ""}`}>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center space-x-3">
-                      <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-lg">
-                        {project.logo}
-                      </div>
-                      <span
-                        className={`text-[14px] font-semibold transition-colors ${
-                          theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"
-                        }`}
-                      >
-                        {project.name}
-                      </span>
+                      <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-lg">{project.logo}</div>
+                      <span className={`text-[14px] font-semibold transition-colors ${theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"}`}>{project.name}</span>
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center space-x-2">
-                      <Github
-                        className={`w-4 h-4 transition-colors ${
-                          theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"
-                        }`}
-                      />
-                      <span
-                        className={`text-[13px] transition-colors ${
-                          theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"
-                        }`}
-                      >
-                        {project.lead}
-                      </span>
+                      <Github className={`w-4 h-4 transition-colors ${theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"}`} />
+                      <span className={`text-[13px] transition-colors ${theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"}`}>{project.lead}</span>
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span
                       className={`inline-flex items-center px-3 py-1.5 rounded-full text-[13px] font-semibold transition-colors ${
-                        theme === "dark"
-                          ? "bg-[#c9983a]/20 text-[#f5c563]"
-                          : "bg-[#c9983a]/25 border border-[#c9983a]/30 text-[#2d2820]"
+                        theme === "dark" ? "bg-[#c9983a]/20 text-[#f5c563]" : "bg-[#c9983a]/25 border border-[#c9983a]/30 text-[#2d2820]"
                       }`}
                     >
                       {project.contributors}
@@ -221,36 +203,20 @@ export function ProjectsTab() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center space-x-1">
-                      <span
-                        className={`text-[13px] transition-colors ${
-                          theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"
-                        }`}
-                      >
-                        {project.availableIssues}
-                      </span>
-                      <ChevronDown
-                        className={`w-4 h-4 transition-colors ${
-                          theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"
-                        }`}
-                      />
+                      <span className={`text-[13px] transition-colors ${theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"}`}>{project.availableIssues}</span>
+                      <ChevronDown className={`w-4 h-4 transition-colors ${theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"}`} />
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span
                       className={`inline-flex items-center px-3 py-1.5 rounded-full text-[13px] font-semibold transition-colors ${
-                        theme === "dark"
-                          ? "bg-[#c9983a]/20 text-[#f5c563]"
-                          : "bg-[#c9983a]/25 border border-[#c9983a]/30 text-[#2d2820]"
+                        theme === "dark" ? "bg-[#c9983a]/20 text-[#f5c563]" : "bg-[#c9983a]/25 border border-[#c9983a]/30 text-[#2d2820]"
                       }`}
                     >
                       {project.myContributions}
                     </span>
                   </td>
-                  <td
-                    className={`px-6 py-4 text-[14px] font-semibold whitespace-nowrap transition-colors ${
-                      theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"
-                    }`}
-                  >
+                  <td className={`px-6 py-4 text-[14px] font-semibold whitespace-nowrap transition-colors ${theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"}`}>
                     {project.myRewards}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -261,14 +227,10 @@ export function ProjectsTab() {
                           <span
                             key={idx}
                             className={`flex items-center gap-1.5 px-2 py-1 rounded-[6px] text-[11px] font-medium transition-colors ${
-                              theme === "dark"
-                                ? "bg-[#c9983a]/20 border border-[#c9983a]/30 text-[#f5c563]"
-                                : "bg-[#c9983a]/15 border border-[#c9983a]/25 text-[#8b6f3a]"
+                              theme === "dark" ? "bg-[#c9983a]/20 border border-[#c9983a]/30 text-[#f5c563]" : "bg-[#c9983a]/15 border border-[#c9983a]/25 text-[#8b6f3a]"
                             }`}
                           >
-                            <span
-                              className={`w-4 h-4 ${iconInfo.color} rounded-sm flex items-center justify-center text-[8px] font-bold text-white`}
-                            >
+                            <span className={`w-4 h-4 ${iconInfo.color} rounded-sm flex items-center justify-center text-[8px] font-bold text-white`}>
                               {iconInfo.icon}
                             </span>
                             <span>{lang}</span>
@@ -279,34 +241,14 @@ export function ProjectsTab() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center space-x-2">
-                      <Github
-                        className={`w-4 h-4 transition-colors ${
-                          theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"
-                        }`}
-                      />
-                      <span
-                        className={`text-[12px] transition-colors ${
-                          theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"
-                        }`}
-                      >
-                        {project.repository}
-                      </span>
+                      <Github className={`w-4 h-4 transition-colors ${theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"}`} />
+                      <span className={`text-[12px] transition-colors ${theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"}`}>{project.repository}</span>
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center space-x-1">
-                      <span
-                        className={`text-[12px] transition-colors ${
-                          theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"
-                        }`}
-                      >
-                        {project.billingProfile}
-                      </span>
-                      <ChevronDown
-                        className={`w-4 h-4 transition-colors ${
-                          theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"
-                        }`}
-                      />
+                      <span className={`text-[12px] transition-colors ${theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"}`}>{project.billingProfile}</span>
+                      <ChevronDown className={`w-4 h-4 transition-colors ${theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"}`} />
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -333,9 +275,7 @@ export function ProjectsTab() {
           <div
             key={project.id}
             className={`backdrop-blur-[30px] bg-white/[0.12] rounded-[16px] border border-white/20 p-4 transition-colors hover:bg-white/[0.15] ${
-              theme === "dark"
-                ? "hover:border-white/30"
-                : "hover:border-white/25"
+              theme === "dark" ? "hover:border-white/30" : "hover:border-white/25"
             }`}
           >
             {/* Header: Project name with logo */}
@@ -345,20 +285,8 @@ export function ProjectsTab() {
                   {project.logo}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h4
-                    className={`text-[14px] font-semibold truncate ${
-                      theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"
-                    }`}
-                  >
-                    {project.name}
-                  </h4>
-                  <p
-                    className={`text-[12px] truncate ${
-                      theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"
-                    }`}
-                  >
-                    {project.billingProfile}
-                  </p>
+                  <h4 className={`text-[14px] font-semibold truncate ${theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"}`}>{project.name}</h4>
+                  <p className={`text-[12px] truncate ${theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"}`}>{project.billingProfile}</p>
                 </div>
               </div>
             </div>
@@ -367,74 +295,26 @@ export function ProjectsTab() {
             <div className="grid grid-cols-2 gap-3 mb-3">
               {/* Contributors */}
               <div className="backdrop-blur-[20px] bg-white/[0.05] rounded-[10px] p-2.5">
-                <span
-                  className={`text-[11px] block ${
-                    theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"
-                  }`}
-                >
-                  Contributors
-                </span>
-                <span
-                  className={`text-[13px] font-semibold mt-0.5 ${
-                    theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"
-                  }`}
-                >
-                  {project.contributors}
-                </span>
+                <span className={`text-[11px] block ${theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"}`}>Contributors</span>
+                <span className={`text-[13px] font-semibold mt-0.5 ${theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"}`}>{project.contributors}</span>
               </div>
 
               {/* Available Issues */}
               <div className="backdrop-blur-[20px] bg-white/[0.05] rounded-[10px] p-2.5">
-                <span
-                  className={`text-[11px] block ${
-                    theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"
-                  }`}
-                >
-                  Available
-                </span>
-                <span
-                  className={`text-[13px] font-semibold mt-0.5 ${
-                    theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"
-                  }`}
-                >
-                  {project.availableIssues}
-                </span>
+                <span className={`text-[11px] block ${theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"}`}>Available</span>
+                <span className={`text-[13px] font-semibold mt-0.5 ${theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"}`}>{project.availableIssues}</span>
               </div>
 
               {/* My Contributions */}
               <div className="backdrop-blur-[20px] bg-white/[0.05] rounded-[10px] p-2.5">
-                <span
-                  className={`text-[11px] block ${
-                    theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"
-                  }`}
-                >
-                  My contributions
-                </span>
-                <span
-                  className={`text-[13px] font-semibold mt-0.5 ${
-                    theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"
-                  }`}
-                >
-                  {project.myContributions}
-                </span>
+                <span className={`text-[11px] block ${theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"}`}>My contributions</span>
+                <span className={`text-[13px] font-semibold mt-0.5 ${theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"}`}>{project.myContributions}</span>
               </div>
 
               {/* My Rewards */}
               <div className="backdrop-blur-[20px] bg-white/[0.05] rounded-[10px] p-2.5">
-                <span
-                  className={`text-[11px] block ${
-                    theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"
-                  }`}
-                >
-                  My rewards
-                </span>
-                <span
-                  className={`text-[13px] font-semibold mt-0.5 ${
-                    theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"
-                  }`}
-                >
-                  {project.myRewards}
-                </span>
+                <span className={`text-[11px] block ${theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"}`}>My rewards</span>
+                <span className={`text-[13px] font-semibold mt-0.5 ${theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"}`}>{project.myRewards}</span>
               </div>
             </div>
 
@@ -446,16 +326,10 @@ export function ProjectsTab() {
                   <span
                     key={idx}
                     className={`flex items-center gap-1.5 px-2 py-1 rounded-[6px] text-[11px] font-medium transition-colors ${
-                      theme === "dark"
-                        ? "bg-[#c9983a]/20 border border-[#c9983a]/30 text-[#f5c563]"
-                        : "bg-[#c9983a]/15 border border-[#c9983a]/25 text-[#8b6f3a]"
+                      theme === "dark" ? "bg-[#c9983a]/20 border border-[#c9983a]/30 text-[#f5c563]" : "bg-[#c9983a]/15 border border-[#c9983a]/25 text-[#8b6f3a]"
                     }`}
                   >
-                    <span
-                      className={`w-4 h-4 ${iconInfo.color} rounded-sm flex items-center justify-center text-[8px] font-bold text-white`}
-                    >
-                      {iconInfo.icon}
-                    </span>
+                    <span className={`w-4 h-4 ${iconInfo.color} rounded-sm flex items-center justify-center text-[8px] font-bold text-white`}>{iconInfo.icon}</span>
                     <span>{lang}</span>
                   </span>
                 );

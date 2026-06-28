@@ -1,4 +1,6 @@
 @custom-variant dark (&:is(.dark *));
+@custom-variant high-contrast (&:is(.high-contrast *));
+@custom-variant reduced-motion (&:is(.reduced-motion *));
 
 /**
  * Dark-Mode Focus Ring Specification (WCAG 2.1 AA)
@@ -151,5 +153,238 @@ textarea:focus-visible,
   }
   .animate-notify-slide-in {
     animation: none;
+  }
+}
+
+/* ============================================================
+   HIGH-CONTRAST THEME
+   Selector: .high-contrast (applied to <html> by ThemeProvider)
+
+   Design goals:
+   - All UI borders ≥ 3:1 contrast (WCAG 1.4.11)
+   - All text ≥ 4.5:1 contrast (WCAG 1.4.3)
+   - No glassmorphism (backdrop-filter disabled)
+   - Minimum 2 px border width on all interactive elements
+   - Yellow (#ffff00) focus ring at 3 px for maximum visibility
+   Reference: design/specs/accessibility-theme-variants.md
+   ============================================================ */
+
+/* Surface backgrounds — fully opaque, no glass */
+.high-contrast {
+  background-color: #000000;
+  color: #ffffff;
+}
+
+/* Kill ALL backdrop-blur / glassmorphism effects */
+.high-contrast *,
+.high-contrast *::before,
+.high-contrast *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background-image: none !important; /* removes gradient overlays */
+}
+
+/* Restore non-gradient backgrounds that components set inline */
+.high-contrast [class*="bg-[#"] {
+  /* Components using inline Tailwind hex bg classes keep their value;
+     the override above only strips CSS background-image (gradients). */
+}
+
+/* Focus rings — yellow 3 px, high visibility */
+.high-contrast button:focus-visible,
+.high-contrast input:focus-visible,
+.high-contrast select:focus-visible,
+.high-contrast textarea:focus-visible,
+.high-contrast [role="button"]:focus-visible,
+.high-contrast [role="tab"]:focus-visible,
+.high-contrast [role="menuitem"]:focus-visible,
+.high-contrast [role="option"]:focus-visible,
+.high-contrast a:focus-visible {
+  outline: 3px solid #ffff00 !important;
+  outline-offset: 2px !important;
+}
+
+/* Borders — enforce solid, high-contrast strokes */
+.high-contrast button,
+.high-contrast input,
+.high-contrast select,
+.high-contrast textarea,
+.high-contrast [role="button"],
+.high-contrast [role="dialog"],
+.high-contrast [role="listbox"],
+.high-contrast [role="option"] {
+  border: 2px solid #888888 !important;
+}
+
+/* Interactive element hover/active — visible without color alone */
+.high-contrast button:hover,
+.high-contrast [role="button"]:hover {
+  outline: 2px solid #ffffff;
+  outline-offset: 1px;
+}
+
+/* Skeleton loaders — static solid block, no shimmer */
+.high-contrast .animate-shimmer,
+.high-contrast .animate-shimmer-fast {
+  animation: none !important;
+}
+
+.high-contrast .skeleton-surface {
+  background-color: #333333 !important;
+  opacity: 1 !important;
+}
+
+/* Modal — opaque backdrop, thick border, no blur */
+.high-contrast [role="dialog"] {
+  background-color: #0d0d0d !important;
+  border: 2px solid #aaaaaa !important;
+  box-shadow: 0 0 0 1px #ffffff !important;
+}
+
+/* Toast — opaque background, visible border */
+.high-contrast .grainlify-toast {
+  background-color: #0d0d0d !important;
+  border: 2px solid #aaaaaa !important;
+  color: #ffffff !important;
+  backdrop-filter: none !important;
+}
+
+/* Heatmap cells — solid borders, disable scale hover */
+.high-contrast .heatmap-cell:hover {
+  transform: none !important;
+}
+
+/* Scrollbar — high-contrast thumb */
+.high-contrast .scrollbar-custom,
+.high-contrast .scrollbar-custom-thin {
+  scrollbar-color: #aaaaaa #000000;
+}
+.high-contrast .scrollbar-custom::-webkit-scrollbar-thumb,
+.high-contrast .scrollbar-custom-thin::-webkit-scrollbar-thumb {
+  background: #aaaaaa !important;
+  border-color: #000000 !important;
+}
+
+/* ============================================================
+   REDUCED-MOTION THEME
+   Selector: .reduced-motion (applied alongside .dark by ThemeProvider)
+
+   Design goals:
+   - Zero transform-based animations (translate, scale, rotate)
+   - Opacity-only transitions permitted at ≤ 150 ms
+   - Skeleton shimmer replaced with static block
+   - Modal open/close: instant opacity cut
+   - Toast enter/exit: instant opacity cut
+   - Heatmap cell hover: no scale, opacity highlight only
+   - Badge-in: no scale, instant appearance
+   - Notification slide: instant opacity fade
+   - Page route transitions: instant cut
+   Reference: design/specs/accessibility-theme-variants.md
+   Reference: design/skeleton-motion.md §Reduced Motion Behavior
+   ============================================================ */
+
+/* Kill all transform-based animations globally */
+.reduced-motion *,
+.reduced-motion *::before,
+.reduced-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  transition-delay: 0ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* Re-permit opacity-only transitions (≤ 150 ms, no transform) */
+.reduced-motion [data-opacity-transition] {
+  transition-property: opacity !important;
+  transition-duration: 150ms !important;
+  transition-timing-function: linear !important;
+}
+
+/* Shimmer — static block, no animation */
+.reduced-motion .animate-shimmer,
+.reduced-motion .animate-shimmer-fast {
+  animation: none !important;
+}
+
+/* Badge — instant appearance, no scale */
+.reduced-motion .animate-badge-in {
+  animation: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+/* Notification slide — instant opacity only */
+.reduced-motion .animate-notify-slide-in {
+  animation: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+/* Modal — no zoom-in-95 / scale enter animation */
+.reduced-motion [role="dialog"] {
+  animation: none !important;
+  transform: none !important;
+}
+
+/* Toast — no slide; appear instantly */
+.reduced-motion .grainlify-toast {
+  transition-property: opacity !important;
+  transition-duration: 150ms !important;
+  transform: none !important;
+}
+
+/* Heatmap cells — no scale on hover/focus */
+.reduced-motion button:hover,
+.reduced-motion button:focus-visible {
+  transform: none !important;
+}
+
+/* Radix UI animate-in / zoom-in utilities — neutralise */
+.reduced-motion [data-state="open"],
+.reduced-motion [data-state="closed"] {
+  animation: none !important;
+}
+
+/* Sonner toast viewport transitions */
+.reduced-motion [data-sonner-toaster] * {
+  transition-property: opacity !important;
+  transition-duration: 150ms !important;
+}
+
+/* tw-animate-css: disable any enter/exit animations */
+.reduced-motion .animate-in,
+.reduced-motion .animate-out {
+  animation: none !important;
+  opacity: 1 !important;
+}
+
+/* ============================================================
+   SYSTEM prefers-reduced-motion — mirrors .reduced-motion rules
+   so the OS/browser preference is respected even when the user
+   hasn't explicitly selected the reduced-motion theme.
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  .animate-slide-in-right {
+    animation: none;
+    opacity: 1;
+  }
+  .animate-badge-in {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+  .animate-notify-slide-in {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+  [data-state="open"],
+  [data-state="closed"] {
+    animation: none !important;
+  }
+  .animate-in,
+  .animate-out {
+    animation: none !important;
   }
 }

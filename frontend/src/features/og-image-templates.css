@@ -1,0 +1,418 @@
+/*
+ * og-image-templates.css
+ * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+ * Shared styles for all three Grainlify Open Graph preview image surfaces:
+ *   â€¢ ProjectDetailPage   (.og-root)
+ *   â€¢ ProfilePage         (.og-root--profile)
+ *   â€¢ EcosystemDetailPage (.og-root--ecosystem)
+ *
+ * Design tokens
+ * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+ * --og-gold        Grainlify brand gold â€” primary accent
+ * --og-gold-dim    Muted gold for secondary decoration
+ * --og-bg-deep     Base background â€” near-black with a cool-blue cast
+ * --og-bg-glass    Glassmorphic panel fill (white at ~6% opacity)
+ * --og-text-hi     High-contrast white text
+ * --og-text-mid    Mid-contrast text for labels and secondary copy
+ * --og-text-lo     Low-contrast text for tertiary elements
+ * --og-border      Hairline border for glass panels
+ *
+ * Dimensions
+ * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+ * All templates are sized via inline `style` on .og-root to support both:
+ *   1200Ã—630px â€” standard OG / Facebook / LinkedIn
+ *    800Ã—418px â€” Twitter / X summary_large_image card
+ *
+ * The width-specific modifier classes (--wide / --compact) scale display text.
+ */
+
+/* â”€â”€â”€ Design Tokens â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+:root {
+  --og-gold:        #C9A84C;
+  --og-gold-dim:    rgba(201, 168, 76, 0.35);
+  --og-bg-deep:     #0C0E14;
+  --og-bg-glass:    rgba(255, 255, 255, 0.06);
+  --og-text-hi:     #F2F2F2;
+  --og-text-mid:    rgba(242, 242, 242, 0.60);
+  --og-text-lo:     rgba(242, 242, 242, 0.35);
+  --og-border:      rgba(255, 255, 255, 0.10);
+  --og-radius:      16px;
+}
+
+/* â”€â”€â”€ Root container â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.og-root {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--og-bg-deep);
+  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  padding: 48px 56px 40px;
+  color: var(--og-text-hi);
+}
+
+/* â”€â”€â”€ Background gradient â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.og-bg {
+  position: absolute;
+  inset: 0;
+  /* Radial burst from top-right â€” project / default */
+  background:
+    radial-gradient(ellipse 70% 60% at 85% 10%, rgba(201, 168, 76, 0.18) 0%, transparent 70%),
+    radial-gradient(ellipse 60% 50% at 15% 90%, rgba(56, 80, 180, 0.20) 0%, transparent 65%),
+    linear-gradient(160deg, #0C0E14 0%, #111420 100%);
+  pointer-events: none;
+}
+
+/* Profile variant â€” cooler blue-violet burst */
+.og-bg--profile {
+  background:
+    radial-gradient(ellipse 55% 65% at 90% 5%, rgba(120, 90, 220, 0.22) 0%, transparent 65%),
+    radial-gradient(ellipse 50% 45% at 10% 95%, rgba(201, 168, 76, 0.14) 0%, transparent 60%),
+    linear-gradient(160deg, #0C0E14 0%, #10121C 100%);
+}
+
+/* Ecosystem variant â€” wider sweep to imply scale */
+.og-bg--ecosystem {
+  background:
+    radial-gradient(ellipse 90% 70% at 80% -5%, rgba(201, 168, 76, 0.20) 0%, transparent 70%),
+    radial-gradient(ellipse 70% 60% at 5% 110%, rgba(40, 120, 200, 0.22) 0%, transparent 65%),
+    linear-gradient(150deg, #0A0D12 0%, #0E1118 100%);
+}
+
+/* â”€â”€â”€ Grain / noise texture overlay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/*
+ * SVG-based noise pattern avoids a network request.
+ * Turbulence values tuned for a subtle film-grain look at OG dimensions.
+ */
+.og-grain {
+  position: absolute;
+  inset: 0;
+  opacity: 0.04;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='400' height='400' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+  pointer-events: none;
+}
+
+/* â”€â”€â”€ Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.og-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 36px;
+  flex-shrink: 0;
+}
+
+/* Grainlify wordmark */
+.og-wordmark {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+  color: var(--og-gold);
+}
+
+/* Surface label badge (e.g. "Contributor", "Ecosystem") */
+.og-surface-label,
+.og-ecosystem-badge {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--og-text-mid);
+  background: var(--og-bg-glass);
+  border: 1px solid var(--og-border);
+  border-radius: 100px;
+  padding: 4px 14px;
+}
+
+/* â”€â”€â”€ Body â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.og-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 20px;
+}
+
+/* â”€â”€â”€ Project logo â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.og-logo-wrap {
+  width: 72px;
+  height: 72px;
+  border-radius: 14px;
+  background: var(--og-bg-glass);
+  border: 1px solid var(--og-border);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.og-logo {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+}
+
+/* â”€â”€â”€ Project name â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.og-project-name {
+  font-weight: 700;
+  color: var(--og-text-hi);
+  line-height: 1.15;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+.og-project-name--wide    { font-size: 52px; }
+.og-project-name--compact { font-size: 36px; }
+
+/* â”€â”€â”€ Headline stat block â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.og-stat-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.og-stat-value {
+  font-size: 40px;
+  font-weight: 800;
+  color: var(--og-gold);
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.og-stat-label {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--og-text-mid);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* â”€â”€â”€ Footer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.og-footer {
+  flex-shrink: 0;
+  margin-top: auto;
+}
+
+.og-divider {
+  height: 1px;
+  background: var(--og-border);
+  margin-bottom: 16px;
+}
+
+.og-footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.og-contrib {
+  font-size: 15px;
+  color: var(--og-text-mid);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.og-contrib strong {
+  color: var(--og-text-hi);
+  font-weight: 600;
+}
+
+.og-contrib-icon {
+  color: var(--og-gold-dim);
+  font-size: 14px;
+}
+
+.og-footer-tag {
+  font-size: 12px;
+  color: var(--og-text-lo);
+  letter-spacing: 0.05em;
+}
+
+/* â”€â”€â”€ Gold accent rule (signature element) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.og-gold-rule {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--og-gold-dim) 20%,
+    var(--og-gold) 50%,
+    var(--og-gold-dim) 80%,
+    transparent 100%
+  );
+}
+
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   PROFILE PAGE SURFACE
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+
+.og-body--profile {
+  flex-direction: row;
+  align-items: center;
+  gap: 48px;
+}
+
+/* Avatar */
+.og-avatar-wrap {
+  flex-shrink: 0;
+}
+
+.og-avatar {
+  width: 148px;
+  height: 148px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--og-border);
+}
+
+.og-avatar--fallback {
+  background: linear-gradient(135deg, #1e2135 0%, #2a2e48 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.og-avatar-initials {
+  font-size: 52px;
+  font-weight: 700;
+  color: var(--og-gold);
+}
+
+/* Identity block */
+.og-identity {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.og-contributor-name {
+  font-weight: 700;
+  color: var(--og-text-hi);
+  margin: 0;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+.og-contributor-name--wide    { font-size: 44px; }
+.og-contributor-name--compact { font-size: 30px; }
+
+.og-role {
+  font-size: 18px;
+  color: var(--og-text-mid);
+  margin: 0;
+}
+
+/* Ecosystem chips */
+.og-ecosystem-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.og-ecosystem-chip {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--og-gold);
+  background: var(--og-gold-dim);
+  border: 1px solid var(--og-gold-dim);
+  border-radius: 100px;
+  padding: 3px 12px;
+}
+
+/* Stats cluster */
+.og-stats-cluster {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  padding: 20px 28px;
+  background: var(--og-bg-glass);
+  border: 1px solid var(--og-border);
+  border-radius: var(--og-radius);
+  align-self: flex-start;
+  flex-shrink: 0;
+}
+
+.og-stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.og-stat-divider {
+  width: 1px;
+  height: 40px;
+  background: var(--og-border);
+}
+
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   ECOSYSTEM PAGE SURFACE
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+
+.og-body--ecosystem {
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.og-eco-logo-wrap {
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
+  background: var(--og-bg-glass);
+  border: 1px solid var(--og-border);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.og-eco-logo {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+
+.og-ecosystem-name {
+  font-weight: 800;
+  color: var(--og-text-hi);
+  margin: 0;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+}
+.og-ecosystem-name--wide    { font-size: 60px; }
+.og-ecosystem-name--compact { font-size: 40px; }
+
+.og-tagline {
+  font-size: 20px;
+  color: var(--og-text-mid);
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* Three-stat cluster */
+.og-eco-stats {
+  display: flex;
+  align-items: center;
+  gap: 40px;
+  margin-top: 8px;
+}
+
+.og-eco-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.og-stat-value--gold {
+  color: var(--og-gold);
+}

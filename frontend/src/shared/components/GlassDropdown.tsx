@@ -8,6 +8,8 @@ interface GlassDropdownProps<T extends string> {
   isOpen: boolean;
   onToggle: () => void;
   onClose: () => void;
+  /** Optional: map a raw value to a display label. When omitted, the value itself is shown. */
+  getLabel?: (value: T) => string;
 }
 
 export function GlassDropdown<T extends string>({
@@ -17,6 +19,7 @@ export function GlassDropdown<T extends string>({
   isOpen,
   onToggle,
   onClose,
+  getLabel,
 }: GlassDropdownProps<T>) {
   const { theme } = useTheme();
   const isDark = theme === "dark";
@@ -42,7 +45,7 @@ export function GlassDropdown<T extends string>({
             isDark ? "text-[#e8dfd0]" : "text-[#2d2820]"
           }`}
         >
-          {value}
+          {getLabel ? getLabel(value) : value}
         </span>
         <ChevronDown
           className={`w-4 h-4 transition-transform ${
@@ -76,7 +79,7 @@ export function GlassDropdown<T extends string>({
                   }`}
                   onClick={() => handleSelect(option)}
                 >
-                  {option}
+                  {getLabel ? getLabel(option) : option}
                 </button>
               ))}
             </div>

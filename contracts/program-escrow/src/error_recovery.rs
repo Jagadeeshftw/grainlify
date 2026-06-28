@@ -21,7 +21,7 @@
 // All circuit breaker state is stored in persistent storage keyed by
 // `CircuitBreakerKey::*`.
 
-use soroban_sdk::{contracttype, symbol_short, Address, Env, String, Vec};
+use soroban_sdk::{contracttype, symbol_short, Address, Env, String, Symbol, Vec};
 
 /// Maximum number of full failure records retained in hot contract storage.
 /// Older records are moved into compact per-program archives.
@@ -360,7 +360,7 @@ fn transition_to_half_open_timeout(env: &Env) {
 
 // Emit event indicating automatic timeout transition
     env.events().publish(
-        (symbol_short!("circuit"), symbol_short!("cb_timeout")),
+        (symbol_short!("circuit"), Symbol::new(env, "cb_timeout")),
         (symbol_short!("auto_half"), env.ledger().timestamp()),
     );
 }
@@ -575,7 +575,8 @@ pub fn archive_circuit_breaker_logs(env: &Env, program_id: String) -> CompactFai
     let mut archived = Vec::new(env);
 
     while log.len() > 0 {
-        let entry = log.remove(0);
+        let entry = log.get(0).unwrap();
+        log.remove(0);
         if entry.program_id == program_id {
             archived.push_back(entry);
         } else {
@@ -862,7 +863,8 @@ fn normalize_error_log_limit(requested: u32) -> u32 {
 
 fn prune_error_log(env: &Env, log: &mut Vec<ErrorEntry>, max_entries: u32) {
     while log.len() > max_entries {
-        let entry = log.remove(0);
+        let entry = log.get(0).unwrap();
+        log.remove(0);
         let mut archived = Vec::new(env);
         let program_id = entry.program_id.clone();
         archived.push_back(entry);

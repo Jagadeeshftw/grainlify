@@ -13,6 +13,7 @@ import { ProjectsTable } from "../components/ProjectsTable";
 import { LeaderboardStyles } from "../components/LeaderboardStyles";
 import { ContributorsPodiumSkeleton } from "../components/ContributorsPodiumSkeleton";
 import { ContributorsTableSkeleton } from "../components/ContributorsTableSkeleton";
+import { EmptyState } from "../../../shared/components/EmptyState";
 
 const POLL_INTERVAL_MS = 30_000; // 30s polling for real-time updates
 
@@ -60,46 +61,59 @@ export function LeaderboardPage() {
     return enriched;
   }, []);
 
-  const fetchLeaderboard = useCallback(async (isPoll = false) => {
-    if (leaderboardType !== "contributors") return;
-    if (!isPoll) {
-      setIsLoading(true);
-      setOffset(0);
-    }
-    setError(null);
-    try {
-      const data = await getLeaderboard(
-        10,
-        0,
-        selectedEcosystem.value !== "all" ? selectedEcosystem.value : undefined,
-      );
-      const transformedData: LeaderData[] = data.map((item: { rank: number; rank_tier?: string; rank_tier_name?: string; username: string; avatar?: string; user_id?: string; score: number; trend: "up" | "down" | "same"; trendValue: number; contributions?: number; ecosystems?: string[] }) => ({
-        rank: item.rank,
-        rank_tier: item.rank_tier,
-        rank_tier_name: item.rank_tier_name,
-        username: item.username,
-        avatar: item.avatar || `https://github.com/${item.username}.png?size=200`,
-        user_id: item.user_id || "",
-        score: item.score,
-        trend: item.trend,
-        trendValue: item.trendValue,
-        contributions: item.contributions,
-        ecosystems: item.ecosystems || [],
-      }));
-      const enriched = computePreviousRanks(transformedData);
-      setLeaderboardData(enriched);
-      setHasMore(data.length === 10);
-      setLastUpdated(new Date());
-    } catch (err) {
-      console.error("Failed to fetch leaderboard:", err);
+  const fetchLeaderboard = useCallback(
+    async (isPoll = false) => {
+      if (leaderboardType !== "contributors") return;
       if (!isPoll) {
-        setLeaderboardData([]);
-        setError("Failed to load leaderboard. Please try again.");
+        setIsLoading(true);
+        setOffset(0);
       }
-    } finally {
-      if (!isPoll) setIsLoading(false);
-    }
-  }, [leaderboardType, selectedEcosystem.value, computePreviousRanks]);
+      setError(null);
+      try {
+        const data = await getLeaderboard(10, 0, selectedEcosystem.value !== "all" ? selectedEcosystem.value : undefined);
+        const transformedData: LeaderData[] = data.map(
+          (item: {
+            rank: number;
+            rank_tier?: string;
+            rank_tier_name?: string;
+            username: string;
+            avatar?: string;
+            user_id?: string;
+            score: number;
+            trend: "up" | "down" | "same";
+            trendValue: number;
+            contributions?: number;
+            ecosystems?: string[];
+          }) => ({
+            rank: item.rank,
+            rank_tier: item.rank_tier,
+            rank_tier_name: item.rank_tier_name,
+            username: item.username,
+            avatar: item.avatar || `https://github.com/${item.username}.png?size=200`,
+            user_id: item.user_id || "",
+            score: item.score,
+            trend: item.trend,
+            trendValue: item.trendValue,
+            contributions: item.contributions,
+            ecosystems: item.ecosystems || [],
+          }),
+        );
+        const enriched = computePreviousRanks(transformedData);
+        setLeaderboardData(enriched);
+        setHasMore(data.length === 10);
+        setLastUpdated(new Date());
+      } catch (err) {
+        console.error("Failed to fetch leaderboard:", err);
+        if (!isPoll) {
+          setLeaderboardData([]);
+          setError("Failed to load leaderboard. Please try again.");
+        }
+      } finally {
+        if (!isPoll) setIsLoading(false);
+      }
+    },
+    [leaderboardType, selectedEcosystem.value, computePreviousRanks],
+  );
 
   const fetchProjects = useCallback(async () => {
     if (leaderboardType !== "projects") return;
@@ -163,28 +177,38 @@ export function LeaderboardPage() {
     setIsLoadingMore(true);
     try {
       const nextOffset = offset + 10;
-      const data = await getLeaderboard(
-        10,
-        nextOffset,
-        selectedEcosystem.value !== "all" ? selectedEcosystem.value : undefined,
-      );
+      const data = await getLeaderboard(10, nextOffset, selectedEcosystem.value !== "all" ? selectedEcosystem.value : undefined);
       if (data.length === 0) {
         setHasMore(false);
         return;
       }
-      const transformedData: LeaderData[] = data.map((item: { rank: number; rank_tier?: string; rank_tier_name?: string; username: string; avatar?: string; user_id?: string; score: number; trend: "up" | "down" | "same"; trendValue: number; contributions?: number; ecosystems?: string[] }) => ({
-        rank: item.rank,
-        rank_tier: item.rank_tier,
-        rank_tier_name: item.rank_tier_name,
-        username: item.username,
-        avatar: item.avatar || `https://github.com/${item.username}.png?size=200`,
-        user_id: item.user_id || "",
-        score: item.score,
-        trend: item.trend,
-        trendValue: item.trendValue,
-        contributions: item.contributions,
-        ecosystems: item.ecosystems || [],
-      }));
+      const transformedData: LeaderData[] = data.map(
+        (item: {
+          rank: number;
+          rank_tier?: string;
+          rank_tier_name?: string;
+          username: string;
+          avatar?: string;
+          user_id?: string;
+          score: number;
+          trend: "up" | "down" | "same";
+          trendValue: number;
+          contributions?: number;
+          ecosystems?: string[];
+        }) => ({
+          rank: item.rank,
+          rank_tier: item.rank_tier,
+          rank_tier_name: item.rank_tier_name,
+          username: item.username,
+          avatar: item.avatar || `https://github.com/${item.username}.png?size=200`,
+          user_id: item.user_id || "",
+          score: item.score,
+          trend: item.trend,
+          trendValue: item.trendValue,
+          contributions: item.contributions,
+          ecosystems: item.ecosystems || [],
+        }),
+      );
       setLeaderboardData((prev) => [...prev, ...transformedData]);
       setOffset(nextOffset);
       setHasMore(data.length === 10);
@@ -254,38 +278,26 @@ export function LeaderboardPage() {
     <div className="space-y-6 relative">
       <FallingPetals petals={petals} />
 
-      <LeaderboardTypeToggle
-        leaderboardType={leaderboardType}
-        onToggle={setLeaderboardType}
-        isLoaded={isLoaded}
-      />
+      <LeaderboardTypeToggle leaderboardType={leaderboardType} onToggle={setLeaderboardType} isLoaded={isLoaded} />
 
       <LeaderboardHero leaderboardType={leaderboardType} isLoaded={isLoaded}>
-        {leaderboardType === "contributors" && isLoading && (
-          <ContributorsPodiumSkeleton />
-        )}
-        {leaderboardType === "contributors" && !isLoading && (
-          leaderboardData.length > 0
-            ? <ContributorsPodium topThree={contributorTopThree} isLoaded={isLoaded} actualCount={leaderboardData.length} />
-            : (
-              <div className={`text-center py-8 transition-colors ${theme === "dark" ? "text-[#b8a898]" : "text-[#7a6b5a]"}`}>
-                No contributors yet. Be the first to contribute!
-              </div>
-            )
-        )}
+        {leaderboardType === "contributors" && isLoading && <ContributorsPodiumSkeleton />}
+        {leaderboardType === "contributors" &&
+          !isLoading &&
+          (leaderboardData.length > 0 ? (
+            <ContributorsPodium topThree={contributorTopThree} isLoaded={isLoaded} actualCount={leaderboardData.length} />
+          ) : (
+            <EmptyState variant="no-leaderboard" isDark={theme === "dark"} ctaLabel="Start contributing" onCta={() => {}} />
+          ))}
 
-        {leaderboardType === "projects" && isLoadingProjects && (
-          <ContributorsPodiumSkeleton />
-        )}
-        {leaderboardType === "projects" && !isLoadingProjects && (
-          projectsData.length > 0
-            ? <ProjectsPodium topThree={projectTopThree} isLoaded={isLoaded} />
-            : (
-              <div className={`text-center py-8 transition-colors ${theme === "dark" ? "text-[#b8a898]" : "text-[#7a6b5a]"}`}>
-                No projects yet. Complete project setup to appear here.
-              </div>
-            )
-        )}
+        {leaderboardType === "projects" && isLoadingProjects && <ContributorsPodiumSkeleton />}
+        {leaderboardType === "projects" &&
+          !isLoadingProjects &&
+          (projectsData.length > 0 ? (
+            <ProjectsPodium topThree={projectTopThree} isLoaded={isLoaded} />
+          ) : (
+            <EmptyState variant="no-programs" isDark={theme === "dark"} ctaLabel="Set up a project" onCta={() => {}} />
+          ))}
       </LeaderboardHero>
 
       <FiltersSection
@@ -304,11 +316,7 @@ export function LeaderboardPage() {
 
       {/* Real-time update indicator */}
       {lastUpdated && leaderboardType === "contributors" && (
-        <div
-          className={`text-[11px] text-right px-2 transition-colors ${theme === "dark" ? "text-[#b8a898]" : "text-[#7a6b5a]"}`}
-          aria-live="polite"
-          aria-atomic="true"
-        >
+        <div className={`text-[11px] text-right px-2 transition-colors ${theme === "dark" ? "text-[#b8a898]" : "text-[#7a6b5a]"}`} aria-live="polite" aria-atomic="true">
           Last updated: {lastUpdated.toLocaleTimeString()}
           <span className="inline-block w-2 h-2 rounded-full bg-[#c9983a] ml-1.5 animate-pulse-slow" aria-hidden="true" />
         </div>
@@ -316,10 +324,7 @@ export function LeaderboardPage() {
 
       {/* Error state */}
       {error && (
-        <div
-          className="backdrop-blur-[40px] bg-red-500/10 rounded-[20px] border border-red-500/30 p-6 text-center"
-          role="alert"
-        >
+        <div className="backdrop-blur-[40px] bg-red-500/10 rounded-[20px] border border-red-500/30 p-6 text-center" role="alert">
           <p className="text-red-600 font-semibold text-[14px]">{error}</p>
           <button
             onClick={() => fetchLeaderboard()}
@@ -371,17 +376,7 @@ export function LeaderboardPage() {
 
       {/* Projects section */}
       {leaderboardType === "projects" && (
-        <>
-          {isLoadingProjects ? (
-            <ContributorsTableSkeleton />
-          ) : (
-            <ProjectsTable
-              data={projectsData}
-              activeFilter={activeFilter}
-              isLoaded={isLoaded}
-            />
-          )}
-        </>
+        <>{isLoadingProjects ? <ContributorsTableSkeleton /> : <ProjectsTable data={projectsData} activeFilter={activeFilter} isLoaded={isLoaded} />}</>
       )}
 
       <LeaderboardStyles />
