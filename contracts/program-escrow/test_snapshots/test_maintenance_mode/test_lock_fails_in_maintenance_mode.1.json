@@ -27,13 +27,20 @@
     [],
     [
       [
-        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
         {
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
               "function_name": "publish_program",
-              "args": []
+              "args": [
+                {
+                  "string": "test-prog"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                }
+              ]
             }
           },
           "sub_invocations": []
@@ -189,6 +196,117 @@
         {
           "contract_data": {
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "Admin"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "Admin"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4095
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "Config"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "Config"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "map": [
+                    {
+                      "key": {
+                        "symbol": "failure_threshold"
+                      },
+                      "val": {
+                        "u32": 3
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "max_error_log"
+                      },
+                      "val": {
+                        "u32": 10
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "recovery_window"
+                      },
+                      "val": {
+                        "u64": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "success_threshold"
+                      },
+                      "val": {
+                        "u32": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4095
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
             "key": "ledger_key_contract_instance",
             "durability": "persistent"
           }
@@ -228,6 +346,14 @@
                               },
                               "val": {
                                 "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "fee_waivers"
+                              },
+                              "val": {
+                                "u32": 0
                               }
                             },
                             {
@@ -312,6 +438,12 @@
                               "val": {
                                 "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                               }
+                            },
+                            {
+                              "key": {
+                                "symbol": "circuit_breaker_threshold"
+                              },
+                              "val": "void"
                             },
                             {
                               "key": {
@@ -457,6 +589,18 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "CircuitBreakerSchemaVersion"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u32": 2
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "DependencyStatus"
                             },
                             {
@@ -488,6 +632,14 @@
                               },
                               "val": {
                                 "u32": 200
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "schema_version"
+                              },
+                              "val": {
+                                "u32": 1
                               }
                             }
                           ]
@@ -537,6 +689,12 @@
                             },
                             {
                               "key": {
+                                "symbol": "lock_unpause_at"
+                              },
+                              "val": "void"
+                            },
+                            {
+                              "key": {
                                 "symbol": "pause_reason"
                               },
                               "val": "void"
@@ -559,11 +717,23 @@
                             },
                             {
                               "key": {
+                                "symbol": "refund_unpause_at"
+                              },
+                              "val": "void"
+                            },
+                            {
+                              "key": {
                                 "symbol": "release_paused"
                               },
                               "val": {
                                 "bool": false
                               }
+                            },
+                            {
+                              "key": {
+                                "symbol": "release_unpause_at"
+                              },
+                              "val": "void"
                             }
                           ]
                         }
@@ -614,6 +784,12 @@
                               "val": {
                                 "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                               }
+                            },
+                            {
+                              "key": {
+                                "symbol": "circuit_breaker_threshold"
+                              },
+                              "val": "void"
                             },
                             {
                               "key": {
@@ -688,7 +864,7 @@
                               "val": {
                                 "vec": [
                                   {
-                                    "symbol": "Draft"
+                                    "symbol": "Active"
                                   }
                                 ]
                               }
@@ -735,6 +911,55 @@
                           "vec": [
                             {
                               "symbol": "ReleaseTriggerSchemaVersion"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u32": 1
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "RoleManagementConfig"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "map": [
+                            {
+                              "key": {
+                                "symbol": "emergency_blocks_rotations"
+                              },
+                              "val": {
+                                "bool": true
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "max_transition_period"
+                              },
+                              "val": {
+                                "u64": 2592000
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "rotation_enabled"
+                              },
+                              "val": {
+                                "bool": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "RoleManagementSchemaVersion"
                             }
                           ]
                         },
@@ -812,7 +1037,7 @@
       [
         {
           "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
             "key": {
               "ledger_key_nonce": {
                 "nonce": 5541220902715666415
@@ -827,7 +1052,7 @@
             "data": {
               "contract_data": {
                 "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
                 "key": {
                   "ledger_key_nonce": {
                     "nonce": 5541220902715666415
@@ -1497,6 +1722,112 @@
           "v0": {
             "topics": [
               {
+                "symbol": "circuit"
+              },
+              {
+                "symbol": "cb_adm"
+              }
+            ],
+            "data": {
+              "vec": [
+                "void",
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                },
+                {
+                  "u64": 0
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "circuit"
+              },
+              {
+                "symbol": "cb_cfg"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "u32": 3
+                },
+                {
+                  "u32": 3
+                },
+                {
+                  "u32": 1
+                },
+                {
+                  "u32": 1
+                },
+                {
+                  "u64": 300
+                },
+                {
+                  "u64": 0
+                },
+                {
+                  "u64": 0
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "circuit"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "symbol": "cb_init"
+                },
+                {
+                  "u64": 0
+                },
+                {
+                  "u32": 2
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
                 "symbol": "TkAlSch"
               }
             ],
@@ -1638,6 +1969,12 @@
                 },
                 {
                   "key": {
+                    "symbol": "circuit_breaker_threshold"
+                  },
+                  "val": "void"
+                },
+                {
+                  "key": {
                     "symbol": "delegate"
                   },
                   "val": "void"
@@ -1758,7 +2095,16 @@
                 "symbol": "publish_program"
               }
             ],
-            "data": "void"
+            "data": {
+              "vec": [
+                {
+                  "string": "test-prog"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                }
+              ]
+            }
           }
         }
       },
@@ -1788,7 +2134,15 @@
                 },
                 {
                   "key": {
-                    "symbol": "published_at"
+                    "symbol": "publisher"
+                  },
+                  "val": {
+                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "timestamp"
                   },
                   "val": {
                     "u64": 0
@@ -1847,6 +2201,12 @@
                   "val": {
                     "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                   }
+                },
+                {
+                  "key": {
+                    "symbol": "circuit_breaker_threshold"
+                  },
+                  "val": "void"
                 },
                 {
                   "key": {
@@ -2269,7 +2629,7 @@
             "data": {
               "vec": [
                 {
-                  "string": "caught panic 'Funds Paused' from contract function 'Symbol(obj#925)'"
+                  "string": "caught panic 'Funds Paused' from contract function 'Symbol(obj#1141)'"
                 },
                 {
                   "i128": {

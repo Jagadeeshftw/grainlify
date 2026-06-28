@@ -102,7 +102,7 @@ fn setup_program(env: &Env, initial_locked_balance: i128) -> TestContext<'static
         &None,
         &None,
     );
-    client.publish_program();
+    client.publish_program(&program_id, &admin);
 
     if initial_locked_balance > 0 {
         mint_to_contract(env, &client, &token, initial_locked_balance);
@@ -135,6 +135,7 @@ fn set_pause_flags(client: &ProgramEscrowContractClient<'_>, flags: Flags) {
         &Some(flags.release_paused),
         &Some(flags.refund_paused),
         &None::<String>,
+        &None::<u64>,
     );
 }
 
@@ -452,9 +453,9 @@ fn test_unpausing_release_does_not_unpause_lock_or_refund() {
     env.ledger().set_timestamp(TEST_TIMESTAMP);
 
     ctx.client
-        .set_paused(&Some(true), &Some(true), &Some(true), &None::<String>);
+        .set_paused(&Some(true), &Some(true), &Some(true), &None::<String>, &None::<u64>);
     ctx.client
-        .set_paused(&None, &Some(false), &None, &None::<String>);
+        .set_paused(&None, &Some(false), &None, &None::<String>, &None::<u64>);
 
     let stored = ctx.client.get_pause_flags();
     assert!(stored.lock_paused, "lock pause should remain enabled");

@@ -5,13 +5,24 @@ import { useTheme } from '../contexts/ThemeContext'
 const MAX_VISIBLE_TOASTS = 3
 const DEFAULT_TOAST_DURATION = 5000
 
+/**
+ * Toast duration rules for payout notifications:
+ * - Default auto-dismiss: 5s
+ * - Timer pauses on hover (implemented by Sonner `pauseWhenHovering`)
+ */
+
+/**
+ * Grainlify global Sonner toast wrapper.
+ * @component Toast
+ * @description Applies consistent styling, queueing, and accessibility.
+ */
 const Toast = () => {
   const { theme } = useTheme()
   const isDark = theme === 'dark'
   const { toasts } = useSonner()
   const queuedCount = Math.max(0, toast.getToasts().length - MAX_VISIBLE_TOASTS)
 
-  return (
+return (
     <div className="relative">
       <Toaster
         theme={theme as 'light' | 'dark' | 'system'}
@@ -19,6 +30,7 @@ const Toast = () => {
         visibleToasts={MAX_VISIBLE_TOASTS}
         gap={12}
         duration={DEFAULT_TOAST_DURATION}
+        pauseWhenHovering
         closeButton
         className="grainlify-toast-viewport"
         containerAriaLabel="Application notifications"
