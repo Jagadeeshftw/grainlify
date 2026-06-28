@@ -1300,6 +1300,12 @@ pub enum DataKey {
     RoleManagementConfig,
     /// Anonymous resolver for a program — maps program_id to AnonymousResolver.
     AnonymousResolver(String),
+    /// Lazy inverted index: (program_id, recipient) → Vec<PayoutRecord>.
+    ///
+    /// Written on first payout to a given recipient; never touched until then,
+    /// so programs with no payouts pay zero cold-storage cost.
+    /// Stored in persistent storage so it survives TTL-based ledger pruning.
+    RecipientPayoutIndex(String, Address),
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -5876,7 +5882,15 @@ impl ProgramEscrowContract {
                 recipient,
                 amount: transfer_amount,
                 timestamp,
-            });
+            };
+            updated_history.push_back(record.clone());
+            // Lazy recipient index
+            Self::append_recipient_index(
+                &env,
+                &program_data.program_id,
+                &recipient,
+                &record,
+            );
         }
 
         // Update program data atomically after all transfers succeed.
@@ -6245,7 +6259,7 @@ impl ProgramEscrowContract {
         };
 
         let mut updated_history = program_data.payout_history.clone();
-        updated_history.push_back(payout_record);
+        updated_history.push_back(payout_record.clone());
 
         let mut updated_data = program_data.clone();
         updated_data.remaining_balance = updated_data
@@ -6255,6 +6269,15 @@ impl ProgramEscrowContract {
         updated_data.payout_history = updated_history;
 
         env.storage().instance().set(&PROGRAM_DATA, &updated_data);
+
+        // Lazy recipient index — write to persistent storage so the index
+        // survives instance TTL eviction.  Initialized on first write only.
+        Self::append_recipient_index(
+            &env,
+            &updated_data.program_id,
+            &payout_record.recipient,
+            &payout_record,
+        );
 
         // Store idempotency record if key was provided
         if let Some(key) = idempotency_key {
@@ -7038,6 +7061,57 @@ impl ProgramEscrowContract {
         Self::paginate_filtered(&env, program_data.payout_history, offset, limit, |record| {
             record.recipient == recipient
         })
+    }
+
+    /// O(1) recipient history lookup using the lazy-initialized inverted index.
+    ///
+    /// Returns all [`PayoutRecord`]s for `recipient` in `program_id`, in
+    /// chronological insertion order.  Returns an empty `Vec` when the
+    /// recipient has never received a payout (the key is simply absent).
+    ///
+    /// # Storage
+    /// Reads from `DataKey::RecipientPayoutIndex(program_id, recipient)` in
+    /// persistent storage (written by `single_payout_internal` /
+    /// `batch_payout_internal` on every payout to this recipient).
+    ///
+    /// # Security
+    /// - Read-only; never mutates state.
+    /// - No authorization required (payout records are public on-chain data).
+    /// - `program_id` is caller-supplied but cannot forge records: the index
+    ///   is written exclusively by the payout paths under admin auth.
+    pub fn query_recipient_history(
+        env: Env,
+        program_id: String,
+        recipient: Address,
+    ) -> soroban_sdk::Vec<PayoutRecord> {
+        let key = DataKey::RecipientPayoutIndex(program_id, recipient);
+        env.storage()
+            .persistent()
+            .get::<DataKey, soroban_sdk::Vec<PayoutRecord>>(&key)
+            .unwrap_or_else(|| soroban_sdk::Vec::new(&env))
+    }
+
+    // ─── private helper ───────────────────────────────────────────────────
+
+    /// Append `record` to the persistent recipient index for `(program_id, recipient)`.
+    ///
+    /// Lazy initialization: the key is created on the first payout; no
+    /// storage entry exists until then, keeping cold-storage costs at zero
+    /// for programs that have not yet paid out to a given address.
+    fn append_recipient_index(
+        env: &Env,
+        program_id: &String,
+        recipient: &Address,
+        record: &PayoutRecord,
+    ) {
+        let key = DataKey::RecipientPayoutIndex(program_id.clone(), recipient.clone());
+        let mut index: soroban_sdk::Vec<PayoutRecord> = env
+            .storage()
+            .persistent()
+            .get::<DataKey, soroban_sdk::Vec<PayoutRecord>>(&key)
+            .unwrap_or_else(|| soroban_sdk::Vec::new(env));
+        index.push_back(record.clone());
+        env.storage().persistent().set(&key, &index);
     }
 
     /// Query idempotency key status
