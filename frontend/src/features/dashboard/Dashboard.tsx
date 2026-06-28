@@ -23,6 +23,7 @@ import { useAuth } from "../../shared/contexts/AuthContext";
 import grainlifyLogo from "../../assets/grainlify_log.svg";
 import { useTheme } from "../../shared/contexts/ThemeContext";
 import { UserProfileDropdown } from "../../shared/components/UserProfileDropdown";
+import { OnboardingTourProvider, TOUR_TARGET } from "../onboarding";
 import { NotificationsDropdown } from "../../shared/components/NotificationsDropdown";
 import { RoleSwitcher } from "../../shared/components/RoleSwitcher";
 import {
@@ -486,6 +487,7 @@ export function Dashboard() {
       <button
         key={item.id}
         type="button"
+        data-tour={opts?.mobile ? undefined : `nav-${item.id}`}
         onClick={() => !item.disabled && handleNavigation(item.id)}
         aria-current={isActive ? "page" : undefined}
         aria-disabled={item.disabled ? "true" : undefined}
@@ -552,6 +554,7 @@ export function Dashboard() {
   };
 
   return (
+    <OnboardingTourProvider onNavigate={setCurrentPage}>
     <div
       className={`min-h-screen relative overflow-hidden transition-colors ${
         darkTheme
@@ -1119,10 +1122,12 @@ export function Dashboard() {
                 closeMobileNav={closeMobileNav}
               />
 
-              <UserProfileDropdown
-                onPageChange={handleNavigation}
-                showMobileNav={false}
-              />
+              <span data-tour={TOUR_TARGET.topbarProfile} className="inline-flex items-center">
+                <UserProfileDropdown
+                  onPageChange={handleNavigation}
+                  showMobileNav={false}
+                />
+              </span>
             </div>
           </header>
 
@@ -1403,5 +1408,6 @@ export function Dashboard() {
         </form>
       </Modal>
     </div>
+    </OnboardingTourProvider>
   );
 }

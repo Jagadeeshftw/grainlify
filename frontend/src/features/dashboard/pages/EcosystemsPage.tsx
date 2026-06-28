@@ -5,6 +5,11 @@ import { Modal, ModalFooter, ModalButton, ModalInput, ModalSelect } from "../../
 import { getEcosystems } from "../../../shared/api/client";
 import { EmptyState } from "../../../shared/components/EmptyState";
 
+/**
+ * Design contract placeholder for ecosystem comparison selection and side-by-side metrics.
+ * See: design/specs/ecosystem-comparison-view.md
+ */
+
 interface EcosystemsPageProps {
   onEcosystemClick: (id: string, name: string, description?: string | null, logoUrl?: string | null) => void;
 }

@@ -86,6 +86,29 @@ use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, Address, Env, Vec,
 };
 
+// ─── Cross-contract interface for ProgramEscrow ───────────────────────────────
+
+/// Minimal payout record mirrored from `program-escrow` for cross-contract use.
+///
+/// Must stay in sync with `PayoutRecord` in `contracts/program-escrow/src/lib.rs`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PayoutRecord {
+    pub recipient: Address,
+    pub amount: i128,
+    pub timestamp: u64,
+}
+
+/// Thin cross-contract client for the `ProgramEscrow` methods used by this facade.
+#[soroban_sdk::contractclient(name = "EscrowClient")]
+pub trait ProgramEscrowTrait {
+    fn query_recipient_history(
+        env: Env,
+        program_id: soroban_sdk::String,
+        recipient: Address,
+    ) -> Vec<PayoutRecord>;
+}
+
 // ============================================================================
 // Error Type
 // ============================================================================
@@ -522,6 +545,37 @@ impl ViewFacade {
             }
         }
         None
+    }
+
+    /// Query all payout records for `recipient` within `program_id` via a
+    /// registered `ProgramEscrow` contract.
+    ///
+    /// Delegates to `ProgramEscrow::query_recipient_history`, which reads the
+    /// lazy-initialized inverted index keyed by `(program_id, recipient)`.
+    /// The lookup is O(1) in the number of total payouts across all recipients.
+    ///
+    /// # Arguments
+    /// * `escrow` — On-chain address of a registered `ProgramEscrow` contract.
+    /// * `program_id` — String identifier of the program.
+    /// * `recipient` — Address whose payout history is requested.
+    ///
+    /// # Returns
+    /// `Vec<PayoutRecord>` — may be empty if the recipient has no payouts.
+    ///
+    /// # Security
+    /// - Read-only; does not mutate any state.
+    /// - No authorization required — payout records are public on-chain data.
+    /// - The caller-supplied `escrow` address is not validated against the
+    ///   registry; callers should verify the contract kind via `get_contract`
+    ///   before trusting results.
+    pub fn query_recipient_history(
+        env: Env,
+        escrow: Address,
+        program_id: soroban_sdk::String,
+        recipient: Address,
+    ) -> Vec<PayoutRecord> {
+        let client = EscrowClient::new(&env, &escrow);
+        client.query_recipient_history(&program_id, &recipient)
     }
 }
 

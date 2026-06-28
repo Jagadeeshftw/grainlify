@@ -6,7 +6,8 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
-    "generate-favicon": "node scripts/generate-favicon.mjs"
+    "generate-favicon": "node scripts/generate-favicon.mjs",
+    "test": "vitest run"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
@@ -46,6 +47,7 @@
     "d3-geo": "^3.1.1",
     "date-fns": "3.6.0",
     "embla-carousel-react": "8.6.0",
+    "html2canvas": "^1.4.1",
     "input-otp": "1.4.2",
     "lucide-react": "0.487.0",
     "motion": "12.23.24",
@@ -56,6 +58,7 @@
     "react-dnd-html5-backend": "16.0.1",
     "react-dom": "^18.3.1",
     "react-hook-form": "7.55.0",
+    "react-joyride": "3.1.0",
     "react-markdown": "^10.1.0",
     "react-popper": "2.3.0",
     "react-resizable-panels": "2.1.7",
@@ -74,13 +77,19 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.1.12",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/react": "^19.2.9",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "4.7.0",
+    "@vitest/coverage-v8": "^4.1.9",
+    "jsdom": "^29.1.1",
     "sharp": "^0.34.5",
     "tailwindcss": "4.1.12",
     "to-ico": "^1.1.5",
-    "vite": "6.3.5"
+    "vite": "6.3.5",
+    "vitest": "^4.1.9"
   },
   "pnpm": {
     "overrides": {
