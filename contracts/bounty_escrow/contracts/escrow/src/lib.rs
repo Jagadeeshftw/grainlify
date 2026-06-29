@@ -634,6 +634,10 @@ pub enum Error {
     TimelockNotElapsed = 53,
     /// A release is already queued for this bounty; cancel it before queuing another.
     ReleaseAlreadyQueued = 54,
+    /// Router address is not configured in contract instance storage
+    RouterNotConfigured = 58,
+    /// Slippage exceeded the maximum allowed bps
+    SlippageExceeded = 59,
 }
 
 /// Bit flag: escrow or payout should be treated as elevated risk (indexers, UIs).
@@ -918,6 +922,7 @@ pub enum DataKey {
     /// Upgrade-safe schema marker for high-value timelock config storage layout.
     /// Increment when `HighValueConfig` or `QueuedRelease` layout changes.
     HighValueConfigSchemaVersion,
+    Router,
 }
 
 #[contracttype]
@@ -4473,6 +4478,47 @@ impl BountyEscrowContract {
         res
     }
 
+    pub fn set_router(env: Env, router: Address) -> Result<(), Error> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        admin.require_auth();
+        env.storage().instance().set(&DataKey::Router, &router);
+        Ok(())
+    }
+
+    pub fn get_router(env: Env) -> Option<Address> {
+        env.storage().instance().get(&DataKey::Router)
+    }
+
+    pub fn release_with_conversion(
+        env: Env,
+        bounty_id: u64,
+        contributor: Address,
+        dest_asset: Address,
+        path: Vec<Address>,
+        max_slippage_bps: u32,
+    ) -> Result<(), Error> {
+        Self::validate_claim_window(env.clone(), bounty_id)?;
+        let caller = env
+            .storage()
+            .instance()
+            .get::<DataKey, Address>(&DataKey::Admin)
+            .unwrap_or(contributor.clone());
+        let res = Self::release_with_conversion_logic(
+            env.clone(),
+            bounty_id,
+            contributor,
+            dest_asset,
+            path,
+            max_slippage_bps,
+        );
+        monitoring::track_operation(&env, symbol_short!("rel_conv"), caller, res.is_ok());
+        res
+    }
+
     fn release_funds_logic(env: Env, bounty_id: u64, contributor: Address) -> Result<(), Error> {
         // Validation precedence (deterministic ordering):
         // 1. Reentrancy guard
@@ -4630,6 +4676,221 @@ impl BountyEscrowContract {
                 amount: escrow.amount,
                 recipient: contributor.clone(),
                 timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        // GUARD: release reentrancy lock
+        reentrancy_guard::release(&env);
+        Ok(())
+    }
+
+    fn release_with_conversion_logic(
+        env: Env,
+        bounty_id: u64,
+        contributor: Address,
+        dest_asset: Address,
+        path: Vec<Address>,
+        max_slippage_bps: u32,
+    ) -> Result<(), Error> {
+        // 1. GUARD: acquire reentrancy lock
+        reentrancy_guard::acquire(&env);
+
+        // 2. Contract must be initialized
+        if !env.storage().instance().has(&DataKey::Admin) {
+            reentrancy_guard::release(&env);
+            return Err(Error::NotInitialized);
+        }
+
+        // 3. Operational state: paused
+        if Self::check_paused(&env, symbol_short!("release")) {
+            reentrancy_guard::release(&env);
+            return Err(Error::FundsPaused);
+        }
+
+        // 4. Authorization
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        // 5. Business logic: bounty must exist and be locked
+        if !env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
+            reentrancy_guard::release(&env);
+            return Err(Error::BountyNotFound);
+        }
+
+        let mut escrow: Escrow = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Escrow(bounty_id))
+            .unwrap();
+
+        Self::ensure_escrow_not_frozen(&env, bounty_id)?;
+        Self::ensure_address_not_frozen(&env, &escrow.depositor)?;
+
+        if escrow.status != EscrowStatus::Locked {
+            reentrancy_guard::release(&env);
+            return Err(Error::FundsNotLocked);
+        }
+
+        // High-value timelock check (same as release_funds_logic)
+        if let Some(hv_cfg) = env
+            .storage()
+            .instance()
+            .get::<DataKey, HighValueConfig>(&DataKey::HighValueConfig)
+        {
+            if hv_cfg.threshold > 0 && escrow.amount >= hv_cfg.threshold {
+                // Reject if a release is already queued for this bounty.
+                if env
+                    .storage()
+                    .persistent()
+                    .has(&DataKey::QueuedRelease(bounty_id))
+                {
+                    reentrancy_guard::release(&env);
+                    return Err(Error::ReleaseAlreadyQueued);
+                }
+
+                let executable_at = env.ledger().timestamp().saturating_add(hv_cfg.duration);
+                let queued = QueuedRelease {
+                    contributor: contributor.clone(),
+                    amount: escrow.amount,
+                    executable_at,
+                };
+                env.storage()
+                    .persistent()
+                    .set(&DataKey::QueuedRelease(bounty_id), &queued);
+
+                events::emit_release_queued(
+                    &env,
+                    events::ReleaseQueued {
+                        version: EVENT_VERSION_V2,
+                        bounty_id,
+                        contributor,
+                        amount: escrow.amount,
+                        executable_at,
+                        timestamp: env.ledger().timestamp(),
+                    },
+                );
+
+                reentrancy_guard::release(&env);
+                return Ok(());
+            }
+        }
+
+        // Resolve effective fee config for release.
+        let (
+            _lock_fee_rate,
+            release_fee_rate,
+            _lock_fixed,
+            release_fixed_fee,
+            fee_recipient,
+            fee_enabled,
+        ) = Self::resolve_fee_config(&env);
+
+        let release_fee = Self::combined_fee_amount(
+            escrow.amount,
+            release_fee_rate,
+            release_fixed_fee,
+            fee_enabled,
+        );
+        let mut fee_config = Self::get_fee_config_internal(&env);
+        fee_config.release_fee_rate = release_fee_rate;
+        fee_config.release_fixed_fee = release_fixed_fee;
+        fee_config.fee_recipient = fee_recipient.clone();
+        fee_config.fee_enabled = fee_enabled;
+
+        // Net payout to contributor after release fee.
+        let net_payout = escrow
+            .amount
+            .checked_sub(release_fee)
+            .unwrap_or(escrow.amount);
+        if net_payout <= 0 {
+            reentrancy_guard::release(&env);
+            return Err(Error::InvalidAmount);
+        }
+
+        // EFFECTS: update state before external calls (CEI)
+        escrow.status = EscrowStatus::Released;
+        escrow.remaining_amount = 0;
+        invariants::assert_escrow(&env, &escrow);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Escrow(bounty_id), &escrow);
+
+        // INTERACTION: external token transfers are last
+        let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
+        let client = token::Client::new(&env, &token_addr);
+
+        if release_fee > 0 {
+            Self::route_fee_for_bounty(
+                &env,
+                &client,
+                &fee_config,
+                bounty_id,
+                release_fee,
+                release_fee_rate,
+                escrow.amount,
+                events::FeeOperationType::Release,
+            )?;
+        }
+
+        // Swapping the escrowed asset to the recipient's preferred currency atomically before transfer
+        let router_address: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Router)
+            .ok_or_else(|| {
+                reentrancy_guard::release(&env);
+                Error::RouterNotConfigured
+            })?;
+
+        let router_client = RouterClient::new(&env, &router_address);
+
+        // Approve router to spend net_payout of source asset from contract
+        let deadline = env.ledger().timestamp() + 300;
+        client.approve(&env.current_contract_address(), &router_address, &net_payout, &deadline);
+
+        // Query the router for the expected amount out to validate slippage
+        let amounts_out = router_client.get_amounts_out(&net_payout, &path);
+        let expected_out = amounts_out.last().unwrap_or(0);
+
+        // Calculate min amount out based on max slippage bps
+        let min_amount_out = expected_out
+            .checked_mul(10000 - max_slippage_bps as i128)
+            .unwrap()
+            .checked_div(10000)
+            .unwrap();
+
+        // Execute the swap
+        let swap_amounts = router_client.swap_exact_tokens_for_tokens(
+            &net_payout,
+            &min_amount_out,
+            &path,
+            &contributor,
+            &deadline,
+        );
+
+        let actual_out = swap_amounts.last().unwrap_or(0);
+
+        // Validate slippage against actual received amount
+        if actual_out < min_amount_out {
+            reentrancy_guard::release(&env);
+            return Err(Error::SlippageExceeded);
+        }
+
+        // Emit ReleasedWithConversion event
+        // rate = (actual_out * 1_000_000) / net_payout
+        let rate = if net_payout > 0 {
+            actual_out.checked_mul(1_000_000).unwrap().checked_div(net_payout).unwrap_or(0)
+        } else {
+            0
+        };
+
+        events::emit_released_with_conversion(
+            &env,
+            events::ReleasedWithConversion {
+                escrow_id: bounty_id,
+                src_asset: token_addr,
+                dest_asset,
+                rate,
             },
         );
 
@@ -8930,3 +9191,21 @@ mod test_e2e_upgrade_with_pause;
 #[cfg(test)]
 mod test_status_transitions;
 // #[cfg(test)] mod test_upgrade_scenarios;
+
+#[cfg(test)]
+#[path = "tests/conversion_tests.rs"]
+mod test_conversion;
+
+#[contractclient(name = "RouterClient")]
+pub trait Router {
+    fn swap_exact_tokens_for_tokens(
+        env: Env,
+        amount_in: i128,
+        amount_out_min: i128,
+        path: Vec<Address>,
+        to: Address,
+        deadline: u64,
+    ) -> Vec<i128>;
+
+    fn get_amounts_out(env: Env, amount_in: i128, path: Vec<Address>) -> Vec<i128>;
+}

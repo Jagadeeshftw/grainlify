@@ -2048,3 +2048,21 @@ pub fn emit_reentrancy_guard_acquired(env: &Env, event: ReentrancyGuardAcquired)
     let topics = (symbol_short!("rg_acq"),);
     env.events().publish(topics, event);
 }
+
+// ============================================================================
+// Released With Conversion Event
+// ============================================================================
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReleasedWithConversion {
+    pub escrow_id: u64,
+    pub src_asset: soroban_sdk::Address,
+    pub dest_asset: soroban_sdk::Address,
+    pub rate: i128,
+}
+
+pub fn emit_released_with_conversion(env: &Env, event: ReleasedWithConversion) {
+    let topics = (symbol_short!("conv"), event.escrow_id);
+    env.events().publish(topics, event);
+}
