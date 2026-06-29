@@ -2,7 +2,7 @@
 ///
 /// Verifies that the per-program circuit breaker threshold feature works correctly:
 /// - Default threshold (3) is used when not configured
-/// - Custom threshold can be set via set_program_circuit_breaker_threshold
+/// - Custom threshold can be set via set_program_cb_threshold
 /// - Threshold validation (1-100) is enforced
 /// - Threshold changes emit correct audit events
 /// - Circuit breaker respects per-program thresholds
@@ -52,7 +52,7 @@ mod test {
 
         let program_id = String::from_str(&env, "prog-cb-threshold");
         client.init_program(&program_id, &admin, &token_id, &admin, &None, &None);
-        client.publish_program(&program_id);
+        client.publish_program(&program_id, &admin);
 
         let initial_balance = 10_000_0000000; // 10,000 tokens
         token_admin_client.mint(&contract_id, &initial_balance);
@@ -109,7 +109,7 @@ mod test {
         let s = setup();
         
         // Set threshold to 10
-        s.client.set_program_circuit_breaker_threshold(&s.program_id, &Some(10u8));
+        s.client.set_program_cb_threshold(&s.program_id, &Some(10u32));
         
         let program_data = get_program_data(&s.env, &s.program_id);
         assert_eq!(program_data.circuit_breaker_threshold, Some(10));
@@ -121,10 +121,10 @@ mod test {
         let s = setup();
         
         // Set threshold to 10
-        s.client.set_program_circuit_breaker_threshold(&s.program_id, &Some(10u8));
+        s.client.set_program_cb_threshold(&s.program_id, &Some(10u32));
         
         // Reset to None
-        s.client.set_program_circuit_breaker_threshold(&s.program_id, &None);
+        s.client.set_program_cb_threshold(&s.program_id, &None);
         
         let program_data = get_program_data(&s.env, &s.program_id);
         assert_eq!(program_data.circuit_breaker_threshold, None);
@@ -135,7 +135,7 @@ mod test {
     #[should_panic(expected = "804")]
     fn test_threshold_too_low() {
         let s = setup();
-        s.client.set_program_circuit_breaker_threshold(&s.program_id, &Some(0u8));
+        s.client.set_program_cb_threshold(&s.program_id, &Some(0u32));
     }
 
     /// Threshold must be <= 100.
@@ -143,14 +143,14 @@ mod test {
     #[should_panic(expected = "804")]
     fn test_threshold_too_high() {
         let s = setup();
-        s.client.set_program_circuit_breaker_threshold(&s.program_id, &Some(101u8));
+        s.client.set_program_cb_threshold(&s.program_id, &Some(101u32));
     }
 
     /// Threshold of 1 is valid (minimum allowed).
     #[test]
     fn test_threshold_minimum_valid() {
         let s = setup();
-        s.client.set_program_circuit_breaker_threshold(&s.program_id, &Some(1u8));
+        s.client.set_program_cb_threshold(&s.program_id, &Some(1u32));
         
         let program_data = get_program_data(&s.env, &s.program_id);
         assert_eq!(program_data.circuit_breaker_threshold, Some(1));
@@ -160,7 +160,7 @@ mod test {
     #[test]
     fn test_threshold_maximum_valid() {
         let s = setup();
-        s.client.set_program_circuit_breaker_threshold(&s.program_id, &Some(100u8));
+        s.client.set_program_cb_threshold(&s.program_id, &Some(100u32));
         
         let program_data = get_program_data(&s.env, &s.program_id);
         assert_eq!(program_data.circuit_breaker_threshold, Some(100));
@@ -175,7 +175,7 @@ mod test {
     fn test_set_threshold_emits_event() {
         let s = setup();
         
-        s.client.set_program_circuit_breaker_threshold(&s.program_id, &Some(10u8));
+        s.client.set_program_cb_threshold(&s.program_id, &Some(10u32));
         
         assert!(
             has_event_topic(&s.env, symbol_short!("CbThrSet"), symbol_short!("CbThrSet")),
@@ -189,10 +189,10 @@ mod test {
         let s = setup();
         
         // First set: previous is None
-        s.client.set_program_circuit_breaker_threshold(&s.program_id, &Some(10u8));
+        s.client.set_program_cb_threshold(&s.program_id, &Some(10u32));
         
         // Second set: previous is Some(10)
-        s.client.set_program_circuit_breaker_threshold(&s.program_id, &Some(20u8));
+        s.client.set_program_cb_threshold(&s.program_id, &Some(20u32));
         
         // Verify events were emitted
         let events = s.env.events().all();
@@ -225,7 +225,7 @@ mod test {
         
         // Try to set threshold as unauthorized user
         // This should fail because require_auth is called on authorized_payout_key
-        s.client.set_program_circuit_breaker_threshold(&s.program_id, &Some(10u8));
+        s.client.set_program_cb_threshold(&s.program_id, &Some(10u32));
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -238,7 +238,7 @@ mod test {
         let s = setup();
         
         // Set custom threshold to 5
-        s.client.set_program_circuit_breaker_threshold(&s.program_id, &Some(5u8));
+        s.client.set_program_cb_threshold(&s.program_id, &Some(5u32));
         
         let program_data = get_program_data(&s.env, &s.program_id);
         let threshold = program_data.circuit_breaker_threshold.map(|t| t as u32).unwrap_or(3);

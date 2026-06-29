@@ -1,0 +1,882 @@
+/*
+ * reward-certificate-templates.css
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Style declarations for Grainlify contributor certificates and ProfilePage integration.
+ * 
+ * Supports Gold (Hackathon), Blue (Scholarship), and Silver (Bounty) templates.
+ */
+
+/* ─── Variables & Theme Overrides ─────────────────────────────────────────── */
+:root {
+  --cert-gold: #f1b400;
+  --cert-gold-border: #c9983a;
+  --cert-gold-glow: rgba(201, 152, 58, 0.15);
+
+  --cert-blue: #3b82f6;
+  --cert-blue-border: #1d4ed8;
+  --cert-blue-glow: rgba(59, 130, 246, 0.15);
+
+  --cert-silver: #a8a29e;
+  --cert-silver-border: #57534e;
+  --cert-silver-glow: rgba(168, 162, 158, 0.15);
+
+  --cert-bg-dark: #0C0E14;
+  --cert-bg-glass: rgba(255, 255, 255, 0.06);
+  --cert-border-light: rgba(255, 255, 255, 0.10);
+  
+  --cert-text-hi: #F2F2F2;
+  --cert-text-mid: rgba(242, 242, 242, 0.60);
+  --cert-text-lo: rgba(242, 242, 242, 0.35);
+}
+
+/* ─── Certificate Root Layout ─────────────────────────────────────────────── */
+.cert-root {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1.414 / 1; /* A4 aspect ratio */
+  background-color: var(--cert-bg-dark);
+  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  color: var(--cert-text-hi);
+  box-sizing: border-box;
+  padding: 40px 48px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+/* ─── Background textures & glows ─── */
+.cert-bg {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(160deg, #0C0E14 0%, #111420 100%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.cert-grain {
+  position: absolute;
+  inset: 0;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='400' height='400' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Frame outline offset inside safe margins */
+.cert-border-frame {
+  position: absolute;
+  inset: 20px;
+  border-style: double;
+  border-width: 4px;
+  pointer-events: none;
+  z-index: 3;
+}
+
+/* Variant Specific Radial Highlight Bursts & Borders */
+.cert-root--gold .cert-bg {
+  background:
+    radial-gradient(ellipse 70% 60% at 50% 50%, var(--cert-gold-glow) 0%, transparent 75%),
+    linear-gradient(160deg, #0C0E14 0%, #121422 100%);
+}
+.cert-root--gold .cert-border-frame {
+  border-color: var(--cert-gold-border);
+}
+
+.cert-root--blue .cert-bg {
+  background:
+    radial-gradient(ellipse 70% 60% at 50% 50%, var(--cert-blue-glow) 0%, transparent 75%),
+    linear-gradient(160deg, #0C0E14 0%, #0E1220 100%);
+}
+.cert-root--blue .cert-border-frame {
+  border-color: var(--cert-blue-border);
+}
+
+.cert-root--silver .cert-bg {
+  background:
+    radial-gradient(ellipse 70% 60% at 50% 50%, var(--cert-silver-glow) 0%, transparent 75%),
+    linear-gradient(160deg, #0C0E14 0%, #11131C 100%);
+}
+.cert-root--silver .cert-border-frame {
+  border-color: var(--cert-silver-border);
+}
+
+/* ─── Header Elements ─── */
+.cert-header {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.cert-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cert-logo-icon {
+  width: 28px;
+  height: 28px;
+}
+.cert-root--gold .cert-logo-icon { color: var(--cert-gold); }
+.cert-root--blue .cert-logo-icon { color: var(--cert-blue); }
+.cert-root--silver .cert-logo-icon { color: var(--cert-silver); }
+
+.cert-wordmark {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+  color: var(--cert-text-hi);
+}
+
+.cert-sponsor-logo {
+  max-height: 38px;
+  max-width: 160px;
+  object-fit: contain;
+}
+
+.cert-sponsor-placeholder {
+  border: 1px solid var(--cert-border-light);
+  background: var(--cert-bg-glass);
+  border-radius: 100px;
+  padding: 4px 12px;
+}
+
+.cert-sponsor-tag {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--cert-text-mid);
+}
+
+/* ─── Main Content ─── */
+.cert-body {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  flex: 1;
+  justify-content: center;
+}
+
+.cert-title {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin: 0 0 16px 0;
+}
+.cert-root--gold .cert-title { color: var(--cert-gold); }
+.cert-root--blue .cert-title { color: var(--cert-blue); }
+.cert-root--silver .cert-title { color: var(--cert-silver); }
+
+.cert-preposition {
+  font-size: 14px;
+  font-style: italic;
+  color: var(--cert-text-mid);
+  margin: 0 0 12px 0;
+}
+
+.cert-recipient-name {
+  font-size: 48px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  color: var(--cert-text-hi);
+  margin: 0 0 14px 0;
+}
+
+.cert-description {
+  font-size: 13px;
+  color: var(--cert-text-mid);
+  max-width: 580px;
+  margin: 0 0 18px 0;
+  line-height: 1.45;
+}
+
+.cert-program-name {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0 0 24px 0;
+}
+.cert-root--gold .cert-program-name { color: var(--cert-gold); }
+.cert-root--blue .cert-program-name { color: var(--cert-blue); }
+.cert-root--silver .cert-program-name { color: var(--cert-silver); }
+
+/* Stats Row */
+.cert-stats-row {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  margin-bottom: 8px;
+}
+
+.cert-stat-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.cert-stat-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--cert-text-lo);
+  letter-spacing: 0.08em;
+  margin-bottom: 2px;
+}
+
+.cert-stat-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--cert-text-hi);
+}
+
+.cert-stat-divider {
+  width: 1px;
+  height: 24px;
+  background-color: var(--cert-border-light);
+}
+
+/* ─── Footer Section ─── */
+.cert-footer {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-top: 16px;
+}
+
+.cert-verify-block {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.cert-qr-container {
+  width: 90px;
+  height: 90px;
+  background-color: #FFFFFF;
+  border-radius: 8px;
+  padding: 6px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+}
+
+.cert-qr-code {
+  width: 100%;
+  height: 100%;
+}
+
+.cert-metadata {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cert-meta-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.cert-meta-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--cert-text-lo);
+  letter-spacing: 0.05em;
+}
+
+.cert-meta-value {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--cert-text-mid);
+}
+
+.cert-code {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Signatures */
+.cert-signatures {
+  display: flex;
+  gap: 32px;
+}
+
+.cert-sig-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 140px;
+}
+
+.cert-sig-line {
+  height: 32px;
+  width: 100px;
+  color: var(--cert-text-hi);
+}
+
+.cert-sig-divider {
+  width: 100%;
+  height: 1px;
+  background-color: var(--cert-border-light);
+  margin: 4px 0;
+}
+
+.cert-signer-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--cert-text-hi);
+  text-align: center;
+}
+
+.cert-signer-title {
+  font-size: 9px;
+  color: var(--cert-text-lo);
+  text-align: center;
+}
+
+
+/* ─── ProfilePage Section List Styles ──────────────────────────────────────── */
+
+.cert-section-container {
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.20);
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(40px);
+  padding: 32px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+}
+
+.cert-section-heading {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--cert-text-hi);
+  margin-bottom: 24px;
+}
+
+.cert-empty-state {
+  text-align: center;
+  padding: 32px;
+  color: var(--cert-text-mid);
+}
+
+.cert-programs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.cert-program-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.06);
+  transition: all 0.2s ease-in-out;
+}
+
+.cert-program-row:hover:not(.cert-program-row--disabled) {
+  background: rgba(255, 255, 255, 0.10);
+  border-color: rgba(255, 255, 255, 0.15);
+  transform: translateY(-1px);
+}
+
+.cert-program-row--disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.cert-program-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cert-row-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--cert-text-hi);
+}
+
+.cert-row-meta {
+  font-size: 13px;
+  color: var(--cert-text-mid);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cert-meta-dot {
+  color: var(--cert-text-lo);
+}
+
+.cert-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Button UI Components */
+.cert-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15ms cubic-bezier(0, 0, 0.2, 1);
+  box-sizing: border-box;
+}
+
+.cert-btn--primary {
+  padding: 10px 18px;
+  background: rgba(201, 152, 58, 0.15);
+  border: 1px solid rgba(201, 152, 58, 0.30);
+  color: var(--cert-gold);
+}
+.cert-btn--primary:hover:not(:disabled) {
+  background: rgba(201, 152, 58, 0.25);
+  border-color: rgba(201, 152, 58, 0.50);
+  color: #e8c77f;
+}
+.cert-btn--primary:focus {
+  outline: 2px solid var(--cert-gold);
+  outline-offset: 2px;
+}
+.cert-btn--primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cert-btn--icon {
+  width: 42px;
+  height: 42px;
+  background: transparent;
+  border: 1px solid var(--cert-border-light);
+  color: var(--cert-text-mid);
+}
+.cert-btn--icon:hover:not(:disabled) {
+  border-color: var(--cert-gold-border);
+  color: var(--cert-gold);
+}
+.cert-btn--icon:focus {
+  outline: 2px solid var(--cert-gold);
+  outline-offset: 2px;
+}
+.cert-btn--icon:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Status Badges */
+.cert-status-badge {
+  display: flex;
+  align-items: center;
+  margin-left: 16px;
+}
+
+.cert-badge {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+.cert-badge--kyc {
+  background-color: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.30);
+  color: #f59e0b;
+}
+
+.cert-badge--tx {
+  background-color: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.30);
+  color: #6366f1;
+}
+
+/* Toast Alert Styling */
+.cert-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 24px;
+  border-radius: 16px;
+  border: 1px solid rgba(34, 197, 150, 0.30);
+  background: #0E121E;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  color: var(--cert-text-hi);
+  font-size: 14px;
+  font-weight: 500;
+  animation: slideIn 0.3s cubic-bezier(0, 0, 0.2, 1);
+}
+
+@keyframes slideIn {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+
+/* ─── Responsive Preview Modal Styling ─────────────────────────────────────── */
+
+.cert-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  background-color: rgba(12, 14, 20, 0.85);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.cert-modal-container {
+  position: relative;
+  width: 100%;
+  max-width: 1024px;
+  background: #0F121C;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 28px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: calc(100vh - 48px);
+}
+
+.cert-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24px 32px 18px;
+  border-b: 1px solid var(--cert-border-light);
+}
+
+.cert-modal-heading {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--cert-text-hi);
+}
+
+.cert-modal-close {
+  background: transparent;
+  border: none;
+  color: var(--cert-text-mid);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 8px;
+  transition: all 0.15s;
+}
+.cert-modal-close:hover {
+  color: var(--cert-text-hi);
+  background-color: rgba(255,255,255,0.06);
+}
+.cert-modal-close:focus {
+  outline: 2px solid var(--cert-gold);
+}
+
+.cert-modal-body {
+  display: grid;
+  grid-template-columns: 63% 37%;
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* Left Pane: Preview image aspect containment */
+.cert-modal-preview-pane {
+  background-color: #07090F;
+  padding: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border-right: 1px solid var(--cert-border-light);
+}
+
+.cert-preview-wrapper {
+  width: 100%;
+  max-width: 580px;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.6);
+}
+
+/* Right Pane: Actions and Details */
+.cert-modal-actions-pane {
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-sizing: border-box;
+}
+
+.cert-meta-details {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cert-details-heading {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--cert-text-hi);
+  line-height: 1.35;
+}
+
+.cert-details-recipient {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--cert-gold);
+}
+
+.cert-details-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  margin-top: 12px;
+  padding-top: 20px;
+  border-top: 1px solid var(--cert-border-light);
+}
+
+.cert-grid-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cert-grid-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--cert-text-lo);
+  letter-spacing: 0.05em;
+}
+
+.cert-grid-value {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--cert-text-hi);
+}
+
+/* Modal Actions Buttons */
+.cert-action-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 32px;
+}
+
+.cert-modal-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 14px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-sizing: border-box;
+  text-decoration: none;
+}
+
+.cert-modal-btn--primary {
+  background: var(--cert-gold);
+  border: 1px solid var(--cert-gold);
+  color: #0C0E14;
+}
+.cert-modal-btn--primary:hover {
+  background-color: #e8c77f;
+  border-color: #e8c77f;
+  transform: translateY(-1px);
+}
+
+.cert-modal-btn--secondary {
+  background: transparent;
+  border: 1px solid var(--cert-border-light);
+  color: var(--cert-text-hi);
+}
+.cert-modal-btn--secondary:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+.cert-modal-btn--link {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--cert-text-mid);
+}
+.cert-modal-btn--link:hover {
+  color: var(--cert-text-hi);
+  border-color: var(--cert-border-light);
+}
+
+/* Mobile Sticky Footer */
+.cert-modal-mobile-footer {
+  display: none;
+}
+
+
+/* ─── Responsive Media Queries ────────────────────────────────────────────── */
+
+@media (max-width: 960px) {
+  .cert-modal-container {
+    max-height: 95vh;
+  }
+  .cert-modal-body {
+    grid-template-columns: 1fr;
+  }
+  .cert-modal-preview-pane {
+    border-right: none;
+    border-bottom: 1px solid var(--cert-border-light);
+    padding: 24px;
+  }
+  .cert-modal-actions-pane {
+    padding: 24px;
+  }
+}
+
+@media (max-width: 640px) {
+  .cert-program-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+  .cert-row-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .cert-btn--primary {
+    flex: 1;
+  }
+  .cert-status-badge {
+    margin-left: 0;
+    margin-top: 8px;
+  }
+  .cert-toast {
+    left: 20px;
+    right: 20px;
+    bottom: 20px;
+    justify-content: center;
+  }
+}
+
+/* Mobile viewport specific scaling definitions */
+@media (max-width: 480px) {
+  .cert-modal-container {
+    border-radius: 0;
+    max-height: 100vh;
+    height: 100vh;
+  }
+  .cert-modal-body {
+    padding-bottom: 84px; /* Space for sticky button */
+  }
+  .cert-modal-preview-pane {
+    padding: 16px;
+  }
+  .cert-modal-mobile-footer {
+    display: block;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background-color: #0F121C;
+    border-top: 1px solid var(--cert-border-light);
+    padding: 16px;
+    box-sizing: border-box;
+    z-index: 100;
+  }
+  .cert-mobile-sticky-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    padding: 16px;
+    border-radius: 12px;
+    background-color: var(--cert-gold);
+    border: none;
+    color: #0c0a09;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  /* Hide the redundant desktop download button inside the actions list on mobile */
+  .cert-action-buttons .cert-modal-btn--primary {
+    display: none;
+  }
+}
+
+
+/* ─── CSS Print Overrides ──────────────────────────────────────────────────── */
+
+@media print {
+  /* Set exact orientation & paper layout */
+  @page {
+    size: A4 landscape;
+    margin: 0;
+  }
+
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    background-color: var(--cert-bg-dark) !important;
+  }
+
+  /* Hide screen controls, actions, navigation, wrappers */
+  .cert-section-container,
+  .cert-toast,
+  .cert-modal-backdrop,
+  .cert-modal-header,
+  .cert-modal-actions-pane,
+  .cert-modal-mobile-footer,
+  .no-print {
+    display: none !important;
+  }
+
+  /* Force print target to expand to paper dimensions */
+  .cert-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 297mm;
+    height: 210mm;
+    padding: 20mm; /* Outer print margins */
+    aspect-ratio: 1.414 / 1;
+    page-break-after: avoid;
+    page-break-inside: avoid;
+  }
+
+  .cert-border-frame {
+    inset: 10mm;
+  }
+
+  .cert-verify-block {
+    left: 10mm;
+  }
+
+  .cert-signatures {
+    right: 10mm;
+  }
+}

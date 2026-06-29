@@ -218,7 +218,7 @@ fn test_pause_wins_over_open_circuit_batch_payout() {
 
     let recipients = vec![&env, recipient];
     let amounts = vec![&env, 100i128];
-    client.batch_payout_by(&payout_key, &recipients, &amounts, &None);
+    client.batch_payout_by(&payout_key, &recipients, &amounts);
 }
 
 /// When lock is paused AND the circuit is open, lock operations must return
@@ -288,7 +288,7 @@ fn test_all_three_active_pause_wins_batch_payout() {
 
     let recipients = vec![&env, recipient];
     let amounts = vec![&env, 100i128];
-    client.batch_payout_by(&payout_key, &recipients, &amounts, &None);
+    client.batch_payout_by(&payout_key, &recipients, &amounts);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -332,7 +332,7 @@ fn test_circuit_open_fires_when_pause_inactive_batch_payout() {
 
     let recipients = vec![&env, recipient];
     let amounts = vec![&env, 100i128];
-    client.batch_payout_by(&payout_key, &recipients, &amounts, &None);
+    client.batch_payout_by(&payout_key, &recipients, &amounts);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

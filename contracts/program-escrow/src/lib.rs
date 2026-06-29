@@ -177,6 +177,8 @@ const ADMIN_ROTATION_CANCELLED: Symbol = symbol_short!("AdmCanc");
 const CONTROLLER_PROPOSED: Symbol = symbol_short!("CtrlProp");
 const CONTROLLER_ACCEPTED: Symbol = symbol_short!("CtrlAcc");
 const CONTROLLER_ROTATION_CANCELLED: Symbol = symbol_short!("CtrlCanc");
+const FOT_ROUTER_SET: Symbol = symbol_short!("FotRtrS");
+const FOT_ROUTER_CLEARED: Symbol = symbol_short!("FotRtrC");
 
 // Storage keys
 const PROGRAM_DATA: Symbol = symbol_short!("ProgData");
@@ -216,6 +218,7 @@ pub const DELEGATE_PERMISSION_MASK: u32 =
 // Role management constants for deterministic behavior
 pub const ROLE_MANAGEMENT_SCHEMA_VERSION_V1: u32 = 1;
 pub const MAX_ROLE_TRANSITION_PERIOD: u64 = 30 * 24 * 60 * 60; // 30 days in seconds
+pub const PAUSE_REASON_MAX_LEN: u32 = 256;
 
 /// Deterministic role transition state for upgrade-safe storage.
 #[contracttype]
@@ -671,9 +674,47 @@ pub enum ProgramStatus {
 /// contract.set_program_circuit_breaker_threshold(&program_id, &None);
 /// ```
 
+<<<<<<< fix/optimize-program-data-struct-field-ordering
 // schema_version: 2
 // Field ordering optimized for Soroban XDR write cost: fixed-size hot-path fields
 // come first so partial-update patterns touch the smallest possible XDR prefix.
+=======
+/// Configuration for fee-on-transfer (FoT) token routing via an AMM router.
+///
+/// When set, the contract queries the router for a quote before each payout
+/// transfer to compute the gross amount needed to deliver the intended net
+/// amount after any FoT deductions.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FotRouter {
+    /// Address of the router contract that implements `quote(Address, i128) -> i128`.
+    pub router_contract: Address,
+    /// Slippage tolerance in basis points (1 bp = 0.01%).
+    /// Applied as a buffer on top of the quoted amount.
+    pub slippage_bps: u32,
+}
+
+/// Event emitted when the FoT router configuration is set or updated.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FotRouterSetEvent {
+    pub version: u32,
+    pub router_contract: Address,
+    pub slippage_bps: u32,
+    pub set_by: Address,
+    pub timestamp: u64,
+}
+
+/// Event emitted when the FoT router configuration is cleared.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FotRouterClearedEvent {
+    pub version: u32,
+    pub set_by: Address,
+    pub timestamp: u64,
+}
+
+>>>>>>> master
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProgramData {
@@ -693,11 +734,15 @@ pub struct ProgramData {
     /// Optional per-program circuit breaker failure threshold.
     /// If set, overrides the global default (3) for this program.
     /// Must be between 1 and 100 inclusive when set.
+<<<<<<< fix/optimize-program-data-struct-field-ordering
     pub circuit_breaker_threshold: Option<u8>,
     // --- Cold path: variable-size fields written infrequently ---
     pub program_id: String,
     pub payout_history: soroban_sdk::Vec<PayoutRecord>,
     pub reference_hash: Option<soroban_sdk::Bytes>,
+=======
+    pub circuit_breaker_threshold: Option<u32>,
+>>>>>>> master
 }
 
 /// Program delegate audit record used for bulk reporting and indexer views.
@@ -864,9 +909,9 @@ pub struct CircuitBreakerThresholdSetEvent {
     /// Program the threshold applies to.
     pub program_id: String,
     /// Previous threshold value (None = not set, uses global default of 3).
-    pub previous_threshold: Option<u8>,
+    pub previous_threshold: Option<u32>,
     /// New threshold value (None = reset to global default of 3).
-    pub new_threshold: Option<u8>,
+    pub new_threshold: Option<u32>,
     /// Admin that made the change.
     pub set_by: Address,
     /// Ledger timestamp.
@@ -1027,7 +1072,7 @@ const IDEMPOTENCY_KEY_USED: Symbol = symbol_short!("IdempUsed");
 /// Keys must be between 1 and 256 bytes long.
 fn validate_idempotency_key(key: &str) -> Result<(), BatchError> {
     let key_len = key.len();
-    if key_len < MIN_IDEMPOTENCY_KEY_LENGTH || key_len > MAX_IDEMPOTENCY_KEY_LENGTH {
+    if key_len < MIN_IDEMPOTENCY_KEY_LENGTH as usize || key_len > MAX_IDEMPOTENCY_KEY_LENGTH as usize {
         return Err(BatchError::IdempotencyKeyInvalid);
     }
 
@@ -1049,7 +1094,7 @@ fn validate_idempotency_key(key: &str) -> Result<(), BatchError> {
     Ok(())
 }
 
-const ROLE_MANAGEMENT_SCHEMA: Symbol = symbol_short!("RoleMgmtSch");
+const ROLE_MANAGEMENT_SCHEMA: Symbol = symbol_short!("RoleMgmt");
 
 // Event symbol for per-window program spend limit enforcement
 const PROG_SPEND_LIMIT: Symbol = symbol_short!("prg_lim");
@@ -1238,6 +1283,8 @@ pub enum DataKey {
     SpendLimitSchemaVersion,
     PauseSchemaVersion,
     TokenAllowlist,
+    TokenAllowlistV2,
+    TokenDecimals(Address),
     TokenAllowlistSchemaVersion,
     SpendingConfig(String),
     SpendingState(String),
@@ -1265,6 +1312,12 @@ pub enum DataKey {
     RoleManagementConfig,
     /// Anonymous resolver for a program — maps program_id to AnonymousResolver.
     AnonymousResolver(String),
+    /// Lazy inverted index: (program_id, recipient) → Vec<PayoutRecord>.
+    ///
+    /// Written on first payout to a given recipient; never touched until then,
+    /// so programs with no payouts pay zero cold-storage cost.
+    /// Stored in persistent storage so it survives TTL-based ledger pruning.
+    RecipientPayoutIndex(String, Address),
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1632,9 +1685,10 @@ pub enum BatchError {
     IdempotencyKeyInvalid = 416,
     InvalidMerkleRoot = 409,
     BatchReceiptNotFound = 414,
-    InvalidPaginationLimit = 415,
+    InvalidPaginationLimit = 411,
     PaginationLimitExceeded = 412,
     InvalidPaginationOffset = 413,
+    BatchTooLarge = 410,
 }
 
 pub const MAX_BATCH_SIZE: u32 = 100;
@@ -1774,6 +1828,7 @@ mod reentrancy_tests;
 #[cfg(any())] // pre-existing syntax error in file
 mod test_circuit_breaker_enforcement;
 // #[cfg(test)] mod test_dispute_resolution; // pre-existing breakage
+mod fot_routing;
 mod threshold_monitor;
 mod token_math;
 
@@ -1781,6 +1836,15 @@ mod token_math;
 // #[cfg(test)] mod malicious_reentrant; // pre-existing breakage
 #[cfg(test)]
 mod test_granular_pause;
+
+// ========================================================================
+// Property-based test suite — `src/tests/` submodule hierarchy
+// ========================================================================
+// Contains large property-based test surfaces (proptest) for the
+// fee-config rounding primitives.  All submodules are cfg(test)-gated
+// and live under `src/tests/`; see `src/tests/mod.rs` for the entry point.
+#[cfg(test)]
+mod tests;
 // #[cfg(test)] mod test_lifecycle; // pre-existing breakage
 // #[cfg(test)] mod test_full_lifecycle; // pre-existing breakage
 
@@ -1853,7 +1917,7 @@ impl ProgramEscrowContract {
         }
 
         // Validate schema version for upgrade safety
-        Self::validate_pagination_schema(env).map_err(|_| Error::InvalidPaginationOffset)?;
+        Self::validate_pagination_schema(env)?;
 
         let cfg = Self::get_history_pagination_config(env);
         if limit > cfg.max_limit {
@@ -1901,40 +1965,7 @@ impl ProgramEscrowContract {
         Ok(results)
     }
 
-    /// Admin-only immediate circuit breaker reset.
-    ///
-    /// Resets the circuit breaker to the `Closed` state and clears the
-    /// failure counters. This is an immediate/hard reset intended for use
-    /// by the contract admin after an incident has been resolved.
-    ///
-    /// Security: caller must be the contract admin (reads `DataKey::Admin` and
-    /// requires that address to sign the transaction). Emits an audit event
-    /// `(circuit, admin_reset)` with `(program_id, admin, timestamp)`.
-    pub fn reset_circuit_breaker(env: Env, program_id: String) -> Result<(), Error> {
-        // Read admin from instance storage and require its auth
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .map_err(|_| Error::Unauthorized)?;
-        admin.require_auth();
 
-        // Close circuit and clear counters (close_circuit resets counts and opened_at)
-        crate::error_recovery::close_circuit(&env);
-
-        // Ensure failure count is cleared as well (defensive)
-        env.storage()
-            .persistent()
-            .set(&crate::error_recovery::CircuitBreakerKey::FailureCount, &0u32);
-
-        // Emit admin reset audit event with program context
-        env.events().publish(
-            (symbol_short!("circuit"), symbol_short!("admin_reset")),
-            (program_id, admin, env.ledger().timestamp()),
-        );
-
-        Ok(())
-    }
 
     fn order_batch_lock_items(env: &Env, items: &Vec<LockItem>) -> soroban_sdk::Vec<LockItem> {
         let mut ordered: soroban_sdk::Vec<LockItem> = Vec::new(env);
@@ -2002,10 +2033,7 @@ impl ProgramEscrowContract {
 
     /// Validate idempotency key format and constraints
     fn validate_idempotency_key(idempotency_key: &String) {
-        let key_str = idempotency_key.as_str();
-        if validate_idempotency_key(key_str).is_err() {
-            panic!("IdempotencyKeyInvalid");
-        }
+        Self::validate_idempotency_key_format(idempotency_key);
     }
 
     /// Check if an idempotency key has been used before
@@ -2253,6 +2281,7 @@ impl ProgramEscrowContract {
             archived_at: None,
             status: ProgramStatus::Draft,
             circuit_breaker_threshold: None,
+            fot_router: None,
         };
 
         // Store program data in registry
@@ -2608,6 +2637,7 @@ impl ProgramEscrowContract {
                 archived_at: None,
                 status: ProgramStatus::Draft,
                 circuit_breaker_threshold: None,
+                fot_router: None,
             };
             let program_key = DataKey::Program(program_id.clone());
             env.storage().instance().set(&program_key, &program_data);
@@ -2977,13 +3007,13 @@ impl ProgramEscrowContract {
 
         if let Some(r) = lock_fee_rate {
             if r > MAX_FEE_RATE {
-                panic_with_error!(&env, ContractError::InvalidFeeRate);
+                panic_with_error!(&env, &ContractError::InvalidFeeRate);
             }
             cfg.lock_fee_rate = r;
         }
         if let Some(r) = payout_fee_rate {
             if r > MAX_FEE_RATE {
-                panic_with_error!(&env, ContractError::InvalidFeeRate);
+                panic_with_error!(&env, &ContractError::InvalidFeeRate);
             }
             cfg.payout_fee_rate = r;
         }
@@ -3444,7 +3474,7 @@ impl ProgramEscrowContract {
     fn generate_rotation_nonce(env: &Env, proposer: &Address) -> u64 {
         // Use combination of timestamp, proposer address, and ledger sequence for deterministic nonce
         let timestamp = env.ledger().timestamp();
-        let sequence = env.ledger().sequence();
+        let sequence = env.ledger().sequence() as u64;
 
         // Simple deterministic hash combination (in production, use a proper hash function)
         (timestamp.wrapping_mul(31) ^ sequence.wrapping_mul(17) ^ proposer.to_string().len() as u64)
@@ -4028,6 +4058,81 @@ impl ProgramEscrowContract {
         program_data
     }
 
+    /// Set the FoT router configuration for fee-on-transfer token support.
+    ///
+    /// When configured, the contract queries the router before each payout
+    /// transfer to compute the gross amount needed to deliver the intended
+    /// net amount after FoT deductions.
+    ///
+    /// # Arguments
+    /// * `router_contract` - Address of the AMM router contract implementing `quote`.
+    /// * `slippage_bps` - Slippage tolerance in basis points (0-500, i.e. 0-5%).
+    ///
+    /// # Panics
+    /// * If the contract is not initialized
+    /// * If caller is not the admin
+    /// * If `slippage_bps` exceeds 500 (5%)
+    pub fn set_fot_router(env: Env, router_contract: Address, slippage_bps: u32) {
+        let admin = Self::require_admin(&env);
+        if slippage_bps > 500 {
+            panic!("FoT router slippage exceeds maximum (500 bps = 5%)");
+        }
+
+        let mut program_data: ProgramData = env
+            .storage()
+            .instance()
+            .get(&PROGRAM_DATA)
+            .unwrap_or_else(|| panic!("Program not initialized"));
+
+        program_data.fot_router = Some(FotRouter {
+            router_contract: router_contract.clone(),
+            slippage_bps,
+        });
+
+        env.storage().instance().set(&PROGRAM_DATA, &program_data);
+
+        env.events().publish(
+            (FOT_ROUTER_SET,),
+            FotRouterSetEvent {
+                version: EVENT_VERSION_V2,
+                router_contract,
+                slippage_bps,
+                set_by: admin,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+    }
+
+    /// Clear the FoT router configuration, disabling fee-on-transfer routing.
+    ///
+    /// After clearing, payouts behave as before (no routing adjustment).
+    ///
+    /// # Panics
+    /// * If the contract is not initialized
+    /// * If caller is not the admin
+    pub fn clear_fot_router(env: Env) {
+        let admin = Self::require_admin(&env);
+
+        let mut program_data: ProgramData = env
+            .storage()
+            .instance()
+            .get(&PROGRAM_DATA)
+            .unwrap_or_else(|| panic!("Program not initialized"));
+
+        program_data.fot_router = None;
+
+        env.storage().instance().set(&PROGRAM_DATA, &program_data);
+
+        env.events().publish(
+            (FOT_ROUTER_CLEARED,),
+            FotRouterClearedEvent {
+                version: EVENT_VERSION_V2,
+                set_by: admin,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+    }
+
     pub fn get_program_release_schedules(env: Env) -> soroban_sdk::Vec<ProgramReleaseSchedule> {
         env.storage()
             .instance()
@@ -4438,6 +4543,7 @@ impl ProgramEscrowContract {
         failure_threshold: u32,
         success_threshold: u32,
         max_error_log: u32,
+        recovery_window: u64,
     ) {
         caller.require_auth();
         let admin = error_recovery::get_circuit_admin(&env).expect("Circuit admin not set");
@@ -4449,6 +4555,7 @@ impl ProgramEscrowContract {
             failure_threshold,
             success_threshold,
             max_error_log,
+            recovery_window,
         };
         error_recovery::set_config(&env, config);
     }
@@ -4727,10 +4834,7 @@ impl ProgramEscrowContract {
     ) -> Option<PayoutIdempotencyKey> {
         match idempotency_key {
             Some(key) => {
-                if validate_idempotency_key(key.as_str()).is_err() {
-                    panic!("IdempotencyKeyInvalid");
-                }
-
+                Self::validate_idempotency_key_format(key);
                 Self::check_idempotency_key(env, key)
             }
             None => None,
@@ -4741,8 +4845,24 @@ impl ProgramEscrowContract {
     ///
     /// This helper is kept for explicit format assertions in internal code.
     fn validate_idempotency_key_format(key: &String) {
-        if validate_idempotency_key(key.as_str()).is_err() {
+        let key_len = key.len() as usize;
+        if key_len < MIN_IDEMPOTENCY_KEY_LENGTH as usize || key_len > MAX_IDEMPOTENCY_KEY_LENGTH as usize {
             panic!("IdempotencyKeyInvalid");
+        }
+        let mut buf = [0u8; 128];
+        key.copy_into_slice(&mut buf[..key_len]);
+        let mut i = 0;
+        while i < key_len {
+            let b = buf[i];
+            let valid_char = (b >= b'a' && b <= b'z')
+                || (b >= b'A' && b <= b'Z')
+                || (b >= b'0' && b <= b'9')
+                || b == b'-'
+                || b == b'_';
+            if !valid_char {
+                panic!("IdempotencyKeyInvalid");
+            }
+            i += 1;
         }
     }
     /// Set or update the per-window spending limit for a program.
@@ -4814,10 +4934,10 @@ impl ProgramEscrowContract {
     /// # Events
     /// Emits `CB_THRESHOLD_SET` with [`CircuitBreakerThresholdSetEvent`].
     /// Set or update the per-program circuit breaker failure threshold.
-    pub fn set_program_circuit_breaker_threshold(
+    pub fn set_program_cb_threshold(
         env: Env,
         program_id: String,
-        threshold: Option<u8>,
+        threshold: Option<u32>,
     ) {
         let program_data = Self::get_program_data_by_id(&env, &program_id);
         program_data.authorized_payout_key.require_auth();
@@ -5365,11 +5485,6 @@ impl ProgramEscrowContract {
             (TOKEN_ALLOWLIST_UPDATED,),
             TokenAllowlistUpdatedEvent {
                 version: EVENT_VERSION_V2,
-                program_id: updated_data.program_id.clone(),
-                recipient_count: recipients.len() as u32,
-                total_amount: total_payout,
-                remaining_balance: updated_data.remaining_balance,
-                idempotency_key,
                 token,
                 added: false,
                 updated_by: admin,
@@ -5451,25 +5566,14 @@ impl ProgramEscrowContract {
     /// - Protected by reentrancy guard.
     /// - Respects circuit breaker and threshold limits.
     /// - Idempotency key ensures deterministic behavior on retries.
-    /// Execute a batch payout to multiple winners.
-    pub fn batch_payout(
-        env: Env,
-        recipients: soroban_sdk::Vec<Address>,
-        amounts: soroban_sdk::Vec<i128>,
-        idempotency_key: Option<String>,
-    ) -> ProgramData {
-        Self::batch_payout_internal(env, None, recipients, amounts, idempotency_key)
-    }
-
     /// Execute a batch payout with a specified caller.
     pub fn batch_payout_by(
         env: Env,
         caller: Address,
         recipients: soroban_sdk::Vec<Address>,
         amounts: soroban_sdk::Vec<i128>,
-        idempotency_key: Option<String>,
     ) -> ProgramData {
-        Self::batch_payout_internal(env, Some(caller), recipients, amounts, idempotency_key)
+        Self::batch_payout_internal(env, Some(caller), None, recipients, amounts)
     }
 
     /// Compute a deterministic Merkle root over a batch of `(recipient, amount)` pairs.
@@ -5537,7 +5641,6 @@ impl ProgramEscrowContract {
         idempotency_key: Option<String>,
         recipients: soroban_sdk::Vec<Address>,
         amounts: soroban_sdk::Vec<i128>,
-        idempotency_key: Option<String>,
     ) -> ProgramData {
         // Validation precedence (deterministic ordering):
         // 1.  Reentrancy guard
@@ -5680,6 +5783,8 @@ impl ProgramEscrowContract {
         let batch_fee_waived = Self::is_fee_waived(cfg.fee_waivers, &PayoutType::Batch(0));
         let mut net_amounts: soroban_sdk::Vec<i128> = soroban_sdk::Vec::new(&env);
         let mut fee_amounts: soroban_sdk::Vec<i128> = soroban_sdk::Vec::new(&env);
+        let mut transfer_amounts: soroban_sdk::Vec<i128> = soroban_sdk::Vec::new(&env);
+        let mut total_actual_outflow: i128 = 0;
         for i in 0..recipients.len() {
             let gross = amounts.get(i).unwrap();
             let pay_fee = if batch_fee_waived {
@@ -5696,8 +5801,31 @@ impl ProgramEscrowContract {
                 Some(v) if v > 0 => v,
                 _ => panic!("Payout fee consumes entire payout"),
             };
+
+            // Apply FoT routing to compute actual transfer amount needed
+            // to deliver the intended net after fee-on-transfer deductions.
+            let transfer_amount = fot_routing::apply_fot_router(
+                &env,
+                &program_data.token_address,
+                net,
+                &program_data.fot_router,
+            );
+
+            let debit = pay_fee
+                .checked_add(transfer_amount)
+                .expect("Batch payout debit overflow");
+            total_actual_outflow = total_actual_outflow
+                .checked_add(debit)
+                .expect("Batch total outflow overflow");
+
             net_amounts.push_back(net);
             fee_amounts.push_back(pay_fee);
+            transfer_amounts.push_back(transfer_amount);
+        }
+
+        // Balance check uses the actual total outflow including FoT markup.
+        if total_actual_outflow > program_data.remaining_balance {
+            panic!("Insufficient balance");
         }
 
         // 9. Execute transfers — all pre-validation passed; this section must not fail.
@@ -5708,9 +5836,9 @@ impl ProgramEscrowContract {
 
         for i in 0..recipients.len() {
             let recipient = recipients.get(i).unwrap().clone();
-            let net = net_amounts.get(i).unwrap();
+            let transfer_amount = transfer_amounts.get(i).unwrap();
             let pay_fee = fee_amounts.get(i).unwrap();
-            let gross = amounts.get(i).unwrap();
+            let _gross = amounts.get(i).unwrap();
 
             if pay_fee > 0 {
                 token_client.transfer(&contract_address, &cfg.fee_recipient, &pay_fee);
@@ -5723,31 +5851,42 @@ impl ProgramEscrowContract {
                     cfg.fee_recipient.clone(),
                 );
             }
-            token_client.transfer(&contract_address, &recipient, &net);
+            token_client.transfer(&contract_address, &recipient, &transfer_amount);
             error_recovery::record_success(&env);
             threshold_monitor::record_operation_success(&env);
-            threshold_monitor::record_outflow(&env, gross);
+            threshold_monitor::record_outflow(&env, pay_fee + transfer_amount);
             updated_history.push_back(PayoutRecord {
                 recipient,
-                amount: net,
+                amount: transfer_amount,
                 timestamp,
-            });
+            };
+            updated_history.push_back(record.clone());
+            // Lazy recipient index
+            Self::append_recipient_index(
+                &env,
+                &program_data.program_id,
+                &recipient,
+                &record,
+            );
         }
 
         // Update program data atomically after all transfers succeed.
         let mut updated_data = program_data.clone();
-        updated_data.remaining_balance -= total_payout;
+        updated_data.remaining_balance = updated_data
+            .remaining_balance
+            .checked_sub(total_actual_outflow)
+            .expect("Remaining balance underflow");
         updated_data.payout_history = updated_history;
         env.storage().instance().set(&PROGRAM_DATA, &updated_data);
 
         // Store idempotency record (CEI: after state mutation, before event).
-        if let Some(key) = idempotency_key {
+        if let Some(ref key) = idempotency_key {
             Self::store_idempotency_record(
                 &env,
-                key,
+                key.clone(),
                 symbol_short!("batchpay"),
                 updated_data.program_id.clone(),
-                total_payout,
+                total_actual_outflow,
                 recipients.len() as u32,
                 executor,
             );
@@ -5760,8 +5899,9 @@ impl ProgramEscrowContract {
                 version: EVENT_VERSION_V2,
                 program_id: updated_data.program_id.clone(),
                 recipient_count: recipients.len() as u32,
-                total_amount: total_payout,
+                total_amount: total_actual_outflow,
                 remaining_balance: updated_data.remaining_balance,
+                idempotency_key,
             },
         );
 
@@ -5779,17 +5919,6 @@ impl ProgramEscrowContract {
             .unwrap_or(0u32)
     }
 
-    /// Execute batch payouts with idempotency support.
-    ///
-    /// # Arguments
-    /// * `recipients` - Vector of winner addresses.
-    /// * `amounts` - Vector of prize amounts (must match recipients length).
-    /// * `idempotency_key` - Optional unique key to ensure idempotent behavior.
-    ///
-    /// # Returns
-    /// The updated `ProgramData` reflecting the new balance and payout history.
-    ///
-    /// # Idempotency
     /// - If `idempotency_key` is provided and already used, returns the stored result without re-executing.
     /// - If `idempotency_key` is provided and new, executes the payout and stores the key.
     /// - If `idempotency_key` is None, behaves like regular batch_payout.
@@ -5798,95 +5927,7 @@ impl ProgramEscrowContract {
     /// - Requires authorization from the `authorized_payout_key`.
     /// - Protected by reentrancy guard.
     /// - Respects circuit breaker and threshold limits.
-    pub fn batch_payout_idempotent(
-        env: Env,
-        recipients: Vec<Address>,
-        amounts: Vec<i128>,
-        idempotency_key: Option<String>,
-    ) -> ProgramData {
-        Self::batch_payout_idempotent_internal(env, None, recipients, amounts, idempotency_key)
-    }
 
-    pub fn batch_payout_idempotent_by(
-        env: Env,
-        caller: Address,
-        recipients: Vec<Address>,
-        amounts: Vec<i128>,
-        idempotency_key: Option<String>,
-    ) -> ProgramData {
-        Self::batch_payout_idempotent_internal(
-            env,
-            Some(caller),
-            recipients,
-            amounts,
-            idempotency_key,
-        )
-    }
-
-    fn batch_payout_idempotent_internal(
-        env: Env,
-        caller: Option<Address>,
-        recipients: Vec<Address>,
-        amounts: Vec<i128>,
-        idempotency_key: Option<String>,
-    ) -> ProgramData {
-        // Check if idempotency key already exists
-        if let Some(existing_record) =
-            Self::validate_and_get_idempotency_key(&env, &idempotency_key)
-        {
-            // Key already used - return existing state without re-executing
-            // This ensures idempotent behavior
-            let program_data: ProgramData = env
-                .storage()
-                .instance()
-                .get(&PROGRAM_DATA)
-                .unwrap_or_else(|| panic!("Program not initialized"));
-
-            // Emit event indicating idempotent replay
-            env.events().publish(
-                (symbol_short!("IdmReplay"),),
-                (
-                    existing_record.key.clone(),
-                    existing_record.program_id.clone(),
-                    existing_record.total_amount,
-                ),
-            );
-
-            return program_data;
-        }
-
-        // Execute normal batch payout
-        let program_data = Self::batch_payout_internal(
-            env.clone(),
-            caller,
-            recipients.clone(),
-            amounts.clone(),
-            None,
-        );
-
-        // Store idempotency key if provided (store all recipients and amounts)
-        if let Some(key) = &idempotency_key {
-            // Calculate total amount
-            let mut total_amount: i128 = 0;
-            for amount in amounts.iter() {
-                total_amount = crate::token_math::safe_add(total_amount, amount);
-            }
-
-            Self::store_idempotency_key(
-                &env,
-                key,
-                &program_data.program_id,
-                PayoutType::Batch(recipients.len() as u32),
-                None, // No single recipient for batch
-                None, // No single amount for batch
-                Some(recipients),
-                Some(amounts),
-                total_amount,
-            );
-        }
-
-        program_data
-    }
 
     /// Execute a single payout to one winner.
     ///
@@ -6033,10 +6074,6 @@ impl ProgramEscrowContract {
         // Per-window spending limit check (after per-payout threshold, before balance)
         Self::enforce_spending_window(&env, &program_data.program_id, amount);
 
-        if amount > program_data.remaining_balance {
-            panic!("Insufficient balance");
-        }
-
         let contract_address = env.current_contract_address();
         let token_client = token::Client::new(&env, &program_data.token_address);
         let cfg = Self::get_fee_config_internal(&env);
@@ -6055,6 +6092,25 @@ impl ProgramEscrowContract {
             panic!("Payout fee consumes entire payout");
         }
 
+        // Apply FoT routing to compute actual transfer amount needed
+        // to deliver the intended net after fee-on-transfer deductions.
+        let transfer_amount = fot_routing::apply_fot_router(
+            &env,
+            &program_data.token_address,
+            net,
+            &program_data.fot_router,
+        );
+
+        // Total debit from remaining_balance = protocol fee + routed transfer
+        let total_debit = pay_fee
+            .checked_add(transfer_amount)
+            .expect("Payout debit overflow");
+
+        // Balance check accounts for the actual outflow including FoT markup
+        if total_debit > program_data.remaining_balance {
+            panic!("Insufficient balance");
+        }
+
         if pay_fee > 0 {
             token_client.transfer(&contract_address, &cfg.fee_recipient, &pay_fee);
             Self::emit_fee_collected(
@@ -6067,27 +6123,40 @@ impl ProgramEscrowContract {
             );
         }
 
-        token_client.transfer(&contract_address, &recipient, &net);
+        token_client.transfer(&contract_address, &recipient, &transfer_amount);
 
         error_recovery::record_success(&env);
         threshold_monitor::record_operation_success(&env);
-        threshold_monitor::record_outflow(&env, amount);
+        // Record outflow using the amount debited from remaining_balance
+        threshold_monitor::record_outflow(&env, total_debit);
 
         let timestamp = env.ledger().timestamp();
         let payout_record = PayoutRecord {
             recipient: recipient.clone(),
-            amount: net,
+            amount: transfer_amount,
             timestamp,
         };
 
         let mut updated_history = program_data.payout_history.clone();
-        updated_history.push_back(payout_record);
+        updated_history.push_back(payout_record.clone());
 
         let mut updated_data = program_data.clone();
-        updated_data.remaining_balance -= amount;
+        updated_data.remaining_balance = updated_data
+            .remaining_balance
+            .checked_sub(total_debit)
+            .expect("Remaining balance underflow");
         updated_data.payout_history = updated_history;
 
         env.storage().instance().set(&PROGRAM_DATA, &updated_data);
+
+        // Lazy recipient index — write to persistent storage so the index
+        // survives instance TTL eviction.  Initialized on first write only.
+        Self::append_recipient_index(
+            &env,
+            &updated_data.program_id,
+            &payout_record.recipient,
+            &payout_record,
+        );
 
         // Store idempotency record if key was provided
         if let Some(key) = idempotency_key {
@@ -6108,7 +6177,7 @@ impl ProgramEscrowContract {
                 version: EVENT_VERSION_V2,
                 program_id: updated_data.program_id.clone(),
                 recipient: recipient.clone(),
-                amount: net,
+                amount: transfer_amount,
                 remaining_balance: updated_data.remaining_balance,
             },
         );
@@ -6410,7 +6479,7 @@ impl ProgramEscrowContract {
     fn trigger_program_releases_internal(env: Env, caller: Option<Address>) -> u32 {
         reentrancy_guard::acquire(&env);
 
-        let program_data: ProgramData = env
+        let mut program_data: ProgramData = env
             .storage()
             .instance()
             .get(&PROGRAM_DATA)
@@ -6425,12 +6494,12 @@ impl ProgramEscrowContract {
             panic!("Funds Paused");
         }
 
-        let schedules: soroban_sdk::Vec<ProgramReleaseSchedule> = env
+        let mut schedules: soroban_sdk::Vec<ProgramReleaseSchedule> = env
             .storage()
             .instance()
             .get(&SCHEDULES)
             .unwrap_or_else(|| Vec::new(&env));
-        let release_history: soroban_sdk::Vec<ProgramReleaseHistory> = env
+        let mut release_history: soroban_sdk::Vec<ProgramReleaseHistory> = env
             .storage()
             .instance()
             .get(&RELEASE_HISTORY)
@@ -6588,13 +6657,7 @@ impl ProgramEscrowContract {
     // Multi-tenant / Multi-program Migration Wrappers (ignore id for now)
     // ========================================================================
 
-    pub fn get_program_info_v2(env: Env, program_id: String) -> ProgramData {
-        let program_key = DataKey::Program(program_id);
-        env.storage()
-            .instance()
-            .get(&program_key)
-            .unwrap_or_else(|| panic!("Program not found"))
-    }
+
 
     pub fn lock_program_funds_v2(env: Env, program_id: String, amount: i128) -> ProgramData {
         Self::require_not_read_only(&env);
@@ -6730,7 +6793,7 @@ impl ProgramEscrowContract {
         merkle_root: soroban_sdk::BytesN<32>,
     ) -> BatchReceipt {
         let program_data =
-            Self::batch_payout(env.clone(), recipients.clone(), amounts.clone(), None);
+            Self::batch_payout(env.clone(), recipients.clone(), amounts.clone());
 
         let batch_id_key = BatchReceiptKey::NextId;
         let batch_id: u64 = env.storage().persistent().get(&batch_id_key).unwrap_or(0);
@@ -6777,7 +6840,7 @@ impl ProgramEscrowContract {
         recipients: soroban_sdk::Vec<Address>,
         amounts: soroban_sdk::Vec<i128>,
     ) -> ProgramData {
-        Self::batch_payout(env, recipients, amounts, None)
+        Self::batch_payout(env, recipients, amounts)
     }
 
     /// Retrieve a stored batch payout receipt by its receipt ID.
@@ -6873,19 +6936,60 @@ impl ProgramEscrowContract {
         })
     }
 
+    /// O(1) recipient history lookup using the lazy-initialized inverted index.
+    ///
+    /// Returns all [`PayoutRecord`]s for `recipient` in `program_id`, in
+    /// chronological insertion order.  Returns an empty `Vec` when the
+    /// recipient has never received a payout (the key is simply absent).
+    ///
+    /// # Storage
+    /// Reads from `DataKey::RecipientPayoutIndex(program_id, recipient)` in
+    /// persistent storage (written by `single_payout_internal` /
+    /// `batch_payout_internal` on every payout to this recipient).
+    ///
+    /// # Security
+    /// - Read-only; never mutates state.
+    /// - No authorization required (payout records are public on-chain data).
+    /// - `program_id` is caller-supplied but cannot forge records: the index
+    ///   is written exclusively by the payout paths under admin auth.
+    pub fn query_recipient_history(
+        env: Env,
+        program_id: String,
+        recipient: Address,
+    ) -> soroban_sdk::Vec<PayoutRecord> {
+        let key = DataKey::RecipientPayoutIndex(program_id, recipient);
+        env.storage()
+            .persistent()
+            .get::<DataKey, soroban_sdk::Vec<PayoutRecord>>(&key)
+            .unwrap_or_else(|| soroban_sdk::Vec::new(&env))
+    }
+
+    // ─── private helper ───────────────────────────────────────────────────
+
+    /// Append `record` to the persistent recipient index for `(program_id, recipient)`.
+    ///
+    /// Lazy initialization: the key is created on the first payout; no
+    /// storage entry exists until then, keeping cold-storage costs at zero
+    /// for programs that have not yet paid out to a given address.
+    fn append_recipient_index(
+        env: &Env,
+        program_id: &String,
+        recipient: &Address,
+        record: &PayoutRecord,
+    ) {
+        let key = DataKey::RecipientPayoutIndex(program_id.clone(), recipient.clone());
+        let mut index: soroban_sdk::Vec<PayoutRecord> = env
+            .storage()
+            .persistent()
+            .get::<DataKey, soroban_sdk::Vec<PayoutRecord>>(&key)
+            .unwrap_or_else(|| soroban_sdk::Vec::new(env));
+        index.push_back(record.clone());
+        env.storage().persistent().set(&key, &index);
+    }
+
     /// Query idempotency key status
     ///
-    /// # Arguments
-    /// * `idempotency_key` - The idempotency key to query
-    ///
-    /// # Returns
-    /// Some(PayoutIdempotencyKey) if the key exists, None otherwise
-    pub fn get_idempotency_key_status(
-        env: Env,
-        idempotency_key: String,
-    ) -> Option<PayoutIdempotencyKey> {
-        Self::check_idempotency_key(&env, &idempotency_key)
-    }
+
 
     /// Query payout history by amount range
     pub fn query_payouts_by_amount(
@@ -6945,15 +7049,8 @@ impl ProgramEscrowContract {
             .get(&SCHEDULES)
             .unwrap_or_else(|| Vec::new(&env));
 
-        pub fn preview_split(
-            env: Env,
-            program_id: String,
-            total_amount: i128,
-        ) -> soroban_sdk::Vec<BeneficiarySplit> {
-            payout_splits::preview_split(&env, &program_id, total_amount)
-        }
         Self::paginate_filtered(&env, schedules, offset, limit, |schedule| {
-            schedule.released == released
+            schedule.recipient == recipient
         })
     }
 
@@ -7141,6 +7238,17 @@ impl ProgramEscrowContract {
             });
         }
         result
+    }
+
+    pub fn query_all_delegates(env: Env, program_id: String) -> soroban_sdk::Vec<ProgramDelegateInfo> {
+        let mut results = soroban_sdk::Vec::new(&env);
+        let delegates = Self::query_program_delegates(env.clone(), None, None);
+        for d in delegates.iter() {
+            if d.program_id == program_id {
+                results.push_back(d);
+            }
+        }
+        results
     }
 
     pub fn get_program_release_schedule(env: Env, schedule_id: u64) -> ProgramReleaseSchedule {
@@ -7365,16 +7473,7 @@ impl ProgramEscrowContract {
     // Dispute Resolution
     // ========================================================================
 
-    /// Returns the current dispute state for this contract instance.
-    ///
-    /// `DisputeState::None` is returned when no dispute record exists.
-    fn dispute_state(env: &Env) -> DisputeState {
-        env.storage()
-            .instance()
-            .get::<DataKey, DisputeRecord>(&DataKey::Dispute)
-            .map(|r| r.state)
-            .unwrap_or(DisputeState::None)
-    }
+
 
     /// Open a dispute on the program, blocking all payouts until resolved.
     ///
@@ -7620,3 +7719,377 @@ mod test_batch_receipts;
 mod test_circuit_breaker_enforcement;
 #[cfg(test)]
 mod test_rbac;
+
+//! # Program Escrow Contract
+//!
+//! Manages hackathon and program prize pools with:
+//! - Batch milestone/schedule-based payouts
+//! - Dependency management between milestones
+//! - Circuit breaker protection
+//! - **O(1) RELEASE_HISTORY storage access** (see [`release_schedule`])
+//!
+//! ## Storage Keys
+//!
+//! | Key                | Type                    | Description                          |
+//! |--------------------|-------------------------|--------------------------------------|
+//! | `RELEASE_HISTORY`  | `Vec<ReleaseEntry>`     | All scheduled payout entries         |
+//! | `ESCROW_BALANCE`   | `u64`                   | Current locked balance               |
+//! | `PROGRAM_PAUSED`   | `bool`                  | Circuit breaker flag                 |
+//! | `AUTHORIZED_KEY`   | `String`                | Authorized payout key                |
+
+// ─── Storage key constants ────────────────────────────────────────────────────
+
+/// Storage key for the full release schedule / history vector.
+pub const RELEASE_HISTORY: &str = "RELEASE_HISTORY";
+
+/// Storage key for the locked escrow balance.
+pub const ESCROW_BALANCE: &str = "ESCROW_BALANCE";
+
+/// Storage key for the circuit-breaker pause flag.
+pub const PROGRAM_PAUSED: &str = "PROGRAM_PAUSED";
+
+/// Storage key for the authorized payout public key.
+pub const AUTHORIZED_KEY: &str = "AUTHORIZED_KEY";
+
+// ─── Domain types ─────────────────────────────────────────────────────────────
+
+/// A single scheduled release entry.
+///
+/// Entries are stored in a flat `Vec<ReleaseEntry>` under `RELEASE_HISTORY`.
+/// The optimized [`release_schedule`] loads this vec **once**, processes all
+/// due entries in memory, then writes it back **once**.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReleaseEntry {
+    /// Unique identifier for this milestone / schedule entry.
+    pub id: u64,
+    /// Ledger timestamp at which this entry becomes eligible for release.
+    pub due_ledger: u64,
+    /// Amount (in the escrow token's smallest unit) to release.
+    pub amount: u64,
+    /// Recipient wallet address.
+    pub recipient: String,
+    /// Whether this entry has already been released.
+    pub released: bool,
+    /// Optional dependency: this entry cannot be released until the entry
+    /// with this `id` has already been released.
+    pub depends_on: Option<u64>,
+}
+
+/// Result returned by [`release_schedule`].
+#[derive(Debug, PartialEq)]
+pub struct ReleaseResult {
+    /// Number of entries that were newly released in this call.
+    pub entries_released: usize,
+    /// Total amount disbursed across all newly released entries.
+    pub total_disbursed: u64,
+    /// IDs of entries that were released.
+    pub released_ids: Vec<u64>,
+}
+
+// ─── Error type ───────────────────────────────────────────────────────────────
+
+/// Errors that can be returned by contract functions.
+#[derive(Debug, PartialEq)]
+pub enum EscrowError {
+    /// The program has been paused by the circuit breaker.
+    ProgramPaused,
+    /// The caller is not the authorized payout key.
+    Unauthorized,
+    /// The escrow balance is insufficient to cover the requested payout.
+    InsufficientBalance,
+    /// Integer overflow occurred during amount accumulation.
+    Overflow,
+    /// A dependency milestone has not yet been released.
+    DependencyNotMet(u64),
+}
+
+// ─── Simulated storage (used in tests and embedded logic) ─────────────────────
+
+/// Minimal in-process key-value store used to simulate ledger storage.
+///
+/// In a real Soroban contract this would be replaced by `env.storage()`.
+/// Keeping it as a plain `std::collections::HashMap` lets us run the full
+/// logic under `cargo test` without a Soroban test harness.
+pub struct Storage {
+    inner: std::collections::HashMap<String, StorageValue>,
+}
+
+/// Union of storable value types.
+#[derive(Clone)]
+pub enum StorageValue {
+    Entries(Vec<ReleaseEntry>),
+    Balance(u64),
+    Paused(bool),
+    Key(String),
+}
+
+impl Storage {
+    pub fn new() -> Self {
+        Self {
+            inner: std::collections::HashMap::new(),
+        }
+    }
+
+    pub fn get_entries(&self, key: &str) -> Vec<ReleaseEntry> {
+        match self.inner.get(key) {
+            Some(StorageValue::Entries(v)) => v.clone(),
+            _ => Vec::new(),
+        }
+    }
+
+    pub fn set_entries(&mut self, key: &str, entries: Vec<ReleaseEntry>) {
+        self.inner.insert(key.to_string(), StorageValue::Entries(entries));
+    }
+
+    pub fn get_balance(&self) -> u64 {
+        match self.inner.get(ESCROW_BALANCE) {
+            Some(StorageValue::Balance(b)) => *b,
+            _ => 0,
+        }
+    }
+
+    pub fn set_balance(&mut self, balance: u64) {
+        self.inner.insert(ESCROW_BALANCE.to_string(), StorageValue::Balance(balance));
+    }
+
+    pub fn is_paused(&self) -> bool {
+        match self.inner.get(PROGRAM_PAUSED) {
+            Some(StorageValue::Paused(p)) => *p,
+            _ => false,
+        }
+    }
+
+    pub fn set_paused(&mut self, paused: bool) {
+        self.inner.insert(PROGRAM_PAUSED.to_string(), StorageValue::Paused(paused));
+    }
+
+    pub fn get_authorized_key(&self) -> Option<String> {
+        match self.inner.get(AUTHORIZED_KEY) {
+            Some(StorageValue::Key(k)) => Some(k.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn set_authorized_key(&mut self, key: &str) {
+        self.inner.insert(
+            AUTHORIZED_KEY.to_string(),
+            StorageValue::Key(key.to_string()),
+        );
+    }
+}
+
+// ─── Core contract function ───────────────────────────────────────────────────
+
+/// Processes all due milestone entries and releases their escrowed funds.
+///
+/// # Optimization — O(1) storage reads for `RELEASE_HISTORY`
+///
+/// ## Before (O(N) pattern — **do not use**)
+///
+/// The naive implementation read and wrote `RELEASE_HISTORY` on every loop
+/// iteration, producing N ledger-entry accesses for N due entries:
+///
+/// ```text
+/// for entry in schedule_ids {
+///     let mut history = storage.get(RELEASE_HISTORY);   // ← read #1..N
+///     history[entry].released = true;
+///     storage.set(RELEASE_HISTORY, history);             // ← write #1..N
+/// }
+/// ```
+///
+/// Each ledger-entry read/write incurs a fee on Stellar/Soroban.  For a
+/// program with 50 milestones becoming due simultaneously this was 100
+/// ledger-entry operations instead of 2.
+///
+/// ## After (O(1) pattern — **this implementation**)
+///
+/// ```text
+/// let mut history = storage.get(RELEASE_HISTORY);       // ← single read
+/// let mut dirty = false;
+/// for entry in &mut history {
+///     if is_due && !entry.released {
+///         entry.released = true;                         // mutate in memory
+///         dirty = true;
+///     }
+/// }
+/// if dirty {
+///     storage.set(RELEASE_HISTORY, history);            // ← single write
+/// }
+/// ```
+///
+/// Storage accesses are now constant (1 read + at most 1 write) regardless
+/// of how many entries are processed.
+///
+/// # Arguments
+///
+/// * `storage`         — Mutable reference to the contract storage.
+/// * `current_ledger`  — The current ledger sequence number (acts as timestamp).
+/// * `caller`          — Public key of the transaction submitter.
+///
+/// # Returns
+///
+/// * `Ok(ReleaseResult)` — Summary of what was released.
+/// * `Err(EscrowError)`  — If the program is paused, caller is unauthorized,
+///                         balance is insufficient, or arithmetic overflows.
+///
+/// # Security
+///
+/// - Authorization check runs **before** any state mutation.
+/// - Circuit breaker (pause flag) check runs **before** authorization.
+/// - Overflow is checked with `checked_add`; the function returns
+///   [`EscrowError::Overflow`] rather than panicking.
+/// - Dependency constraints are enforced: an entry whose `depends_on` points
+///   to an unreleased entry is skipped in the current call rather than
+///   returning an error, allowing independent milestones to proceed.
+/// - The balance is decremented atomically after accumulation; the escrow
+///   write happens only if at least one entry was processed.
+/// - Already-released entries are idempotently skipped (no double-spend).
+///
+/// # Examples
+///
+/// ```rust
+/// use program_escrow::{Storage, ReleaseEntry, release_schedule};
+///
+/// let mut storage = Storage::new();
+/// storage.set_authorized_key("alice");
+/// storage.set_balance(1_000);
+/// storage.set_entries("RELEASE_HISTORY", vec![
+///     ReleaseEntry {
+///         id: 1, due_ledger: 100, amount: 500,
+///         recipient: "bob".into(), released: false, depends_on: None,
+///     },
+/// ]);
+///
+/// let result = release_schedule(&mut storage, 100, "alice").unwrap();
+/// assert_eq!(result.entries_released, 1);
+/// assert_eq!(result.total_disbursed, 500);
+/// ```
+pub fn release_schedule(
+    storage: &mut Storage,
+    current_ledger: u64,
+    caller: &str,
+) -> Result<ReleaseResult, EscrowError> {
+    // ── 1. Circuit breaker ────────────────────────────────────────────────────
+    if storage.is_paused() {
+        return Err(EscrowError::ProgramPaused);
+    }
+
+    // ── 2. Authorization ──────────────────────────────────────────────────────
+    let authorized = storage.get_authorized_key();
+    if authorized.as_deref() != Some(caller) {
+        return Err(EscrowError::Unauthorized);
+    }
+
+    // ── 3. Load RELEASE_HISTORY exactly once ──────────────────────────────────
+    //
+    // OPTIMIZATION: This is the single storage read for the entire function.
+    // All subsequent processing operates on `history` in memory.
+    let mut history = storage.get_entries(RELEASE_HISTORY);
+
+    // ── 4. Build a set of already-released IDs for dependency checking ────────
+    //
+    // We collect these up-front so dependency resolution uses the state
+    // *before* this call, preventing intra-call cascading releases which
+    // could introduce ordering ambiguity.
+    let already_released: std::collections::HashSet<u64> = history
+        .iter()
+        .filter(|e| e.released)
+        .map(|e| e.id)
+        .collect();
+
+    // ── 5. Process all due entries in memory ──────────────────────────────────
+    let mut total_disbursed: u64 = 0;
+    let mut released_ids: Vec<u64> = Vec::new();
+    let mut dirty = false;
+
+    for entry in history.iter_mut() {
+        // Skip already-released entries (idempotency / double-spend guard).
+        if entry.released {
+            continue;
+        }
+
+        // Skip entries not yet due.
+        if entry.due_ledger > current_ledger {
+            continue;
+        }
+
+        // Enforce dependency constraints.  If the dependency hasn't been
+        // released *before* this call, skip rather than error so that
+        // independent milestones can still be paid out.
+        if let Some(dep_id) = entry.depends_on {
+            if !already_released.contains(&dep_id) {
+                continue;
+            }
+        }
+
+        // Accumulate disbursement amount — overflow-safe.
+        total_disbursed = total_disbursed
+            .checked_add(entry.amount)
+            .ok_or(EscrowError::Overflow)?;
+
+        // Mark released in memory — NO storage write yet.
+        entry.released = true;
+        released_ids.push(entry.id);
+        dirty = true;
+    }
+
+    // ── 6. Early exit if nothing was processed ────────────────────────────────
+    if !dirty {
+        return Ok(ReleaseResult {
+            entries_released: 0,
+            total_disbursed: 0,
+            released_ids: Vec::new(),
+        });
+    }
+
+    // ── 7. Balance check and deduction ────────────────────────────────────────
+    let balance = storage.get_balance();
+    if balance < total_disbursed {
+        return Err(EscrowError::InsufficientBalance);
+    }
+    storage.set_balance(balance - total_disbursed);
+
+    // ── 8. Write RELEASE_HISTORY exactly once ─────────────────────────────────
+    //
+    // OPTIMIZATION: This is the single storage write for the entire function.
+    // `dirty` guarantees we only pay the write fee when something changed.
+    storage.set_entries(RELEASE_HISTORY, history);
+
+    Ok(ReleaseResult {
+        entries_released: released_ids.len(),
+        total_disbursed,
+        released_ids,
+    })
+}
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+#[cfg(test)]
+mod tests;
+
+// ─── Helper constructors (used in tests) ─────────────────────────────────────
+
+impl ReleaseEntry {
+    /// Constructs a basic entry with no dependency.
+    pub fn new(id: u64, due_ledger: u64, amount: u64, recipient: &str) -> Self {
+        Self {
+            id,
+            due_ledger,
+            amount,
+            recipient: recipient.to_string(),
+            released: false,
+            depends_on: None,
+        }
+    }
+
+    /// Constructs an entry with a dependency on another entry's `id`.
+    pub fn with_dependency(mut self, dep_id: u64) -> Self {
+        self.depends_on = Some(dep_id);
+        self
+    }
+
+    /// Marks this entry as already released (for seeding pre-released state).
+    pub fn already_released(mut self) -> Self {
+        self.released = true;
+        self
+    }
+}

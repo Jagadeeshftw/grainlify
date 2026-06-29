@@ -505,6 +505,15 @@ pub enum ContractError {
     /// This error occurs when the circuit breaker threshold
     /// is not in the valid range (1-100).
     InvalidCircuitBreakerThreshold = 804,
+
+    // =========================================================================
+    // FoT Router Errors (1300-1399)
+    // =========================================================================
+    /// FoT routing failed.
+    ///
+    /// This error occurs when the fee-on-transfer router contract
+    /// returns an invalid result or the routing call fails.
+    FotRoutingFailed = 1300,
     
     // =========================================================================
     // Threshold Monitoring Errors (900-999)
@@ -855,6 +864,9 @@ impl ContractError {
                 "Token is not on the allowlist and cannot be removed"
             }
 
+            // FoT Router Errors
+            ContractError::FotRoutingFailed => "FoT routing failed",
+
             // Role Management Errors
             ContractError::AdminRotationInProgress => "Admin rotation already in progress",
             ContractError::NoAdminRotationInProgress => "No admin rotation in progress",
@@ -868,6 +880,7 @@ impl ContractError {
             ContractError::InvalidRoleProposal => "Invalid role proposal",
             ContractError::RoleRotationNotAllowed => "Role rotation not allowed",
 
+            ContractError::RotationTimelockActive => "Role rotation timelock is active",
             // Release Trigger / Schedule Errors
             ContractError::ReleaseTriggerFailed => "Release trigger failed",
             ContractError::NoSchedulesDue => "No schedules are due for release",

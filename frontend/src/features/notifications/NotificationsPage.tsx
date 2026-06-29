@@ -1,21 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import {
-  Bell,
-  Award,
-  GitPullRequest,
-  GitMerge,
-  Wallet,
-  AlertTriangle,
-  CheckCheck,
-  Eye,
-  EyeOff,
-  ArrowRight,
-  Loader2,
-} from "lucide-react";
+import { Bell, Award, GitPullRequest, GitMerge, Wallet, AlertTriangle, CheckCheck, Eye, EyeOff, ArrowRight, Loader2 } from "lucide-react";
 import { useTheme } from "../../shared/contexts/ThemeContext";
 import { getNotifications, markNotificationRead, markAllNotificationsRead } from "../../shared/api/client";
 import { groupNotificationsByDate, formatTimeAgo } from "../../shared/utils/notifications";
 import type { Notification, NotificationType, NotificationFilterMode } from "../../shared/types/notifications";
+import { EmptyState } from "../../shared/components/EmptyState";
 
 const TYPE_ICON: Record<NotificationType, typeof Award> = {
   bounty_awarded: Award,
@@ -87,48 +76,51 @@ export function NotificationsPage() {
   const offsetRef = useRef(0);
   const hasMoreRef = useRef(true);
 
-  const fetchPage = useCallback(async (offset: number, append: boolean) => {
-    if (append) {
-      setLoadingMore(true);
-    } else {
-      setLoading(true);
-    }
-    setError(null);
-    try {
-      const params: { type?: string; read?: boolean; limit: number; offset: number } = {
-        limit: PAGE_SIZE,
-        offset,
-      };
-      if (typeFilter !== "all") params.type = typeFilter;
-      if (readFilter === "unread") params.read = false;
-
-      const data = await getNotifications(params);
-      const mapped: Notification[] = (data.notifications || []).map((n) => ({
-        id: n.id,
-        type: n.type as NotificationType,
-        title: n.title,
-        body: n.body,
-        read: n.read,
-        createdAt: n.created_at,
-        actionUrl: n.action_url,
-        actor: n.actor ? { name: n.actor.name, avatarUrl: n.actor.avatar_url } : undefined,
-      }));
-
+  const fetchPage = useCallback(
+    async (offset: number, append: boolean) => {
       if (append) {
-        setNotifications((prev) => [...prev, ...mapped]);
+        setLoadingMore(true);
       } else {
-        setNotifications(mapped);
+        setLoading(true);
       }
-      setTotal(data.total ?? 0);
-      hasMoreRef.current = offset + PAGE_SIZE < (data.total ?? 0);
-      offsetRef.current = offset;
-    } catch {
-      setError("Failed to load notifications");
-    } finally {
-      setLoading(false);
-      setLoadingMore(false);
-    }
-  }, [typeFilter, readFilter]);
+      setError(null);
+      try {
+        const params: { type?: string; read?: boolean; limit: number; offset: number } = {
+          limit: PAGE_SIZE,
+          offset,
+        };
+        if (typeFilter !== "all") params.type = typeFilter;
+        if (readFilter === "unread") params.read = false;
+
+        const data = await getNotifications(params);
+        const mapped: Notification[] = (data.notifications || []).map((n) => ({
+          id: n.id,
+          type: n.type as NotificationType,
+          title: n.title,
+          body: n.body,
+          read: n.read,
+          createdAt: n.created_at,
+          actionUrl: n.action_url,
+          actor: n.actor ? { name: n.actor.name, avatarUrl: n.actor.avatar_url } : undefined,
+        }));
+
+        if (append) {
+          setNotifications((prev) => [...prev, ...mapped]);
+        } else {
+          setNotifications(mapped);
+        }
+        setTotal(data.total ?? 0);
+        hasMoreRef.current = offset + PAGE_SIZE < (data.total ?? 0);
+        offsetRef.current = offset;
+      } catch {
+        setError("Failed to load notifications");
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    },
+    [typeFilter, readFilter],
+  );
 
   useEffect(() => {
     offsetRef.current = 0;
@@ -169,9 +161,7 @@ export function NotificationsPage() {
     if (notification.read) return;
     try {
       await markNotificationRead(notification.id);
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === notification.id ? { ...n, read: true } : n)),
-      );
+      setNotifications((prev) => prev.map((n) => (n.id === notification.id ? { ...n, read: true } : n)));
     } catch {
       // handled by next fetch on re-open
     }
@@ -193,9 +183,7 @@ export function NotificationsPage() {
     if (selectedIds.size === 0) return;
     try {
       await Promise.all(Array.from(selectedIds).map((id) => markNotificationRead(id)));
-      setNotifications((prev) =>
-        prev.map((n) => (selectedIds.has(n.id) ? { ...n, read: true } : n)),
-      );
+      setNotifications((prev) => prev.map((n) => (selectedIds.has(n.id) ? { ...n, read: true } : n)));
       setSelectedIds(new Set());
     } catch {
       // handled by next fetch
@@ -206,9 +194,7 @@ export function NotificationsPage() {
   const groups = groupNotificationsByDate(notifications);
 
   const glassCard = `backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] transition-colors ${
-    darkTheme
-      ? "bg-[#2d2820]/[0.4] border-white/10"
-      : "bg-white/[0.12] border-white/20"
+    darkTheme ? "bg-[#2d2820]/[0.4] border-white/10" : "bg-white/[0.12] border-white/20"
   }`;
 
   return (
@@ -217,12 +203,7 @@ export function NotificationsPage() {
       <div className={`${glassCard} p-6 sm:p-8`}>
         <div className="flex items-start justify-between flex-wrap gap-4">
           <div>
-            <h1
-              tabIndex={-1}
-              className={`text-[28px] font-bold mb-1 ${
-                darkTheme ? "text-[#f5efe5]" : "text-[#2d2820]"
-              }`}
-            >
+            <h1 tabIndex={-1} className={`text-[28px] font-bold mb-1 ${darkTheme ? "text-[#f5efe5]" : "text-[#2d2820]"}`}>
               Notifications Center
             </h1>
             <p className={`text-[14px] ${darkTheme ? "text-[#b8a898]" : "text-[#7a6b5a]"}`}>
@@ -236,11 +217,7 @@ export function NotificationsPage() {
               disabled={markingAllRead}
               className={`px-5 py-2.5 rounded-[12px] backdrop-blur-[30px] border font-medium text-[14px] transition-all flex items-center gap-2 ${
                 markingAllRead ? "opacity-40 pointer-events-none" : "hover:bg-white/[0.25]"
-              } ${
-                darkTheme
-                  ? "bg-[#3d342c]/[0.5] border-white/20 text-[#d4c5b0]"
-                  : "bg-white/[0.2] border-white/30 text-[#2d2820]"
-              }`}
+              } ${darkTheme ? "bg-[#3d342c]/[0.5] border-white/20 text-[#d4c5b0]" : "bg-white/[0.2] border-white/30 text-[#2d2820]"}`}
             >
               <CheckCheck className="w-4 h-4" />
               Mark all as read
@@ -289,9 +266,7 @@ export function NotificationsPage() {
             </button>
           ))}
         </div>
-        <p className={`text-[12px] ${darkTheme ? "text-[#8a7e70]" : "text-[#9f8b74]"}`}>
-          Newest first
-        </p>
+        <p className={`text-[12px] ${darkTheme ? "text-[#8a7e70]" : "text-[#9f8b74]"}`}>Newest first</p>
       </div>
 
       {/* Loading State */}
@@ -307,12 +282,8 @@ export function NotificationsPage() {
       {error && !loading && (
         <div className={`${glassCard} p-12 flex flex-col items-center justify-center text-center`}>
           <AlertTriangle className="w-12 h-12 text-[#ef4444] mb-4" />
-          <h3 className={`text-lg font-semibold mb-2 ${darkTheme ? "text-[#f5efe5]" : "text-[#2d2820]"}`}>
-            Failed to load
-          </h3>
-          <p className={`text-[14px] mb-4 ${darkTheme ? "text-[#b8a898]" : "text-[#7a6b5a]"}`}>
-            {error}
-          </p>
+          <h3 className={`text-lg font-semibold mb-2 ${darkTheme ? "text-[#f5efe5]" : "text-[#2d2820]"}`}>Failed to load</h3>
+          <p className={`text-[14px] mb-4 ${darkTheme ? "text-[#b8a898]" : "text-[#7a6b5a]"}`}>{error}</p>
           <button
             onClick={() => fetchPage(0, false)}
             className="px-6 py-2.5 rounded-[12px] bg-[#c9983a] text-white font-medium text-[14px] hover:bg-[#a67c2e] transition-colors"
@@ -324,30 +295,19 @@ export function NotificationsPage() {
 
       {/* Empty State */}
       {!loading && !error && notifications.length === 0 && (
-        <div className={`${glassCard} p-12 flex flex-col items-center justify-center text-center`}>
-          <div
-            className={`w-20 h-20 rounded-full flex items-center justify-center mb-4 ${
-              darkTheme ? "bg-white/[0.08]" : "bg-white/[0.15]"
-            }`}
-          >
-            <Bell className={`w-10 h-10 ${darkTheme ? "text-[#b8a898]" : "text-[#7a6b5a]"}`} />
-          </div>
-          <h3 className={`text-lg font-semibold mb-1 ${darkTheme ? "text-[#f5efe5]" : "text-[#2d2820]"}`}>
-            No notifications yet
-          </h3>
-          <p className={`text-[14px] max-w-sm ${darkTheme ? "text-[#b8a898]" : "text-[#7a6b5a]"}`}>
-            {typeFilter !== "all"
-              ? "No notifications match this filter. Try selecting a different type."
-              : "You'll see updates about your contributions, rewards, and project activity here."}
-          </p>
-          {typeFilter !== "all" && (
-            <button
-              onClick={() => setTypeFilter("all")}
-              className="mt-4 text-[13px] font-medium text-[#c9983a] hover:text-[#a67c2e] transition-colors"
-            >
-              Clear filters
-            </button>
-          )}
+        <div className={`${glassCard} flex items-center justify-center`}>
+          <EmptyState
+            variant="no-notifications"
+            isDark={darkTheme}
+            headline="No notifications yet"
+            subtext={
+              typeFilter !== "all"
+                ? "No notifications match this filter. Try selecting a different type."
+                : "You'll see updates about your contributions, rewards, and project activity here."
+            }
+            ctaLabel={typeFilter !== "all" ? "Clear filters" : undefined}
+            onCta={typeFilter !== "all" ? () => setTypeFilter("all") : undefined}
+          />
         </div>
       )}
 
@@ -357,14 +317,8 @@ export function NotificationsPage() {
           <div role="list" aria-label="Notifications">
             {groups.map((group) => (
               <div key={group.label}>
-                <div
-                  className={`px-4 sm:px-6 py-3 border-b ${
-                    darkTheme ? "border-white/[0.06] bg-white/[0.02]" : "border-white/[0.12] bg-white/[0.04]"
-                  }`}
-                >
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-[#8a7e70]">
-                    {group.label}
-                  </p>
+                <div className={`px-4 sm:px-6 py-3 border-b ${darkTheme ? "border-white/[0.06] bg-white/[0.02]" : "border-white/[0.12] bg-white/[0.04]"}`}>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-[#8a7e70]">{group.label}</p>
                 </div>
                 {group.items.map((notification) => {
                   const isSelected = selectedIds.has(notification.id);
@@ -373,9 +327,7 @@ export function NotificationsPage() {
                       key={notification.id}
                       role="listitem"
                       className={`flex items-start gap-3 sm:gap-4 p-4 sm:p-6 border-b transition-colors ${
-                        darkTheme
-                          ? "border-white/[0.06] hover:bg-white/[0.04]"
-                          : "border-white/[0.1] hover:bg-white/[0.06]"
+                        darkTheme ? "border-white/[0.06] hover:bg-white/[0.04]" : "border-white/[0.1] hover:bg-white/[0.06]"
                       } ${isSelected ? (darkTheme ? "bg-[#c9983a]/[0.06]" : "bg-[#c9983a]/[0.04]") : ""} ${
                         !notification.read ? (darkTheme ? "bg-white/[0.02]" : "bg-white/[0.04]") : ""
                       }`}
@@ -385,11 +337,7 @@ export function NotificationsPage() {
                         onClick={() => handleToggleSelect(notification.id)}
                         aria-label={isSelected ? "Deselect notification" : "Select notification"}
                         className={`w-5 h-5 rounded border-2 flex-shrink-0 mt-2.5 transition-colors ${
-                          isSelected
-                            ? "bg-[#c9983a] border-[#c9983a]"
-                            : darkTheme
-                              ? "border-white/20 hover:border-white/40"
-                              : "border-white/30 hover:border-[#c9983a]/50"
+                          isSelected ? "bg-[#c9983a] border-[#c9983a]" : darkTheme ? "border-white/20 hover:border-white/40" : "border-white/30 hover:border-[#c9983a]/50"
                         }`}
                       >
                         {isSelected && (
@@ -407,11 +355,7 @@ export function NotificationsPage() {
                       >
                         {(() => {
                           const Icon = TYPE_ICON[notification.type] || Bell;
-                          return (
-                            <Icon
-                              className={`w-5 h-5 ${TYPE_COLOR[notification.type]?.split(" ")[0] || "text-[#c9983a]"}`}
-                            />
-                          );
+                          return <Icon className={`w-5 h-5 ${TYPE_COLOR[notification.type]?.split(" ")[0] || "text-[#c9983a]"}`} />;
                         })()}
                       </div>
 
@@ -431,9 +375,7 @@ export function NotificationsPage() {
                             <span className={`text-[11px] whitespace-nowrap ${darkTheme ? "text-[#8a7e70]" : "text-[#9f8b74]"}`}>
                               {formatTimeAgo(notification.createdAt)}
                             </span>
-                            {!notification.read && (
-                              <span className="w-2 h-2 bg-[#c9983a] rounded-full flex-shrink-0" aria-label="Unread" />
-                            )}
+                            {!notification.read && <span className="w-2 h-2 bg-[#c9983a] rounded-full flex-shrink-0" aria-label="Unread" />}
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -441,20 +383,14 @@ export function NotificationsPage() {
                               }}
                               aria-label={notification.read ? "Mark as unread" : "Mark as read"}
                               className={`p-1 rounded transition-colors ${
-                                darkTheme
-                                  ? "hover:bg-white/[0.1] text-[#8a7e70] hover:text-[#e8dfd0]"
-                                  : "hover:bg-white/[0.15] text-[#9f8b74] hover:text-[#2d2820]"
+                                darkTheme ? "hover:bg-white/[0.1] text-[#8a7e70] hover:text-[#e8dfd0]" : "hover:bg-white/[0.15] text-[#9f8b74] hover:text-[#2d2820]"
                               }`}
                             >
                               {notification.read ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                             </button>
                           </div>
                         </div>
-                        <p className={`text-[13px] leading-relaxed mt-1 line-clamp-2 ${
-                          darkTheme ? "text-[#b8a898]" : "text-[#7a6b5a]"
-                        }`}>
-                          {notification.body}
-                        </p>
+                        <p className={`text-[13px] leading-relaxed mt-1 line-clamp-2 ${darkTheme ? "text-[#b8a898]" : "text-[#7a6b5a]"}`}>{notification.body}</p>
                         {notification.actionUrl && (
                           <a
                             href={notification.actionUrl}
@@ -486,9 +422,7 @@ export function NotificationsPage() {
 
           {/* End of list */}
           {!hasMoreRef.current && notifications.length > 0 && (
-            <p className={`text-center text-[13px] py-6 ${darkTheme ? "text-[#8a7e70]" : "text-[#9f8b74]"}`}>
-              You've reached the end
-            </p>
+            <p className={`text-center text-[13px] py-6 ${darkTheme ? "text-[#8a7e70]" : "text-[#9f8b74]"}`}>You've reached the end</p>
           )}
         </div>
       )}
@@ -497,14 +431,10 @@ export function NotificationsPage() {
       {selectedIds.size > 0 && (
         <div
           className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 px-5 py-3 rounded-[16px] backdrop-blur-[40px] border shadow-[0_8px_32px_rgba(0,0,0,0.2)] ${
-            darkTheme
-              ? "bg-[#2d2820]/[0.95] border-white/15"
-              : "bg-white/[0.9] border-white/30"
+            darkTheme ? "bg-[#2d2820]/[0.95] border-white/15" : "bg-white/[0.9] border-white/30"
           }`}
         >
-          <span className={`text-[13px] font-medium ${darkTheme ? "text-[#e8dfd0]" : "text-[#2d2820]"}`}>
-            {selectedIds.size} selected
-          </span>
+          <span className={`text-[13px] font-medium ${darkTheme ? "text-[#e8dfd0]" : "text-[#2d2820]"}`}>{selectedIds.size} selected</span>
           <div className="flex items-center gap-2">
             <button
               onClick={handleBulkMarkRead}
@@ -515,9 +445,7 @@ export function NotificationsPage() {
             <button
               onClick={() => setSelectedIds(new Set())}
               className={`px-4 py-1.5 rounded-[10px] text-[13px] font-medium transition-colors ${
-                darkTheme
-                  ? "bg-white/[0.1] text-[#d4c5b0] hover:bg-white/[0.15]"
-                  : "bg-white/[0.2] text-[#6b5d4d] hover:bg-white/[0.3]"
+                darkTheme ? "bg-white/[0.1] text-[#d4c5b0] hover:bg-white/[0.15]" : "bg-white/[0.2] text-[#6b5d4d] hover:bg-white/[0.3]"
               }`}
             >
               Clear selection
