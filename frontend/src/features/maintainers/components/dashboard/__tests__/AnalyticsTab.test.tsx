@@ -174,17 +174,21 @@ describe('PayoutHistoryTable', () => {
 
   it('renders contributor name', () => {
     render(<PayoutHistoryTable records={[paidRecord]} />);
-    expect(screen.getByText('alice')).toBeInTheDocument();
+    // The table is the accessible source of truth; mobile cards are aria-hidden
+    const table = screen.getByRole('table');
+    expect(within(table).getByText('alice')).toBeInTheDocument();
   });
 
   it('renders amount with XLM suffix', () => {
     render(<PayoutHistoryTable records={[paidRecord]} />);
-    expect(screen.getByText('250 XLM')).toBeInTheDocument();
+    const table = screen.getByRole('table');
+    expect(within(table).getByText('250 XLM')).toBeInTheDocument();
   });
 
   it('renders repository name', () => {
     render(<PayoutHistoryTable records={[paidRecord]} />);
-    expect(screen.getByText('StelloPay/frontend')).toBeInTheDocument();
+    const table = screen.getByRole('table');
+    expect(within(table).getByText('StelloPay/frontend')).toBeInTheDocument();
   });
 
   it('renders "Paid" status pill with role=status', () => {
@@ -210,7 +214,9 @@ describe('PayoutHistoryTable', () => {
 
   it('shows empty state when records is empty', () => {
     render(<PayoutHistoryTable records={[]} />);
-    expect(screen.getByText('No payouts yet')).toBeInTheDocument();
+    // Empty state lives inside the table (mobile fallback is aria-hidden)
+    const table = screen.getByRole('table');
+    expect(within(table).getByText('No payouts yet')).toBeInTheDocument();
   });
 
   it('shows skeleton rows when isLoading is true', () => {

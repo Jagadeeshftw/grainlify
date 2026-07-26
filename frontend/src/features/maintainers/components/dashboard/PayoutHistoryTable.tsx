@@ -315,16 +315,22 @@ export function PayoutHistoryTable({
         </table>
       </div>
 
-      {/* ── Mobile card list ── */}
+      {/* ── Mobile card list (aria-hidden: the <table> above is the accessible source of truth) ── */}
       {isLoading ? (
         <SkeletonCards />
       ) : pageRecords.length === 0 ? (
-        <div className={`md:hidden flex flex-col items-center py-10 gap-3 ${isDark ? 'text-[#b8a898]' : 'text-[#7a6b5a]'}`}>
+        <div
+          aria-hidden="true"
+          className={`md:hidden flex flex-col items-center py-10 gap-3 ${isDark ? 'text-[#b8a898]' : 'text-[#7a6b5a]'}`}
+        >
           <DollarSign className="w-10 h-10 opacity-30" aria-hidden />
           <p className="text-[13px]">No payouts yet</p>
         </div>
       ) : (
-        <ul className="md:hidden space-y-3 mt-2" aria-label="Payout history">
+        <ul
+          aria-hidden="true"
+          className="md:hidden space-y-3 mt-2"
+        >
           {pageRecords.map((r) => (
             <PayoutCard key={r.id} record={r} isDark={isDark} />
           ))}
