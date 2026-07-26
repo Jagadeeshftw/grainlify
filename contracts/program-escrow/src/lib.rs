@@ -152,9 +152,8 @@ use errors::ContractError;
 
 mod dynamic_pricing;
 pub use dynamic_pricing::{
-    DynamicPricingConfig, PricingState, PricingEngine, PricingError,
+    DynamicPricingConfig, PricingState, PricingEngine,
     DemandMetrics, SupplyMetrics, OracleMarketData, PriceUpdateEvent,
-    update_demand_metrics, update_supply_metrics, get_dynamic_fee,
 };
 
 // Event types
