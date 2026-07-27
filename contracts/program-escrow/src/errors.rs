@@ -473,6 +473,19 @@ pub enum ContractError {
     /// insufficient balance or transfer issues.
     FeeCollectionFailed = 703,
 
+    /// Invalid insurance reserve basis-point rate.
+    ///
+    /// This error occurs when `insurance_reserve_bps` exceeds `MAX_FEE_RATE`
+    /// or when the sum of `insurance_reserve_bps` and any fee rate would
+    /// exceed `BASIS_POINTS` (100 %).
+    InvalidInsuranceReserveBps = 704,
+
+    /// Insurance reserve withdrawal failed.
+    ///
+    /// Emitted when `withdraw_insurance_reserve` is called but the on-chain
+    /// reserve balance is zero or the requested amount exceeds the balance.
+    InsufficientInsuranceReserve = 705,
+
     // =========================================================================
     // Circuit Breaker Errors (800-899)
     // =========================================================================
@@ -675,11 +688,29 @@ pub enum ContractError {
     InvalidRoleProposal = 1207,
     RoleRotationNotAllowed = 1208,
 
-    /// Rotation timelock has not yet expired.
+    /// Role rotation timelock is active.
     ///
     /// This error occurs when role rotation is temporarily disabled
     /// due to contract state (e.g., emergency mode, dispute, etc.).
-    RoleRotationNotAllowed = 1208,
+    RotationTimelockActive = 1209,
+
+    // =========================================================================
+    // FoT Router Errors (1210-1219)
+    // =========================================================================
+
+    /// Fee-on-transfer routing failed.
+    ///
+    /// This error occurs when the FoT router contract returns an unexpected
+    /// result or the routing calculation overflows.
+    FotRoutingFailed = 1210,
+
+    /// Fee-on-transfer router quote exceeded the configured maximum multiplier.
+    ///
+    /// This error occurs when `router.quote()` returns a gross amount larger
+    /// than `net_amount * max_fot_multiplier_bps / BASIS_POINTS`, which is
+    /// rejected to prevent a malicious or misconfigured router from draining
+    /// the program's remaining balance.
+    FotRouterQuoteExceeded = 1211,
 
     // =========================================================================
     // Dynamic Pricing Errors (1300-1399)
@@ -875,6 +906,8 @@ impl ContractError {
             ContractError::InvalidFeeRate => "Invalid fee rate",
             ContractError::FeeRecipientNotSet => "Fee recipient not set",
             ContractError::FeeCollectionFailed => "Fee collection failed",
+            ContractError::InvalidInsuranceReserveBps => "Invalid insurance reserve basis-point rate",
+            ContractError::InsufficientInsuranceReserve => "Insurance reserve balance insufficient for withdrawal",
 
             // Circuit Breaker Errors
             ContractError::CircuitBreakerOpen => "Circuit breaker is open",
@@ -925,6 +958,9 @@ impl ContractError {
 
             // FoT Router Errors
             ContractError::FotRoutingFailed => "FoT routing failed",
+            ContractError::FotRouterQuoteExceeded => {
+                "FoT router quote exceeded configured maximum multiplier"
+            }
 
             // Role Management Errors
             ContractError::AdminRotationInProgress => "Admin rotation already in progress",

@@ -9,7 +9,7 @@ use soroban_sdk::{testutils::Address as _, testutils::Events, token, vec, Addres
 
 use crate::{
     BatchError, BatchPayoutReplayedEvent, LockItem, ProgramData, ProgramEscrowContract,
-    ProgramEscrowContractClient, ReleaseItem,
+    ProgramEscrowContractClient, ProgramInitItem, ReleaseItem,
 };
 
 pub struct Ctx<'a> {
@@ -937,4 +937,130 @@ fn test_batch_payout_by_over_max_returns_batch_too_large() {
         "expected BatchError::BatchTooLarge, got: {:?}",
         result
     );
+}
+
+// ============================================================================
+// batch_initialize_programs duplicate-id detection tests (issue #1474)
+// ============================================================================
+
+/// Adjacent duplicate program_ids are rejected.
+#[test]
+fn test_batch_init_duplicate_adjacent_ids_rejected() {
+    let ctx = setup();
+    let items = vec![
+        &ctx.env,
+        ProgramInitItem {
+            program_id: String::from_str(&ctx.env, "PROG_A"),
+            authorized_payout_key: ctx.admin.clone(),
+            token_address: ctx.token_id.clone(),
+            reference_hash: None,
+        },
+        ProgramInitItem {
+            program_id: String::from_str(&ctx.env, "PROG_A"),
+            authorized_payout_key: ctx.admin.clone(),
+            token_address: ctx.token_id.clone(),
+            reference_hash: None,
+        },
+    ];
+    let res = ctx.client.try_batch_initialize_programs(&items);
+    assert!(matches!(res, Err(Ok(BatchError::DuplicateProgramId))));
+}
+
+/// Non-adjacent duplicate program_ids at start and end are rejected.
+#[test]
+fn test_batch_init_duplicate_non_adjacent_ids_rejected() {
+    let ctx = setup();
+    let items = vec![
+        &ctx.env,
+        ProgramInitItem {
+            program_id: String::from_str(&ctx.env, "PROG_A"),
+            authorized_payout_key: ctx.admin.clone(),
+            token_address: ctx.token_id.clone(),
+            reference_hash: None,
+        },
+        ProgramInitItem {
+            program_id: String::from_str(&ctx.env, "PROG_B"),
+            authorized_payout_key: ctx.admin.clone(),
+            token_address: ctx.token_id.clone(),
+            reference_hash: None,
+        },
+        ProgramInitItem {
+            program_id: String::from_str(&ctx.env, "PROG_A"),
+            authorized_payout_key: ctx.admin.clone(),
+            token_address: ctx.token_id.clone(),
+            reference_hash: None,
+        },
+    ];
+    let res = ctx.client.try_batch_initialize_programs(&items);
+    assert!(matches!(res, Err(Ok(BatchError::DuplicateProgramId))));
+}
+
+/// Duplicate buried in the middle of a larger batch is rejected.
+#[test]
+fn test_batch_init_duplicate_middle_of_batch_rejected() {
+    let ctx = setup();
+    let items = vec![
+        &ctx.env,
+        ProgramInitItem {
+            program_id: String::from_str(&ctx.env, "P1"),
+            authorized_payout_key: ctx.admin.clone(),
+            token_address: ctx.token_id.clone(),
+            reference_hash: None,
+        },
+        ProgramInitItem {
+            program_id: String::from_str(&ctx.env, "P2"),
+            authorized_payout_key: ctx.admin.clone(),
+            token_address: ctx.token_id.clone(),
+            reference_hash: None,
+        },
+        ProgramInitItem {
+            program_id: String::from_str(&ctx.env, "P3"),
+            authorized_payout_key: ctx.admin.clone(),
+            token_address: ctx.token_id.clone(),
+            reference_hash: None,
+        },
+        ProgramInitItem {
+            program_id: String::from_str(&ctx.env, "P2"),
+            authorized_payout_key: ctx.admin.clone(),
+            token_address: ctx.token_id.clone(),
+            reference_hash: None,
+        },
+    ];
+    let res = ctx.client.try_batch_initialize_programs(&items);
+    assert!(matches!(res, Err(Ok(BatchError::DuplicateProgramId))));
+}
+
+/// All-unique program_ids in a batch of 5 succeeds.
+#[test]
+fn test_batch_init_all_unique_ids_succeeds() {
+    let ctx = setup();
+    let ids = ["A", "B", "C", "D", "E"];
+    let items: soroban_sdk::Vec<ProgramInitItem> = ids.iter().fold(soroban_sdk::Vec::new(&ctx.env), |mut v, id| {
+        v.push_back(ProgramInitItem {
+            program_id: String::from_str(&ctx.env, id),
+            authorized_payout_key: ctx.admin.clone(),
+            token_address: ctx.token_id.clone(),
+            reference_hash: None,
+        });
+        v
+    });
+    let result = ctx.client.try_batch_initialize_programs(&items);
+    assert!(result.is_ok(), "All-unique batch should succeed");
+}
+
+/// Single-element batch (no duplicates possible) succeeds.
+#[test]
+fn test_batch_init_single_element_succeeds() {
+    let ctx = setup();
+    let items = vec![
+        &ctx.env,
+        ProgramInitItem {
+            program_id: String::from_str(&ctx.env, "ONLY"),
+            authorized_payout_key: ctx.admin.clone(),
+            token_address: ctx.token_id.clone(),
+            reference_hash: None,
+        },
+    ];
+    let result = ctx.client.try_batch_initialize_programs(&items);
+    assert!(result.is_ok());
 }

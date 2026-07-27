@@ -10,6 +10,7 @@ import { isValidProject, getRepoName } from "../../../shared/utils/projectFilter
 
 import { useOptimisticData } from "../../../shared/hooks/useOptimisticData";
 import { EmptyState } from "../../../shared/components/EmptyState";
+import { useCoachMark } from "../../../features/onboarding/coach-marks";
 
 interface BrowsePageProps {
   onProjectClick?: (id: string) => void;
@@ -68,6 +69,15 @@ const truncateDescription = (description: string | undefined | null, maxLength: 
 
 export function BrowsePage({ onProjectClick }: BrowsePageProps) {
   const { theme } = useTheme();
+
+  useCoachMark({
+    featureId: 'browse-advanced-filters',
+    title: 'Advanced Filters',
+    body: 'Filter by language, ecosystem, category and tags to narrow your search for projects.',
+    targetSelector: '[data-coach="filter-fab"]',
+    placement: 'top',
+  });
+
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [searchTerms, setSearchTerms] = useState<{ [key: string]: string }>({
     languages: "",
@@ -470,6 +480,7 @@ export function BrowsePage({ onProjectClick }: BrowsePageProps) {
       <div className="fixed bottom-6 right-6 z-40 lg:hidden">
         <button
           ref={triggerRef}
+          data-coach="filter-fab"
           onClick={() => setIsFilterDrawerOpen(true)}
           aria-label="Open filters"
           aria-expanded={isFilterDrawerOpen}

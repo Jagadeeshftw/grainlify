@@ -86,6 +86,9 @@ use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, Address, Env, Vec,
 };
 
+// ─── ProgramEscrow types for query caching ───────────────────────────────────
+use program_escrow::{FeeConfig, ProgramData};
+
 // ─── Cross-contract interface for ProgramEscrow ───────────────────────────────
 
 /// Minimal payout record mirrored from `program-escrow` for cross-contract use.
@@ -107,6 +110,149 @@ pub trait ProgramEscrowTrait {
         program_id: soroban_sdk::String,
         recipient: Address,
     ) -> Vec<PayoutRecord>;
+}
+
+/// Cross-contract client for querying ProgramData and FeeConfig from a
+/// ProgramEscrow contract.  Used by [`QueryCache`] to fetch data that is
+/// then memoized in temporary storage.
+#[soroban_sdk::contractclient(name = "EscrowQueryClient")]
+pub trait ProgramEscrowQueryTrait {
+    /// Fetch the full [`ProgramData`] struct for `program_id`.
+    fn get_program_info_v2(env: Env, program_id: soroban_sdk::String) -> ProgramData;
+
+    /// Fetch the current [`FeeConfig`] from the escrow contract.
+    fn get_fee_config(env: Env) -> FeeConfig;
+}
+
+// ============================================================================
+// Query Cache (per-invocation memoization via temporary storage)
+// ============================================================================
+
+/// Storage keys used by [`QueryCache`] in Soroban temporary storage.
+///
+/// Temporary storage is scoped to the current top-level contract invocation
+/// and is automatically discarded at the end of the transaction.  This makes
+/// it a safe, zero-maintenance cache for redundant reads.
+#[contracttype]
+pub enum QueryCacheKey {
+    /// Cached [`ProgramData`] for a specific `(escrow_address, program_id)` pair.
+    ProgramData(Address, soroban_sdk::String),
+    /// Cached [`FeeConfig`] for a specific escrow contract address.
+    FeeConfig(Address),
+}
+
+/// Per-invocation read-through cache backed by Soroban temporary storage.
+///
+/// # Purpose
+///
+/// When multiple query functions within a single transaction call into the same
+/// escrow contract to fetch [`ProgramData`] or [`FeeConfig`], each call incurs a
+/// separate storage-read cost.  `QueryCache` memoizes the results in temporary
+/// storage so that the first access populates the cache and all subsequent
+/// accesses return the cached value without additional cross-contract calls.
+///
+/// # Safety & Liveness
+///
+/// - **Read-only**: the cache never mutates persistent storage.
+/// - **Scoped**: temporary storage is discarded at transaction end — stale data
+///   cannot leak across transactions.
+/// - **No invalidation needed**: because the cache lives only within a single
+///   call chain, it is inherently coherent for the duration of that invocation.
+///
+/// # Usage
+///
+/// ```rust,ignore
+/// let data = QueryCache::get_or_load_program_data(&env, &escrow, &program_id);
+/// let fees = QueryCache::get_or_load_fee_config(&env, &escrow);
+/// ```
+///
+/// # Gas savings
+///
+/// Each cached read avoids one full cross-contract call (~1000+ CPU
+/// instructions on Soroban).  For dashboards that aggregate data from multiple
+/// view functions in a single transaction, the savings are proportional to the
+/// number of redundant reads.
+pub struct QueryCache;
+
+impl QueryCache {
+    /// Return [`ProgramData`] for `program_id` on `escrow`, fetching from the
+    /// underlying contract only on first access within the current invocation.
+    ///
+    /// # Arguments
+    /// * `env`        — The Soroban environment.
+    /// * `escrow`     — Address of the ProgramEscrow contract.
+    /// * `program_id` — Identifier of the program to query.
+    ///
+    /// # Returns
+    /// The [`ProgramData`] struct from the escrow contract.
+    ///
+    /// # Panics
+    /// If the cross-contract call to `get_program_info_v2` panics (e.g.
+    /// program not found), the panic propagates to the caller.
+    pub fn get_or_load_program_data(
+        env: &Env,
+        escrow: &Address,
+        program_id: &soroban_sdk::String,
+    ) -> ProgramData {
+        let key = QueryCacheKey::ProgramData(escrow.clone(), program_id.clone());
+
+        // Check temporary storage for a previously cached value.
+        if let Some(cached) = env.storage().temporary().get::<QueryCacheKey, ProgramData>(&key) {
+            return cached;
+        }
+
+        // Cache miss — fetch via cross-contract call.
+        let client = EscrowQueryClient::new(env, escrow);
+        let data = client.get_program_info_v2(program_id);
+
+        // Populate the cache for subsequent reads within this invocation.
+        env.storage().temporary().set(&key, &data);
+
+        data
+    }
+
+    /// Return [`FeeConfig`] for `escrow`, fetching from the underlying contract
+    /// only on first access within the current invocation.
+    ///
+    /// # Arguments
+    /// * `env`    — The Soroban environment.
+    /// * `escrow` — Address of the ProgramEscrow contract.
+    ///
+    /// # Returns
+    /// The [`FeeConfig`] struct from the escrow contract.
+    pub fn get_or_load_fee_config(env: &Env, escrow: &Address) -> FeeConfig {
+        let key = QueryCacheKey::FeeConfig(escrow.clone());
+
+        if let Some(cached) = env.storage().temporary().get::<QueryCacheKey, FeeConfig>(&key) {
+            return cached;
+        }
+
+        let client = EscrowQueryClient::new(env, escrow);
+        let config = client.get_fee_config();
+
+        env.storage().temporary().set(&key, &config);
+
+        config
+    }
+
+    /// Explicitly remove a cached [`ProgramData`] entry from temporary storage.
+    ///
+    /// Useful in tests that want to verify cache-miss behaviour after a
+    /// previous `get_or_load` call.
+    pub fn invalidate_program_data(
+        env: &Env,
+        escrow: &Address,
+        program_id: &soroban_sdk::String,
+    ) {
+        let key = QueryCacheKey::ProgramData(escrow.clone(), program_id.clone());
+        env.storage().temporary().remove(&key);
+    }
+
+    /// Explicitly remove a cached [`FeeConfig`] entry from temporary storage.
+    pub fn invalidate_fee_config(env: &Env, escrow: &Address) {
+        let key = QueryCacheKey::FeeConfig(escrow.clone());
+        env.storage().temporary().remove(&key);
+    }
 }
 
 // ============================================================================
@@ -577,9 +723,118 @@ impl ViewFacade {
         let client = EscrowClient::new(&env, &escrow);
         client.query_recipient_history(&program_id, &recipient)
     }
+
+    // ========================================================================
+    // Cached Query Methods (per-invocation memoization via QueryCache)
+    // ========================================================================
+
+    /// Fetch [`ProgramData`] for `program_id` on `escrow`, using the
+    /// per-invocation [`QueryCache`] to avoid redundant cross-contract calls.
+    ///
+    /// If this function (or [`query_program_balance_and_fee`]) has already
+    /// been called with the same `(escrow, program_id)` pair within the
+    /// current transaction, the cached value is returned without another
+    /// cross-contract call.
+    ///
+    /// # Arguments
+    /// * `escrow`     — Address of a registered `ProgramEscrow` contract.
+    /// * `program_id` — Identifier of the program to query.
+    ///
+    /// # Returns
+    /// The full [`ProgramData`] struct from the escrow contract.
+    ///
+    /// # Panics
+    /// Propagates any panic from the underlying cross-contract call
+    /// (e.g. if the program does not exist on the target escrow).
+    ///
+    /// # Caveats
+    /// The cache is scoped to the current invocation.  If a write operation
+    /// (e.g. `batch_payout`) mutates the program state within the same
+    /// transaction, subsequent cached reads will return the **pre-mutation**
+    /// value.  Callers mixing reads and writes in one transaction should
+    /// invalidate the cache explicitly via [`QueryCache::invalidate_program_data`].
+    ///
+    /// # Security
+    /// - Read-only; does not mutate persistent state.
+    /// - No authorization required.
+    /// - The cache is scoped to the current invocation; no stale data can
+    ///   leak across transactions.
+    pub fn query_program_data_cached(
+        env: Env,
+        escrow: Address,
+        program_id: soroban_sdk::String,
+    ) -> ProgramData {
+        QueryCache::get_or_load_program_data(&env, &escrow, &program_id)
+    }
+
+    /// Fetch [`FeeConfig`] for `escrow`, using the per-invocation [`QueryCache`]
+    /// to avoid redundant cross-contract calls.
+    ///
+    /// # Arguments
+    /// * `escrow` — Address of a registered `ProgramEscrow` contract.
+    ///
+    /// # Returns
+    /// The [`FeeConfig`] struct from the escrow contract.
+    ///
+    /// # Panics
+    /// Propagates any panic from the underlying cross-contract call.
+    ///
+    /// # Caveats
+    /// The cache is scoped to the current invocation.  If a fee-config update
+    /// occurs within the same transaction, subsequent cached reads return the
+    /// pre-update value.  Invalidate via [`QueryCache::invalidate_fee_config`].
+    ///
+    /// # Security
+    /// - Read-only; does not mutate persistent state.
+    /// - No authorization required.
+    pub fn query_fee_config_cached(env: Env, escrow: Address) -> FeeConfig {
+        QueryCache::get_or_load_fee_config(&env, &escrow)
+    }
+
+    /// Aggregated query returning both [`ProgramData`] and [`FeeConfig`] in a
+    /// single call, with per-invocation caching.
+    ///
+    /// This is the most efficient way to fetch program metadata when a
+    /// frontend needs both the program state and the current fee schedule.
+    /// The first read of each type populates the cache; subsequent reads
+    /// within the same transaction are served from memory without additional
+    /// cross-contract calls.
+    ///
+    /// # Arguments
+    /// * `escrow`     — Address of a registered `ProgramEscrow` contract.
+    /// * `program_id` — Identifier of the program to query.
+    ///
+    /// # Returns
+    /// A tuple of `(ProgramData, FeeConfig)` from the escrow contract.
+    ///
+    /// # Panics
+    /// Propagates panics from either underlying cross-contract call
+    /// (`get_program_info_v2` or `get_fee_config`).
+    ///
+    /// # Caveats
+    /// The same invocation-scoping caveats apply as for
+    /// [`query_program_data_cached`] and [`query_fee_config_cached`].
+    ///
+    /// # Gas savings
+    ///
+    /// Without caching, querying both `ProgramData` and `FeeConfig` requires
+    /// two cross-contract calls.  With the cache, subsequent calls within the
+    /// same transaction avoid both calls entirely — each saved cross-contract
+    /// call eliminates ~1000+ CPU instructions.
+    pub fn query_program_balance_and_fee(
+        env: Env,
+        escrow: Address,
+        program_id: soroban_sdk::String,
+    ) -> (ProgramData, FeeConfig) {
+        let data = QueryCache::get_or_load_program_data(&env, &escrow, &program_id);
+        let fees = QueryCache::get_or_load_fee_config(&env, &escrow);
+        (data, fees)
+    }
 }
 
 #[cfg(test)]
 mod test;
 #[cfg(test)]
 mod test_cross_contract_safety;
+#[cfg(test)]
+mod tests;

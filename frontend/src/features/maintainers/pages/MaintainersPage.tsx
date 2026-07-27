@@ -11,6 +11,7 @@ import { getMyProjects, getPendingSetupProjects, type PendingSetupProject } from
 import { InstallGitHubAppModal } from "../components/InstallGitHubAppModal";
 import { NewProjectSetupModal } from "../components/NewProjectSetupModal";
 import { ProgramCreationWizard } from "../components/ProgramCreationWizard";
+import { useCoachMark } from "../../../features/onboarding/coach-marks";
 
 interface MaintainersPageProps {
   onNavigate: (page: string) => void;
@@ -46,6 +47,15 @@ interface GroupedRepository {
 
 export function MaintainersPage({ onNavigate }: MaintainersPageProps) {
   const { theme } = useTheme();
+
+  useCoachMark({
+    featureId: 'maintainers-bounty-analytics',
+    title: 'Bounty Analytics',
+    body: 'Track submission rates, reward distribution, and contributor engagement across your bounty programs.',
+    targetSelector: '[data-coach="analytics-tab"]',
+    placement: 'bottom',
+  });
+
   const [activeTab, setActiveTab] = useState<TabType>("Dashboard");
   const [isRepoDropdownOpen, setIsRepoDropdownOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -528,6 +538,7 @@ export function MaintainersPage({ onNavigate }: MaintainersPageProps) {
               <button
                 key={tab}
                 type="button"
+                data-coach={tab === "Analytics" ? "analytics-tab" : undefined}
                 onClick={() => setActiveTab(tab)}
                 className={`px-5 py-3 rounded-[14px] text-[14px] font-semibold transition-all cursor-pointer ${
                   activeTab === tab

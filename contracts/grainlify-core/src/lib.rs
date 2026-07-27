@@ -42,12 +42,25 @@ pub enum ContractError {
     SnapshotRestoreAdminPending = 106,
     /// Snapshot was pruned and is no longer available
     SnapshotPruned = 107,
+    /// Pagination parameters are invalid (offset > total or limit = 0)
+    InvalidPagination = 108,
 }
 pub const STORAGE_SCHEMA_VERSION: u32 = 1;
 pub const LIVENESS_SCHEMA_VERSION: u32 = 1;
 /// Version stamp embedded in every event struct for cross-version compatibility checks.
 pub const EVENT_SCHEMA_VERSION: u32 = 1;
-const CONFIG_SNAPSHOT_LIMIT: u32 = 20;
+
+/// Maximum number of retained `CoreConfigSnapshot` entries.
+///
+/// Without this cap, `list_config_snapshots` CPU cost grows linearly with the
+/// number of snapshots accumulated over a long-lived deployment. Automatic
+/// rotation on `create_config_snapshot` and explicit `prune_old_snapshots`
+/// keep storage and listing cost bounded.
+///
+/// **Tradeoff:** A lower limit reduces listing/storage cost but shortens
+/// rollback history depth. Prefer creating a snapshot immediately before a
+/// sensitive config change so the known-good state stays within the window.
+pub const CONFIG_SNAPSHOT_LIMIT: u32 = 20;
 
 /// Maximum number of deployed contracts that can be registered.
 /// Prevents unbounded storage growth and ensures predictable gas costs.
@@ -828,6 +841,8 @@ mod test_contract_registry;
 mod test_config_change_timelock;
 #[cfg(test)]
 mod test_build_info_init_event;
+#[cfg(test)]
+mod test_migration_replay;
 // ==================== END MONITORING MODULE ====================
 
 #[cfg_attr(feature = "contract", contract)]
@@ -1268,6 +1283,19 @@ impl GrainlifyContract {
     // Config Snapshots
     // ========================================================================
 
+    /// Capture the current admin/version/multisig configuration into a new
+    /// `CoreConfigSnapshot`.
+    ///
+    /// # Authorization
+    /// Requires the current admin.
+    ///
+    /// # Retention
+    /// Retained snapshot count is capped at [`CONFIG_SNAPSHOT_LIMIT`]. When the
+    /// limit is exceeded the oldest snapshot is removed automatically (FIFO).
+    /// Use [`Self::prune_old_snapshots`] to shrink the window further.
+    ///
+    /// # Security
+    /// Blocked in read-only mode. Snapshot IDs are monotonic and never reused.
     pub fn create_config_snapshot(env: Env) -> u64 {
         let admin: Address = env.storage().instance().get(&DataKey::Admin).expect("Admin not set");
         admin.require_auth();
@@ -1298,13 +1326,8 @@ impl GrainlifyContract {
             .get(&DataKey::SnapshotIndex).unwrap_or(Vec::new(&env));
         index.push_back(next_id);
 
-        if index.len() > CONFIG_SNAPSHOT_LIMIT {
-            let oldest_snapshot_id = index.get(0).unwrap();
-            env.storage().instance().remove(&DataKey::ConfigSnapshot(oldest_snapshot_id));
-            let mut trimmed = Vec::new(&env);
-            for i in 1..index.len() { trimmed.push_back(index.get(i).unwrap()); }
-            index = trimmed;
-        }
+        // Auto-rotate when retention limit is exceeded.
+        Self::trim_snapshot_index_to(&env, &mut index, CONFIG_SNAPSHOT_LIMIT);
 
         env.storage().instance().set(&DataKey::SnapshotIndex, &index);
         env.storage().instance().set(&DataKey::SnapshotCounter, &next_id);
@@ -1316,11 +1339,51 @@ impl GrainlifyContract {
         next_id
     }
 
-    pub fn list_config_snapshots(env: Env) -> Vec<CoreConfigSnapshot> {
+    /// List retained config snapshots with optional pagination.
+    ///
+    /// Mirrors `view-facade::list_contracts`: callers pass optional `offset`
+    /// and `limit` to bound result size and CPU cost. Prefer paginated reads
+    /// over [`Self::list_config_snapshots_all`] for indexer-style scans.
+    ///
+    /// # Arguments
+    /// * `offset` — Number of entries to skip from the oldest end (default: 0).
+    /// * `limit` — Maximum number of entries to return (default: remaining).
+    ///
+    /// # Errors
+    /// * [`ContractError::InvalidPagination`] — if `offset > total` or
+    ///   `limit` is explicitly `0`.
+    ///
+    /// # Note
+    /// Pure view — no authorization required.
+    pub fn list_config_snapshots(
+        env: Env,
+        offset: Option<u32>,
+        limit: Option<u32>,
+    ) -> Result<Vec<CoreConfigSnapshot>, ContractError> {
         let index: Vec<u64> = env.storage().instance()
             .get(&DataKey::SnapshotIndex).unwrap_or(Vec::new(&env));
+        let total = index.len();
+        let offset = offset.unwrap_or(0);
+
+        if offset > total {
+            return Err(ContractError::InvalidPagination);
+        }
+        // Explicit zero limit is invalid; `None` means "all remaining", which
+        // may be zero when the index is empty (return Ok(empty)).
+        let limit = match limit {
+            Some(0) => return Err(ContractError::InvalidPagination),
+            Some(l) => l,
+            None => total.saturating_sub(offset),
+        };
+
+        let end = if offset.saturating_add(limit) > total {
+            total
+        } else {
+            offset + limit
+        };
+
         let mut snapshots: Vec<CoreConfigSnapshot> = Vec::new(&env);
-        for i in 0..index.len() {
+        for i in offset..end {
             let snapshot_id = index.get(i).unwrap();
             if let Some(snapshot) = env.storage().instance()
                 .get::<DataKey, CoreConfigSnapshot>(&DataKey::ConfigSnapshot(snapshot_id))
@@ -1328,13 +1391,94 @@ impl GrainlifyContract {
                 snapshots.push_back(snapshot);
             }
         }
-        snapshots
+        Ok(snapshots)
     }
 
+    /// Return all retained config snapshots (legacy / small-N convenience).
+    ///
+    /// Equivalent to `list_config_snapshots(None, None)` but always succeeds.
+    /// For large retained sets prefer the paginated form to bound CPU cost.
+    ///
+    /// # Note
+    /// Pure view — no authorization required.
+    pub fn list_config_snapshots_all(env: Env) -> Vec<CoreConfigSnapshot> {
+        // `None, None` never yields InvalidPagination (empty index returns Ok([])).
+        Self::list_config_snapshots(env, None, None).unwrap()
+    }
+
+    /// Prune oldest snapshots, retaining at most `keep_count` most-recent entries.
+    ///
+    /// # Authorization
+    /// Requires the current admin. Blocked in read-only mode.
+    ///
+    /// # Arguments
+    /// * `keep_count` — Number of newest snapshots to retain. Capped at
+    ///   [`CONFIG_SNAPSHOT_LIMIT`]. Pass `0` to remove all retained snapshots.
+    ///
+    /// # Returns
+    /// Number of snapshots removed.
+    ///
+    /// # Tradeoff
+    /// Aggressive pruning frees storage and bounds listing cost, but permanently
+    /// destroys older rollback points. `get_config_snapshot` / `restore_config_snapshot`
+    /// for pruned IDs will fail; unrelated retained snapshots remain fully usable.
+    ///
+    /// # Security
+    /// Admin-gated mutation. Does not alter live config — only snapshot history.
+    pub fn prune_old_snapshots(env: Env, keep_count: u32) -> u32 {
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).expect("Admin not set");
+        admin.require_auth();
+        Self::require_not_read_only(&env);
+
+        let keep = if keep_count > CONFIG_SNAPSHOT_LIMIT {
+            CONFIG_SNAPSHOT_LIMIT
+        } else {
+            keep_count
+        };
+
+        let mut index: Vec<u64> = env.storage().instance()
+            .get(&DataKey::SnapshotIndex).unwrap_or(Vec::new(&env));
+        let before = index.len();
+        Self::trim_snapshot_index_to(&env, &mut index, keep);
+        let pruned = before.saturating_sub(index.len());
+
+        env.storage().instance().set(&DataKey::SnapshotIndex, &index);
+
+        env.events().publish(
+            (symbol_short!("cfg_snap"), symbol_short!("prune")),
+            (pruned, keep, env.ledger().timestamp()),
+        );
+        pruned
+    }
+
+    /// Drop oldest index entries until `index.len() <= keep`.
+    /// Removes corresponding `ConfigSnapshot` storage slots.
+    fn trim_snapshot_index_to(env: &Env, index: &mut Vec<u64>, keep: u32) {
+        while index.len() > keep {
+            let oldest_snapshot_id = index.get(0).unwrap();
+            env.storage().instance().remove(&DataKey::ConfigSnapshot(oldest_snapshot_id));
+            let mut trimmed = Vec::new(env);
+            for i in 1..index.len() {
+                trimmed.push_back(index.get(i).unwrap());
+            }
+            *index = trimmed;
+        }
+    }
+
+    /// Retrieve a specific retained snapshot by id.
+    ///
+    /// Returns `None` when the id was never created or has been pruned.
+    ///
+    /// # Note
+    /// Pure view — no authorization required.
     pub fn get_config_snapshot(env: Env, snapshot_id: u64) -> Option<CoreConfigSnapshot> {
         env.storage().instance().get(&DataKey::ConfigSnapshot(snapshot_id))
     }
 
+    /// Return the most recently retained config snapshot, if any.
+    ///
+    /// # Note
+    /// Pure view — no authorization required.
     pub fn get_latest_config_snapshot(env: Env) -> Option<CoreConfigSnapshot> {
         let index: Vec<u64> = env.storage().instance()
             .get(&DataKey::SnapshotIndex).unwrap_or(Vec::new(&env));
@@ -1343,12 +1487,33 @@ impl GrainlifyContract {
         env.storage().instance().get(&DataKey::ConfigSnapshot(latest_id))
     }
 
+    /// Number of currently retained config snapshots (≤ [`CONFIG_SNAPSHOT_LIMIT`]).
+    ///
+    /// Useful for pagination calculations alongside [`Self::list_config_snapshots`].
+    ///
+    /// # Note
+    /// Pure view — no authorization required.
     pub fn get_snapshot_count(env: Env) -> u32 {
         let index: Vec<u64> = env.storage().instance()
             .get(&DataKey::SnapshotIndex).unwrap_or(Vec::new(&env));
         index.len()
     }
 
+    /// Hard retention ceiling for config snapshots.
+    ///
+    /// # Note
+    /// Pure view — no authorization required.
+    pub fn get_config_snapshot_limit(_env: Env) -> u32 {
+        CONFIG_SNAPSHOT_LIMIT
+    }
+
+    /// Diff two retained snapshots by id.
+    ///
+    /// Cost is O(1) with respect to total snapshot count — only the two
+    /// addressed entries are loaded. Panics if either id is missing/pruned.
+    ///
+    /// # Note
+    /// Pure view — no authorization required.
     pub fn compare_snapshots(env: Env, from_id: u64, to_id: u64) -> SnapshotDiff {
         let from: CoreConfigSnapshot = env.storage().instance()
             .get(&DataKey::ConfigSnapshot(from_id))
@@ -1878,6 +2043,21 @@ impl GrainlifyContract {
         }
     }
 
+    pub fn get_migration_commitment(env: Env, target_version: u32) -> Option<MigrationCommitment> {
+        env.storage().instance().get(&DataKey::MigrationCommitment(target_version))
+    }
+
+    pub fn revoke_migration_commitment(env: Env, target_version: u32) {
+        let admin: Address = env.storage().instance().get(&DataKey::Admin)
+            .unwrap_or_else(|| panic!("{}", ContractError::NotInitialized as u32));
+        admin.require_auth();
+        env.storage().instance().remove(&DataKey::MigrationCommitment(target_version));
+        env.events().publish(
+            (symbol_short!("migrate"), symbol_short!("revoke")),
+            (target_version, env.ledger().timestamp()),
+        );
+    }
+
     // ========================================================================
     // Multisig Initialization
     // ========================================================================
@@ -1994,7 +2174,67 @@ impl GrainlifyContract {
     // ========================================================================
 
     /// Pre-commit a migration hash for replay protection.
+    ///
     /// Must be called before `migrate()` with the same target_version and hash.
+    /// This two-step commit-reveal pattern prevents unauthorized or replayed migrations
+    /// by requiring the admin to publish the migration hash in a separate transaction
+    /// before execution.
+    ///
+    /// # Parameters
+    ///
+    /// * `target_version` - The contract version to authorize for migration. Must be
+    ///   greater than the current version when `migrate()` is called.
+    /// * `hash` - SHA-256 hash of the migration data/payload. This hash must match
+    ///   exactly when calling `migrate()`, providing cryptographic binding between
+    ///   the commitment and the actual migration.
+    /// * `expires_at` - Absolute ledger timestamp when this commitment expires.
+    ///   Set to `0` for no expiry. If non-zero, `migrate()` will fail if called after
+    ///   this timestamp, and the commitment will be consumed to prevent replay after
+    ///   ledger timestamp resets.
+    ///
+    /// # Events
+    ///
+    /// Emits `MigrationCommittedEvent` with:
+    /// * `target_version` - The authorized version
+    /// * `hash` - The committed migration hash
+    /// * `committed_at` - Ledger timestamp when commitment was made
+    /// * `expires_at` - Expiry timestamp (0 if none)
+    ///
+    /// # Authorization
+    ///
+    /// Requires admin authorization (`admin.require_auth()`).
+    ///
+    /// # Security Considerations
+    ///
+    /// * **Replay Protection**: The commitment is consumed (deleted) after successful
+    ///   migration, preventing replay of the same migration hash.
+    /// * **Expiry**: On networks with monotonic timestamps (Stellar mainnet), an expired
+    ///   commitment cannot become valid again because time never moves backward. On test
+    ///   networks with periodic timestamp resets, an expired commitment that survives a
+    ///   failed migration (because Soroban rolls back all state on panic) can become
+    ///   valid again after a reset. Admins must treat expiry failures as requiring a
+    ///   fresh `commit_migration`.
+    /// * **Hash Binding**: The hash check is independent of timestamp checks, providing
+    ///   a standalone barrier against replay of an unintended migration payload.
+    /// * **Version Isolation**: Commitments are keyed by `target_version`, preventing
+    ///   cross-version replay (a hash committed for v3 cannot be used for v4).
+    ///
+    /// # Trust Assumptions
+    ///
+    /// * **Soroban Atomicity**: All storage writes in a contract execution are rolled
+    ///   back if the contract panics. This means the expiry check cannot consume a
+    ///   commitment on failure.
+    /// * **Ledger Timestamp Monotonicity**: The expiry mechanism is reliable only on
+    ///   networks where the ledger timestamp never moves backward (Stellar mainnet).
+    ///   On test networks with periodic resets, admins must re-commit after expiry
+    ///   failures. The migration hash provides the primary replay defense independent
+    ///   of timestamp monotonicity.
+    ///
+    /// # Errors
+    ///
+    /// * `NotInitialized` - If the contract has not been initialized
+    /// * `NotAdmin` - If caller is not the admin
+    /// * `ReadOnlyMode` - If read-only mode is enabled
     pub fn commit_migration(env: Env, target_version: u32, hash: BytesN<32>, expires_at: u64) {
         let admin: Address = env.storage().instance().get(&DataKey::Admin)
             .unwrap_or_else(|| panic!("{}", ContractError::NotInitialized as u32));
@@ -2017,20 +2257,90 @@ impl GrainlifyContract {
     ///
     /// Requires a prior `commit_migration` call with the same hash (replay protection).
     /// Idempotent: migrating to the same version twice is a no-op after the first call.
+    ///
+    /// # Parameters
+    ///
+    /// * `target_version` - The contract version to migrate to. Must be strictly greater
+    ///   than the current version. Supported migration paths are defined in the
+    ///   version-specific migration functions (e.g., `migrate_v1_to_v2`, `migrate_v2_to_v3`).
+    /// * `migration_hash` - SHA-256 hash of the migration data/payload. Must match the
+    ///   hash previously committed via `commit_migration()` for the same `target_version`.
+    ///
+    /// # Events
+    ///
+    /// Emits `MigrationEvent` on success with:
+    /// * `from_version` - The version before migration
+    /// * `to_version` - The version after migration
+    /// * `timestamp` - Ledger timestamp when migration executed
+    /// * `migration_hash` - The hash used for this migration
+    /// * `success` - `true` if migration succeeded
+    /// * `error_message` - `None` on success
+    ///
+    /// # Authorization
+    ///
+    /// Requires admin authorization (`admin.require_auth()`).
+    ///
+    /// # Idempotency
+    ///
+    /// If `MigrationState.to_version == target_version` already exists in storage,
+    /// the call returns immediately without re-executing migrations or emitting events.
+    /// This allows safe retry of migration operations.
+    ///
+    /// # Chaining
+    ///
+    /// If `target_version > current_version + 1`, intermediate migrations are executed
+    /// in sequence. For example, migrating from v1 to v3 will execute:
+    /// 1. `migrate_v1_to_v2(&env)`
+    /// 2. `migrate_v2_to_v3(&env)`
+    ///
+    /// # Security Considerations
+    ///
+    /// * **Commitment Verification**: The migration hash must match a previously committed
+    ///   hash for the same target version. This prevents unauthorized migrations and
+    ///   replay attacks.
+    /// * **Commitment Consumption**: After successful migration, the commitment is deleted
+    ///   from storage, preventing replay of the same migration.
+    /// * **Expiry**: If a commitment has expired (current timestamp > expires_at),
+    ///   the contract rejects the migration. Because Soroban rolls back all state on
+    ///   panic, the commitment is not consumed on failure. On networks with monotonic
+    ///   timestamps (Stellar mainnet) this is not exploitable. On test networks that
+    ///   reset timestamps, admins must re-commit after any expiry failure.
+    /// * **Hash Independence**: The hash check is independent of timestamp checks,
+    ///   providing a standalone barrier against replay of an unintended payload.
+    /// * **Version Monotonicity**: Only forward migrations are allowed (target_version > current_version).
+    ///   Downgrades are rejected to prevent state corruption.
+    ///
+    /// # Trust Assumptions
+    ///
+    /// * **Soroban Atomicity**: Because all storage writes are rolled back on panic,
+    ///   `migrate()` cannot persist the removal of an expired commitment.
+    /// * **Ledger Timestamp Monotonicity**: The expiry check is reliable only on networks
+    ///   where the ledger timestamp never moves backward. Test network resets can make
+    ///   a previously-expired commitment valid again. The migration hash binding and
+    ///   idempotency guard are the primary replay defenses independent of time.
+    ///
+    /// # Errors
+    ///
+    /// * `NotInitialized` - If the contract has not been initialized
+    /// * `NotAdmin` - If caller is not the admin
+    /// * `ReadOnlyMode` - If read-only mode is enabled
+    /// * `MigrationCommitmentNotFound` - If no commitment exists for `target_version`
+    /// * `MigrationHashMismatch` - If `migration_hash` does not match the committed hash
+    /// * `"Target version must be greater than current version"` - If `target_version <= current_version`
+    /// * `"No migration path available"` - If no migration function exists for the version step
+    /// * `"Migration commitment has expired"` - If current timestamp > commitment.expires_at
     pub fn migrate(env: Env, target_version: u32, migration_hash: BytesN<32>) {
         let admin: Address = env.storage().instance().get(&DataKey::Admin)
             .unwrap_or_else(|| panic!("{}", ContractError::NotInitialized as u32));
         admin.require_auth();
         Self::require_not_read_only(&env);
 
-        // Idempotency: skip if already migrated to this version
         if let Some(state) = env.storage().instance().get::<_, MigrationState>(&DataKey::MigrationState) {
             if state.to_version == target_version {
                 return;
             }
         }
 
-        // [FIX-C01] Verify commitment exists and hash matches
         let commitment: MigrationCommitment = env.storage().instance()
             .get(&DataKey::MigrationCommitment(target_version))
             .unwrap_or_else(|| panic!("{}", ContractError::MigrationCommitmentNotFound as u32));
@@ -2046,10 +2356,10 @@ impl GrainlifyContract {
         }
 
         if commitment.expires_at > 0 && env.ledger().timestamp() > commitment.expires_at {
+            env.storage().instance().remove(&DataKey::MigrationCommitment(target_version));
             panic!("Migration commitment has expired");
         }
 
-        // Run version-specific migration logic
         if current_version == 1 && target_version == 2 {
             migrate_v1_to_v2(&env);
         } else if current_version == 2 && target_version == 3 {
@@ -2070,7 +2380,6 @@ impl GrainlifyContract {
         env.storage().instance().set(&DataKey::MigrationState, &state);
         env.storage().instance().set(&DataKey::Version, &target_version);
 
-        // Consume commitment (replay protection)
         env.storage().instance().remove(&DataKey::MigrationCommitment(target_version));
 
         env.events().publish(
@@ -2152,3 +2461,7 @@ impl traits::UpgradeInterface for GrainlifyContract {
     }
 }
 mod test;
+
+#[cfg(test)]
+#[path = "test/state_snapshot_tests.rs"]
+mod state_snapshot_tests;

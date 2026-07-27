@@ -1,5 +1,6 @@
 import { GitPullRequest, Circle } from 'lucide-react';
 import { useTheme } from '../../../../shared/contexts/ThemeContext';
+import { TimestampDisplay } from '../../../../shared/components/TimestampDisplay';
 import { Activity } from '../../types';
 
 interface ActivityItemProps {
@@ -73,10 +74,11 @@ export function ActivityItem({ activity, index, onClick }: ActivityItemProps) {
                   {activity.label}
                 </span>
               )}
-              <span className={`text-[12px] font-medium transition-colors ${theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
-                }`}>
-                {activity.timeAgo}
-              </span>
+              <TimestampDisplay
+                timestamp={activity.createdAt || activity.timestamp}
+                fallbackText={activity.timeAgo}
+                className={`text-[12px] font-medium ${theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'}`}
+              />
             </div>
           </div>
         </div>

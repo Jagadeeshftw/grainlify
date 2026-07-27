@@ -1,4 +1,4 @@
-#![cfg(test)]
+﻿#![cfg(test)]
 
 use super::reputation::{
     benchmark_overall_scores_dust_vs_typical, REPUTATION_DUST_PAYOUT_AMOUNT,
@@ -148,7 +148,7 @@ fn test_reputation_with_schedules() {
     assert_eq!(rep.overdue_releases, 2);
     assert_eq!(rep.completion_rate_bps, 0);
 
-    client.trigger_program_releases();
+    client.trigger_program_releases(&None);
 
     let rep = client.get_program_reputation();
     assert_eq!(rep.completed_releases, 2);
@@ -157,7 +157,7 @@ fn test_reputation_with_schedules() {
     assert_eq!(rep.completion_rate_bps, 6_666);
 
     env.ledger().set_timestamp(2500);
-    client.trigger_program_releases();
+    client.trigger_program_releases(&None);
 
     let rep = client.get_program_reputation();
     assert_eq!(rep.completed_releases, 3);
@@ -180,7 +180,7 @@ fn test_reputation_mixed_payouts_and_schedules() {
     env.ledger().set_timestamp(100);
     client.create_program_release_schedule(&r2, &100_000, &50);
 
-    client.trigger_program_releases();
+    client.trigger_program_releases(&None);
 
     let rep = client.get_program_reputation();
     assert_eq!(rep.total_payouts, 2);
@@ -297,3 +297,4 @@ fn test_reputation_qualifying_threshold_boundary() {
     assert_eq!(rep.total_payouts, 2);
     assert_eq!(rep.qualified_payout_count, 1);
 }
+

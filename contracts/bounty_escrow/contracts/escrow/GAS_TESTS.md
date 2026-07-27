@@ -144,3 +144,42 @@ Re-run and update this report whenever:
 - Batch size limits (`MAX_BATCH_SIZE`) are changed.
 
 Commit the updated report together with the code change using the prefix `perf:`.
+
+---
+
+## Fixture Stability & Reproducibility
+
+### Determinism Guarantees
+
+All gas measurements in this suite are **deterministic per binary build**:
+
+- `Env::default()` always starts from ledger sequence 0, timestamp 0, empty storage
+- `Address::generate(&env)` produces deterministic addresses for a given call sequence
+- `register_contract(None, ...)` produces deterministic contract IDs
+- `env.budget().reset_unlimited()` resets counters to zero before measurement
+- `env.budget()` meters accumulate deterministically for fixed inputs
+
+**Result:** Running `cargo test gas_profile -- --nocapture` twice on the same binary
+prints **identical** CPU and memory numbers every time.
+
+### What Changes the Numbers
+
+| Trigger | Effect |
+|---------|--------|
+| Soroban SDK version bump | Internal cost accounting may change |
+| Rust compiler version change | Different WASM codegen may change instruction count |
+| Contract code changes | Adding storage writes, events, or computation changes cost |
+| `MAX_BATCH_SIZE` change | Affects batch scaling curves |
+
+### What Does NOT Change the Numbers
+
+- Re-running the same test binary (100% deterministic)
+- Different OS / architecture (Soroban host is platform-independent)
+- Parallel vs. sequential execution (each `Env` is isolated)
+- Wall-clock time, machine load, etc. (no real-time dependency)
+
+### Fixture Hardening
+
+The test suite includes dedicated fixture hardening tests in `test_gas_budget.rs` that
+verify the stability properties above. See `FIXTURE_HARDENING.md` for the full
+regression surface documentation.

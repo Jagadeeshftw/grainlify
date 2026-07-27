@@ -83,6 +83,8 @@ impl FeeWaiverTestEnv {
                 archived: false,
                 archived_at: None,
                 status: ProgramStatus::Active,
+                circuit_breaker_threshold: None,
+                fot_router: OptionalFotRouter::None,
             };
             env.storage().instance().set(&PROGRAM_DATA, &program_data);
         });
@@ -266,6 +268,8 @@ fn test_set_fee_waiver_requires_admin() {
             archived: false,
             archived_at: None,
             status: ProgramStatus::Active,
+            circuit_breaker_threshold: None,
+            fot_router: OptionalFotRouter::None,
         };
         env.storage().instance().set(&PROGRAM_DATA, &program_data);
     });

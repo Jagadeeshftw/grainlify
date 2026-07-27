@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import type { LeaderboardType, FilterType, Petal, LeaderData, ProjectData, TimePeriod, RoleFilter, EcosystemOption } from "../types";
 import { getLeaderboard, getRecommendedProjects } from "../../../shared/api/client";
 import { useTheme } from "../../../shared/contexts/ThemeContext";
@@ -16,6 +16,15 @@ import { ContributorsTableSkeleton } from "../components/ContributorsTableSkelet
 import { EmptyState } from "../../../shared/components/EmptyState";
 
 const POLL_INTERVAL_MS = 30_000; // 30s polling for real-time updates
+
+type ExportFormat = "print" | "pdf";
+
+type ExportRow = {
+  rank: number;
+  name: string;
+  value: number;
+  meta?: string;
+};
 
 export function LeaderboardPage() {
   const { theme } = useTheme();
@@ -39,6 +48,7 @@ export function LeaderboardPage() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>("print");
   const prevDataRef = useRef<Map<string, number>>(new Map());
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -274,8 +284,48 @@ export function LeaderboardPage() {
       })),
   ].slice(0, 3) as ProjectData[];
 
+  const exportRows = useMemo<ExportRow[]>(() => {
+    if (leaderboardType === "contributors") {
+      return leaderboardData.map((leader) => ({
+        rank: leader.rank,
+        name: leader.username,
+        value: leader.score,
+        meta: leader.contributions != null ? `${leader.contributions} contribution${leader.contributions === 1 ? "" : "s"}` : undefined,
+      }));
+    }
+
+    return projectsData.map((project) => ({
+      rank: project.rank,
+      name: project.name,
+      value: project.score,
+      meta: project.contributors != null ? `${project.contributors} contributor${project.contributors === 1 ? "" : "s"}` : undefined,
+    }));
+  }, [leaderboardData, leaderboardType, projectsData]);
+
+  const exportPages = useMemo(() => {
+    const pages: ExportRow[][] = [];
+    for (let index = 0; index < exportRows.length; index += 18) {
+      pages.push(exportRows.slice(index, index + 18));
+    }
+    return pages;
+  }, [exportRows]);
+
+  const exportContextLabel = useMemo(() => {
+    const periodLabel = timePeriod === "monthly" ? "This Month" : timePeriod === "weekly" ? "This Week" : "All Time";
+    const filterLabel = activeFilter === "overall" ? "Overall" : activeFilter === "rewards" ? "Rewards" : activeFilter === "contributions" ? "Contributions" : "Ecosystems";
+    return `${leaderboardType === "contributors" ? "Top Contributors" : "Top Projects"} — ${filterLabel} • ${periodLabel}`;
+  }, [activeFilter, leaderboardType, timePeriod]);
+
+  const handleExport = () => {
+    if (typeof window !== "undefined") {
+      window.print();
+    }
+  };
+
+  const exportDateLabel = useMemo(() => new Date().toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }), []);
+
   return (
-    <div className="space-y-6 relative">
+    <div className="space-y-6 relative leaderboard-screen-shell">
       <FallingPetals petals={petals} />
 
       <LeaderboardTypeToggle leaderboardType={leaderboardType} onToggle={setLeaderboardType} isLoaded={isLoaded} />
@@ -313,6 +363,35 @@ export function LeaderboardPage() {
         roleFilter={roleFilter}
         onRoleFilterChange={setRoleFilter}
       />
+
+      <div className="flex flex-col gap-3 rounded-[24px] border border-white/10 bg-white/[0.08] p-4 shadow-[0_8px_24px_rgba(0,0,0,0.06)] print:hidden sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-[12px] font-semibold uppercase tracking-[0.2em] text-[#7a6b5a]">Export ranking</p>
+          <p className="text-[14px] text-[#2d2820]">Create a print-ready summary for reviews, reports, or PDF export.</p>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <label className="flex items-center gap-2 text-[13px] font-semibold text-[#2d2820]" htmlFor="leaderboard-export-format">
+            <span>Export format</span>
+            <select
+              id="leaderboard-export-format"
+              value={exportFormat}
+              onChange={(event) => setExportFormat(event.target.value as ExportFormat)}
+              className="rounded-[10px] border border-[#d6d3d1] bg-white px-3 py-2 text-[13px] text-[#1c1917] shadow-sm outline-none focus-visible:outline-2 focus-visible:outline-[#c9983a]"
+            >
+              <option value="print">Print</option>
+              <option value="pdf">PDF</option>
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={handleExport}
+            className="inline-flex items-center justify-center rounded-[12px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] px-4 py-2 text-[13px] font-semibold text-white shadow-[0_8px_24px_rgba(162,121,44,0.3)] transition-all hover:shadow-[0_10px_28px_rgba(162,121,44,0.4)] focus-visible:outline-2 focus-visible:outline-white"
+            aria-label={`Export ranking as ${exportFormat === "pdf" ? "PDF" : "print"}`}
+          >
+            Export ranking
+          </button>
+        </div>
+      </div>
 
       {/* Real-time update indicator */}
       {lastUpdated && leaderboardType === "contributors" && (
@@ -378,6 +457,57 @@ export function LeaderboardPage() {
       {leaderboardType === "projects" && (
         <>{isLoadingProjects ? <ContributorsTableSkeleton /> : <ProjectsTable data={projectsData} activeFilter={activeFilter} isLoaded={isLoaded} />}</>
       )}
+
+      <section className="hidden print:block" aria-label="Leaderboard export document">
+        <div className="leaderboard-export-document">
+          <header className="leaderboard-export-header">
+            <div>
+              <p className="leaderboard-export-eyebrow">Exported ranking</p>
+              <h2 className="leaderboard-export-title">{leaderboardType === "contributors" ? "Top Contributors" : "Top Projects"}</h2>
+              <p className="leaderboard-export-subtitle">{exportContextLabel}</p>
+            </div>
+            <div className="leaderboard-export-meta">
+              <span>Exported {exportDateLabel}</span>
+              <span>Format {exportFormat === "pdf" ? "PDF" : "Print"}</span>
+            </div>
+          </header>
+
+          {exportPages.length === 0 ? (
+            <div className="leaderboard-export-empty">
+              <p>No matching rankings were found for this filter combination.</p>
+            </div>
+          ) : (
+            exportPages.map((pageRows, pageIndex) => (
+              <div key={`${exportContextLabel}-${pageIndex}`} className="leaderboard-export-page">
+                <table className="leaderboard-export-table">
+                  <thead>
+                    <tr>
+                      <th>Rank</th>
+                      <th>{leaderboardType === "contributors" ? "Contributor" : "Project"}</th>
+                      <th>Score</th>
+                      <th>Details</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pageRows.map((row) => (
+                      <tr key={`${row.rank}-${row.name}`}>
+                        <td>{row.rank}</td>
+                        <td>{row.name}</td>
+                        <td>{row.value}</td>
+                        <td>{row.meta ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <footer className="leaderboard-export-footer">
+                  <span>{exportContextLabel}</span>
+                  <span>Page {pageIndex + 1} of {exportPages.length}</span>
+                </footer>
+              </div>
+            ))
+          )}
+        </div>
+      </section>
 
       <LeaderboardStyles />
     </div>

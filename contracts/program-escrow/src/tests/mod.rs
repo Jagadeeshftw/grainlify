@@ -8,6 +8,9 @@
 //! - [`bulk_release_optimization_tests`] — host-side O(1) release_schedule
 //! - [`chaos_batch_payout_tests`] — deterministic chaos harness for
 //!   `batch_payout` / `batch_payout_idempotent` failure injection
+//! - [`cross_entrypoint_idempotency_tests`] — regression tests proving that
+//!   `DataKey::IdempotencyKey` is shared between `single_payout_idempotent`
+//!   and `batch_payout_idempotent`.
 //!
 //! All submodules are gated by `#[cfg(test)]` so they are compiled only when
 //! the crate is built with `--tests` or `cargo test`.
@@ -23,3 +26,7 @@ mod chaos_batch_payout_tests;
 
 #[cfg(test)]
 mod delegate_metadata_dos_tests;
+mod cross_entrypoint_idempotency_tests;
+
+#[cfg(test)]
+mod delegate_revocation_propagation_tests;

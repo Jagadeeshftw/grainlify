@@ -1,0 +1,22 @@
+[package]
+name = "grainlify-stream"
+version = "0.1.0"
+edition = "2021"
+description = "Stream-based gas regression test fixtures for the Grainlify on-chain grant execution layer"
+
+[lib]
+name = "grainlify_stream"
+path = "src/lib.rs"
+
+[dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+
+[profile.release]
+overflow-checks = true
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"

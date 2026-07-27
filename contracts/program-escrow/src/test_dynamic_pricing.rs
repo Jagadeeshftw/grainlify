@@ -11,7 +11,9 @@
 //! - Anti-manipulation measures
 
 use soroban_sdk::{testutils::Ledger, Address, Bytes, BytesN, Env, String};
+extern crate std;
 use crate::test::{create_contract, set_admin};
+use crate::DynamicPricingConfig;
 
 #[test]
 fn test_dynamic_pricing_configuration() {
@@ -25,17 +27,19 @@ fn test_dynamic_pricing_configuration() {
     env.as_contract(&contract_id, || {
         crate::ProgramEscrowContract::configure_dynamic_pricing(
             env.clone(),
-            true,                    // enabled
-            100,                     // base_fee_bps (1%)
-            1000,                    // max_fee_bps (10%)
-            10,                      // min_fee_bps (0.1%)
-            500,                     // max_change_bps (5%)
-            2000,                    // smoothing_alpha_bps (20%)
-            3600,                    // min_update_interval (1 hour)
-            None,                    // oracle_address
-            true,                    // use_demand_pricing
-            true,                    // use_supply_pricing
-            true,                    // use_time_decay
+            DynamicPricingConfig {
+                enabled: true,
+                base_fee_bps: 100,
+                max_fee_bps: 1000,
+                min_fee_bps: 10,
+                max_change_bps: 500,
+                smoothing_alpha_bps: 2000,
+                min_update_interval: 3600,
+                oracle_address: None,
+                use_demand_pricing: true,
+                use_supply_pricing: true,
+                use_time_decay: true,
+            },
         );
     });
     
@@ -241,17 +245,19 @@ fn test_price_update_with_metrics() {
     env.as_contract(&contract_id, || {
         crate::ProgramEscrowContract::configure_dynamic_pricing(
             env.clone(),
-            true,
-            100,                     // base_fee_bps
-            1000,
-            10,
-            500,
-            2000,
-            3600,
-            None,
-            true,
-            true,
-            true,
+            DynamicPricingConfig {
+                enabled: true,
+                base_fee_bps: 100,
+                max_fee_bps: 1000,
+                min_fee_bps: 10,
+                max_change_bps: 500,
+                smoothing_alpha_bps: 2000,
+                min_update_interval: 3600,
+                oracle_address: None,
+                use_demand_pricing: true,
+                use_supply_pricing: true,
+                use_time_decay: true,
+            },
         );
     });
     
@@ -306,17 +312,19 @@ fn test_price_update_too_soon() {
     env.as_contract(&contract_id, || {
         crate::ProgramEscrowContract::configure_dynamic_pricing(
             env.clone(),
-            true,
-            100,
-            1000,
-            10,
-            500,
-            2000,
-            3600,                    // 1 hour minimum
-            None,
-            true,
-            true,
-            true,
+            DynamicPricingConfig {
+                enabled: true,
+                base_fee_bps: 100,
+                max_fee_bps: 1000,
+                min_fee_bps: 10,
+                max_change_bps: 500,
+                smoothing_alpha_bps: 2000,
+                min_update_interval: 3600,
+                oracle_address: None,
+                use_demand_pricing: true,
+                use_supply_pricing: true,
+                use_time_decay: true,
+            },
         );
     });
     
@@ -354,17 +362,19 @@ fn test_price_update_not_enabled() {
     env.as_contract(&contract_id, || {
         crate::ProgramEscrowContract::configure_dynamic_pricing(
             env.clone(),
-            false,                   // disabled
-            100,
-            1000,
-            10,
-            500,
-            2000,
-            3600,
-            None,
-            true,
-            true,
-            true,
+            DynamicPricingConfig {
+                enabled: false,
+                base_fee_bps: 100,
+                max_fee_bps: 1000,
+                min_fee_bps: 10,
+                max_change_bps: 500,
+                smoothing_alpha_bps: 2000,
+                min_update_interval: 3600,
+                oracle_address: None,
+                use_demand_pricing: true,
+                use_supply_pricing: true,
+                use_time_decay: true,
+            },
         );
     });
     
@@ -390,17 +400,19 @@ fn test_get_dynamic_fee() {
     env.as_contract(&contract_id, || {
         crate::ProgramEscrowContract::configure_dynamic_pricing(
             env.clone(),
-            true,
-            100,
-            1000,
-            10,
-            500,
-            2000,
-            3600,
-            None,
-            true,
-            true,
-            true,
+            DynamicPricingConfig {
+                enabled: true,
+                base_fee_bps: 100,
+                max_fee_bps: 1000,
+                min_fee_bps: 10,
+                max_change_bps: 500,
+                smoothing_alpha_bps: 2000,
+                min_update_interval: 3600,
+                oracle_address: None,
+                use_demand_pricing: true,
+                use_supply_pricing: true,
+                use_time_decay: true,
+            },
         );
     });
     
@@ -425,17 +437,19 @@ fn test_get_dynamic_fee_disabled() {
     env.as_contract(&contract_id, || {
         crate::ProgramEscrowContract::configure_dynamic_pricing(
             env.clone(),
-            false,
-            100,
-            1000,
-            10,
-            500,
-            2000,
-            3600,
-            None,
-            true,
-            true,
-            true,
+            DynamicPricingConfig {
+                enabled: false,
+                base_fee_bps: 100,
+                max_fee_bps: 1000,
+                min_fee_bps: 10,
+                max_change_bps: 500,
+                smoothing_alpha_bps: 2000,
+                min_update_interval: 3600,
+                oracle_address: None,
+                use_demand_pricing: true,
+                use_supply_pricing: true,
+                use_time_decay: true,
+            },
         );
     });
     
@@ -459,17 +473,19 @@ fn test_configuration_validation() {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             crate::ProgramEscrowContract::configure_dynamic_pricing(
                 env.clone(),
-                true,
-                -100,                    // invalid: negative
-                1000,
-                10,
-                500,
-                2000,
-                3600,
-                None,
-                true,
-                true,
-                true,
+                DynamicPricingConfig {
+                    enabled: true,
+                    base_fee_bps: -100,
+                    max_fee_bps: 1000,
+                    min_fee_bps: 10,
+                    max_change_bps: 500,
+                    smoothing_alpha_bps: 2000,
+                    min_update_interval: 3600,
+                    oracle_address: None,
+                    use_demand_pricing: true,
+                    use_supply_pricing: true,
+                    use_time_decay: true,
+                },
             );
         }));
         
@@ -481,17 +497,19 @@ fn test_configuration_validation() {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             crate::ProgramEscrowContract::configure_dynamic_pricing(
                 env.clone(),
-                true,
-                100,
-                10,                      // invalid: max < min
-                100,
-                500,
-                2000,
-                3600,
-                None,
-                true,
-                true,
-                true,
+                DynamicPricingConfig {
+                    enabled: true,
+                    base_fee_bps: 100,
+                    max_fee_bps: 10,
+                    min_fee_bps: 100,
+                    max_change_bps: 500,
+                    smoothing_alpha_bps: 2000,
+                    min_update_interval: 3600,
+                    oracle_address: None,
+                    use_demand_pricing: true,
+                    use_supply_pricing: true,
+                    use_time_decay: true,
+                },
             );
         }));
         
@@ -503,17 +521,19 @@ fn test_configuration_validation() {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             crate::ProgramEscrowContract::configure_dynamic_pricing(
                 env.clone(),
-                true,
-                100,
-                1000,
-                10,
-                500,
-                2000,
-                0,                       // invalid: zero interval
-                None,
-                true,
-                true,
-                true,
+                DynamicPricingConfig {
+                    enabled: true,
+                    base_fee_bps: 100,
+                    max_fee_bps: 1000,
+                    min_fee_bps: 10,
+                    max_change_bps: 500,
+                    smoothing_alpha_bps: 2000,
+                    min_update_interval: 0,
+                    oracle_address: None,
+                    use_demand_pricing: true,
+                    use_supply_pricing: true,
+                    use_time_decay: true,
+                },
             );
         }));
         
@@ -533,17 +553,19 @@ fn test_pricing_state_initialization() {
     env.as_contract(&contract_id, || {
         crate::ProgramEscrowContract::configure_dynamic_pricing(
             env.clone(),
-            true,
-            150,                     // base_fee_bps
-            1000,
-            10,
-            500,
-            2000,
-            3600,
-            None,
-            true,
-            true,
-            true,
+            DynamicPricingConfig {
+                enabled: true,
+                base_fee_bps: 150,
+                max_fee_bps: 1000,
+                min_fee_bps: 10,
+                max_change_bps: 500,
+                smoothing_alpha_bps: 2000,
+                min_update_interval: 3600,
+                oracle_address: None,
+                use_demand_pricing: true,
+                use_supply_pricing: true,
+                use_time_decay: true,
+            },
         );
     });
     
@@ -575,17 +597,19 @@ fn test_oracle_address_configuration() {
     env.as_contract(&contract_id, || {
         crate::ProgramEscrowContract::configure_dynamic_pricing(
             env.clone(),
-            true,
-            100,
-            1000,
-            10,
-            500,
-            2000,
-            3600,
-            Some(oracle_address.clone()),
-            true,
-            true,
-            true,
+            DynamicPricingConfig {
+                enabled: true,
+                base_fee_bps: 100,
+                max_fee_bps: 1000,
+                min_fee_bps: 10,
+                max_change_bps: 500,
+                smoothing_alpha_bps: 2000,
+                min_update_interval: 3600,
+                oracle_address: Some(oracle_address.clone()),
+                use_demand_pricing: true,
+                use_supply_pricing: true,
+                use_time_decay: true,
+            },
         );
     });
     
@@ -610,17 +634,19 @@ fn test_selective_pricing_components() {
     env.as_contract(&contract_id, || {
         crate::ProgramEscrowContract::configure_dynamic_pricing(
             env.clone(),
-            true,
-            100,
-            1000,
-            10,
-            500,
-            2000,
-            3600,
-            None,
-            true,                    // demand pricing
-            false,                   // supply pricing disabled
-            false,                   // time decay disabled
+            DynamicPricingConfig {
+                enabled: true,
+                base_fee_bps: 100,
+                max_fee_bps: 1000,
+                min_fee_bps: 10,
+                max_change_bps: 500,
+                smoothing_alpha_bps: 2000,
+                min_update_interval: 3600,
+                oracle_address: None,
+                use_demand_pricing: true,
+                use_supply_pricing: false,
+                use_time_decay: false,
+            },
         );
     });
     

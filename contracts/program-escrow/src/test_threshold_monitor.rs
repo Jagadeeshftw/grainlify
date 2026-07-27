@@ -23,11 +23,11 @@ mod test {
         
         // Get config and verify defaults
         let config = client.get_threshold_config();
-        assert_eq!(config.failure_rate_threshold, 10);
+        assert_eq!(config.failure_rate_threshold(), 10);
         assert!(config.outflow_volume_threshold > 0);
         assert!(config.max_single_payout > 0);
-        assert_eq!(config.time_window_secs, 600);
-        assert_eq!(config.cooldown_period_secs, 300);
+        assert_eq!(config.time_window_secs(), 600);
+        assert_eq!(config.cooldown_period_secs(), 300);
     }
 
     #[test]
@@ -36,24 +36,24 @@ mod test {
         
         // Test invalid failure threshold (too high)
         let mut config = ThresholdConfig::default();
-        config.failure_rate_threshold = 2000;
+        config.set_failure_rate_threshold(2000);
         assert!(config.validate().is_err());
         
         // Test invalid failure threshold (zero)
-        config.failure_rate_threshold = 0;
+        config.set_failure_rate_threshold(0);
         assert!(config.validate().is_err());
         
         // Test invalid time window (too short)
-        config.failure_rate_threshold = 10;
-        config.time_window_secs = 5;
+        config.set_failure_rate_threshold(10);
+        config.set_time_window_secs(5);
         assert!(config.validate().is_err());
         
         // Test invalid time window (too long)
-        config.time_window_secs = 100000;
+        config.set_time_window_secs(100000);
         assert!(config.validate().is_err());
         
         // Test valid configuration
-        config.time_window_secs = 600;
+        config.set_time_window_secs(600);
         assert!(config.validate().is_ok());
     }
 
@@ -91,7 +91,7 @@ mod test {
         let env = Env::default();
         
         let mut config = ThresholdConfig::default();
-        config.failure_rate_threshold = 3;
+        config.set_failure_rate_threshold(3);
         threshold_monitor::init_threshold_monitor(&env);
         threshold_monitor::set_threshold_config(&env, config).unwrap();
         
@@ -224,4 +224,62 @@ mod test {
         let result2 = client.try_batch_payout(&recipients2, &amounts2, &None);
         assert!(result2.is_err(), "Payout should fail, per-program spend threshold is strictly enforced");
     }
+
+    #[test]
+    fn test_threshold_config_packing_boundary_values() {
+        let mut config = ThresholdConfig::default();
+
+        // 1. Minimum boundaries
+        config.set_failure_rate_threshold(0);
+        config.set_time_window_secs(0);
+        config.set_cooldown_period_secs(0);
+        config.set_cooldown_multiplier(0);
+
+        assert_eq!(config.failure_rate_threshold(), 0);
+        assert_eq!(config.time_window_secs(), 0);
+        assert_eq!(config.cooldown_period_secs(), 0);
+        assert_eq!(config.cooldown_multiplier(), 0);
+
+        // 2. Maximum boundaries (based on bit allocation)
+        // failure_rate_threshold: 16 bits (max 65535)
+        config.set_failure_rate_threshold(65535);
+        // time_window_secs: 24 bits (max 16777215)
+        config.set_time_window_secs(16777215);
+        // cooldown_period_secs: 16 bits (max 65535)
+        config.set_cooldown_period_secs(65535);
+        // cooldown_multiplier: 8 bits (max 255)
+        config.set_cooldown_multiplier(255);
+
+        assert_eq!(config.failure_rate_threshold(), 65535);
+        assert_eq!(config.time_window_secs(), 16777215);
+        assert_eq!(config.cooldown_period_secs(), 65535);
+        assert_eq!(config.cooldown_multiplier(), 255);
+
+        // 3. Ensure they do not overwrite each other
+        config.set_failure_rate_threshold(0);
+        assert_eq!(config.failure_rate_threshold(), 0);
+        assert_eq!(config.time_window_secs(), 16777215);
+        assert_eq!(config.cooldown_period_secs(), 65535);
+        assert_eq!(config.cooldown_multiplier(), 255);
+
+        config.set_time_window_secs(0);
+        assert_eq!(config.time_window_secs(), 0);
+        assert_eq!(config.cooldown_period_secs(), 65535);
+        assert_eq!(config.cooldown_multiplier(), 255);
+
+        config.set_cooldown_period_secs(0);
+        assert_eq!(config.cooldown_period_secs(), 0);
+        assert_eq!(config.cooldown_multiplier(), 255);
+
+        config.set_cooldown_multiplier(0);
+        assert_eq!(config.cooldown_multiplier(), 0);
+        
+        // 4. Over-boundary (should truncate or mask safely without panicking)
+        config.set_failure_rate_threshold(65536); // one over max (16 bits)
+        assert_eq!(config.failure_rate_threshold(), 0); // masked to 0
+
+        config.set_time_window_secs(16777216); // one over max (24 bits)
+        assert_eq!(config.time_window_secs(), 0); // masked to 0
+    }
 }
+

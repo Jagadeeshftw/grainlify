@@ -17,6 +17,8 @@ export interface Activity {
   title: string;
   label: string | null;
   timeAgo: string;
+  timestamp?: string | Date | number;
+  createdAt?: string | Date | number;
   projectId?: string;
 }
 
@@ -51,6 +53,8 @@ export interface Discussion {
   id: number;
   user: string;
   timeAgo: string;
+  timestamp?: string | Date | number;
+  createdAt?: string | Date | number;
   isAuthor?: boolean;
   appliedForContribution?: boolean;
   content: string;
