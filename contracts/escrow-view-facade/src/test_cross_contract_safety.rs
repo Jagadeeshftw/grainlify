@@ -129,6 +129,15 @@ mod mock_escrow {
         ) -> Vec<EscrowWithId> {
             Vec::new(&env)
         }
+
+        pub fn query_escrows_by_beneficiary(
+            env: Env,
+            _beneficiary: Address,
+            _offset: u32,
+            _limit: u32,
+        ) -> Vec<EscrowWithId> {
+            Vec::new(&env)
+        }
     }
 }
 

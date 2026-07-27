@@ -310,8 +310,44 @@ impl EscrowViewFacade {
             }
         }
 
-        // 2. Setup standard user beneficiary functionality (tickets)
-        let as_beneficiary = Vec::new(&env);
+        // 2. Get escrows where user is the designated beneficiary/contributor
+        let mut as_beneficiary = Vec::new(&env);
+        let beneficiary_ids_res =
+            client.try_query_escrows_by_beneficiary(&user, &0, &100);
+
+        if let Ok(Ok(escrows_with_id)) = beneficiary_ids_res {
+            for escrow_with_id in escrows_with_id.iter() {
+                let id = escrow_with_id.bounty_id;
+                let info = escrow_with_id.escrow;
+
+                let metadata_res = client.try_get_metadata(&id);
+                let (repo_id, issue_id, bounty_type) = if let Ok(Ok(meta)) = metadata_res {
+                    (meta.repo_id, meta.issue_id, meta.bounty_type)
+                } else {
+                    (0, 0, String::from_str(&env, ""))
+                };
+
+                let status = match info.status {
+                    bounty_escrow::EscrowStatus::Locked => EscrowStatus::Locked,
+                    bounty_escrow::EscrowStatus::Released => EscrowStatus::Released,
+                    bounty_escrow::EscrowStatus::Refunded => EscrowStatus::Refunded,
+                    bounty_escrow::EscrowStatus::PartiallyRefunded => EscrowStatus::PartiallyRefunded,
+                };
+
+                as_beneficiary.push_back(EscrowSummary {
+                    bounty_id: id,
+                    depositor: info.depositor,
+                    amount: info.amount,
+                    remaining_amount: info.remaining_amount,
+                    status,
+                    deadline: info.deadline,
+                    repo_id,
+                    issue_id,
+                    bounty_type,
+                    is_paused,
+                });
+            }
+        }
 
         UserPortfolio {
             as_depositor,
