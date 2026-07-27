@@ -24,7 +24,8 @@ mod test_fee_on_transfer;
 mod test_filter_pagination;
 #[cfg(test)]
 mod test_multi_token_fees;
-// #[cfg(test)] mod test_frozen_balance; // pre-existing SDK/API drift blocks filtered test builds
+#[cfg(test)]
+mod test_frozen_balance;
 #[cfg(test)]
 mod test_reentrancy_guard;
 // #[cfg(test)] mod test_admin_rotation; // pre-existing SDK/API drift blocks filtered test builds
@@ -2607,6 +2608,32 @@ impl BountyEscrowContract {
             .get(&DataKey::AddressFreeze(address.clone()))
     }
 
+    /// # Freeze precedence (escrow-level vs address-level)
+    ///
+    /// The contract has two **independent** freeze layers:
+    /// - escrow-level: `EscrowFreeze(bounty_id)` via `freeze_escrow`
+    /// - address-level: `AddressFreeze(address)` via `freeze_address`,
+    ///   keyed on the escrow **depositor**
+    ///
+    /// Every funds-out path (release, partial/batch release, refund, claim,
+    /// authorize_claim, renew, queued-release execution) checks BOTH layers,
+    /// escrow first, then depositor address:
+    ///
+    /// * **Either freeze independently blocks** the operation; both layers
+    ///   must be unfrozen for it to proceed.
+    /// * When **both** apply, the escrow-level check runs first, so the
+    ///   deterministic error is [`Error::EscrowFrozen`], never
+    ///   [`Error::AddressFrozen`].
+    /// * Unfreezing one layer never touches the other layer's record;
+    ///   `get_escrow_freeze_record` and `get_address_freeze_record` stay
+    ///   independently queryable and accurate.
+    /// * Address freezes gate the **depositor** only: a frozen payee
+    ///   (contributor / claim recipient) does not block payouts — freeze the
+    ///   escrow itself to stop a payout to a specific recipient.
+    /// * Freezes gate funds-out only: `lock_funds` and read-only queries are
+    ///   unaffected.
+    ///
+    /// Covered by the precedence matrix tests in `test_frozen_balance.rs`.
     fn ensure_escrow_not_frozen(env: &Env, bounty_id: u64) -> Result<(), Error> {
         if Self::get_escrow_freeze_record_internal(env, bounty_id)
             .map(|record| record.frozen)
@@ -2655,6 +2682,13 @@ impl BountyEscrowContract {
     /// Freeze a specific escrow so release and refund paths fail before any token transfer.
     ///
     /// Read-only queries remain available while the freeze is active.
+    ///
+    /// # Precedence
+    /// Independent of any address-level freeze: this blocks the escrow even
+    /// if its depositor is unfrozen, and unfreezing it does not lift an
+    /// address-level freeze on the depositor (see `ensure_escrow_not_frozen`
+    /// for the full precedence rules). When both layers are frozen, this
+    /// layer's error (`EscrowFrozen`) is the one reported.
     pub fn freeze_escrow(
         env: Env,
         bounty_id: u64,
@@ -2746,6 +2780,14 @@ impl BountyEscrowContract {
     /// Freeze all release/refund operations for escrows owned by `address`.
     ///
     /// Read-only queries remain available while the freeze is active.
+    ///
+    /// # Precedence
+    /// `address` is matched against the escrow **depositor** on every
+    /// funds-out path; freezing a contributor or claim recipient has no
+    /// blocking effect. Independent of any escrow-level freeze: it blocks
+    /// all of the depositor's escrows even when none of them is individually
+    /// frozen, and unfreezing an escrow does not lift this freeze (see
+    /// `ensure_escrow_not_frozen` for the full precedence rules).
     pub fn freeze_address(
         env: Env,
         address: Address,
