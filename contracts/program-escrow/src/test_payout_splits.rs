@@ -89,6 +89,8 @@ impl SplitTestEnv {
             archived: false,
             archived_at: None,
             status: ProgramStatus::Active,
+            circuit_breaker_threshold: None,
+            fot_router: OptionalFotRouter::None,
         };
         self.env
             .storage()
@@ -1006,6 +1008,8 @@ mod fee_enforcement {
                     archived: false,
                     archived_at: None,
                     status: ProgramStatus::Active,
+                    circuit_breaker_threshold: None,
+                    fot_router: OptionalFotRouter::None,
                 };
                 env.storage().instance().set(&PROGRAM_DATA, &pd);
             });

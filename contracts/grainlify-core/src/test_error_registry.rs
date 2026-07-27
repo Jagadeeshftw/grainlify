@@ -61,11 +61,11 @@ mod tests {
 
     #[test]
     fn test_registry_entry_count() {
-        assert_eq!(
-            registered_count(),
-            10,
-            "Expected exactly 10 entries in GRAINLIFY_CORE_REGISTRY (3 common + 7 governance)"
-        );
+    assert_eq!(
+        registered_count(),
+        11,
+        "Expected exactly 11 entries in GRAINLIFY_CORE_REGISTRY (3 common + 8 governance)"
+    );
     }
 
     // ── lookup_name ───────────────────────────────────────────────────────────
@@ -136,8 +136,13 @@ mod tests {
     }
 
     #[test]
-    fn test_lookup_unassigned_code_108() {
-        assert_eq!(lookup_name(108), None);
+    fn test_lookup_invalid_pagination() {
+        assert_eq!(lookup_name(108), Some("InvalidPagination"));
+    }
+
+    #[test]
+    fn test_lookup_unassigned_code_109() {
+        assert_eq!(lookup_name(109), None);
     }
 
     #[test]
@@ -149,7 +154,7 @@ mod tests {
 
     #[test]
     fn test_is_registered_true_for_all_known_codes() {
-        let known = [1u32, 2, 3, 101, 102, 103, 104, 105, 106, 107];
+        let known = [1u32, 2, 3, 101, 102, 103, 104, 105, 106, 107, 108];
         for code in known {
             assert!(is_registered(code), "code {code} must be registered");
         }
@@ -157,7 +162,7 @@ mod tests {
 
     #[test]
     fn test_is_registered_false_for_gaps() {
-        let gaps = [0u32, 4, 99, 100, 108, 200, 9999];
+        let gaps = [0u32, 4, 99, 100, 109, 200, 9999];
         for code in gaps {
             assert!(!is_registered(code), "code {code} must NOT be registered");
         }
@@ -178,6 +183,7 @@ mod tests {
             (ContractError::TimelockDelayTooHigh as u32, "TimelockDelayTooHigh"),
             (ContractError::SnapshotRestoreAdminPending as u32, "SnapshotRestoreAdminPending"),
             (ContractError::SnapshotPruned as u32, "SnapshotPruned"),
+            (ContractError::InvalidPagination as u32, "InvalidPagination"),
         ];
         for (code, name) in variants {
             assert!(
@@ -200,6 +206,7 @@ mod tests {
             (ContractError::TimelockDelayTooHigh as u32, "TimelockDelayTooHigh"),
             (ContractError::SnapshotRestoreAdminPending as u32, "SnapshotRestoreAdminPending"),
             (ContractError::SnapshotPruned as u32, "SnapshotPruned"),
+            (ContractError::InvalidPagination as u32, "InvalidPagination"),
         ];
         for (code, expected_name) in variants {
             assert_eq!(
@@ -223,6 +230,7 @@ mod tests {
             ContractError::TimelockDelayTooHigh as u32,
             ContractError::SnapshotRestoreAdminPending as u32,
             ContractError::SnapshotPruned as u32,
+            ContractError::InvalidPagination as u32,
         ];
         for i in 0..discriminants.len() {
             for j in (i + 1)..discriminants.len() {
@@ -240,7 +248,7 @@ mod tests {
         // The registry length must equal the number of ContractError variants.
         // If they diverge, a variant was added to the enum but not the registry
         // (or vice-versa).
-        let enum_count = 10; // update when ContractError grows
+        let enum_count = 11; // update when ContractError grows
         assert_eq!(
             registered_count(),
             enum_count,
@@ -630,6 +638,7 @@ mod tests {
             ContractError::TimelockDelayTooHigh as u32,
             ContractError::SnapshotRestoreAdminPending as u32,
             ContractError::SnapshotPruned as u32,
+            ContractError::InvalidPagination as u32,
         ];
         
         for code in contract_codes {

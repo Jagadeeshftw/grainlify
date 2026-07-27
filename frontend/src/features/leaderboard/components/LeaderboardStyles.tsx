@@ -159,6 +159,91 @@ export function LeaderboardStyles() {
                     opacity 0.4s ease;
       }
 
+      @media print {
+        .leaderboard-screen-shell {
+          background: #fafaf9 !important;
+          color: #1c1917 !important;
+        }
+        .leaderboard-export-document {
+          display: block !important;
+          width: 100%;
+          color: #1c1917;
+          font-family: Inter, system-ui, -apple-system, sans-serif;
+        }
+        .leaderboard-export-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          margin-bottom: 16px;
+          padding-bottom: 10px;
+          border-bottom: 2px solid #d6d3d1;
+        }
+        .leaderboard-export-eyebrow {
+          margin: 0 0 4px;
+          font-size: 10px;
+          font-weight: 700;
+          letter-spacing: 0.18em;
+          text-transform: uppercase;
+          color: #57534e;
+        }
+        .leaderboard-export-title {
+          margin: 0;
+          font-size: 16px;
+          font-weight: 700;
+          color: #1c1917;
+        }
+        .leaderboard-export-subtitle {
+          margin: 4px 0 0;
+          font-size: 11px;
+          color: #44403c;
+        }
+        .leaderboard-export-meta {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          font-size: 10px;
+          color: #44403c;
+          text-align: right;
+        }
+        .leaderboard-export-page {
+          page-break-after: always;
+        }
+        .leaderboard-export-page:last-child {
+          page-break-after: auto;
+        }
+        .leaderboard-export-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 10px;
+          color: #1c1917;
+        }
+        .leaderboard-export-table th,
+        .leaderboard-export-table td {
+          border: 1px solid #d6d3d1;
+          padding: 7px 8px;
+          text-align: left;
+          vertical-align: top;
+        }
+        .leaderboard-export-table th {
+          background: #f5f5f4;
+          font-weight: 700;
+          color: #1c1917;
+        }
+        .leaderboard-export-footer {
+          display: flex;
+          justify-content: space-between;
+          margin-top: 8px;
+          font-size: 9px;
+          color: #57534e;
+        }
+        .leaderboard-export-empty {
+          border: 1px solid #d6d3d1;
+          padding: 16px;
+          color: #1c1917;
+          background: #fafaf9;
+        }
+      }
+
       @media (prefers-reduced-motion: reduce) {
         .animate-delta-up,
         .animate-delta-down,

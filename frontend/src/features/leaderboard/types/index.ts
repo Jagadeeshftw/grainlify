@@ -38,6 +38,28 @@ export interface ProjectData {
   previousRank?: number;
 }
 
+/** Sort dimension for the leaderboard data view */
+export type LeaderboardSort = 'earnings' | 'contributions' | 'reputation';
+
+/** Adapter type for label-value dropdown options used with GlassDropdown */
+export interface DropdownOption<T extends string = string> {
+  label: string;
+  value: T;
+}
+
+/**
+ * Serializable filter state that maps 1:1 to URL search params.
+ * Only non-default values are serialised.
+ */
+export interface URLFilterState {
+  period?: TimePeriod;
+  ecosystem?: string;
+  role?: RoleFilter;
+  sort?: LeaderboardSort;
+  type?: LeaderboardType;
+  filter?: FilterType;
+}
+
 export interface Petal {
   id: number;
   left: number;

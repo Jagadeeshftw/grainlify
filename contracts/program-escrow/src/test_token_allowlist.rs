@@ -16,17 +16,18 @@
 //! - Remove last token: enforcement re-disabled
 //! - Admin-only guard on add / remove
 //! - Deterministic ordering: rejection happens before program storage write
+//! - Immutable configured decimals and live `decimals()` mismatch telemetry
 
 #![cfg(test)]
 
 use crate::{
-    ProgramEscrowContract, ProgramEscrowContractClient,
-    TokenAllowlistUpdatedEvent, TokenRejectedEvent, TokenAllowlistSchemaVersionSet,
-    TOKEN_ALLOWLIST_SCHEMA_VERSION_V1, EVENT_VERSION_V2,
+    ProgramEscrowContract, ProgramEscrowContractClient, TokenAllowlistSchemaVersionSet,
+    TokenAllowlistUpdatedEvent, TokenDecimalsMismatchEvent, TokenRejectedEvent, EVENT_VERSION_V2,
+    TOKEN_ALLOWLIST_SCHEMA_VERSION_V1,
 };
 use soroban_sdk::{
     testutils::{Address as _, Events, Ledger},
-    Address, Env, String, Symbol, TryIntoVal,
+    token, Address, Env, String, Symbol, TryIntoVal,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -118,13 +119,17 @@ fn test_schema_version_event_emitted_on_init() {
     let schema_event = events.iter().find(|e| {
         if let Some(t0) = e.1.get(0) {
             let sym: Result<Symbol, _> = t0.try_into_val(&env);
-            sym.map(|s| s == Symbol::new(&env, "TkAlSch")).unwrap_or(false)
+            sym.map(|s| s == Symbol::new(&env, "TkAlSch"))
+                .unwrap_or(false)
         } else {
             false
         }
     });
 
-    assert!(schema_event.is_some(), "TokenAllowlistSchemaVersionSet must be emitted on init");
+    assert!(
+        schema_event.is_some(),
+        "TokenAllowlistSchemaVersionSet must be emitted on init"
+    );
     let payload: TokenAllowlistSchemaVersionSet =
         schema_event.unwrap().2.try_into_val(&env).unwrap();
     assert_eq!(payload.version, EVENT_VERSION_V2);
@@ -188,13 +193,17 @@ fn test_add_token_emits_event_with_correct_fields() {
     let ev = events.iter().find(|e| {
         if let Some(t0) = e.1.get(0) {
             let sym: Result<Symbol, _> = t0.try_into_val(&env);
-            sym.map(|s| s == Symbol::new(&env, "TkAllow")).unwrap_or(false)
+            sym.map(|s| s == Symbol::new(&env, "TkAllow"))
+                .unwrap_or(false)
         } else {
             false
         }
     });
 
-    assert!(ev.is_some(), "TokenAllowlistUpdatedEvent must be emitted on add");
+    assert!(
+        ev.is_some(),
+        "TokenAllowlistUpdatedEvent must be emitted on add"
+    );
     let payload: TokenAllowlistUpdatedEvent = ev.unwrap().2.try_into_val(&env).unwrap();
     assert_eq!(payload.version, EVENT_VERSION_V2);
     assert_eq!(payload.token, token);
@@ -266,13 +275,17 @@ fn test_remove_token_emits_event_with_correct_fields() {
     let ev = events.iter().rev().find(|e| {
         if let Some(t0) = e.1.get(0) {
             let sym: Result<Symbol, _> = t0.try_into_val(&env);
-            sym.map(|s| s == Symbol::new(&env, "TkAllow")).unwrap_or(false)
+            sym.map(|s| s == Symbol::new(&env, "TkAllow"))
+                .unwrap_or(false)
         } else {
             false
         }
     });
 
-    assert!(ev.is_some(), "TokenAllowlistUpdatedEvent must be emitted on remove");
+    assert!(
+        ev.is_some(),
+        "TokenAllowlistUpdatedEvent must be emitted on remove"
+    );
     let payload: TokenAllowlistUpdatedEvent = ev.unwrap().2.try_into_val(&env).unwrap();
     assert_eq!(payload.version, EVENT_VERSION_V2);
     assert_eq!(payload.token, token);
@@ -414,13 +427,17 @@ fn test_token_rejected_event_emitted_on_rejection() {
     let ev = events.iter().find(|e| {
         if let Some(t0) = e.1.get(0) {
             let sym: Result<Symbol, _> = t0.try_into_val(&env);
-            sym.map(|s| s == Symbol::new(&env, "TkReject")).unwrap_or(false)
+            sym.map(|s| s == Symbol::new(&env, "TkReject"))
+                .unwrap_or(false)
         } else {
             false
         }
     });
 
-    assert!(ev.is_some(), "TokenRejectedEvent must be emitted on rejection");
+    assert!(
+        ev.is_some(),
+        "TokenRejectedEvent must be emitted on rejection"
+    );
     let payload: TokenRejectedEvent = ev.unwrap().2.try_into_val(&env).unwrap();
     assert_eq!(payload.version, EVENT_VERSION_V2);
     assert_eq!(payload.token, unlisted);
@@ -478,7 +495,10 @@ fn test_multi_token_list_correct_membership() {
     for t in [&t1, &t2, &t3, &t4, &t5] {
         assert!(client.is_token_allowed(t), "listed token must be allowed");
     }
-    assert!(!client.is_token_allowed(&outside), "unlisted token must be rejected");
+    assert!(
+        !client.is_token_allowed(&outside),
+        "unlisted token must be rejected"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -619,6 +639,57 @@ fn test_enforcement_disabled_boundary_empty_list() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 14. Decimal-scale safety
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_token_decimals_are_immutable_after_a_payout() {
+    let env = Env::default();
+    let (client, _contract_admin) = setup_contract(&env);
+    let token_admin = Address::generate(&env);
+    let sac = env.register_stellar_asset_contract_v2(token_admin);
+    let token = sac.address();
+
+    // A Stellar Asset Contract reports seven decimals. Configure that scale,
+    // make a real payout, then prove the historical scale cannot be changed.
+    client.add_allowed_token_with_decimals(&token, &7);
+    assert_eq!(client.get_token_decimals(&token), Some(7));
+
+    let program_id = String::from_str(&env, "decimal-safety");
+    let payout_key = Address::generate(&env);
+    client.init_program(&program_id, &payout_key, &token, &payout_key, &None, &None);
+    client.publish_program();
+    let token_admin_client = token::StellarAssetClient::new(&env, &token);
+    token_admin_client.mint(&client.address, &1_000);
+    client.lock_program_funds(&1_000);
+    client.single_payout(&Address::generate(&env), &100, &None);
+
+    let result = client.try_add_allowed_token_with_decimals(&token, &6);
+    assert!(
+        result.is_err(),
+        "changing configured decimals must be rejected"
+    );
+    assert_eq!(client.get_token_decimals(&token), Some(7));
+}
+
+#[test]
+fn test_decimal_mismatch_is_emitted_but_configuration_is_preserved() {
+    let env = Env::default();
+    let (client, _admin) = setup_contract(&env);
+    let token = make_token(&env);
+
+    // SAC's live decimals() is 7. An explicit application scale of 6 is
+    // accepted but must be observable to downstream indexers.
+    client.add_allowed_token_with_decimals(&token, &6);
+    assert_eq!(client.get_token_decimals(&token), Some(6));
+
+    let events = env.events().all();
+    let event = events.iter().find(|e| {
+        if let Some(topic) = e.1.get(0) {
+            let symbol: Result<Symbol, _> = topic.try_into_val(&env);
+            symbol
+                .map(|symbol| symbol == Symbol::new(&env, "TkDecMis"))
+                .unwrap_or(false)
 // DECIMAL NORMALIZATION TESTS  (issue #1295)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -845,6 +916,11 @@ fn test_add_token_with_decimals_event_has_correct_decimals_field() {
             false
         }
     });
+    assert!(event.is_some(), "a live-decimals mismatch must be flagged");
+    let payload: TokenDecimalsMismatchEvent = event.unwrap().2.try_into_val(&env).unwrap();
+    assert_eq!(payload.token, token);
+    assert_eq!(payload.configured_decimals, 6);
+    assert_eq!(payload.reported_decimals, 7);
 
     assert!(ev.is_some(), "TokenAllowlistUpdatedEvent must be emitted");
     let payload: TokenAllowlistUpdatedEvent = ev.unwrap().2.try_into_val(&env).unwrap();

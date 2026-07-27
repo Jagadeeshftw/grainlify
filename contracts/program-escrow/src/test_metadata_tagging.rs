@@ -366,3 +366,330 @@ fn test_program_metadata_serialization() {
         Some(String::from_str(&s.env, "Updated"))
     );
 }
+
+// ============================================================================
+// Compression Tests: MetadataFieldKey encoding / decoding
+// ============================================================================
+
+/// Helper: create a ProgramMetadata with the given custom fields.
+fn make_metadata_with_fields(env: &Env, fields: &[(&str, &str)]) -> ProgramMetadata {
+    let mut custom_fields: soroban_sdk::Vec<ProgramMetadataField> = soroban_sdk::Vec::new(env);
+    for (key, value) in fields {
+        custom_fields.push_back(ProgramMetadataField {
+            key: String::from_str(env, key),
+            value: String::from_str(env, value),
+        });
+    }
+    ProgramMetadata {
+        program_name: Some(String::from_str(env, "Compression Test")),
+        program_type: Some(String::from_str(env, "hackathon")),
+        ecosystem: Some(String::from_str(env, "stellar")),
+        tags: SdkVec::new(env),
+        start_date: None,
+        end_date: None,
+        custom_fields,
+    }
+}
+
+#[test]
+fn test_metadata_field_key_known_variants() {
+    let env = Env::default();
+
+    let cases: &[(&str, MetadataFieldKey)] = &[
+        ("total_participants", MetadataFieldKey::TotalParticipants),
+        ("prize_pool_usd", MetadataFieldKey::PrizePoolUsd),
+        ("sponsor", MetadataFieldKey::Sponsor),
+        ("repository", MetadataFieldKey::Repository),
+        ("website", MetadataFieldKey::Website),
+        ("contact_email", MetadataFieldKey::ContactEmail),
+        ("difficulty", MetadataFieldKey::Difficulty),
+        ("category", MetadataFieldKey::Category),
+        ("status", MetadataFieldKey::Status),
+        ("version", MetadataFieldKey::Version),
+    ];
+
+    for (raw, expected) in cases {
+        let key = String::from_str(&env, raw);
+        let parsed = MetadataFieldKey::from_string(&env, &key);
+        assert_eq!(parsed, *expected, "from_string({raw}) should match");
+        let back = parsed.to_legacy_string(&env);
+        assert_eq!(back, key, "to_legacy_string round-trip for {raw}");
+    }
+}
+
+#[test]
+fn test_metadata_field_key_custom_fallback() {
+    let env = Env::default();
+    let raw = "my_custom_metric";
+    let key = String::from_str(&env, raw);
+    let parsed = MetadataFieldKey::from_string(&env, &key);
+    assert_eq!(parsed, MetadataFieldKey::Custom(key.clone()));
+    let back = parsed.to_legacy_string(&env);
+    assert_eq!(back, key);
+}
+
+#[test]
+fn test_compress_known_keys_through_storage() {
+    let s = Setup::new();
+    let program_id = String::from_str(&s.env, "CompressKnown");
+
+    let metadata = make_metadata_with_fields(
+        &s.env,
+        &[
+            ("total_participants", "200"),
+            ("sponsor", "Stellar Foundation"),
+            ("prize_pool_usd", "100000"),
+        ],
+    );
+
+    s.escrow.init_program_with_metadata(
+        &program_id,
+        &s.backend,
+        &s.token.address,
+        &s.organizer,
+        &None,
+        &Some(metadata),
+    );
+
+    let retrieved = s.escrow.get_program_metadata(&program_id);
+    assert!(retrieved.is_some());
+    let meta = retrieved.unwrap();
+    assert_eq!(meta.custom_fields.len(), 3);
+
+    let f0 = meta.custom_fields.get(0).unwrap();
+    assert_eq!(f0.key, String::from_str(&s.env, "total_participants"));
+    assert_eq!(f0.value, String::from_str(&s.env, "200"));
+}
+
+#[test]
+fn test_compress_mixed_keys_through_storage() {
+    let s = Setup::new();
+    let program_id = String::from_str(&s.env, "CompressMixed");
+
+    let metadata = make_metadata_with_fields(
+        &s.env,
+        &[
+            ("sponsor", "SDF"),
+            ("contact_email", "admin@example.com"),
+            ("custom_arbitrary_key", "some_value"),
+            ("version", "2.0.0"),
+        ],
+    );
+
+    s.escrow.init_program_with_metadata(
+        &program_id,
+        &s.backend,
+        &s.token.address,
+        &s.organizer,
+        &None,
+        &Some(metadata),
+    );
+
+    let retrieved = s.escrow.get_program_metadata(&program_id);
+    assert!(retrieved.is_some());
+    let meta = retrieved.unwrap();
+    assert_eq!(meta.custom_fields.len(), 4);
+
+    for i in 0..4 {
+        let field = meta.custom_fields.get(i).unwrap();
+        let expected_key = match i {
+            0 => "sponsor",
+            1 => "contact_email",
+            2 => "custom_arbitrary_key",
+            3 => "version",
+            _ => unreachable!(),
+        };
+        assert_eq!(field.key, String::from_str(&s.env, expected_key));
+    }
+}
+
+#[test]
+fn test_compress_empty_custom_fields_through_storage() {
+    let s = Setup::new();
+    let program_id = String::from_str(&s.env, "CompressEmpty");
+
+    let metadata = ProgramMetadata {
+        program_name: Some(String::from_str(&s.env, "No Custom Fields")),
+        program_type: Some(String::from_str(&s.env, "grant")),
+        ecosystem: Some(String::from_str(&s.env, "stellar")),
+        tags: SdkVec::new(&s.env),
+        start_date: None,
+        end_date: None,
+        custom_fields: SdkVec::new(&s.env),
+    };
+
+    s.escrow.init_program_with_metadata(
+        &program_id,
+        &s.backend,
+        &s.token.address,
+        &s.organizer,
+        &None,
+        &Some(metadata.clone()),
+    );
+
+    let retrieved = s.escrow.get_program_metadata(&program_id);
+    assert!(retrieved.is_some());
+    let meta = retrieved.unwrap();
+    assert_eq!(meta.custom_fields.len(), 0);
+    assert_eq!(meta.program_name, metadata.program_name);
+}
+
+#[test]
+fn test_compress_round_trip_through_update() {
+    let s = Setup::new();
+    let program_id = String::from_str(&s.env, "CompressUpdate");
+
+    let metadata = make_metadata_with_fields(
+        &s.env,
+        &[("status", "active"), ("website", "https://example.com")],
+    );
+
+    s.escrow.init_program_with_metadata(
+        &program_id,
+        &s.backend,
+        &s.token.address,
+        &s.organizer,
+        &None,
+        &Some(metadata),
+    );
+
+    let updated = make_metadata_with_fields(
+        &s.env,
+        &[
+            ("status", "completed"),
+            ("difficulty", "advanced"),
+            ("repository", "github.com/example/project"),
+        ],
+    );
+
+    s.escrow
+        .update_program_metadata_by(&program_id, &s.backend, &updated);
+
+    let retrieved = s.escrow.get_program_metadata(&program_id);
+    assert!(retrieved.is_some());
+    let meta = retrieved.unwrap();
+    assert_eq!(meta.custom_fields.len(), 3);
+
+    let f0 = meta.custom_fields.get(0).unwrap();
+    assert_eq!(f0.key, String::from_str(&s.env, "status"));
+    assert_eq!(f0.value, String::from_str(&s.env, "completed"));
+
+    let f1 = meta.custom_fields.get(1).unwrap();
+    assert_eq!(f1.key, String::from_str(&s.env, "difficulty"));
+    assert_eq!(f1.value, String::from_str(&s.env, "advanced"));
+}
+
+#[test]
+fn test_legacy_metadata_still_readable() {
+    let s = Setup::new();
+    let program_id = String::from_str(&s.env, "LegacyCompat");
+
+    let mut custom_fields: soroban_sdk::Vec<ProgramMetadataField> = soroban_sdk::Vec::new(&s.env);
+    custom_fields.push_back(ProgramMetadataField {
+        key: String::from_str(&s.env, "prize_pool_usd"),
+        value: String::from_str(&s.env, "25000"),
+    });
+
+    let metadata = ProgramMetadata {
+        program_name: Some(String::from_str(&s.env, "Legacy")),
+        program_type: Some(String::from_str(&s.env, "bounty")),
+        ecosystem: Some(String::from_str(&s.env, "stellar")),
+        tags: SdkVec::new(&s.env),
+        start_date: None,
+        end_date: None,
+        custom_fields,
+    };
+
+    // Write directly under the legacy DataKey::Metadata (simulating old contract).
+    let key = DataKey::Metadata(program_id.clone());
+    s.env.storage().instance().set(&key, &metadata);
+
+    let retrieved = s.escrow.get_program_metadata(&program_id);
+    assert!(retrieved.is_some());
+    let meta = retrieved.unwrap();
+    assert_eq!(meta.program_name, Some(String::from_str(&s.env, "Legacy")));
+    assert_eq!(meta.custom_fields.len(), 1);
+    let f0 = meta.custom_fields.get(0).unwrap();
+    assert_eq!(f0.key, String::from_str(&s.env, "prize_pool_usd"));
+    assert_eq!(f0.value, String::from_str(&s.env, "25000"));
+}
+
+#[test]
+fn test_compress_long_custom_key() {
+    let s = Setup::new();
+    let program_id = String::from_str(&s.env, "LongKey");
+
+    let long_key = "x".repeat(200);
+    let metadata = make_metadata_with_fields(&s.env, &[(&long_key, "value")]);
+
+    s.escrow.init_program_with_metadata(
+        &program_id,
+        &s.backend,
+        &s.token.address,
+        &s.organizer,
+        &None,
+        &Some(metadata),
+    );
+
+    let retrieved = s.escrow.get_program_metadata(&program_id);
+    assert!(retrieved.is_some());
+    let meta = retrieved.unwrap();
+    assert_eq!(meta.custom_fields.len(), 1);
+    let f0 = meta.custom_fields.get(0).unwrap();
+    assert_eq!(f0.key, String::from_str(&s.env, &long_key));
+    assert_eq!(f0.value, String::from_str(&s.env, "value"));
+}
+
+#[test]
+fn test_compress_special_chars_in_key() {
+    let s = Setup::new();
+    let program_id = String::from_str(&s.env, "SpecialKey");
+
+    let metadata = make_metadata_with_fields(
+        &s.env,
+        &[
+            ("field_with_underscores", "val1"),
+            ("field-with-hyphens", "val2"),
+            ("field.with.dots", "val3"),
+        ],
+    );
+
+    s.escrow.init_program_with_metadata(
+        &program_id,
+        &s.backend,
+        &s.token.address,
+        &s.organizer,
+        &None,
+        &Some(metadata),
+    );
+
+    let retrieved = s.escrow.get_program_metadata(&program_id);
+    assert!(retrieved.is_some());
+    let meta = retrieved.unwrap();
+    assert_eq!(meta.custom_fields.len(), 3);
+}
+
+#[test]
+fn test_compress_case_sensitivity() {
+    let s = Setup::new();
+    let program_id = String::from_str(&s.env, "CaseSensitive");
+
+    // Uppercase "Sponsor" should NOT compress to MetadataFieldKey::Sponsor
+    let metadata = make_metadata_with_fields(&s.env, &[("Sponsor", "SDF")]);
+
+    s.escrow.init_program_with_metadata(
+        &program_id,
+        &s.backend,
+        &s.token.address,
+        &s.organizer,
+        &None,
+        &Some(metadata),
+    );
+
+    let retrieved = s.escrow.get_program_metadata(&program_id);
+    assert!(retrieved.is_some());
+    let meta = retrieved.unwrap();
+    assert_eq!(meta.custom_fields.len(), 1);
+    let f0 = meta.custom_fields.get(0).unwrap();
+    assert_eq!(f0.key, String::from_str(&s.env, "Sponsor"));
+}

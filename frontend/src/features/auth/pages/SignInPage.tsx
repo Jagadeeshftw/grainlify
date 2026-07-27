@@ -1,13 +1,21 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
-import { ArrowLeft, Github } from 'lucide-react';
+import { ArrowLeft, Github, Wallet } from 'lucide-react';
 import { getGitHubLoginUrl } from '../../../shared/api/client';
+import { WalletConnectionModal } from '../components/WalletConnectionModal';
+import type { WalletProviderId } from '../types';
 
 export function SignInPage() {
   const { theme } = useTheme();
   const navigate = useNavigate();
   const [isRedirecting, setIsRedirecting] = useState(false);
+  const [walletModalOpen, setWalletModalOpen] = useState(false);
+
+  const handleWalletConnect = (_providerId: WalletProviderId) => {
+    // TODO: integrate with Stellar wallet SDK per provider
+    setWalletModalOpen(false);
+  };
 
   // Persist returnTo so after OAuth we can redirect back to the intended page (e.g. dashboard?tab=browse&project=...&issue=...)
   useEffect(() => {
@@ -121,6 +129,19 @@ export function SignInPage() {
               </div>
             </div>
 
+            {/* Connect Wallet */}
+            <button
+              onClick={() => setWalletModalOpen(true)}
+              className={`w-full py-4 rounded-[12px] font-medium transition-all flex items-center justify-center space-x-3 border focus:outline-none focus:ring-2 focus:ring-[#c9983a]/50 ${
+                theme === 'dark'
+                  ? 'bg-white/[0.06] border-white/15 text-[#f5efe5] hover:bg-white/[0.12]'
+                  : 'bg-white/[0.15] border-white/25 text-[#2d2820] hover:bg-white/[0.30]'
+              }`}
+            >
+              <Wallet className="w-5 h-5 text-[#c9983a]" />
+              <span>Connect Stellar Wallet</span>
+            </button>
+
             <div className={`backdrop-blur-[25px] border rounded-[12px] p-4 transition-colors ${
               theme === 'dark'
                 ? 'bg-white/[0.06] border-white/10'
@@ -147,5 +168,11 @@ export function SignInPage() {
         </div>
       </div>
     </div>
+    {walletModalOpen && (
+      <WalletConnectionModal
+        onClose={() => setWalletModalOpen(false)}
+        onConnect={handleWalletConnect}
+      />
+    )}
   );
 }

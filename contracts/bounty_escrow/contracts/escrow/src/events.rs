@@ -1436,6 +1436,35 @@ pub struct GasBudgetCapApproached {
     pub timestamp: u64,
 }
 
+/// Published by `get_gas_budget_advisory_status` when non-zero caps are
+/// configured on a production (non-testutils) build.
+///
+/// The presence of this event in the on-chain stream signals that
+/// `GasBudgetConfig` caps are **advisory-only**: they are stored and
+/// observable but not measured or enforced at runtime.
+///
+/// ### Topics
+/// | Index | Value |
+/// |-------|-------|
+/// | 0 | `"gas_adv"` |
+///
+/// ### Security note
+/// `caps_enforced_in_production` is always `false` in a production WASM build.
+/// Auditors should treat any deployment where `caps_configured = true` and
+/// `caps_enforced_in_production = false` as effectively uncapped at runtime.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct GasBudgetAdvisoryNotice {
+    /// Always `false` on the live network; `true` only under `testutils`.
+    pub caps_enforced_in_production: bool,
+    /// At least one operation has a non-zero CPU or memory cap configured.
+    pub caps_configured: bool,
+    /// The `GasBudgetConfig::enforce` flag as stored.
+    pub enforce_flag_set: bool,
+    /// Ledger timestamp when the advisory was emitted.
+    pub timestamp: u64,
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // TIMELOCK EVENTS
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2046,5 +2075,23 @@ pub struct ReentrancyGuardAcquired {
 
 pub fn emit_reentrancy_guard_acquired(env: &Env, event: ReentrancyGuardAcquired) {
     let topics = (symbol_short!("rg_acq"),);
+    env.events().publish(topics, event);
+}
+
+// ============================================================================
+// Released With Conversion Event
+// ============================================================================
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReleasedWithConversion {
+    pub escrow_id: u64,
+    pub src_asset: soroban_sdk::Address,
+    pub dest_asset: soroban_sdk::Address,
+    pub rate: i128,
+}
+
+pub fn emit_released_with_conversion(env: &Env, event: ReleasedWithConversion) {
+    let topics = (symbol_short!("conv"), event.escrow_id);
     env.events().publish(topics, event);
 }

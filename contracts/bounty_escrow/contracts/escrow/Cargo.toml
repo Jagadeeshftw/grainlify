@@ -18,6 +18,7 @@ testutils = []
 [dependencies]
 soroban-sdk = { workspace = true }
 grainlify-core = { path = "../../../grainlify-core", default-features = false }
+ethnum = { workspace = true }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["alloc", "testutils"] }

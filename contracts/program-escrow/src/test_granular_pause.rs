@@ -102,7 +102,7 @@ fn setup_program(env: &Env, initial_locked_balance: i128) -> TestContext<'static
         &None,
         &None,
     );
-    client.publish_program();
+    client.publish_program(&program_id, &admin);
 
     if initial_locked_balance > 0 {
         mint_to_contract(env, &client, &token, initial_locked_balance);
@@ -135,6 +135,7 @@ fn set_pause_flags(client: &ProgramEscrowContractClient<'_>, flags: Flags) {
         &Some(flags.release_paused),
         &Some(flags.refund_paused),
         &None::<String>,
+        &None::<u64>,
     );
 }
 
@@ -221,7 +222,7 @@ fn observe_trigger_program_releases(flags: Flags) -> bool {
     ctx.client
         .create_program_release_schedule(&recipient, &RELEASE_AMOUNT, &DUE_RELEASE_TIMESTAMP);
     set_pause_flags(&ctx.client, flags);
-    ctx.client.try_trigger_program_releases().is_ok()
+    ctx.client.try_trigger_program_releases(&None).is_ok()
 }
 
 /// Return whether `cancel_claim` succeeds under the supplied flags.
@@ -452,9 +453,9 @@ fn test_unpausing_release_does_not_unpause_lock_or_refund() {
     env.ledger().set_timestamp(TEST_TIMESTAMP);
 
     ctx.client
-        .set_paused(&Some(true), &Some(true), &Some(true), &None::<String>);
+        .set_paused(&Some(true), &Some(true), &Some(true), &None::<String>, &None::<u64>);
     ctx.client
-        .set_paused(&None, &Some(false), &None, &None::<String>);
+        .set_paused(&None, &Some(false), &None, &None::<String>, &None::<u64>);
 
     let stored = ctx.client.get_pause_flags();
     assert!(stored.lock_paused, "lock pause should remain enabled");
@@ -518,4 +519,57 @@ fn test_unpausing_release_does_not_unpause_lock_or_refund() {
             .is_err(),
         "refund should remain blocked while refund_paused stays enabled"
     );
+}
+
+/// Verify the layered precedence between global and per-program pause flags.
+/// An operation is blocked if EITHER the global flag OR the per-program flag is set.
+#[test]
+fn test_layered_pause_precedence() {
+    let cases = [
+        (false, false, true),
+        (true, false, false),
+        (false, true, false),
+        (true, true, false),
+    ];
+    
+    // Test lock path (lock_program_funds)
+    for (global, program, allowed) in cases.iter() {
+        let env = Env::default();
+        let ctx = setup_program(&env, 0);
+        mint_to_contract(&env, &ctx.client, &ctx.token, LOCK_AMOUNT);
+        
+        ctx.client.set_paused(&Some(*global), &Some(false), &Some(false), &None::<String>, &None::<u64>);
+        ctx.client.set_program_paused(&ctx.program_id, &Some(*program), &Some(false), &Some(false), &None::<String>, &None::<u64>);
+        
+        let res = ctx.client.try_lock_program_funds(&LOCK_AMOUNT).is_ok();
+        assert_eq!(res, *allowed, "lock: global={}, program={}", global, program);
+    }
+
+    // Test release path (single_payout)
+    for (global, program, allowed) in cases.iter() {
+        let env = Env::default();
+        let ctx = setup_program(&env, INITIAL_LOCKED_BALANCE);
+        let recipient = Address::generate(&env);
+        
+        ctx.client.set_paused(&Some(false), &Some(*global), &Some(false), &None::<String>, &None::<u64>);
+        ctx.client.set_program_paused(&ctx.program_id, &Some(false), &Some(*program), &Some(false), &None::<String>, &None::<u64>);
+        
+        let res = ctx.client.try_single_payout(&recipient, &RELEASE_AMOUNT, &None).is_ok();
+        assert_eq!(res, *allowed, "release: global={}, program={}", global, program);
+    }
+    
+    // Test refund path (cancel_claim)
+    for (global, program, allowed) in cases.iter() {
+        let env = Env::default();
+        let ctx = setup_program(&env, INITIAL_LOCKED_BALANCE);
+        let recipient = Address::generate(&env);
+        env.ledger().set_timestamp(TEST_TIMESTAMP);
+        let claim_id = ctx.client.create_pending_claim(&ctx.program_id, &recipient, &RELEASE_AMOUNT, &CLAIM_DEADLINE);
+        
+        ctx.client.set_paused(&Some(false), &Some(false), &Some(*global), &None::<String>, &None::<u64>);
+        ctx.client.set_program_paused(&ctx.program_id, &Some(false), &Some(false), &Some(*program), &None::<String>, &None::<u64>);
+        
+        let res = ctx.client.try_cancel_claim(&ctx.program_id, &claim_id, &ctx.admin).is_ok();
+        assert_eq!(res, *allowed, "refund: global={}, program={}", global, program);
+    }
 }

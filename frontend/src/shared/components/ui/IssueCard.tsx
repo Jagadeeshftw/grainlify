@@ -2,6 +2,8 @@ import { ReactNode } from 'react';
 import { GitBranch, Users, Circle } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { LanguageIcon } from '../LanguageIcon';
+import { PRLinkBadge } from './PRLinkBadge';
+import { LinkedPR } from '../../../features/maintainers/types';
 
 export interface IssueCardProps {
   id: string;
@@ -25,6 +27,15 @@ export interface IssueCardProps {
   daysLeft?: string;
   variant?: 'default' | 'recommended';
   primaryTag?: string; // For the main tag (e.g., "good first issue", "bug")
+  /**
+   * Pull requests linked to this issue.
+   * Absent or empty → badge hidden (unlinked state).
+   * One PR → single-state badge (open / merged / closed / draft).
+   * Two or more → count badge.
+   */
+  linkedPRs?: LinkedPR[];
+  /** When true, badge renders a loading skeleton. */
+  linkedPRsLoading?: boolean;
 }
 
 export function IssueCard({
@@ -45,6 +56,8 @@ export function IssueCard({
   daysLeft,
   variant = 'default',
   primaryTag,
+  linkedPRs,
+  linkedPRsLoading,
 }: IssueCardProps) {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
@@ -140,6 +153,15 @@ export function IssueCard({
             </div>
           )}
         </div>
+        {/* PR-linking badge — shown only when linkedPRs are present or loading */}
+        {/* Wrap in a span so click on badge doesn't bubble up to the card button */}
+        <span onClick={(e) => e.stopPropagation()}>
+          <PRLinkBadge
+            issueId={id}
+            linkedPRs={linkedPRs}
+            linkedPRsLoading={linkedPRsLoading}
+          />
+        </span>
       </div>
 
       {/* Issue Title */}

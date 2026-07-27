@@ -134,6 +134,70 @@ Steps 4 and 5 are independent. `upgrade` replaces the WASM; `migrate` transforms
 3. **Version monotonicity** — The contract enforces forward-only migrations. There is no on-chain rollback of state; rollback requires deploying a previous WASM and manually reversing state changes.
 4. **Idempotency scope** — Idempotency is per `to_version`. A migration to v3 followed by a migration to v4 are two distinct operations, each recorded separately.
 5. **No key mutations** — Migration functions must not rename or remove `DataKey` variants. New storage keys must use new enum variants.
+6. **Soroban atomicity and ledger timestamp monotonicity** — Soroban transactions are all-or-nothing. If a contract panics, every storage write in that execution is discarded. This means `migrate()` cannot consume a commitment on expiry failure: the `remove` executed before the panic is rolled back. On networks with monotonic timestamps (Stellar mainnet), this is not a problem because a commitment that expires at `T=4600` can never become valid again when time only moves forward. On test networks where timestamps periodically reset, a failed expiry check leaves the commitment in storage and a subsequent reset can make it valid again. The migration system does **not** include end-to-end defense-in-depth against this scenario; admins on test networks must treat expiry failures as requiring a fresh `commit_migration`.
+
+### Replay Protection Mechanisms
+
+The contract implements the following replay protections:
+
+#### Primary: Commitment Consumption on Success
+
+After a successful migration, the commitment is always consumed:
+
+```rust
+// Consume commitment (replay protection)
+env.storage().instance().remove(&DataKey::MigrationCommitment(target_version));
+```
+
+This prevents replay of the same migration, even when `expires_at = 0`.
+
+#### Secondary: Migration Hash Verification
+
+The migration hash check is independent of timestamp checks:
+
+```rust
+if commitment.hash != migration_hash {
+    panic!("{}", ContractError::MigrationHashMismatch as u32);
+}
+```
+
+This means:
+- A hash committed for version 3 cannot be used to migrate to version 4 (version isolation)
+- A different hash cannot be used with an existing commitment (hash binding)
+- The hash check works even when `expires_at = 0` (no expiry)
+
+#### Tertiary: Idempotency Guard
+
+If `MigrationState.to_version == target_version` already exists, `migrate()` returns immediately without re-executing migrations. This prevents replay of a migration that has already completed successfully.
+
+### Expiry Semantics and Testnet Limitations
+
+`expires_at` is an absolute ledger timestamp (seconds). `migrate()` rejects any call where the current ledger timestamp exceeds `expires_at`. This provides a *soft* time-bound window on networks with monotonic timestamps.
+
+However, because Soroban rolls back all state changes when the contract panics, the removal of an expired commitment is not persisted. On test networks that reset ledger timestamps backward, a commitment that failed the expiry check may still be present and can become valid again after the reset.
+
+On Stellar mainnet, ledger timestamps are strictly monotonic and this scenario cannot occur. On test networks, admins should:
+
+- Understand that an expired commitment must be re-committed after a testnet reset
+- Prefer short expiry TTLs to limit exposure
+- Monitor for `"Migration commitment has expired"` panics and re-commit as needed
+
+### Trust Assumptions by Environment
+
+| Environment | Timestamp Monotonicity | Expiry Protection | Recommended Practice |
+|-------------|------------------------|-------------------|----------------------|
+| Stellar Mainnet | ✅ Strictly monotonic | Works as intended | Use `expires_at` for time-bound authorizations |
+| Stellar Testnet | ❌ Periodic resets | Not persisted after failure | Re-commit after expiry failures or set `expires_at = 0` |
+| Local Development | ⚠️ Depends on harness | Mirrors testnet behavior | Use short TTLs or `expires_at = 0` |
+
+### Recommended Practices
+
+1. **Always verify migration_hash** off-chain before and after migration execution — this is the strongest replay protection
+2. **Never reuse a migration hash** across different target versions or migration attempts
+3. **Treat expiry failures as requiring a fresh commitment** — a failed `migrate()` due to expiry does not consume the commitment in Soroban
+4. **Use short expiry TTLs** in test environments to minimize the window for replay
+5. **Use `expires_at = 0`** (no expiry) only in controlled test environments where timestamp behavior is managed
+6. **Monitor expiry events** — if a migration fails due to expiry, re-commit with a new hash before retrying
 
 ---
 
@@ -148,5 +212,6 @@ cargo test --lib
 
 Key test modules:
 - `src/migration_hook_tests.rs` — idempotency, auth, event emission, edge cases
+- `src/test_migration_replay.rs` — replay protection, ledger-timestamp reset safety, hash-only replay prevention
 - `src/test/e2e_upgrade_migration_tests.rs` — end-to-end lifecycle scenarios
 - `src/lib.rs` (inline `mod test`) — integration and regression tests
