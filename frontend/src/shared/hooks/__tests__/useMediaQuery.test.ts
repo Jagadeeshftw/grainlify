@@ -110,6 +110,64 @@ describe('useMediaQuery', () => {
     expect(result.current).toBe(lastExpected)
   })
 
+  it('handles bidirectional changes: match → no-match → match', () => {
+    const mql = mockMatchMedia(false, '(max-width: 767px)')
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation(() => mql),
+    )
+
+    const { result } = renderHook(() => useMediaQuery('(max-width: 767px)'))
+    expect(result.current).toBe(false)
+
+    act(() => {
+      mql.matches = true
+      mql.dispatchEvent(new Event('change'))
+    })
+    expect(result.current).toBe(true)
+
+    act(() => {
+      mql.matches = false
+      mql.dispatchEvent(new Event('change'))
+    })
+    expect(result.current).toBe(false)
+
+    act(() => {
+      mql.matches = true
+      mql.dispatchEvent(new Event('change'))
+    })
+    expect(result.current).toBe(true)
+  })
+
+  it('handles multiple independent instances with different queries', () => {
+    const narrowMql = mockMatchMedia(true, '(max-width: 767px)')
+    const wideMql = mockMatchMedia(false, '(min-width: 1024px)')
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation((query: string) => {
+        if (query === '(max-width: 767px)') return narrowMql
+        if (query === '(min-width: 1024px)') return wideMql
+        return mockMatchMedia(false)
+      }),
+    )
+
+    const { result: narrowResult } = renderHook(() => useMediaQuery('(max-width: 767px)'))
+    const { result: wideResult } = renderHook(() => useMediaQuery('(min-width: 1024px)'))
+
+    expect(narrowResult.current).toBe(true)
+    expect(wideResult.current).toBe(false)
+
+    act(() => {
+      narrowMql.matches = false
+      narrowMql.dispatchEvent(new Event('change'))
+      wideMql.matches = true
+      wideMql.dispatchEvent(new Event('change'))
+    })
+
+    expect(narrowResult.current).toBe(false)
+    expect(wideResult.current).toBe(true)
+  })
+
   it('cleans up the change listener on unmount', () => {
     const removeSpy = vi.fn()
     const mql = {
