@@ -5,6 +5,20 @@
 //! This contract enables organizers to lock funds and distribute prizes to multiple
 //! winners through secure, auditable batch payouts.
 //!
+//! ## ABI Stability
+//!
+//! The complete public interface of this contract — including stability classifications
+//! (`STABLE` / `EVOLVING` / `INTERNAL`), breaking-change rules, and all types that are
+//! duplicated in facade bindings — is documented in the cross-contract ABI stability matrix:
+//!
+//! **[`docs/abi-stability-matrix.md`](../../../../docs/abi-stability-matrix.md)**
+//!
+//! ### Synchronization risks in this crate
+//! - `PayoutRecord` is mirrored (with drift) in `view-facade/src/lib.rs`.
+//! - `ProgramDelegateInfo` is mirrored in `escrow-view-facade/src/program_escrow_bindings.rs`.
+//! - Any field addition/removal/reorder to these types **must** be applied to the binding
+//!   in the same PR and the matrix updated accordingly.
+//!
 //! ## Overview
 //!
 //! The Program Escrow contract manages the complete lifecycle of hackathon/program prizes:
@@ -211,6 +225,45 @@ pub const RISK_FLAG_RESTRICTED: u32 = 1 << 2;
 pub const RISK_FLAG_DEPRECATED: u32 = 1 << 3;
 pub const DELEGATE_PERMISSION_RELEASE: u32 = 1 << 0;
 pub const DELEGATE_PERMISSION_REFUND: u32 = 1 << 1;
+/// # DELEGATE_PERMISSION_UPDATE_META — low-privilege metadata write permission
+///
+/// ## Purpose
+/// Allows a delegate to call `update_program_metadata` / `update_program_metadata_by`
+/// without granting any financial power (no release, no refund).
+///
+/// ## Griefing / DOS vector
+/// Because metadata is stored in instance storage and every write extends the
+/// entry's TTL, a delegate holding *only* this bit can inflate the program
+/// owner's storage rent indefinitely:
+///
+/// ```text
+/// loop {
+///     contract.update_program_metadata_by(program_id, delegate, huge_metadata);
+/// }
+/// ```
+///
+/// Each call costs ledger fees paid by the *caller* but also charges an
+/// incremental XDR-size fee to the *contract instance* (billed to the
+/// program owner's funded account).  Repeated writes with large
+/// `custom_fields` vectors can grow instance storage costs without bound.
+///
+/// ## Mitigations applied in this contract
+/// 1. **Rate limit** — Delegate-invoked metadata writes are capped at
+///    `DELEGATE_META_MAX_OPS_PER_WINDOW` calls per `DELEGATE_META_RATE_LIMIT_WINDOW`
+///    seconds (default: 10 per hour per program).  Admin / owner writes bypass
+///    this limit.  State is tracked in `DataKey::DelegateMetaRateLimit(program_id)`.
+///
+/// 2. **`custom_fields` cap** — `ProgramMetadata::custom_fields` is bounded to
+///    `MAX_CUSTOM_FIELDS` entries, and each key/value string is limited to
+///    `MAX_CUSTOM_FIELD_KEY_LEN` / `MAX_CUSTOM_FIELD_VALUE_LEN` bytes,
+///    preventing unbounded storage growth even within the rate-limit window.
+///
+/// ## Security assumptions
+/// - The rate-limit state lives in instance storage (same TTL as the contract).
+///   A delegate cannot clear it without admin access.
+/// - The admin / owner can call `update_program_metadata` unlimited times;
+///   this is intentional because they pay for their own actions and are
+///   considered trusted parties.
 pub const DELEGATE_PERMISSION_UPDATE_META: u32 = 1 << 2;
 pub const DELEGATE_PERMISSION_MASK: u32 =
     DELEGATE_PERMISSION_RELEASE | DELEGATE_PERMISSION_REFUND | DELEGATE_PERMISSION_UPDATE_META;
@@ -1318,6 +1371,13 @@ pub enum DataKey {
     /// so programs with no payouts pay zero cold-storage cost.
     /// Stored in persistent storage so it survives TTL-based ledger pruning.
     RecipientPayoutIndex(String, Address),
+    /// Per-program rate-limit state for delegate-invoked metadata updates.
+    ///
+    /// Stored as `DelegateMetaRateLimitState` under instance storage.
+    /// Keyed by program_id so each program has an independent rate-limit
+    /// counter; a malicious delegate for one program cannot exhaust the
+    /// budget of another.
+    DelegateMetaRateLimit(String),
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1483,6 +1543,48 @@ pub struct RateLimitConfig {
     pub max_operations: u32,
     pub cooldown_period: u64,
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELEGATE METADATA RATE LIMIT (DOS-resistance for DELEGATE_PERMISSION_UPDATE_META)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Rolling-window counter for delegate-invoked metadata writes on a single program.
+///
+/// Stored under `DataKey::DelegateMetaRateLimit(program_id)` in instance storage.
+/// Reset whenever the current ledger timestamp exceeds
+/// `window_start + DELEGATE_META_RATE_LIMIT_WINDOW`.
+///
+/// # Storage cost
+/// One entry per program that has ever had a delegate metadata update;
+/// size is constant (two u64 words).  The entry is never deleted so the
+/// TTL-extension cost is paid once per program.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DelegateMetaRateLimitState {
+    /// Ledger timestamp (seconds) when the current window started.
+    pub window_start: u64,
+    /// Number of delegate-invoked metadata writes in the current window.
+    pub count: u32,
+}
+
+/// Rolling-window duration for delegate metadata writes (seconds).
+/// Default: 3 600 s (1 hour).
+pub const DELEGATE_META_RATE_LIMIT_WINDOW: u64 = 3_600;
+
+/// Maximum delegate metadata writes permitted within one `DELEGATE_META_RATE_LIMIT_WINDOW`.
+/// Permits one update every ~6 minutes on average; enough for legitimate use
+/// while making sustained spam economically costly.
+pub const DELEGATE_META_MAX_OPS_PER_WINDOW: u32 = 10;
+
+/// Maximum number of entries in `ProgramMetadata::custom_fields`.
+/// Bounds on-chain storage regardless of who calls the update.
+pub const MAX_CUSTOM_FIELDS: u32 = 20;
+
+/// Maximum byte length of a `ProgramMetadataField` key.
+pub const MAX_CUSTOM_FIELD_KEY_LEN: u32 = 64;
+
+/// Maximum byte length of a `ProgramMetadataField` value.
+pub const MAX_CUSTOM_FIELD_VALUE_LEN: u32 = 256;
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3981,6 +4083,19 @@ impl ProgramEscrowContract {
     }
 
     /// Update metadata for a specific program.
+    ///
+    /// # Access control
+    /// - Admin or program owner (authorized_payout_key): unlimited writes.
+    /// - Delegate with `DELEGATE_PERMISSION_UPDATE_META`: rate-limited to
+    ///   `DELEGATE_META_MAX_OPS_PER_WINDOW` writes per `DELEGATE_META_RATE_LIMIT_WINDOW`
+    ///   seconds to prevent storage-bloat griefing (see doc comment on
+    ///   `DELEGATE_PERMISSION_UPDATE_META`).
+    ///
+    /// # Panics
+    /// - `"RateLimitExceeded"` if the delegate rate limit is exceeded.
+    /// - `"CustomFieldsLimitExceeded"` if `metadata.custom_fields.len() > MAX_CUSTOM_FIELDS`.
+    /// - `"CustomFieldKeyTooLong"` if any key exceeds `MAX_CUSTOM_FIELD_KEY_LEN` bytes.
+    /// - `"CustomFieldValueTooLong"` if any value exceeds `MAX_CUSTOM_FIELD_VALUE_LEN` bytes.
     pub fn update_program_metadata(
         env: Env,
         program_id: String,
@@ -3994,6 +4109,30 @@ impl ProgramEscrowContract {
             &caller,
             DELEGATE_PERMISSION_UPDATE_META,
         );
+
+        // ── (1) Validate custom_fields size — applies to all callers ──────────
+        // Bounds storage size regardless of who calls, preventing unbounded
+        // storage growth even via the admin path.
+        let num_fields = metadata.custom_fields.len();
+        if num_fields > MAX_CUSTOM_FIELDS {
+            panic!("CustomFieldsLimitExceeded");
+        }
+        for field in metadata.custom_fields.iter() {
+            if field.key.len() > MAX_CUSTOM_FIELD_KEY_LEN {
+                panic!("CustomFieldKeyTooLong");
+            }
+            if field.value.len() > MAX_CUSTOM_FIELD_VALUE_LEN {
+                panic!("CustomFieldValueTooLong");
+            }
+        }
+
+        // ── (2) Rate-limit delegate-invoked writes ────────────────────────────
+        // Admin and program owner bypass this check — they are trusted parties
+        // who pay for their own storage actions.
+        let caller_is_delegate = Self::is_delegate_caller(&env, &program_data, &caller);
+        if caller_is_delegate {
+            Self::check_and_update_delegate_meta_rate_limit(&env, &program_id);
+        }
 
         env.storage()
             .instance()

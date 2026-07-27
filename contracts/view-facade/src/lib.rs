@@ -81,6 +81,21 @@
 //! ## Spec Alignment
 //!
 //! Grainlify View Interface v1 (Issue #574)
+//!
+//! ## ABI Stability
+//!
+//! The complete public interface of this contract — including stability classifications
+//! (`STABLE` / `EVOLVING` / `INTERNAL`), breaking-change rules, and all types that are
+//! duplicated in facade bindings — is documented in the cross-contract ABI stability matrix:
+//!
+//! **[`docs/abi-stability-matrix.md`](../../../../docs/abi-stability-matrix.md)**
+//!
+//! ### Synchronization risks in this crate
+//! - The local `PayoutRecord` struct is a **subset** of the canonical `PayoutRecord` in
+//!   `program-escrow/src/lib.rs`: it omits the `payout_type` field. Any field addition or
+//!   reorder in the canonical struct must be reflected here in the same PR, or XDR decoding
+//!   of `query_recipient_history` responses will silently produce incorrect values.
+//! - `ContractKind` variants must remain in sync with `grainlify-core`'s registry entries.
 
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, Address, Env, Vec,

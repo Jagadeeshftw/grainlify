@@ -1,4 +1,25 @@
 #![no_std]
+//! # Grainlify Core Contract
+//!
+//! Provides secure contract upgrade management with timelocked governance proposals,
+//! version tracking, multisig authorization, config snapshots/rollback, contract
+//! registry, and liveness watchdog.
+//!
+//! ## ABI Stability
+//!
+//! The complete public interface of this contract — including stability classifications
+//! (`STABLE` / `EVOLVING` / `INTERNAL`), breaking-change rules, and all types that are
+//! duplicated in facade bindings — is documented in the cross-contract ABI stability matrix:
+//!
+//! **[`docs/abi-stability-matrix.md`](../../../../docs/abi-stability-matrix.md)**
+//!
+//! ### Synchronization risks in this crate
+//! - `ContractError` discriminants must never be renumbered; callers match on the u32 values.
+//! - `DeployedContract` / `ContractKind` are queried by `view-facade` and `escrow-view-facade`
+//!   — variant additions are additive only if all consumers handle unknown variants.
+//! - `GovernanceConfig` fields are evolving; do not assume field stability across minor versions.
+//! - Any change to an INTERNAL function that is also tested by external test crates must be
+//!   coordinated with those test crates in the same PR.
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, Address, BytesN, Env,
     String, Symbol, Vec,

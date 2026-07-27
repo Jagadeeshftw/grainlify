@@ -1,4 +1,26 @@
 #![no_std]
+//! # Bounty Escrow Contract
+//!
+//! Manages individual bounty escrows on Stellar: per-bounty fund locking, contributor
+//! release, refund workflows, capability-based one-time-token authorization, participant
+//! filtering (whitelist/blocklist), multi-token support, and admin rotation.
+//!
+//! ## ABI Stability
+//!
+//! The complete public interface of this contract — including stability classifications
+//! (`STABLE` / `EVOLVING` / `INTERNAL`), breaking-change rules, and all types that are
+//! duplicated in facade bindings — is documented in the cross-contract ABI stability matrix:
+//!
+//! **[`docs/abi-stability-matrix.md`](../../../../docs/abi-stability-matrix.md)**
+//!
+//! ### Synchronization risks in this crate
+//! - `EscrowStatus` is exhaustively matched in `escrow-view-facade/src/lib.rs` and
+//!   `escrow-view-facade/src/bounty_escrow_bindings.rs`. Adding a new variant is **breaking**
+//!   for both facade copies until they are updated simultaneously.
+//! - `EscrowMetadata`, `PauseFlags`, `Escrow`, and `EscrowWithId` are mirrored in
+//!   `bounty_escrow_bindings.rs`. Field additions, removals, or reorders **must** be applied
+//!   to the binding in the same PR.
+//! - `AnonymousParty` is mirrored in the binding; variant reorder is an XDR-breaking change.
 
 mod events;
 pub mod gas_budget;

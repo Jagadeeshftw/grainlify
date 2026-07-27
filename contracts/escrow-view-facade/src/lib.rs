@@ -1,4 +1,26 @@
 #![no_std]
+//! # Escrow View Facade
+//!
+//! Read-only aggregation of bounty-escrow data for frontend consumption; also proxies
+//! delegate queries to program-escrow. Returns `None` / empty vecs instead of trapping
+//! when underlying contracts return errors, making it safe to call from UI code.
+//!
+//! ## ABI Stability
+//!
+//! The complete public interface of this contract — including stability classifications
+//! (`STABLE` / `EVOLVING` / `INTERNAL`), breaking-change rules, and all types that are
+//! duplicated in facade bindings — is documented in the cross-contract ABI stability matrix:
+//!
+//! **[`docs/abi-stability-matrix.md`](../../../../docs/abi-stability-matrix.md)**
+//!
+//! ### Synchronization risks in this crate
+//! - `EscrowStatus` (local re-declaration in this file) must stay in sync with
+//!   `bounty-escrow`'s canonical enum. Variant reorder or removal is XDR-breaking.
+//! - `bounty_escrow_bindings.rs` mirrors `EscrowStatus`, `EscrowMetadata`, `PauseFlags`,
+//!   `Escrow`, `EscrowWithId`, and `AnonymousParty` from `bounty-escrow`. All must be
+//!   updated in the same PR as any change to their canonical counterparts.
+//! - `program_escrow_bindings.rs` mirrors `ProgramDelegateInfo` from `program-escrow`.
+//!   Field additions or reorders must be applied to the binding simultaneously.
 
 use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, String, Vec};
 
