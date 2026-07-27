@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-This document specifies the current behavior, security-sensitive edge cases, and expected regression surface for browser-facing request security in the backend service, specifically focusing on CSRF protection, state parameter validation, open redirect prevention, and authentication middleware.
+This document specifies the current behavior, security-sensitive edge cases, and expected regression surface for browser-facing request security in the backend service, specifically focusing on CSRF protection, browser-facing middleware, state parameter validation, open redirect prevention, and authentication middleware.
 
 ---
 
@@ -28,9 +28,15 @@ This document specifies the current behavior, security-sensitive edge cases, and
    - Validates that origin matches an allowed scheme and host whitelist:
      - Development: `http://localhost:*`, `http://127.0.0.1:*`, `https://localhost:*`, `https://127.0.0.1:*`.
      - Vercel Preview Deployments: `*.vercel.app` or `vercel.app`.
-     - Configured Origins: `CORSOrigins` and `FrontendBaseURL`.
+     - Configured Origins: `CORSOrigins` and `FrontendBaseURL` (normalized for trailing slashes).
    - If allowed, redirects user to `{redirect_uri}/auth/callback?token={jwt}&github={login}`.
    - If disallowed or missing, rejects request or falls back to production configured base URL.
+
+4. **Browser-Facing Request Security Middleware (`createCsrfMiddleware`):**
+   - Inspects state-changing HTTP requests (`POST`, `PUT`, `DELETE`, `PATCH`).
+   - Validates `x-csrf-token` header for browser-originating requests (requests with `Origin` or `Referer`).
+   - Validates `Origin` and `Referer` against `isAllowedRedirectURI`.
+   - Non-browser API clients (requests without `Origin` or `Referer`) bypass browser CSRF checks.
 
 ---
 
@@ -40,6 +46,8 @@ This document specifies the current behavior, security-sensitive edge cases, and
 |----------|-------------------|--------------------------|------------------|
 | **Origin Checking** | Malicious host suffix (e.g. `http://localhost.attacker.com`) | Rejected (`false`) | Prevents domain spoofing open redirects |
 | **Origin Checking** | Subdomain takeover target (e.g. `https://vercel.app.attacker.com`) | Rejected (`false`) | Prevents sub-domain string matching bypasses |
+| **Origin Checking** | URL containing userinfo credentials (`http://user:pass@localhost:3000`) | Rejected (`false`) | Prevents credential exposure & phishing via URL auth |
+| **Origin Checking** | Configured origin with trailing slash (`https://grainlify.io/`) | Allowed (`true`) | Prevents config format mismatch false negatives |
 | **Origin Checking** | Non-HTTP schemes (`javascript:...`, `data:...`, `file:...`) | Rejected (`false`) | Prevents XSS / payload injection via URL schemes |
 | **Origin Checking** | Localhost dev origins (`http://localhost:3000`, `http://127.0.0.1:5173`) | Allowed (`true`) | Preserves developer workflow without weakening production |
 | **Origin Checking** | Vercel preview domains (`https://pr-42.vercel.app`) | Allowed (`true`) | Supports dynamic preview deployments securely |
@@ -48,6 +56,11 @@ This document specifies the current behavior, security-sensitive edge cases, and
 | **State Parameter** | Malformed / invalid base64 string in `state` | Fallback to raw string | Prevents panics or 500 errors on invalid inputs |
 | **State Parameter** | Replay of previously consumed `state` parameter | Rejected (`invalid_or_expired_state`) | Ensures single-use state tokens |
 | **State Parameter** | State lookup after 10-minute expiration | Rejected (`invalid_or_expired_state`) | Enforces time-bound state validity |
+| **CSRF Validation** | Non-string / null token arguments passed | Rejected (`false`) | Prevents type confusion & runtime crashes |
+| **CSRF Validation** | Invalid `Date` instance passed as `expiresAt` | Rejected (`false`) | Prevents `NaN` comparison bypasses |
+| **Browser Middleware** | State-changing request with `Origin`/`Referer` missing `x-csrf-token` | HTTP 403 (`missing_csrf_token`) | Blocks browser CSRF attempts |
+| **Browser Middleware** | Browser request with disallowed `Origin` or `Referer` | HTTP 403 (`disallowed_origin`) | Blocks cross-origin browser requests from untrusted origins |
+| **Browser Middleware** | Non-browser request (no `Origin` or `Referer`) | Allowed (`next()`) | Allows direct server-to-server & CLI API calls |
 | **Auth Middleware** | Request missing `Authorization` header | HTTP 401 (`missing_bearer_token`) | Prevents unauthenticated access to protected routes |
 | **Auth Middleware** | `Authorization` header with non-Bearer scheme (`Basic ...`) | HTTP 401 (`missing_bearer_token`) | Enforces Bearer JWT standard |
 | **Auth Middleware** | `Authorization` header with `Bearer ` but empty payload | HTTP 401 (`missing_bearer_token`) | Rejects empty tokens |
@@ -69,7 +82,7 @@ To ensure future changes do not introduce security regressions or break existing
    - The database deletion `DELETE FROM oauth_states WHERE state = $1` MUST execute before or during callback processing. Re-using a state token MUST fail on second attempt.
 
 4. **Response Contract Invariant:**
-   - Error responses for authentication failures MUST preserve exact JSON error keys (`missing_bearer_token`, `invalid_token`, `invalid_or_expired_state`, `redirect_uri_not_allowed`).
+   - Error responses for authentication failures MUST preserve exact JSON error keys (`missing_bearer_token`, `invalid_token`, `invalid_or_expired_state`, `redirect_uri_not_allowed`, `missing_csrf_token`, `disallowed_origin`).
 
 5. **Determinism & Retry Stability Invariant:**
    - State parameter encoding, decoding, and origin validation helper functions MUST be pure and strictly deterministic across retries, re-renders, and concurrent evaluations. Calling `encodeStateWithRedirect`, `decodeStateWithRedirect`, or `isAllowedRedirectURI` 100 times sequentially with identical input parameters MUST produce identical output results without state leakage or side effects.
@@ -82,3 +95,4 @@ The regression surface is explicitly covered and pinned down by unit test suites
 - **Go Handlers & OAuth Edge Cases:** `backend/internal/handlers/github_oauth_test.go`
 - **Go Auth Middleware Edge Cases:** `backend/internal/auth/middleware_test.go`
 - **TypeScript CSRF & Security Edge Cases:** `backend/src/middleware/csrf.test.ts`
+
