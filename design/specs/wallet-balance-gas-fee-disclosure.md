@@ -20,7 +20,7 @@ Adds a **WalletBalanceFeeDisplay** component inside `WalletConnectionModal.tsx` 
 │  [Stellar logo]  1,245.80 XLM                       │
 │                   ≈ $312.45 USD                     │
 │                                                     │
-│  Est. fee  ℹ     0.00001 XLM  (≈ $0.0000025)      │
+│  Est. network fee  ℹ     0.00001 XLM  (≈ $0.0000025)      │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -31,7 +31,7 @@ Adds a **WalletBalanceFeeDisplay** component inside `WalletConnectionModal.tsx` 
 | Token icon | Stellar (XLM) logo, 24×24 | `rounded-full`, `border border-white/10` |
 | Balance amount | Formatted number + ticker | `text-[16px] font-semibold` |
 | USD equivalent | "≈ $X.XX USD" | `text-[13px] text-[#b8a898]` (dark) / `text-[#7a6b5a]` (light) |
-| Fee label | "Est. fee" + info icon | `text-[13px]` + `Info` icon 14×14 |
+| Fee label | "Est. network fee" + info icon | `text-[13px]` + `Info` icon 14×14 |
 | Fee amount | Formatted fee + USD | `text-[13px] font-mono` |
 
 ---
@@ -41,13 +41,14 @@ Adds a **WalletBalanceFeeDisplay** component inside `WalletConnectionModal.tsx` 
 ### 1. Default (balance loaded, fee available)
 
 - Token icon, balance, USD equivalent, and fee line all visible
-- Tooltip on info icon explains: _"Estimated network fee based on current Stellar base fee. Actual fee may vary."_
+- Tooltip on info icon explains: _"Estimated Stellar network fee for signing transactions, including payouts…"_ (see `walletFeeDisclosureCopy.ts`)
 
 ### 2. Insufficient balance
 
 - Balance text turns `text-[#ef4444]` (dark) / `text-[#dc2626]` (light) — maps to `color.semantic.error.600`
 - Warning icon (`AlertTriangle`) appears inline after balance amount
-- Fee line remains visible but fee amount is dimmed (`opacity-60`)
+- Alert banner (`role="alert"`) explains insufficient XLM for typical network fees
+- Fee line remains visible but fee row uses reduced opacity (`opacity-60`)
 - `aria-invalid="true"` on the balance region
 
 ### 3. Loading
@@ -61,13 +62,22 @@ Adds a **WalletBalanceFeeDisplay** component inside `WalletConnectionModal.tsx` 
 - A subtle amber banner appears: _"Balance may be outdated. Pull to refresh."_
 - Banner uses `bg-[#f59e0b]/[0.08] text-[#f59e0b]` (semantic.warning)
 - Balance and fee values remain visible but prefixed with a `Clock` icon (12×12)
-- Tooltip on `Clock` icon: _"Last updated X ago"_
+- When `lastUpdated` is provided, the clock exposes `aria-label` / `title` with _"Last updated Xm ago"_
 
 ### 5. Fee unavailable
 
-- Fee line shows: _"Fee unavailable"_ in `text-[#8a7e70]` (muted)
-- Info icon replaced with `AlertCircle` icon
+- Fee line shows: _"Fee unavailable"_ in muted italic text
+- `AlertCircle` icon with `aria-label` describing that the wallet will show the exact fee at confirmation
 - Balance section unaffected
+
+### 6. Partial quote data (edge)
+
+| Condition | UI behavior |
+|---|---|
+| `usdEquivalent === null` | Balance row shows _"USD equivalent unavailable"_ |
+| `estimatedFee` set, `feeUsdEquivalent === null` | Native fee + ticker only; no `(≈ $…)` suffix |
+| `feeUsdEquivalent < 0.01` | USD suffix renders as _"< $0.01"_ |
+| `balance` with thousands separators | Insufficient check strips commas before numeric compare |
 
 ---
 
@@ -142,6 +152,9 @@ interface WalletBalanceFeeDisplayProps {
 | File | Purpose |
 |---|---|
 | `frontend/src/features/auth/components/WalletBalanceFeeDisplay.tsx` | New component |
+| `frontend/src/features/auth/components/walletFeeDisclosureCopy.ts` | Centralized disclosure strings + format helpers |
+| `frontend/src/features/auth/components/__tests__/WalletBalanceFeeDisplay.test.tsx` | Component regression tests |
+| `frontend/src/features/auth/components/__tests__/walletFeeDisclosureCopy.test.ts` | Copy + formatter unit tests |
 | `frontend/src/features/auth/components/WalletConnectionModal.tsx` | Integration point |
 | `design/specs/wallet-balance-gas-fee-disclosure.md` | This spec |
 

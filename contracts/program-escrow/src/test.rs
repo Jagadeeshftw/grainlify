@@ -1,4 +1,4 @@
-﻿extern crate std;
+extern crate std;
 
 use super::*;
 use soroban_sdk::{

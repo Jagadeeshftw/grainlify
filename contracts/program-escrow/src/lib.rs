@@ -5,6 +5,20 @@
 //! This contract enables organizers to lock funds and distribute prizes to multiple
 //! winners through secure, auditable batch payouts.
 //!
+//! ## ABI Stability
+//!
+//! The complete public interface of this contract — including stability classifications
+//! (`STABLE` / `EVOLVING` / `INTERNAL`), breaking-change rules, and all types that are
+//! duplicated in facade bindings — is documented in the cross-contract ABI stability matrix:
+//!
+//! **[`docs/abi-stability-matrix.md`](../../../../docs/abi-stability-matrix.md)**
+//!
+//! ### Synchronization risks in this crate
+//! - `PayoutRecord` is mirrored (with drift) in `view-facade/src/lib.rs`.
+//! - `ProgramDelegateInfo` is mirrored in `escrow-view-facade/src/program_escrow_bindings.rs`.
+//! - Any field addition/removal/reorder to these types **must** be applied to the binding
+//!   in the same PR and the matrix updated accordingly.
+//!
 //! ## Overview
 //!
 //! The Program Escrow contract manages the complete lifecycle of hackathon/program prizes:
@@ -232,8 +246,50 @@ pub const RISK_FLAG_HIGH_RISK: u32 = 1 << 0;
 pub const RISK_FLAG_UNDER_REVIEW: u32 = 1 << 1;
 pub const RISK_FLAG_RESTRICTED: u32 = 1 << 2;
 pub const RISK_FLAG_DEPRECATED: u32 = 1 << 3;
+pub const DELEGATE_METADATA_UPDATE_INTERVAL: u64 = 60; // 1 minute
+pub const MAX_PROGRAM_METADATA_CUSTOM_FIELDS: u32 = 10;
+
 pub const DELEGATE_PERMISSION_RELEASE: u32 = 1 << 0;
 pub const DELEGATE_PERMISSION_REFUND: u32 = 1 << 1;
+/// # DELEGATE_PERMISSION_UPDATE_META — low-privilege metadata write permission
+///
+/// ## Purpose
+/// Allows a delegate to call `update_program_metadata` / `update_program_metadata_by`
+/// without granting any financial power (no release, no refund).
+///
+/// ## Griefing / DOS vector
+/// Because metadata is stored in instance storage and every write extends the
+/// entry's TTL, a delegate holding *only* this bit can inflate the program
+/// owner's storage rent indefinitely:
+///
+/// ```text
+/// loop {
+///     contract.update_program_metadata_by(program_id, delegate, huge_metadata);
+/// }
+/// ```
+///
+/// Each call costs ledger fees paid by the *caller* but also charges an
+/// incremental XDR-size fee to the *contract instance* (billed to the
+/// program owner's funded account).  Repeated writes with large
+/// `custom_fields` vectors can grow instance storage costs without bound.
+///
+/// ## Mitigations applied in this contract
+/// 1. **Rate limit** — Delegate-invoked metadata writes are capped at
+///    `DELEGATE_META_MAX_OPS_PER_WINDOW` calls per `DELEGATE_META_RATE_LIMIT_WINDOW`
+///    seconds (default: 10 per hour per program).  Admin / owner writes bypass
+///    this limit.  State is tracked in `DataKey::DelegateMetaRateLimit(program_id)`.
+///
+/// 2. **`custom_fields` cap** — `ProgramMetadata::custom_fields` is bounded to
+///    `MAX_CUSTOM_FIELDS` entries, and each key/value string is limited to
+///    `MAX_CUSTOM_FIELD_KEY_LEN` / `MAX_CUSTOM_FIELD_VALUE_LEN` bytes,
+///    preventing unbounded storage growth even within the rate-limit window.
+///
+/// ## Security assumptions
+/// - The rate-limit state lives in instance storage (same TTL as the contract).
+///   A delegate cannot clear it without admin access.
+/// - The admin / owner can call `update_program_metadata` unlimited times;
+///   this is intentional because they pay for their own actions and are
+///   considered trusted parties.
 pub const DELEGATE_PERMISSION_UPDATE_META: u32 = 1 << 2;
 pub const DELEGATE_PERMISSION_MASK: u32 =
     DELEGATE_PERMISSION_RELEASE | DELEGATE_PERMISSION_REFUND | DELEGATE_PERMISSION_UPDATE_META;
@@ -1312,6 +1368,8 @@ pub struct TokenAllowlistSchemaVersionSet {
 const TOKEN_ALLOWLIST_UPDATED: Symbol = symbol_short!("TkAllow");
 const TOKEN_REJECTED: Symbol = symbol_short!("TkReject");
 const TOKEN_ALLOWLIST_SCHEMA: Symbol = symbol_short!("TkAlSch");
+const TOKEN_DECIMALS_CONFIGURED: Symbol = symbol_short!("TkDecCfg");
+const TOKEN_DECIMALS_MISMATCH: Symbol = symbol_short!("TkDecMis");
 
 /// Current token-allowlist storage schema version.
 ///
@@ -1379,12 +1437,16 @@ pub enum DataKey {
     IdempotencySchemaVersion,
     BatchPayoutSchemaVersion,
     CircuitBreakerSchemaVersion,
+    DelegateMetadataRateLimit(String),
     BatchReceipt(u64),
     PendingAdmin,
     /// Pending admin transition metadata used to invalidate replaced or expired proposals.
     PendingAdminTransition,
     /// Pending controller address for two-step controller rotation (step 1).
     PendingController(String),
+    /// Immutable, admin-configured display scale for an allowlisted token.
+    /// Appended to preserve the XDR discriminants of all existing keys.
+    TokenDecimals(Address),
     /// Full transition state for pending controller rotation (proposed_at, deadline, nonce).
     /// Stored alongside PendingController to enable timelock enforcement in accept_controller.
     PendingControllerState(String),
@@ -1400,22 +1462,13 @@ pub enum DataKey {
     /// so programs with no payouts pay zero cold-storage cost.
     /// Stored in persistent storage so it survives TTL-based ledger pruning.
     RecipientPayoutIndex(String, Address),
-    /// Per-program lifecycle timeline: program_id → ProgramLifecycleTimeline.
+    /// Per-program rate-limit state for delegate-invoked metadata updates.
     ///
-    /// Stores an ordered list of status transitions (Draft → Active, etc.)
-    /// enabling dwell-time queries for ecosystem operators.
-    /// Written on each status change; read via get_program_lifecycle_timeline.
-    LifecycleTimeline(String),
-
-    /// Accumulated insurance-reserve balance in native token units.
-    ///
-    /// Written atomically with every fee-collection operation that has a
-    /// non-zero `insurance_reserve_bps`.  Read by `get_insurance_reserve_balance`.
-    /// Never decremented except by `withdraw_insurance_reserve` (admin-gated).
-    ///
-    /// Stored in `instance` storage so it shares the contract TTL and is
-    /// always co-located with `FeeConfig`.
-    InsuranceReserve,
+    /// Stored as `DelegateMetaRateLimitState` under instance storage.
+    /// Keyed by program_id so each program has an independent rate-limit
+    /// counter; a malicious delegate for one program cannot exhaust the
+    /// budget of another.
+    DelegateMetaRateLimit(String),
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1582,6 +1635,48 @@ pub struct RateLimitConfig {
     pub max_operations: u32,
     pub cooldown_period: u64,
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELEGATE METADATA RATE LIMIT (DOS-resistance for DELEGATE_PERMISSION_UPDATE_META)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Rolling-window counter for delegate-invoked metadata writes on a single program.
+///
+/// Stored under `DataKey::DelegateMetaRateLimit(program_id)` in instance storage.
+/// Reset whenever the current ledger timestamp exceeds
+/// `window_start + DELEGATE_META_RATE_LIMIT_WINDOW`.
+///
+/// # Storage cost
+/// One entry per program that has ever had a delegate metadata update;
+/// size is constant (two u64 words).  The entry is never deleted so the
+/// TTL-extension cost is paid once per program.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DelegateMetaRateLimitState {
+    /// Ledger timestamp (seconds) when the current window started.
+    pub window_start: u64,
+    /// Number of delegate-invoked metadata writes in the current window.
+    pub count: u32,
+}
+
+/// Rolling-window duration for delegate metadata writes (seconds).
+/// Default: 3 600 s (1 hour).
+pub const DELEGATE_META_RATE_LIMIT_WINDOW: u64 = 3_600;
+
+/// Maximum delegate metadata writes permitted within one `DELEGATE_META_RATE_LIMIT_WINDOW`.
+/// Permits one update every ~6 minutes on average; enough for legitimate use
+/// while making sustained spam economically costly.
+pub const DELEGATE_META_MAX_OPS_PER_WINDOW: u32 = 10;
+
+/// Maximum number of entries in `ProgramMetadata::custom_fields`.
+/// Bounds on-chain storage regardless of who calls the update.
+pub const MAX_CUSTOM_FIELDS: u32 = 20;
+
+/// Maximum byte length of a `ProgramMetadataField` key.
+pub const MAX_CUSTOM_FIELD_KEY_LEN: u32 = 64;
+
+/// Maximum byte length of a `ProgramMetadataField` value.
+pub const MAX_CUSTOM_FIELD_VALUE_LEN: u32 = 256;
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2151,6 +2246,10 @@ const READ_ONLY_MODE_CHANGED: Symbol = symbol_short!("ROModeChg");
 
 #[contract]
 pub struct ProgramEscrowContract;
+
+const TTL_MIN_LEDGERS: u32 = 518_400; // ~30 days
+const TTL_MAX_LEDGERS: u32 = 3_110_400; // ~180 days
+const TTL_MAX_ACCESS_COUNT: u32 = 100;
 
 #[contractimpl]
 impl ProgramEscrowContract {
@@ -4107,6 +4206,7 @@ impl ProgramEscrowContract {
     fn store_program_data(env: &Env, program_id: &String, program_data: &ProgramData) {
         let program_key = DataKey::Program(program_id.clone());
         env.storage().instance().set(&program_key, program_data);
+        Self::track_and_extend_program_ttl(env, program_id, None);
 
         if env.storage().instance().has(&PROGRAM_DATA) {
             let existing: ProgramData = env
@@ -4118,6 +4218,34 @@ impl ProgramEscrowContract {
                 env.storage().instance().set(&PROGRAM_DATA, program_data);
             }
         }
+    }
+
+    /// Tracks program access frequency and adapts TTL dynamically based on hotness.
+    fn track_and_extend_program_ttl(env: &Env, program_id: &String, persistent_key: Option<&DataKey>) {
+        let signal_key = DataKey::ProgramAccessSignal(program_id.clone());
+        let mut access_count: u32 = env
+            .storage()
+            .persistent()
+            .get(&signal_key)
+            .unwrap_or(0);
+
+        if access_count < TTL_MAX_ACCESS_COUNT {
+            access_count += 1;
+            env.storage().persistent().set(&signal_key, &access_count);
+        }
+
+        let extra_ttl = (TTL_MAX_LEDGERS - TTL_MIN_LEDGERS)
+            .saturating_mul(access_count)
+            / TTL_MAX_ACCESS_COUNT;
+        
+        let ttl_to_set = TTL_MIN_LEDGERS + extra_ttl;
+        
+        env.storage().instance().extend_ttl(TTL_MIN_LEDGERS, ttl_to_set);
+
+        if let Some(key) = persistent_key {
+            env.storage().persistent().extend_ttl(key, TTL_MIN_LEDGERS, ttl_to_set);
+        }
+        env.storage().persistent().extend_ttl(&signal_key, TTL_MIN_LEDGERS, ttl_to_set);
     }
 
     fn require_program_owner_or_admin(
@@ -4213,6 +4341,12 @@ impl ProgramEscrowContract {
     }
 
     /// Set a delegate for a program with specific permissions.
+    ///
+    /// ### Controller Rotation Interaction
+    /// Reassigning a delegate while a `propose_controller` rotation is pending
+    /// is explicitly permitted. This operation does **not** invalidate the pending
+    /// rotation. Any delegate set here will carry over and remain active even
+    /// after the new controller accepts the role.
     pub fn set_program_delegate(
         env: Env,
         program_id: String,
@@ -4355,6 +4489,12 @@ impl ProgramEscrowContract {
 
     /// Propose a new controller (authorized_payout_key) for a program (step 1).
     /// Current controller or admin must authorize. Returns explicit errors for deterministic behavior.
+    ///
+    /// ### Delegate Interaction
+    /// Proposing a controller does not affect existing delegates. Furthermore,
+    /// the outgoing controller retains full authority (including the ability
+    /// to reassign the delegate via `set_program_delegate`) until the rotation
+    /// is accepted.
     pub fn propose_controller(
         env: Env,
         program_id: String,
@@ -4420,6 +4560,12 @@ impl ProgramEscrowContract {
 
     /// Accept the proposed controller role for a program (step 2).
     /// The proposed controller must authorize. Returns explicit errors for deterministic behavior.
+    ///
+    /// ### Delegate Carryover
+    /// When a rotation is accepted, the previously-assigned delegate and their
+    /// permissions **carry over** and remain active. The incoming controller
+    /// inherits the existing delegate and is responsible for reviewing and
+    /// revoking them if their authority is no longer desired.
     ///
     /// ### Timelock
     /// A mandatory 24-hour delay (`ROTATION_TIMELOCK_DELAY`) must elapse between
@@ -4506,12 +4652,29 @@ impl ProgramEscrowContract {
     }
 
     /// Update metadata for a specific program.
+    ///
+    /// # Access control
+    /// - Admin or program owner (authorized_payout_key): unlimited writes.
+    /// - Delegate with `DELEGATE_PERMISSION_UPDATE_META`: rate-limited to
+    ///   `DELEGATE_META_MAX_OPS_PER_WINDOW` writes per `DELEGATE_META_RATE_LIMIT_WINDOW`
+    ///   seconds to prevent storage-bloat griefing (see doc comment on
+    ///   `DELEGATE_PERMISSION_UPDATE_META`).
+    ///
+    /// # Panics
+    /// - `"RateLimitExceeded"` if the delegate rate limit is exceeded.
+    /// - `"CustomFieldsLimitExceeded"` if `metadata.custom_fields.len() > MAX_CUSTOM_FIELDS`.
+    /// - `"CustomFieldKeyTooLong"` if any key exceeds `MAX_CUSTOM_FIELD_KEY_LEN` bytes.
+    /// - `"CustomFieldValueTooLong"` if any value exceeds `MAX_CUSTOM_FIELD_VALUE_LEN` bytes.
     pub fn update_program_metadata(
         env: Env,
         program_id: String,
         caller: Address,
         metadata: ProgramMetadata,
     ) -> ProgramData {
+        if metadata.custom_fields.len() > MAX_PROGRAM_METADATA_CUSTOM_FIELDS {
+            panic!("Metadata custom fields exceed limit");
+        }
+
         let program_data = Self::get_program_data_by_id(&env, &program_id);
         let updated_by = Self::require_program_actor(
             &env,
@@ -4520,7 +4683,30 @@ impl ProgramEscrowContract {
             DELEGATE_PERMISSION_UPDATE_META,
         );
 
-        // Store in legacy format for existing readers.
+        // ── (1) Validate custom_fields size — applies to all callers ──────────
+        // Bounds storage size regardless of who calls, preventing unbounded
+        // storage growth even via the admin path.
+        let num_fields = metadata.custom_fields.len();
+        if num_fields > MAX_CUSTOM_FIELDS {
+            panic!("CustomFieldsLimitExceeded");
+        }
+        for field in metadata.custom_fields.iter() {
+            if field.key.len() > MAX_CUSTOM_FIELD_KEY_LEN {
+                panic!("CustomFieldKeyTooLong");
+            }
+            if field.value.len() > MAX_CUSTOM_FIELD_VALUE_LEN {
+                panic!("CustomFieldValueTooLong");
+            }
+        }
+
+        // ── (2) Rate-limit delegate-invoked writes ────────────────────────────
+        // Admin and program owner bypass this check — they are trusted parties
+        // who pay for their own storage actions.
+        let caller_is_delegate = Self::is_delegate_caller(&env, &program_data, &caller);
+        if caller_is_delegate {
+            Self::check_and_update_delegate_meta_rate_limit(&env, &program_id);
+        }
+
         env.storage()
             .instance()
             .set(&DataKey::Metadata(program_id.clone()), &metadata);
@@ -6173,6 +6359,110 @@ impl ProgramEscrowContract {
         );
     }
 
+    /// Add an allowed token and permanently bind its human-readable decimal
+    /// scale (admin only).
+    ///
+    /// Raw token amounts are always transferred and stored as `i128`; decimals
+    /// are metadata used by indexers and UIs to render those raw amounts.  The
+    /// value is therefore stored instead of read live at display time: a token
+    /// contract can be upgraded, replaced, or expose no standard `decimals()`
+    /// view, while historical payouts must retain their original interpretation.
+    ///
+    /// A configured value is immutable. Re-registering the same token with the
+    /// same value is idempotent, but a different value panics with
+    /// `"Token decimals are immutable"`. This deliberately has no migration
+    /// shortcut: changing a scale would reinterpret every historical raw
+    /// payout. A migration must use a new token address and a new configuration.
+    ///
+    /// If the token implements the standard `decimals()` view, the result is
+    /// compared with `decimals`. A disagreement emits
+    /// [`TokenDecimalsMismatchEvent`] for monitoring but is not blocking, since
+    /// some supported tokens use an application-defined accounting scale.
+    ///
+    /// # Events
+    /// Emits [`TokenDecimalsConfiguredEvent`] for a new configuration and
+    /// [`TokenDecimalsMismatchEvent`] when the optional live check disagrees.
+    pub fn add_allowed_token_with_decimals(env: Env, token: Address, decimals: u32) {
+        let admin = Self::require_admin(&env);
+        let key = DataKey::TokenDecimals(token.clone());
+
+        if let Some(existing) = env.storage().instance().get::<DataKey, u32>(&key) {
+            if existing != decimals {
+                panic!("Token decimals are immutable");
+            }
+            return;
+        }
+
+        let mut allowlist = Self::get_token_allowlist_internal(&env);
+        let mut already_allowed = false;
+        for existing in allowlist.iter() {
+            if existing == token {
+                already_allowed = true;
+                break;
+            }
+        }
+        if !already_allowed {
+            allowlist.push_back(token.clone());
+            env.storage()
+                .instance()
+                .set(&DataKey::TokenAllowlist, &allowlist);
+            env.events().publish(
+                (TOKEN_ALLOWLIST_UPDATED,),
+                TokenAllowlistUpdatedEvent {
+                    version: EVENT_VERSION_V2,
+                    token: token.clone(),
+                    added: true,
+                    updated_by: admin.clone(),
+                    timestamp: env.ledger().timestamp(),
+                },
+            );
+        }
+
+        // `try_decimals` makes this check best-effort: non-standard token
+        // contracts remain usable, but standard-token disagreements are visible
+        // to indexers and operational monitoring.
+        let reported_decimals = token::Client::new(&env, &token).try_decimals().ok();
+        env.storage().instance().set(&key, &decimals);
+        env.events().publish(
+            (TOKEN_DECIMALS_CONFIGURED,),
+            TokenDecimalsConfiguredEvent {
+                version: EVENT_VERSION_V2,
+                token: token.clone(),
+                configured_decimals: decimals,
+                reported_decimals,
+                configured_by: admin.clone(),
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        if let Some(reported_decimals) = reported_decimals {
+            if reported_decimals != decimals {
+                env.events().publish(
+                    (TOKEN_DECIMALS_MISMATCH,),
+                    TokenDecimalsMismatchEvent {
+                        version: EVENT_VERSION_V2,
+                        token,
+                        configured_decimals: decimals,
+                        reported_decimals,
+                        configured_by: admin,
+                        timestamp: env.ledger().timestamp(),
+                    },
+                );
+            }
+        }
+    }
+
+    /// Return the immutable configured decimal scale for `token`.
+    ///
+    /// Returns `None` for legacy allowlist entries added with
+    /// [`add_allowed_token`] or for tokens that have not been configured.
+    pub fn get_token_decimals(env: Env, token: Address) -> Option<u32> {
+        env.storage()
+            .instance()
+            .get(&DataKey::TokenDecimals(token))
+    }
+
+    /// Remove a token contract address from the allowlist (admin only).
     /// Add a token to the allowlist without specifying decimals (admin only).
     ///
     /// Decimals default to `0`.  Prefer `add_allowed_token_with_decimals` for
@@ -7107,8 +7397,13 @@ impl ProgramEscrowContract {
 
     /// Get program information
     ///
+    /// # Deprecation Note
+    /// This is the legacy singleton accessor. Use `get_program_info_v2` which
+    /// reads from `DataKey::Program(id)` instead.
+    ///
     /// # Returns
     /// ProgramData containing all program information
+    #[deprecated(note = "Use get_program_info_v2 instead")]
     pub fn get_program_info(env: Env) -> ProgramData {
         env.storage()
             .instance()
@@ -7982,6 +8277,7 @@ impl ProgramEscrowContract {
             .unwrap_or_else(|| soroban_sdk::Vec::new(env));
         index.push_back(record.clone());
         env.storage().persistent().set(&key, &index);
+        Self::track_and_extend_program_ttl(env, program_id, Some(&key));
     }
 
     /// Query idempotency key status
@@ -8965,6 +9261,7 @@ impl ProgramEscrowContract {
 #[cfg(any())] // pre-existing breakage: duplicate fn names, misplaced #[test] attrs
 mod test;
 #[cfg(test)]
+mod test_token_allowlist;
 #[cfg(any())] // pre-existing breakage: #[test] inside impl blocks
 mod test_pagination;
 #[cfg(test)]

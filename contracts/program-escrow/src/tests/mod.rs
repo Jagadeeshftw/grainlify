@@ -25,6 +25,7 @@ mod bulk_release_optimization_tests;
 mod chaos_batch_payout_tests;
 
 #[cfg(test)]
+mod delegate_metadata_dos_tests;
 mod cross_entrypoint_idempotency_tests;
 
 #[cfg(test)]

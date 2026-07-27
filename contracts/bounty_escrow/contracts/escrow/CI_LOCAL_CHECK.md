@@ -23,3 +23,26 @@ stellar contract build --verbose
 ```
 
 On Windows, `stellar contract build` may require Stellar CLI installed. Steps 1–4 are enough to catch most CI failures.
+
+## Fixture Hardening CI Steps
+
+These steps specifically validate test fixture stability and gas budget enforcement regression guards:
+
+```bash
+# Run all gas budget enforcement tests (fixture hardening)
+cargo test test_gas_budget -- --nocapture
+
+# Run all gas profiling tests (deterministic measurement verification)
+cargo test gas_profile -- --nocapture --test-threads=1
+
+# Run the consolidated scaling summary
+cargo test gas_profile_scaling_summary -- --nocapture
+
+# Verify advisory status production-gap tests
+cargo test test_advisory_status -- --nocapture
+
+# Run is_any_cap_configured unit tests
+cargo test test_is_any_cap_configured -- --nocapture
+```
+
+See `FIXTURE_HARDENING.md` for the full test fixture hardening strategy and regression surface documentation.

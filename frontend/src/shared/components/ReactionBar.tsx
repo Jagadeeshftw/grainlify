@@ -87,17 +87,61 @@ function ReactionButton({ reaction, onToggle, isDark }: { reaction: CommentReact
 
 function AddReactionButton({ onSelect, disabled, isDark }: { onSelect: (emoji: string) => void; disabled?: boolean; isDark: boolean }) {
   const [open, setOpen] = useState(false);
+  const [focusedIndex, setFocusedIndex] = useState(-1);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!open) return;
+    
+    switch (e.key) {
+      case 'ArrowRight':
+        e.preventDefault();
+        setFocusedIndex((prev) => (prev + 1) % COMMON_REACTIONS.length);
+        break;
+      case 'ArrowLeft':
+        e.preventDefault();
+        setFocusedIndex((prev) => (prev - 1 + COMMON_REACTIONS.length) % COMMON_REACTIONS.length);
+        break;
+      case 'Enter':
+      case ' ':
+        e.preventDefault();
+        if (focusedIndex >= 0) {
+          onSelect(COMMON_REACTIONS[focusedIndex].emoji);
+          setOpen(false);
+          setFocusedIndex(-1);
+        }
+        break;
+      case 'Escape':
+        e.preventDefault();
+        setOpen(false);
+        setFocusedIndex(-1);
+        break;
+    }
+  };
+
+  React.useEffect(() => {
+    if (open && focusedIndex >= 0) {
+      const buttons = containerRef.current?.querySelectorAll('button[role="option"]');
+      buttons?.[focusedIndex]?.focus();
+    }
+  }, [focusedIndex, open]);
 
   return (
-    <div className="relative">
+    <div className="relative" ref={containerRef}>
       <button
         type="button"
         aria-label="Add reaction"
+        aria-haspopup="listbox"
+        aria-expanded={open}
         disabled={disabled}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          setOpen((v) => !v);
+          setFocusedIndex(-1);
+        }}
         onBlur={(e) => {
           if (!e.currentTarget.contains(e.relatedTarget as Node)) {
             setOpen(false);
+            setFocusedIndex(-1);
           }
         }}
         className={`inline-flex items-center gap-1 px-2 py-1 rounded-[8px] text-[12px] font-semibold border transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#c9983a] ${
@@ -114,22 +158,26 @@ function AddReactionButton({ onSelect, disabled, isDark }: { onSelect: (emoji: s
         <div
           role="listbox"
           aria-label="Choose a reaction"
+          onKeyDown={handleKeyDown}
           className={`absolute bottom-full left-0 mb-2 flex gap-1 p-2 rounded-[12px] shadow-lg z-50 ${
             isDark
               ? 'bg-[#2d2820] border border-white/15'
               : 'bg-white border border-black/15'
           }`}
         >
-          {COMMON_REACTIONS.map((r) => (
+          {COMMON_REACTIONS.map((r, index) => (
             <button
               key={r.emoji}
               type="button"
               role="option"
               aria-label={r.label}
+              aria-selected={focusedIndex === index}
               onClick={() => {
                 onSelect(r.emoji);
                 setOpen(false);
+                setFocusedIndex(-1);
               }}
+              onFocus={() => setFocusedIndex(index)}
               className="p-1.5 rounded-[6px] text-lg hover:bg-white/[0.1] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#c9983a]"
             >
               {r.char}

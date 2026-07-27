@@ -148,7 +148,7 @@ export function CommentCard({
             value={editBody}
             onChange={(e) => setEditBody(e.target.value)}
             className="w-full min-h-[100px] rounded-[12px] border px-4 py-3 text-[14px] outline-none transition-colors resize-y bg-white/[0.06] border-white/15 text-[#e8dfd0] placeholder:text-[#b8a898]/60 focus-visible:ring-1 focus-visible:ring-[#c9983a]"
-            aria-label="Edit comment"
+            aria-label={`Edit comment by ${comment.user.login}`}
             onKeyDown={(e) => {
               if (e.key === 'Escape') {
                 setIsEditing(false);
@@ -163,7 +163,8 @@ export function CommentCard({
                 setIsEditing(false);
                 setEditBody(comment.body);
               }}
-              className="px-3 py-1.5 rounded-[8px] text-[12px] font-semibold bg-white/[0.06] border border-white/10 text-[#d4d4d4] hover:bg-white/[0.1] transition-all"
+              aria-label="Cancel editing comment"
+              className="px-3 py-1.5 rounded-[8px] text-[12px] font-semibold bg-white/[0.06] border border-white/10 text-[#d4d4d4] hover:bg-white/[0.1] transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#c9983a]"
             >
               Cancel
             </button>
@@ -171,7 +172,8 @@ export function CommentCard({
               type="button"
               disabled={!editBody.trim() || isSubmittingEdit}
               onClick={handleEdit}
-              className="px-3 py-1.5 rounded-[8px] text-[12px] font-semibold bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white border border-white/10 hover:opacity-90 transition-all disabled:opacity-50"
+              aria-label={isSubmittingEdit ? 'Saving comment' : 'Save comment edit'}
+              className="px-3 py-1.5 rounded-[8px] text-[12px] font-semibold bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white border border-white/10 hover:opacity-90 transition-all disabled:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#c9983a]"
             >
               {isSubmittingEdit ? 'Saving...' : 'Save'}
             </button>
@@ -226,14 +228,16 @@ export function CommentCard({
                     type="button"
                     disabled={isDeleting}
                     onClick={handleDelete}
-                    className="px-2 py-1 rounded-[6px] text-[11px] font-semibold bg-red-500/20 border border-red-500/30 text-red-400 hover:bg-red-500/30 transition-all"
+                    aria-label="Confirm delete comment"
+                    className="px-2 py-1 rounded-[6px] text-[11px] font-semibold bg-red-500/20 border border-red-500/30 text-red-400 hover:bg-red-500/30 transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-500"
                   >
                     {isDeleting ? '...' : 'Delete'}
                   </button>
                   <button
                     type="button"
                     onClick={() => setShowDeleteConfirm(false)}
-                    className="px-2 py-1 rounded-[6px] text-[11px] font-semibold bg-white/[0.06] border border-white/10 text-[#d4d4d4] hover:bg-white/[0.1] transition-all"
+                    aria-label="Cancel delete comment"
+                    className="px-2 py-1 rounded-[6px] text-[11px] font-semibold bg-white/[0.06] border border-white/10 text-[#d4d4d4] hover:bg-white/[0.1] transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#c9983a]"
                   >
                     Cancel
                   </button>
