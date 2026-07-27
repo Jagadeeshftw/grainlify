@@ -20,3 +20,6 @@ mod bulk_release_optimization_tests;
 
 #[cfg(test)]
 mod chaos_batch_payout_tests;
+
+#[cfg(test)]
+mod delegate_metadata_dos_tests;

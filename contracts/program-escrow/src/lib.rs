@@ -221,8 +221,15 @@ pub const RISK_FLAG_HIGH_RISK: u32 = 1 << 0;
 pub const RISK_FLAG_UNDER_REVIEW: u32 = 1 << 1;
 pub const RISK_FLAG_RESTRICTED: u32 = 1 << 2;
 pub const RISK_FLAG_DEPRECATED: u32 = 1 << 3;
+pub const DELEGATE_METADATA_UPDATE_INTERVAL: u64 = 60; // 1 minute
+pub const MAX_PROGRAM_METADATA_CUSTOM_FIELDS: u32 = 10;
+
 pub const DELEGATE_PERMISSION_RELEASE: u32 = 1 << 0;
 pub const DELEGATE_PERMISSION_REFUND: u32 = 1 << 1;
+/// Allows the delegate to update program metadata.
+/// To prevent storage-bloat griefing and excessive TTL-extension fees
+/// for the program owner, delegate-invoked updates are rate-limited
+/// (e.g., maximum once per minute) and bounded by a maximum custom fields limit.
 pub const DELEGATE_PERMISSION_UPDATE_META: u32 = 1 << 2;
 pub const DELEGATE_PERMISSION_MASK: u32 =
     DELEGATE_PERMISSION_RELEASE | DELEGATE_PERMISSION_REFUND | DELEGATE_PERMISSION_UPDATE_META;
@@ -1258,6 +1265,7 @@ pub enum DataKey {
     IdempotencySchemaVersion,
     BatchPayoutSchemaVersion,
     CircuitBreakerSchemaVersion,
+    DelegateMetadataRateLimit(String),
     BatchReceipt(u64),
     PendingAdmin,
     /// Pending admin transition metadata used to invalidate replaced or expired proposals.
@@ -4179,6 +4187,10 @@ impl ProgramEscrowContract {
         caller: Address,
         metadata: ProgramMetadata,
     ) -> ProgramData {
+        if metadata.custom_fields.len() > MAX_PROGRAM_METADATA_CUSTOM_FIELDS {
+            panic!("Metadata custom fields exceed limit");
+        }
+
         let program_data = Self::get_program_data_by_id(&env, &program_id);
         let updated_by = Self::require_program_actor(
             &env,
@@ -4186,6 +4198,23 @@ impl ProgramEscrowContract {
             &caller,
             DELEGATE_PERMISSION_UPDATE_META,
         );
+
+        let is_admin = env
+            .storage()
+            .instance()
+            .get::<_, Address>(&DataKey::Admin)
+            .map(|admin| admin == caller)
+            .unwrap_or(false);
+
+        if !is_admin {
+            let rl_key = DataKey::DelegateMetadataRateLimit(program_id.clone());
+            let last_update: u64 = env.storage().instance().get(&rl_key).unwrap_or(0);
+            let current_time = env.ledger().timestamp();
+            if current_time < last_update + DELEGATE_METADATA_UPDATE_INTERVAL {
+                panic!("Delegate metadata update rate limit exceeded");
+            }
+            env.storage().instance().set(&rl_key, &current_time);
+        }
 
         env.storage()
             .instance()
