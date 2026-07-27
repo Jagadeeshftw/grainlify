@@ -49,6 +49,7 @@ export function ReplyComposer({ authorName, onCancel, onSubmit }: ReplyComposerP
         <button
           type="button"
           onClick={onCancel}
+          aria-label="Cancel reply"
           className="px-3 py-1.5 rounded-[8px] text-[12px] font-semibold bg-white/[0.06] border border-white/10 text-[#d4d4d4] hover:bg-white/[0.1] transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#c9983a]"
         >
           Cancel
@@ -57,6 +58,7 @@ export function ReplyComposer({ authorName, onCancel, onSubmit }: ReplyComposerP
           type="button"
           disabled={!body.trim() || isSubmitting}
           onClick={handleSubmit}
+          aria-label={isSubmitting ? 'Posting reply' : 'Post reply'}
           className="px-3 py-1.5 rounded-[8px] text-[12px] font-semibold bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white border border-white/10 hover:opacity-90 transition-all disabled:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#c9983a]"
         >
           {isSubmitting ? 'Posting...' : 'Reply'}

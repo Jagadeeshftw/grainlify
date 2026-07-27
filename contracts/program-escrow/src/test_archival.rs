@@ -477,3 +477,42 @@ fn test_no_data_loss_after_archival() {
         assert_eq!(rec_history.get(0).unwrap().amount, expected_amount);
     }
 }
+
+// ─── Test 11: adaptive TTL based on hot vs cold access ───────────────────────
+
+#[test]
+fn test_adaptive_ttl_hot_vs_cold() {
+    let ctx = setup();
+    
+    // Cold program: minimal accesses
+    let cold_prog = "COLD";
+    init_program(&ctx, cold_prog, 100);
+    let r1 = Address::generate(&ctx.env);
+    do_payout(&ctx, &r1, 10); // 1 payout
+    
+    // Hot program: many accesses
+    let hot_prog = "HOT";
+    init_program(&ctx, hot_prog, 1000);
+    for _ in 0..5 {
+        let r = Address::generate(&ctx.env);
+        do_payout(&ctx, &r, 10);
+    }
+    
+    let get_access_count = |prog: &str| -> u32 {
+        let key = crate::DataKey::ProgramAccessSignal(String::from_str(&ctx.env, prog));
+        ctx.env.as_contract(&ctx.client.address, || {
+            ctx.env.storage().persistent().get(&key).unwrap_or(0)
+        })
+    };
+    
+    let cold_count = get_access_count(cold_prog);
+    let hot_count = get_access_count(hot_prog);
+    
+    assert!(hot_count > cold_count, "Hot program should have higher access count than cold program ({} vs {})", hot_count, cold_count);
+    
+    // Check specific expected values to ensure we scale as intended
+    // init_program calls store_program_data (1)
+    // do_payout calls store_program_data and append_recipient_index (2 accesses per payout)
+    assert_eq!(cold_count, 1 + 2); // 3
+    assert_eq!(hot_count, 1 + 5 * 2); // 11
+}

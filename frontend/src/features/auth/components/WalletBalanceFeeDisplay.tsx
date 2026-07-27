@@ -2,6 +2,12 @@ import { useState, useRef, useEffect } from 'react';
 import { Info, AlertTriangle, Clock, AlertCircle } from 'lucide-react';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
 import { SkeletonLoader } from '../../../shared/components/SkeletonLoader';
+import {
+  WALLET_FEE_DISCLOSURE_COPY,
+  formatTimeAgo,
+  formatWalletUsd,
+  staleBalanceAriaLabel,
+} from './walletFeeDisclosureCopy';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -26,26 +32,17 @@ export interface WalletBalanceFeeDisplayProps {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-function formatUsd(value: number): string {
-  if (value < 0.01) return '< $0.01';
-  return `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-function timeAgo(date: Date): string {
-  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  return `${hours}h ago`;
-}
-
-// ---------------------------------------------------------------------------
 // Tooltip
 // ---------------------------------------------------------------------------
-function InfoTooltip({ content, isDark }: { content: string; isDark: boolean }) {
+function InfoTooltip({
+  content,
+  isDark,
+  ariaLabel = 'More information',
+}: {
+  content: string;
+  isDark: boolean;
+  ariaLabel?: string;
+}) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const tooltipId = useRef(`tooltip-${Math.random().toString(36).slice(2, 8)}`).current;
@@ -77,7 +74,7 @@ function InfoTooltip({ content, isDark }: { content: string; isDark: boolean }) 
         className={`inline-flex items-center justify-center w-[18px] h-[18px] rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#c9983a]/50 ${
           isDark ? 'text-[#8a7e70] hover:text-[#b8a898]' : 'text-[#a8a29e] hover:text-[#78716c]'
         }`}
-        aria-label="More information"
+        aria-label={ariaLabel}
       >
         <Info className="w-3.5 h-3.5" />
       </button>
@@ -111,7 +108,8 @@ function InfoTooltip({ content, isDark }: { content: string; isDark: boolean }) 
  * Displays the connected wallet's native token balance with USD equivalent
  * and estimated network transaction fee.
  *
- * States: default, insufficient-balance, loading, stale, fee-unavailable.
+ * States: default, insufficient-balance, loading, stale, fee-unavailable,
+ * and partial quotes (USD or fee USD missing).
  */
 export function WalletBalanceFeeDisplay({
   balance,
@@ -129,8 +127,9 @@ export function WalletBalanceFeeDisplay({
   const insufficientBalance = balance !== null && parseFloat(balance.replace(/,/g, '')) <= 0;
   const feeAvailable = estimatedFee !== null;
 
-  const feeTooltipText =
-    'Estimated network fee based on current Stellar base fee. Actual fee may vary.';
+  const feeTooltipText = WALLET_FEE_DISCLOSURE_COPY.feeTooltip;
+  const staleUpdatedLabel =
+    isStale && lastUpdated ? staleBalanceAriaLabel(lastUpdated) : undefined;
 
   // -----------------------------------------------------------------------
   // Loading state
@@ -139,7 +138,7 @@ export function WalletBalanceFeeDisplay({
     return (
       <div
         aria-busy="true"
-        aria-label="Loading wallet balance"
+        aria-label={WALLET_FEE_DISCLOSURE_COPY.loadingAriaLabel}
         className={`mx-6 mb-4 p-4 rounded-[16px] border backdrop-blur-[40px] ${
           isDark
             ? 'bg-white/[0.04] border-white/[0.08]'
@@ -235,7 +234,8 @@ export function WalletBalanceFeeDisplay({
               className={`inline-block w-3 h-3 ml-1.5 -mt-0.5 ${
                 isDark ? 'text-[#f59e0b]' : 'text-[#d97706]'
               }`}
-              aria-hidden="true"
+              aria-label={staleUpdatedLabel ?? 'Balance may be outdated'}
+              title={lastUpdated ? `Last updated ${formatTimeAgo(lastUpdated)}` : undefined}
             />
           )}
           {insufficientBalance && (
@@ -258,8 +258,8 @@ export function WalletBalanceFeeDisplay({
           }`}
         >
           {usdEquivalent !== null
-            ? `≈ ${formatUsd(usdEquivalent)} USD`
-            : 'USD equivalent unavailable'}
+            ? `≈ ${formatWalletUsd(usdEquivalent)} USD`
+            : WALLET_FEE_DISCLOSURE_COPY.usdUnavailable}
         </span>
       </div>
 
@@ -273,7 +273,21 @@ export function WalletBalanceFeeDisplay({
           }`}
         >
           <Clock className="w-3 h-3 flex-shrink-0" aria-hidden="true" />
-          Balance may be outdated. Pull to refresh.
+          {WALLET_FEE_DISCLOSURE_COPY.staleBanner}
+        </div>
+      )}
+
+      {insufficientBalance && (
+        <div
+          role="alert"
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-[12px] mb-3 ${
+            isDark
+              ? 'bg-[#ef4444]/[0.08] text-[#ef4444]'
+              : 'bg-[#dc2626]/[0.08] text-[#dc2626]'
+          }`}
+        >
+          <AlertTriangle className="w-3 h-3 flex-shrink-0" aria-hidden="true" />
+          {WALLET_FEE_DISCLOSURE_COPY.insufficientBalanceAlert}
         </div>
       )}
 
@@ -281,7 +295,7 @@ export function WalletBalanceFeeDisplay({
       <div
         className={`flex items-center gap-3 pt-3 border-t ${
           isDark ? 'border-white/[0.06]' : 'border-white/40'
-        }`}
+        } ${insufficientBalance ? 'opacity-60' : ''}`}
       >
         <div className="w-6 flex-shrink-0" />
         <span
@@ -289,16 +303,20 @@ export function WalletBalanceFeeDisplay({
             isDark ? 'text-[#8a7e70]' : 'text-[#a8a29e]'
           }`}
         >
-          Est. fee
+          {WALLET_FEE_DISCLOSURE_COPY.feeLabel}
         </span>
         {feeAvailable ? (
-          <InfoTooltip content={feeTooltipText} isDark={isDark} />
+          <InfoTooltip
+            content={feeTooltipText}
+            isDark={isDark}
+            ariaLabel={WALLET_FEE_DISCLOSURE_COPY.infoButtonAriaLabel}
+          />
         ) : (
           <AlertCircle
             className={`w-3.5 h-3.5 ${
               isDark ? 'text-[#8a7e70]' : 'text-[#a8a29e]'
             }`}
-            aria-hidden="true"
+            aria-label={WALLET_FEE_DISCLOSURE_COPY.feeUnavailableAriaLabel}
           />
         )}
         <span
@@ -321,12 +339,12 @@ export function WalletBalanceFeeDisplay({
                     isDark ? 'text-[#8a7e70]' : 'text-[#a8a29e]'
                   }`}
                 >
-                  (≈ {formatUsd(feeUsdEquivalent)})
+                  (≈ {formatWalletUsd(feeUsdEquivalent)})
                 </span>
               )}
             </>
           ) : (
-            'Fee unavailable'
+            WALLET_FEE_DISCLOSURE_COPY.feeUnavailable
           )}
         </span>
       </div>

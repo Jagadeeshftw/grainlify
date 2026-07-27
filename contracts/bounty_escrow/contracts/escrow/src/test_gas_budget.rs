@@ -15,6 +15,11 @@
 //! | batch_lock_funds cap enforced               | Returns `Error::GasBudgetExceeded`               |
 //! | batch_release_funds cap enforced            | Returns `Error::GasBudgetExceeded`               |
 //! | Warning event at 80% threshold              | Emits `GasBudgetCapApproached`                   |
+//! | Fixture determinism (2 setups)              | Identical config from two fresh setups           |
+//! | Budget counter reset                        | reset_unlimited() zeroes CPU and memory meters   |
+//! | Cross-operation isolation                   | Cap on lock does not affect release              |
+//! | All ops uncapped succeed                    | Every operation succeeds with all zero caps      |
+//! | Advisory status after cap set + reset       | caps_configured = false after full reset         |
 //!
 //! ## How cap enforcement is triggered
 //!
@@ -653,4 +658,211 @@ fn test_advisory_status_struct_caps_enforced_is_true_in_testutils() {
         status_val,
         "caps_enforced_in_production must be true when compiled with testutils"
     );
+}
+
+// ─── Fixture hardening: determinism and reproducibility ──────────────────────
+
+/// Two fresh setups MUST produce identical default configs.
+///
+/// This test guards against non-deterministic address generation or contract
+/// deployment that would cause measurements to drift across test runs.
+#[test]
+fn test_fixture_hardening_two_setups_identical_default_config() {
+    let s1 = Setup::new();
+    let s2 = Setup::new();
+
+    let cfg1 = s1.client.get_gas_budget();
+    let cfg2 = s2.client.get_gas_budget();
+
+    // Both setups start from the uncapped default
+    assert_eq!(cfg1.lock.max_cpu_instructions, 0);
+    assert_eq!(cfg2.lock.max_cpu_instructions, 0);
+    assert_eq!(cfg1.lock.max_memory_bytes, 0);
+    assert_eq!(cfg2.lock.max_memory_bytes, 0);
+    assert_eq!(cfg1.enforce, false);
+    assert_eq!(cfg2.enforce, false);
+
+    // Advisory status must also be identical
+    let status1 = s1.client.get_gas_budget_advisory_status();
+    let status2 = s2.client.get_gas_budget_advisory_status();
+    assert_eq!(status1.caps_configured, status2.caps_configured);
+    assert_eq!(status1.enforce_flag_set, status2.enforce_flag_set);
+    assert_eq!(
+        status1.caps_enforced_in_production,
+        status2.caps_enforced_in_production
+    );
+}
+
+/// `env.budget().reset_unlimited()` MUST zero both CPU and memory meters.
+///
+/// This test verifies the core measurement isolation invariant. If this
+/// fails, all gas profiling numbers are suspect.
+#[test]
+fn test_fixture_hardening_budget_reset_zeroes_counters() {
+    let s = Setup::new();
+    s.mint(1_000);
+
+    // Consume some budget first
+    s.client
+        .lock_funds(&s.depositor.clone(), &1, &1_000, &s.deadline());
+
+    // Reset and verify counters are at zero
+    s.env.budget().reset_unlimited();
+    assert_eq!(
+        s.env.budget().cpu_instruction_cost(),
+        0,
+        "cpu_instruction_cost must be 0 after reset_unlimited()"
+    );
+    assert_eq!(
+        s.env.budget().memory_bytes_cost(),
+        0,
+        "memory_bytes_cost must be 0 after reset_unlimited()"
+    );
+}
+
+/// Cross-operation isolation: a cap on lock MUST NOT prevent release.
+///
+/// Only the operation under test is affected by its own cap; other operations
+/// remain uncapped and succeed. This guards against cap leakage between paths.
+#[test]
+fn test_fixture_hardening_cap_isolation_lock_cap_does_not_block_release() {
+    let s = Setup::new();
+    s.mint(1_000);
+
+    // Create an escrow while fully uncapped
+    s.client
+        .lock_funds(&s.depositor.clone(), &1, &1_000, &s.deadline());
+
+    // Set a restrictive cap on lock only — release cap remains zero
+    s.set_lock_cap(1, true);
+    s.env.budget().reset_unlimited();
+
+    // Release should succeed because its cap is zero (uncapped)
+    s.client.release_funds(&1, &s.contributor.clone());
+    let escrow = s.client.get_escrow_info(&1);
+    assert_eq!(escrow.status, EscrowStatus::Released);
+}
+
+/// All six operations succeed when every cap is zero (fully uncapped).
+///
+/// This is the comprehensive sanity check: the default uncapped state must
+/// allow all operations through without any budget-related errors.
+#[test]
+fn test_fixture_hardening_all_ops_succeed_when_fully_uncapped() {
+    let s = Setup::new();
+    s.mint(5_000);
+
+    // Verify default is uncapped
+    let cfg = s.client.get_gas_budget();
+    assert!(!cfg.enforce);
+    assert_eq!(cfg.lock.max_cpu_instructions, 0);
+    assert_eq!(cfg.release.max_cpu_instructions, 0);
+    assert_eq!(cfg.refund.max_cpu_instructions, 0);
+    assert_eq!(cfg.partial_release.max_cpu_instructions, 0);
+    assert_eq!(cfg.batch_lock.max_cpu_instructions, 0);
+    assert_eq!(cfg.batch_release.max_cpu_instructions, 0);
+
+    // lock_funds
+    s.client
+        .lock_funds(&s.depositor.clone(), &1, &1_000, &s.deadline());
+    assert_eq!(
+        s.client.get_escrow_info(&1).status,
+        EscrowStatus::Locked
+    );
+
+    // partial_release
+    s.client
+        .partial_release(&1, &s.contributor.clone(), &400);
+
+    // release_funds (another escrow)
+    s.client
+        .lock_funds(&s.depositor.clone(), &2, &1_000, &s.deadline());
+    s.client.release_funds(&2, &s.contributor.clone());
+    assert_eq!(
+        s.client.get_escrow_info(&2).status,
+        EscrowStatus::Released
+    );
+
+    // refund (escrow with expired deadline)
+    let past_deadline = s.env.ledger().timestamp() + 10;
+    s.client
+        .lock_funds(&s.depositor.clone(), &3, &500, &past_deadline);
+    s.env.ledger().set_timestamp(past_deadline + 1);
+    s.client.refund(&3);
+    assert_eq!(
+        s.client.get_escrow_info(&3).status,
+        EscrowStatus::Refunded
+    );
+
+    // batch_lock_funds
+    let deadline = s.deadline();
+    let mut items: Vec<LockFundsItem> = Vec::new(&s.env);
+    items.push_back(LockFundsItem {
+        bounty_id: 10,
+        depositor: s.depositor.clone(),
+        amount: 100,
+        deadline,
+    });
+    s.client.batch_lock_funds(&items);
+    assert_eq!(
+        s.client.get_escrow_info(&10).status,
+        EscrowStatus::Locked
+    );
+
+    // batch_release_funds
+    let mut rel_items: Vec<ReleaseFundsItem> = Vec::new(&s.env);
+    rel_items.push_back(ReleaseFundsItem {
+        bounty_id: 10,
+        contributor: s.contributor.clone(),
+    });
+    s.client.batch_release_funds(&rel_items);
+    assert_eq!(
+        s.client.get_escrow_info(&10).status,
+        EscrowStatus::Released
+    );
+}
+
+/// Advisory status after set + reset returns to uncapped state.
+///
+/// This guards against stale state after configuration churn: a deployment
+/// that sets caps, then resets them, must report `caps_configured = false`.
+///
+/// Extends the existing `test_advisory_status_caps_configured_false_after_reset`
+/// by additionally verifying `enforce_flag_set` and the full config snapshot.
+#[test]
+fn test_fixture_hardening_advisory_status_after_set_then_reset() {
+    let s = Setup::new();
+
+    // Start uncapped
+    assert!(!s.client.get_gas_budget_advisory_status().caps_configured);
+
+    // Set a cap
+    s.set_lock_cap(1_000_000, true);
+    assert!(s.client.get_gas_budget_advisory_status().caps_configured);
+    assert!(s.client.get_gas_budget_advisory_status().enforce_flag_set);
+
+    // Reset to uncapped
+    let uncapped = gas_budget::OperationBudget::uncapped();
+    s.client.set_gas_budget(
+        &uncapped, &uncapped, &uncapped, &uncapped, &uncapped, &uncapped, &false,
+    );
+
+    // Must be back to the initial state
+    let status = s.client.get_gas_budget_advisory_status();
+    assert!(
+        !status.caps_configured,
+        "caps_configured must be false after resetting to uncapped"
+    );
+    assert!(
+        !status.enforce_flag_set,
+        "enforce_flag_set must be false after resetting enforce to false"
+    );
+
+    // Config snapshot must also reflect uncapped state
+    assert_eq!(status.config.lock.max_cpu_instructions, 0);
+    assert_eq!(status.config.release.max_cpu_instructions, 0);
+    assert_eq!(status.config.refund.max_cpu_instructions, 0);
+    assert_eq!(status.config.partial_release.max_cpu_instructions, 0);
+    assert_eq!(status.config.batch_lock.max_cpu_instructions, 0);
+    assert_eq!(status.config.batch_release.max_cpu_instructions, 0);
 }
