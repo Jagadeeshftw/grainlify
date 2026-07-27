@@ -74,6 +74,38 @@ describe('useResponsiveBreakpoint', () => {
     expect(result.current.breakpoint).toBe('lg')
   })
 
+  it('returns isLargeDesktop=true and breakpoint="xl" at 1280px+', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation((query: string) => {
+        if (query === '(min-width: 1280px)') return mockMatchMedia(true)
+        if (query === '(min-width: 1024px)') return mockMatchMedia(true)
+        return mockMatchMedia(false)
+      }),
+    )
+    const { result } = renderHook(() => useResponsiveBreakpoint())
+    expect(result.current.isLargeDesktop).toBe(true)
+    expect(result.current.isDesktop).toBe(true)
+    expect(result.current.isTablet).toBe(false)
+    expect(result.current.isMobile).toBe(false)
+    expect(result.current.breakpoint).toBe('xl')
+  })
+
+  it('keeps isDesktop=false when explicitly mobile (backward compat)', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation((query: string) => {
+        if (query === '(max-width: 767px)') return mockMatchMedia(true)
+        return mockMatchMedia(false)
+      }),
+    )
+    const { result } = renderHook(() => useResponsiveBreakpoint())
+    expect(result.current.isDesktop).toBe(false)
+    expect(result.current.isLargeDesktop).toBe(false)
+    expect(result.current.isMobile).toBe(true)
+    expect(result.current.breakpoint).toBe('sm')
+  })
+
   it('is deterministic — same value across sequential renders for same viewport', () => {
     const { result, rerender } = renderHook(() => useResponsiveBreakpoint())
     const first = { ...result.current }

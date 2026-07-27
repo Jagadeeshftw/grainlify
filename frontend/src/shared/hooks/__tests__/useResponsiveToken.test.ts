@@ -96,4 +96,59 @@ describe('useResponsiveToken', () => {
     const { result: result2 } = renderHook(() => useResponsiveToken(tokens, 'z'))
     expect(result2.current).toBe('x')
   })
+
+  it('resolves xl-specific token at large desktop breakpoint', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation((query: string) => {
+        if (query === '(min-width: 1280px)') return mockMatchMedia(true)
+        if (query === '(min-width: 1024px)') return mockMatchMedia(true)
+        return mockMatchMedia(false)
+      }),
+    )
+    const tokens = { sm: 1, md: 2, lg: 3, xl: 5 }
+    const { result } = renderHook(() => useResponsiveToken(tokens, 1))
+    expect(result.current).toBe(5)
+  })
+
+  it('falls back from xl to lg when xl token is not defined', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation((query: string) => {
+        if (query === '(min-width: 1280px)') return mockMatchMedia(true)
+        if (query === '(min-width: 1024px)') return mockMatchMedia(true)
+        return mockMatchMedia(false)
+      }),
+    )
+    const tokens = { sm: 1, md: 2, lg: 4 }
+    const { result } = renderHook(() => useResponsiveToken(tokens, 1))
+    expect(result.current).toBe(4)
+  })
+
+  it('falls back through the full chain xl → lg → md → sm → default', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation((query: string) => {
+        if (query === '(min-width: 1280px)') return mockMatchMedia(true)
+        if (query === '(min-width: 1024px)') return mockMatchMedia(true)
+        return mockMatchMedia(false)
+      }),
+    )
+    const tokens = { sm: 100 }
+    const { result } = renderHook(() => useResponsiveToken(tokens, 999))
+    expect(result.current).toBe(100)
+  })
+
+  it('returns defaultValue when token map is empty even at xl', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation((query: string) => {
+        if (query === '(min-width: 1280px)') return mockMatchMedia(true)
+        if (query === '(min-width: 1024px)') return mockMatchMedia(true)
+        return mockMatchMedia(false)
+      }),
+    )
+    const { result } = renderHook(() => useResponsiveToken({}, 'fallback'))
+    expect(result.current).toBe('fallback')
+  })
 })

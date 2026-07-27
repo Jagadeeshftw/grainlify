@@ -69,4 +69,62 @@ describe('useMediaQuery', () => {
 
     expect(result.current).toBe(true)
   })
+
+  it('handles dynamic query changes via rerender', () => {
+    const { result, rerender } = renderHook(
+      (q: string) => useMediaQuery(q),
+      { initialProps: '(max-width: 767px)' },
+    )
+    expect(result.current).toBe(false)
+
+    rerender('(min-width: 1024px)')
+    expect(result.current).toBe(false)
+  })
+
+  it('reads current matchMedia value synchronously (no async flash)', () => {
+    const { result } = renderHook(() => useMediaQuery('(max-width: 767px)'))
+    expect(result.current).toBe(false)
+
+    const { result: resultTrue } = renderHook(() => useMediaQuery('(min-width: 1024px)'))
+    expect(resultTrue.current).toBe(false)
+  })
+
+  it('survives rapid change events and settles on the last emitted value', () => {
+    const mql = mockMatchMedia(false, '(max-width: 767px)')
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation(() => mql),
+    )
+
+    const { result } = renderHook(() => useMediaQuery('(max-width: 767px)'))
+
+    const TOGGLE_COUNT = 20
+    for (let i = 0; i < TOGGLE_COUNT; i++) {
+      act(() => {
+        mql.matches = i % 2 === 0
+        mql.dispatchEvent(new Event('change'))
+      })
+    }
+
+    const lastExpected = (TOGGLE_COUNT - 1) % 2 === 0
+    expect(result.current).toBe(lastExpected)
+  })
+
+  it('cleans up the change listener on unmount', () => {
+    const removeSpy = vi.fn()
+    const mql = {
+      matches: false,
+      media: '(max-width: 767px)',
+      addEventListener: vi.fn(),
+      removeEventListener: removeSpy,
+    }
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation(() => mql),
+    )
+
+    const { unmount } = renderHook(() => useMediaQuery('(max-width: 767px)'))
+    unmount()
+    expect(removeSpy).toHaveBeenCalledTimes(1)
+  })
 })

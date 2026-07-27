@@ -14,6 +14,7 @@ export interface BreakpointState {
   isMobile: boolean;
   isTablet: boolean;
   isDesktop: boolean;
+  isLargeDesktop: boolean;
   breakpoint: Breakpoint;
 }
 
@@ -21,9 +22,12 @@ export const useResponsiveBreakpoint = (): BreakpointState => {
   const isMobile = useMediaQuery('(max-width: 767px)');
   const isTablet = useMediaQuery('(min-width: 768px) and (max-width: 1023px)');
   const isDesktop = useMediaQuery('(min-width: 1024px)');
+  const isLargeDesktop = useMediaQuery('(min-width: 1280px)');
 
   let breakpoint: Breakpoint;
-  if (isDesktop) {
+  if (isLargeDesktop) {
+    breakpoint = 'xl';
+  } else if (isDesktop) {
     breakpoint = 'lg';
   } else if (isTablet) {
     breakpoint = 'md';
@@ -31,5 +35,5 @@ export const useResponsiveBreakpoint = (): BreakpointState => {
     breakpoint = 'sm';
   }
 
-  return { isMobile, isTablet, isDesktop, breakpoint };
+  return { isMobile, isTablet, isDesktop, isLargeDesktop, breakpoint };
 };
