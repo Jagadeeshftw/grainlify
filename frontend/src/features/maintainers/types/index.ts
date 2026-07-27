@@ -17,6 +17,8 @@ export interface Activity {
   title: string;
   label: string | null;
   timeAgo: string;
+  timestamp?: string | Date | number;
+  createdAt?: string | Date | number;
   projectId?: string;
 }
 
@@ -51,6 +53,8 @@ export interface Discussion {
   id: number;
   user: string;
   timeAgo: string;
+  timestamp?: string | Date | number;
+  createdAt?: string | Date | number;
   isAuthor?: boolean;
   appliedForContribution?: boolean;
   content: string;
@@ -105,8 +109,62 @@ export interface PullRequest {
 
 export type PRFilterType = "All states" | "Open" | "Merged" | "Closed" | "Draft";
 
+/**
+ * A pull request that is linked to an issue, used by the PR-linking badge
+ * on IssueCard components.
+ */
+export interface LinkedPR {
+  id: number;
+  number: number;
+  title: string;
+  status: 'open' | 'merged' | 'closed' | 'draft';
+  /** Human-readable detail, e.g. "merged 2 days ago by JagadeeshFtw" */
+  statusDetail: string;
+  author: {
+    name: string;
+    /** GitHub avatar URL. Falls back to initials if absent or fails to load. */
+    avatar?: string;
+  };
+  /** Full GitHub PR URL for the "Open on GitHub" link. */
+  url?: string;
+}
+
 // Remove Waves from TabType
-export type TabType = "Dashboard" | "Issues" | "Pull Requests";
+export type TabType = "Dashboard" | "Issues" | "Pull Requests" | "Analytics";
+
+/** Analytics date-range filter periods */
+export type AnalyticsPeriod = "7d" | "30d" | "90d" | "all";
+
+/** One stage of the bounty conversion funnel */
+export interface FunnelStage {
+  name: string;
+  value: number;
+  fill: string;
+}
+
+/** Payout status values */
+export type PayoutStatus = "paid" | "pending" | "processing" | "failed";
+
+/** One row in the payout history table */
+export interface PayoutRecord {
+  id: string;
+  date: string;           // ISO 8601
+  contributor: string;    // GitHub username
+  avatarUrl?: string;
+  repository: string;     // "org/repo"
+  amount: number;         // in XLM
+  status: PayoutStatus;
+}
+
+/** One entry in the top-contributors module */
+export interface TopContributor {
+  rank: number;
+  username: string;
+  avatarUrl?: string;
+  totalEarned: number;    // in XLM
+  trend: "up" | "down" | "same";
+  trendValue: number;     // absolute rank delta
+}
 
 // Shared types
 export interface Repository {

@@ -35,10 +35,11 @@ mod test {
     //! - Token balance reconciliation ensures no funds are lost or created.
 
     use crate::{
-        BountyEscrowContract, BountyEscrowContractClient, DataKey, EscrowStatus, RefundMode,
+        BountyEscrowContract, BountyEscrowContractClient, DataKey, Error, EscrowStatus,
+        MultisigConfig, RefundMode, ReleaseApproval,
     };
     use soroban_sdk::testutils::{Address as _, Ledger};
-    use soroban_sdk::{token, Address, Env};
+    use soroban_sdk::{token, vec, Address, Env};
 
     /// Shared setup: initializes contract, mints tokens, returns all handles.
     fn setup_bounty(
@@ -610,5 +611,197 @@ mod test {
         assert!(client.verify_state(&80));
         assert!(client.verify_state(&81));
         assert!(client.verify_state(&82));
+    }
+
+    // =========================================================================
+    // 10. Multisig threshold live-semantics tests
+    //
+    // Verifies that `execute_queued_release` enforces the multisig approval
+    // threshold at execution time (live-threshold), and that changing
+    // `required_signatures` after approvals are queued correctly gates the
+    // release.
+    // =========================================================================
+
+    /// Helper: sets up a high-value release queued via release_funds.
+    fn setup_queued_high_value_release(
+        env: &Env,
+        client: &BountyEscrowContractClient<'static>,
+        depositor: &Address,
+        bounty_id: u64,
+        amount: i128,
+        contributor: &Address,
+    ) {
+        let hv_threshold: i128 = 1;
+        let hv_duration: u64 = 3600;
+        client.set_high_value_config(&hv_threshold, &hv_duration);
+        let deadline = env.ledger().timestamp() + 10000;
+        client.lock_funds(depositor, &bounty_id, &amount, &deadline);
+        client.release_funds(&bounty_id, contributor);
+    }
+
+    #[test]
+    fn test_multisig_lower_threshold_makes_release_executable() {
+        let env = Env::default();
+        let (client, _contract_id, _admin, depositor, _token_id, _token) = setup_bounty(&env);
+        let contributor = Address::generate(&env);
+        let signer1 = Address::generate(&env);
+        let signer2 = Address::generate(&env);
+        let signer3 = Address::generate(&env);
+
+        let signers = vec![&env, signer1.clone(), signer2.clone(), signer3.clone()];
+        let threshold_amount: i128 = 1000;
+        client.update_multisig_config(&threshold_amount, &signers, &3);
+
+        let bounty_id = 200u64;
+        setup_queued_high_value_release(&env, &client, &depositor, bounty_id, 1000, &contributor);
+
+        // Only 2 of 3 signers approve
+        client.approve_large_release(&bounty_id, &contributor, &signer1);
+        client.approve_large_release(&bounty_id, &contributor, &signer2);
+
+        // Advance past timelock
+        env.ledger().set_timestamp(env.ledger().timestamp() + 3601);
+
+        // Not enough approvals yet
+        let res = client.try_execute_queued_release(&bounty_id);
+        assert!(res.is_err());
+
+        // Lower threshold to 2 — now should be executable
+        client.update_multisig_config(&threshold_amount, &signers, &2);
+        client.execute_queued_release(&bounty_id);
+
+        assert_eq!(
+            client.get_escrow_info(&bounty_id).status,
+            EscrowStatus::Released
+        );
+    }
+
+    #[test]
+    fn test_multisig_raise_threshold_blocks_release() {
+        let env = Env::default();
+        let (client, _contract_id, _admin, depositor, _token_id, _token) = setup_bounty(&env);
+        let contributor = Address::generate(&env);
+        let signer1 = Address::generate(&env);
+        let signer2 = Address::generate(&env);
+        let signer3 = Address::generate(&env);
+        let signer4 = Address::generate(&env);
+
+        // Start with 3 signers, required=3
+        let signers3 = vec![&env, signer1.clone(), signer2.clone(), signer3.clone()];
+        let threshold_amount: i128 = 1000;
+        client.update_multisig_config(&threshold_amount, &signers3, &3);
+
+        let bounty_id = 201u64;
+        setup_queued_high_value_release(&env, &client, &depositor, bounty_id, 1000, &contributor);
+
+        // 2 of 3 signers approve
+        client.approve_large_release(&bounty_id, &contributor, &signer1);
+        client.approve_large_release(&bounty_id, &contributor, &signer2);
+
+        // Advance past timelock
+        env.ledger().set_timestamp(env.ledger().timestamp() + 3601);
+
+        // Not enough approvals at 3 required
+        let res = client.try_execute_queued_release(&bounty_id);
+        assert!(res.is_err());
+
+        // Raise to 4 signers with required=4 (still only 2 approvals)
+        let signers4 = vec![
+            &env,
+            signer1.clone(),
+            signer2.clone(),
+            signer3.clone(),
+            signer4.clone(),
+        ];
+        client.update_multisig_config(&threshold_amount, &signers4, &4);
+
+        // Still blocked — 2 < 4
+        let res = client.try_execute_queued_release(&bounty_id);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_multisig_threshold_not_met_still_blocks() {
+        let env = Env::default();
+        let (client, _contract_id, _admin, depositor, _token_id, _token) = setup_bounty(&env);
+        let contributor = Address::generate(&env);
+        let signer1 = Address::generate(&env);
+        let signer2 = Address::generate(&env);
+        let signer3 = Address::generate(&env);
+
+        let signers = vec![&env, signer1.clone(), signer2.clone(), signer3.clone()];
+        let threshold_amount: i128 = 1000;
+        client.update_multisig_config(&threshold_amount, &signers, &3);
+
+        let bounty_id = 202u64;
+        setup_queued_high_value_release(&env, &client, &depositor, bounty_id, 1000, &contributor);
+
+        // Only 1 approval out of 3 required
+        client.approve_large_release(&bounty_id, &contributor, &signer1);
+
+        env.ledger().set_timestamp(env.ledger().timestamp() + 3601);
+
+        let res = client.try_execute_queued_release(&bounty_id);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_multisig_threshold_met_allows_release() {
+        let env = Env::default();
+        let (client, _contract_id, _admin, depositor, _token_id, _token) = setup_bounty(&env);
+        let contributor = Address::generate(&env);
+        let signer1 = Address::generate(&env);
+        let signer2 = Address::generate(&env);
+        let signer3 = Address::generate(&env);
+
+        let signers = vec![&env, signer1.clone(), signer2.clone(), signer3.clone()];
+        let threshold_amount: i128 = 1000;
+        client.update_multisig_config(&threshold_amount, &signers, &3);
+
+        let bounty_id = 203u64;
+        setup_queued_high_value_release(&env, &client, &depositor, bounty_id, 1000, &contributor);
+
+        // All 3 signers approve
+        client.approve_large_release(&bounty_id, &contributor, &signer1);
+        client.approve_large_release(&bounty_id, &contributor, &signer2);
+        client.approve_large_release(&bounty_id, &contributor, &signer3);
+
+        env.ledger().set_timestamp(env.ledger().timestamp() + 3601);
+
+        client.execute_queued_release(&bounty_id);
+
+        assert_eq!(
+            client.get_escrow_info(&bounty_id).status,
+            EscrowStatus::Released
+        );
+    }
+
+    #[test]
+    fn test_multisig_config_persistence() {
+        let env = Env::default();
+        let (client, _contract_id, _admin, _depositor, _token_id, _token) = setup_bounty(&env);
+        let signer1 = Address::generate(&env);
+        let signer2 = Address::generate(&env);
+        let signer3 = Address::generate(&env);
+
+        let signers = vec![&env, signer1, signer2, signer3];
+        let threshold_amount: i128 = 5000;
+        let required_sigs: u32 = 2;
+
+        client.update_multisig_config(&threshold_amount, &signers, &required_sigs);
+
+        let config = client.get_multisig_config();
+        assert_eq!(config.threshold_amount, threshold_amount);
+        assert_eq!(config.signers.len(), 3);
+        assert_eq!(config.required_signatures, required_sigs);
+
+        // Update
+        let new_threshold: i128 = 10000;
+        let new_required: u32 = 1;
+        client.update_multisig_config(&new_threshold, &config.signers, &new_required);
+
+        let updated = client.get_multisig_config();
+        assert_eq!(updated.threshold_amount, new_threshold);
+        assert_eq!(updated.required_signatures, new_required);
     }
 }

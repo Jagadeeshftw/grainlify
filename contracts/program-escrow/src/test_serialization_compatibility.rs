@@ -91,6 +91,8 @@ fn serialization_compatibility_public_types_and_events() {
         archived: false,
         archived_at: None,
         status: ProgramStatus::Active,
+        circuit_breaker_threshold: None,
+        fot_router: OptionalFotRouter::None,
     };
 
     let program_initialized = ProgramInitializedEvent {

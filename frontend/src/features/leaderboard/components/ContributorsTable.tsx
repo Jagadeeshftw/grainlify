@@ -65,7 +65,7 @@ export function ContributorsTable({
 
   return (
     <div
-      className={`backdrop-blur-[40px] bg-white/[0.12] rounded-[24px] border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.08)] overflow-hidden transition-all duration-700 delay-1000 ${
+      className={`backdrop-blur-[40px] bg-white/[0.12] rounded-[24px] border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.08)] overflow-hidden transition-all duration-700 delay-1000 print:hidden ${
         isLoaded ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
       }`}
       role="region"

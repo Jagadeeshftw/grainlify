@@ -461,6 +461,18 @@
                             },
                             {
                               "key": {
+                                "symbol": "fot_router"
+                              },
+                              "val": {
+                                "vec": [
+                                  {
+                                    "symbol": "None"
+                                  }
+                                ]
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "initial_liquidity"
                               },
                               "val": {
@@ -803,6 +815,18 @@
                               },
                               "val": {
                                 "u32": 0
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "fot_router"
+                              },
+                              "val": {
+                                "vec": [
+                                  {
+                                    "symbol": "None"
+                                  }
+                                ]
                               }
                             },
                             {
@@ -1989,6 +2013,18 @@
                 },
                 {
                   "key": {
+                    "symbol": "fot_router"
+                  },
+                  "val": {
+                    "vec": [
+                      {
+                        "symbol": "None"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "key": {
                     "symbol": "initial_liquidity"
                   },
                   "val": {
@@ -2220,6 +2256,18 @@
                   },
                   "val": {
                     "u32": 0
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "fot_router"
+                  },
+                  "val": {
+                    "vec": [
+                      {
+                        "symbol": "None"
+                      }
+                    ]
                   }
                 },
                 {
@@ -2629,7 +2677,7 @@
             "data": {
               "vec": [
                 {
-                  "string": "caught panic 'Funds Paused' from contract function 'Symbol(obj#1141)'"
+                  "string": "caught panic 'Funds Paused' from contract function 'Symbol(obj#1183)'"
                 },
                 {
                   "i128": {

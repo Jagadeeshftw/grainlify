@@ -737,3 +737,43 @@ fn batch_release_partial_failure_leaves_all_siblings_locked() {
         "bounty 32 must remain Locked; its sibling's failure must not release it"
     );
 }
+
+// ===========================================================================
+// SOA BATCH TESTS
+// ===========================================================================
+
+#[test]
+fn batch_lock_soa_mismatch_fails() {
+    let ctx = setup();
+    let depositor = Address::generate(&ctx.env);
+
+    let bounty_ids = vec![&ctx.env, 1, 2];
+    let depositors = vec![&ctx.env, depositor.clone(), depositor.clone()];
+    let amounts = vec![&ctx.env, AMOUNT]; // Mismatched length (1 instead of 2)
+    let deadlines = vec![&ctx.env, ctx.env.ledger().timestamp() + DEADLINE_OFFSET, ctx.env.ledger().timestamp() + DEADLINE_OFFSET];
+
+    assert_eq!(
+        ctx.client
+            .try_batch_lock_funds_soa(&bounty_ids, &depositors, &amounts, &deadlines)
+            .unwrap_err()
+            .unwrap(),
+        Error::BatchSizeMismatch
+    );
+}
+
+#[test]
+fn batch_release_soa_mismatch_fails() {
+    let ctx = setup();
+
+    let bounty_ids = vec![&ctx.env, 1, 2];
+    let contributors = vec![&ctx.env, Address::generate(&ctx.env)]; // Mismatched length (1 instead of 2)
+
+    assert_eq!(
+        ctx.client
+            .try_batch_release_funds_soa(&bounty_ids, &contributors)
+            .unwrap_err()
+            .unwrap(),
+        Error::BatchSizeMismatch
+    );
+}
+

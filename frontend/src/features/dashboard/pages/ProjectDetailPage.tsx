@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { ExternalLink, Copy, Circle, ArrowLeft, GitPullRequest } from 'lucide-react';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
@@ -8,8 +8,7 @@ import { MediaEmbed } from '../../../shared/components/MediaEmbed';
 import ReactMarkdown from 'react-markdown';
 import { LanguageIcon } from '../../../shared/components/LanguageIcon';
 import { ProjectReleaseTimeline } from '../../ProjectDetailPage/ProjectReleaseTimeline';
-
-const InPreContext = createContext(false);
+import { ReadmeEmbed } from '../components/ReadmeEmbed';
 
 interface ProjectDetailPageProps {
   onBack?: () => void;
@@ -836,6 +835,22 @@ export function ProjectDetailPage({ onBack, onIssueClick, projectId: propProject
               <span className="text-[#c9983a]">✦</span>
               Overview
             </h2>
+            {githubUrl && (
+              <a
+                href={githubUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="View README on GitHub (opens in new tab)"
+                className={`flex items-center gap-1.5 text-[13px] font-semibold underline decoration-1 underline-offset-2 transition-colors ${
+                  theme === 'dark'
+                    ? 'text-[#f5c563] hover:text-[#ffd700]'
+                    : 'text-[#6b4c1a] hover:text-[#4a3310]'
+                }`}
+              >
+                <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
+                View on GitHub
+              </a>
+            )}
           </div>
           {isLoading ? (
             <div className="space-y-3">
@@ -844,9 +859,7 @@ export function ProjectDetailPage({ onBack, onIssueClick, projectId: propProject
               <SkeletonLoader className="h-4 w-3/4" />
             </div>
           ) : project?.readme ? (
-            <div className="prose prose-sm max-w-none [&_pre]:my-4 [&_pre]:overflow-x-auto [&_pre]:rounded-[12px] [&_pre]:p-4 [&_pre_code]:!p-0 [&_pre_code]:!bg-transparent [&_pre_code]:!border-0 [&_pre_code]:!text-inherit [&_pre_code]:block">
-              <OverviewMarkdown readme={project.readme} theme={theme} />
-            </div>
+            <ReadmeEmbed content={project.readme} theme={theme} />
           ) : description ? (
             <p className={`text-[15px] leading-relaxed transition-colors ${
               theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#4a3f2f]'
@@ -857,14 +870,14 @@ export function ProjectDetailPage({ onBack, onIssueClick, projectId: propProject
             <p className={`text-[15px] leading-relaxed transition-colors ${
               theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#4a3f2f]'
             }`}>
-              No description available. Visit the <a 
-                href={githubUrl} 
-                target="_blank" 
+              No description available. Visit the <a
+                href={githubUrl}
+                target="_blank"
                 rel="noopener noreferrer"
-                className={`font-semibold hover:underline transition-colors ${
-                  theme === 'dark' 
-                    ? 'text-[#f5c563] hover:text-[#ffd700]' 
-                    : 'text-[#b8872f] hover:text-[#8b6f3a]'
+                className={`font-semibold underline decoration-1 underline-offset-2 transition-colors ${
+                  theme === 'dark'
+                    ? 'text-[#f5c563] hover:text-[#ffd700]'
+                    : 'text-[#6b4c1a] hover:text-[#4a3310]'
                 }`}
               >GitHub repository</a> for more information.
             </p>

@@ -9,6 +9,8 @@ import { Modal, ModalFooter, ModalButton } from '../../../../shared/components/u
 import { applyToIssue, getProjectIssues, postBotComment, withdrawApplication, assignApplicant, unassignApplicant, rejectApplication } from '../../../../shared/api/client';
 import { formatDistanceToNow } from 'date-fns';
 import { IssueCardSkeleton } from '../../../../shared/components/IssueCardSkeleton';
+import { TimestampDisplay } from '../../../../shared/components/TimestampDisplay';
+import { CommentThread, CommentData, CommentReaction } from '../../../../shared/components';
 import RenderMarkdownContent from '../../../../app/utils/renderMarkdown';
 
 interface Project {
@@ -323,6 +325,71 @@ Only applications submitted via the apply link above will be considered. Please 
 
   const applicationData = getApplicationData(selectedIssue, selectedIssueFromAPI);
   const isDark = theme === 'dark';
+
+  // Local state for comment reactions (backed by GitHub API when available)
+  const [commentReactions, setCommentReactions] = useState<Record<number, CommentReaction[]>>({});
+
+  const commentData: CommentData[] = useMemo(() => {
+    const comments = selectedIssueFromAPI?.comments || [];
+    return comments.map((c) => ({
+      id: c.id,
+      body: c.body,
+      user: { login: c.user.login },
+      created_at: c.created_at,
+      updated_at: c.updated_at,
+      isAuthor: c.user.login === selectedIssueFromAPI?.author_login,
+      isMaintainer: false,
+      reactions: commentReactions[c.id] || [],
+    }));
+  }, [selectedIssueFromAPI, commentReactions]);
+
+  const handleCommentReact = useCallback((commentId: number, emoji: string) => {
+    setCommentReactions((prev) => {
+      const existing = [...(prev[commentId] || [])];
+      const idx = existing.findIndex((r) => r.emoji === emoji);
+      if (idx >= 0) {
+        const reaction = existing[idx];
+        if (!reaction.viewersReaction) {
+          existing[idx] = { ...reaction, count: reaction.count + 1, viewersReaction: true, reactors: [...reaction.reactors, user?.github?.login || 'anonymous'] };
+        }
+      } else {
+        existing.push({ emoji, label: emoji, count: 1, viewersReaction: true, reactors: [user?.github?.login || 'anonymous'] });
+      }
+      return { ...prev, [commentId]: existing };
+    });
+  }, [user?.github?.login]);
+
+  const handleCommentRemoveReaction = useCallback((commentId: number, emoji: string) => {
+    setCommentReactions((prev) => {
+      const existing = [...(prev[commentId] || [])];
+      const idx = existing.findIndex((r) => r.emoji === emoji);
+      if (idx >= 0) {
+        const reaction = existing[idx];
+        if (reaction.count <= 1) {
+          existing.splice(idx, 1);
+        } else {
+          existing[idx] = { ...reaction, count: reaction.count - 1, viewersReaction: false, reactors: reaction.reactors.filter((r) => r !== user?.github?.login) };
+        }
+      }
+      return { ...prev, [commentId]: existing };
+    });
+  }, [user?.github?.login]);
+
+  const handleCommentReply = useCallback(async (_parentId: number, _body: string) => {
+    // TODO: Implement reply via GitHub API when comment threading is supported
+    // See backend/internal/github/issues_comments.go CreateIssueComment
+    console.warn('Comment reply not yet implemented — requires backend support for threaded replies');
+  }, []);
+
+  const handleCommentEdit = useCallback(async (_commentId: number, _body: string) => {
+    // TODO: Implement edit via GitHub API when supported
+    console.warn('Comment edit not yet implemented — requires backend update endpoint');
+  }, []);
+
+  const handleCommentDelete = useCallback(async (_commentId: number) => {
+    // TODO: Implement delete via GitHub API when supported (see DeleteIssueComment)
+    console.warn('Comment delete not yet implemented — requires backend integration');
+  }, []);
 
   const canApplyToSelectedIssue = selectedIssueFromAPI && (() => {
     const isOpen = (selectedIssueFromAPI.state || '').toLowerCase() === 'open';
@@ -1026,8 +1093,13 @@ Only applications submitted via the apply link above will be considered. Please 
                                   } group-hover/user:text-[#c9983a]`}>
                                   {application.author.name}
                                 </h4>
-                                <p className={`text-[12px] transition-colors ${isDark ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
-                                  }`}>Applied - {application.timeAgo}</p>
+                                <div className={`text-[12px] flex items-center gap-1 transition-colors ${isDark ? 'text-[#b8a898]' : 'text-[#7a6b5a]'}`}>
+                                  <span>Applied -</span>
+                                  <TimestampDisplay
+                                    timestamp={(application as any).appliedDate || (application as any).createdAt}
+                                    fallbackText={application.timeAgo}
+                                  />
+                                </div>
                               </div>
                               <ExternalLink className="w-4 h-4 text-[#7a6b5a] ml-auto opacity-0 group-hover/user:opacity-100 transition-opacity" />
                             </button>
@@ -1205,70 +1277,17 @@ Only applications submitted via the apply link above will be considered. Please 
                     </div>
                   </div>
                 )}
-                {applicationData && applicationData.discussions.length > 0 ? (
-                  applicationData.discussions.map((discussion) => (
-                    <div
-                      key={discussion.id}
-                      className={`backdrop-blur-[25px] rounded-[16px] border p-5 transition-colors ${isDark
-                        ? 'bg-white/[0.08] border-white/10'
-                        : 'bg-white/[0.15] border-white/25'
-                        }`}
-                    >
-                      <div className="flex items-center gap-3 mb-3">
-                        {failedAvatars.has(getGitHubAvatar(discussion.user, 32)) ? (
-                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#c9983a]/30 to-[#d4af37]/20 border border-[#c9983a]/40 flex items-center justify-center">
-                            <span className="text-[11px] font-bold text-[#c9983a]">
-                              {discussion.user.substring(0, 2).toUpperCase()}
-                            </span>
-                          </div>
-                        ) : (
-                          <img
-                            src={getGitHubAvatar(discussion.user, 32)}
-                            alt={discussion.user}
-                            className="w-8 h-8 rounded-full border border-[#c9983a]/40"
-                            onError={() => setFailedAvatars(prev => new Set(prev).add(getGitHubAvatar(discussion.user, 32)))}
-                          />
-                        )}
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className={`text-[14px] font-bold transition-colors ${isDark ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
-                              }`}>{discussion.user}</span>
-                            {discussion.isAuthor && (
-                              <span className="px-2 py-0.5 rounded-[4px] bg-[#c9983a]/20 border border-[#c9983a]/30 text-[10px] font-bold text-[#c9983a]">
-                                AUTHOR
-                              </span>
-                            )}
-                          </div>
-                          <span className={`text-[12px] transition-colors ${isDark ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
-                            }`}>{discussion.timeAgo}</span>
-                        </div>
-                      </div>
 
-                      {discussion.appliedForContribution && (
-                        <div className="mb-3 px-3 py-2 rounded-[8px] bg-[#c9983a]/10 border border-[#c9983a]/20">
-                          <span className="text-[12px] font-semibold text-[#c9983a]">
-                            Applied for this contribution
-                          </span>
-                        </div>
-                      )}
-
-                      <div className={`text-[14px] leading-relaxed whitespace-pre-wrap transition-colors ${isDark ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
-                        }`}>
-                        {discussion.content}
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className={`p-8 rounded-[16px] backdrop-blur-[25px] border text-center min-h-[300px] flex flex-col items-center justify-center ${isDark ? 'bg-white/[0.08] border-white/10' : 'bg-white/[0.15] border-white/25'
-                    }`}>
-                    <MessageSquare className={`w-12 h-12 mx-auto mb-4 transition-colors ${isDark ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-                      }`} />
-                    <p className={`text-[14px] transition-colors ${isDark ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-                      }`}>
-                      No discussions yet
-                    </p>
-                  </div>
-                )}
+                <CommentThread
+                  comments={commentData}
+                  currentUserLogin={user?.github?.login}
+                  totalCommentCount={commentData.length}
+                  onReply={handleCommentReply}
+                  onReact={handleCommentReact}
+                  onRemoveReaction={handleCommentRemoveReaction}
+                  onEdit={handleCommentEdit}
+                  onDelete={handleCommentDelete}
+                />
               </div>
             )}
           </div>

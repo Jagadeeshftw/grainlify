@@ -20,8 +20,16 @@ Each snapshot stores:
 
 ## Retention and pruning
 
-Both contracts retain the most recent **20 snapshots**.
+Both contracts retain the most recent **20 snapshots** (`CONFIG_SNAPSHOT_LIMIT`).
 When a new snapshot exceeds this limit, the oldest snapshot is pruned automatically.
+
+Grainlify Core also exposes `prune_old_snapshots(keep_count)` so an admin can
+shrink the retention window further. Lower retention bounds listing CPU cost but
+shortens rollback history depth — see `contracts/grainlify-core/STORAGE_LAYOUT.md`.
+
+Listing should use paginated `list_config_snapshots(offset, limit)` for
+indexer-style scans; `list_config_snapshots_all` remains available for small-N
+/ legacy callers.
 
 ## Operational workflow
 
@@ -39,11 +47,14 @@ When a new snapshot exceeds this limit, the oldest snapshot is pruned automatica
 
 ### Grainlify Core
 - `create_config_snapshot() -> u64`
-- `list_config_snapshots() -> Vec<CoreConfigSnapshot>`
+- `list_config_snapshots(offset, limit) -> Result<Vec<CoreConfigSnapshot>, ContractError>` — paginated listing
+- `list_config_snapshots_all() -> Vec<CoreConfigSnapshot>` — full listing (legacy)
+- `prune_old_snapshots(keep_count) -> u32` — admin prune; retains newest `keep_count`
 - `restore_config_snapshot(snapshot_id: u64)`
 - `get_config_snapshot(snapshot_id: u64) -> Option<CoreConfigSnapshot>` — retrieve a specific snapshot by ID
 - `get_latest_config_snapshot() -> Option<CoreConfigSnapshot>` — most recent snapshot
 - `get_snapshot_count() -> u32` — number of retained snapshots
+- `get_config_snapshot_limit() -> u32` — hard retention ceiling
 - `compare_snapshots(from_id: u64, to_id: u64) -> SnapshotDiff` — diff between two snapshots
 - `get_rollback_info() -> RollbackInfo` — aggregated rollback intelligence for recovery drills
 

@@ -19,6 +19,7 @@ fn make_minimal_program_data(env: &Env) -> ProgramData {
         circuit_breaker_threshold: None,
         program_id: SorobanString::from_str(env, "test-program"),
         payout_history: soroban_sdk::Vec::new(env),
+        fot_router: OptionalFotRouter::None,
         reference_hash: None,
     }
 }
@@ -44,6 +45,7 @@ fn make_full_program_data(env: &Env) -> ProgramData {
         circuit_breaker_threshold: Some(5),
         program_id: SorobanString::from_str(env, "full-program"),
         payout_history: soroban_sdk::vec![env, payout],
+        fot_router: OptionalFotRouter::None,
         reference_hash: Some(Bytes::from_array(env, &[0x01, 0x02, 0x03, 0x04])),
     }
 }

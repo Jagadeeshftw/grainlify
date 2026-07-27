@@ -4,11 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 soroban-sdk = "=21.7.7"
 grainlify-core = { path = "../grainlify-core", default-features = false }
+ethnum = "1.5"
 
 [dev-dependencies]
 soroban-sdk = { version = "=21.7.7", features = ["testutils"] }
@@ -17,27 +18,12 @@ proptest = "1.4"
 [profile.release]
 overflow-checks = true
 opt-level = "z"
-lto = true
-codegen-units = 1
-panic = "abort"
-[package]
-name = "program-escrow"
-version = "0.1.0"
-edition = "2021"
-
-[lib]
-crate-type = ["cdylib", "rlib"]
-
-[dependencies]
-
-[dev-dependencies]
-
-[profile.release]
-opt-level = "z"
-overflow-checks = true
 debug = 0
 strip = "symbols"
 debug-assertions = false
 panic = "abort"
 codegen-units = 1
 lto = true
+
+[profile.test]
+overflow-checks = true
