@@ -1,10 +1,11 @@
 #![no_std]
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, Address, BytesN, Env,
+    contract, contracterror, contractimpl, contracttype, symbol_short, Address, Bytes, BytesN, Env,
     String, Symbol, Vec,
 };
 pub mod asset;
 pub mod commit_reveal;
+pub mod correlation;
 pub mod error_registry;
 pub mod errors;
 mod governance;
@@ -13,6 +14,8 @@ pub mod nonce;
 pub mod pseudo_randomness;
 pub mod strict_mode;
 use multisig::MultiSig;
+
+pub use correlation::*;
 
 #[cfg(test)]
 mod test_error_registry;
@@ -86,7 +89,7 @@ const VERSION: u32 = 2;
 // ============================================================================
 
 #[contracttype]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UpgradeEvent {
     /// The new WASM hash that was installed.
     pub new_wasm_hash: BytesN<32>,
@@ -96,6 +99,8 @@ pub struct UpgradeEvent {
     pub timestamp: u64,
     /// Event schema version for cross-version compatibility checks.
     pub event_version: u32,
+    /// Optional correlation identifier linking this event across multi-contract workflows.
+    pub correlation_id: Option<CorrelationId>,
 }
 
 /// Emitted when read-only mode is toggled.
@@ -107,6 +112,8 @@ pub struct ReadOnlyModeEvent {
     pub timestamp: u64,
     /// Event schema version for cross-version compatibility checks.
     pub event_version: u32,
+    /// Optional correlation identifier linking this event across multi-contract workflows.
+    pub correlation_id: Option<CorrelationId>,
 }
 
 /// Emitted during contract initialization to record build and deployment information.
@@ -204,6 +211,8 @@ pub struct MigrationEvent {
     pub error_message: Option<String>,
     /// Event schema version for cross-version compatibility checks.
     pub event_version: u32,
+    /// Optional correlation identifier linking this event across multi-contract workflows.
+    pub correlation_id: Option<CorrelationId>,
 }
 
 #[contracttype]
@@ -944,6 +953,7 @@ impl GrainlifyContract {
                 previous_version: current_version,
                 timestamp: env.ledger().timestamp(),
                 event_version: EVENT_SCHEMA_VERSION,
+                correlation_id: None,
             },
         );
 
@@ -982,6 +992,7 @@ impl GrainlifyContract {
                 previous_version: current_version,
                 timestamp: env.ledger().timestamp(),
                 event_version: EVENT_SCHEMA_VERSION,
+                correlation_id: None,
             },
         );
 
@@ -1270,7 +1281,7 @@ impl GrainlifyContract {
         env.storage().instance().set(&DataKey::ReadOnlyMode, &enabled);
         env.events().publish(
             (symbol_short!("ROModeChg"),),
-            ReadOnlyModeEvent { enabled, admin, timestamp: env.ledger().timestamp(), event_version: EVENT_SCHEMA_VERSION },
+            ReadOnlyModeEvent { enabled, admin, timestamp: env.ledger().timestamp(), event_version: EVENT_SCHEMA_VERSION, correlation_id: None },
         );
     }
 

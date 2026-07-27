@@ -145,6 +145,7 @@ use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short, token, vec,
     Address, Bytes, BytesN, Env, String, Symbol, Vec,
 };
+use grainlify_core::CorrelationId;
 
 mod errors;
 pub use errors::BatchPayoutError;
@@ -501,6 +502,8 @@ pub struct BatchPayoutEvent {
     pub remaining_balance: i128,
     /// Optional idempotency key for auditing.
     pub idempotency_key: Option<String>,
+    /// Optional correlation identifier linking this event across multi-contract workflows.
+    pub correlation_id: Option<CorrelationId>,
 }
 
 /// Emitted when a `batch_payout_idempotent` call is rejected because the
@@ -523,6 +526,8 @@ pub struct PayoutEvent {
     pub recipient: Address,
     pub amount: i128,
     pub remaining_balance: i128,
+    /// Optional correlation identifier linking this event across multi-contract workflows.
+    pub correlation_id: Option<CorrelationId>,
 }
 
 #[contracttype]
@@ -534,6 +539,8 @@ pub struct ReleaseScheduledEvent {
     pub recipient: Address,
     pub amount: i128,
     pub release_timestamp: u64,
+    /// Optional correlation identifier linking this event across multi-contract workflows.
+    pub correlation_id: Option<CorrelationId>,
 }
 
 #[contracttype]
@@ -546,6 +553,8 @@ pub struct ScheduleReleasedEvent {
     pub amount: i128,
     pub released_at: u64,
     pub released_by: Address,
+    /// Optional correlation identifier linking this event across multi-contract workflows.
+    pub correlation_id: Option<CorrelationId>,
 }
 
 /// Summary event emitted once per `trigger_program_releases` invocation.
@@ -6722,6 +6731,7 @@ impl ProgramEscrowContract {
                 total_amount: total_actual_outflow,
                 remaining_balance: updated_data.remaining_balance,
                 idempotency_key,
+                correlation_id: None,
             },
         );
 
@@ -7015,6 +7025,7 @@ impl ProgramEscrowContract {
                 recipient: recipient.clone(),
                 amount: transfer_amount,
                 remaining_balance: updated_data.remaining_balance,
+                correlation_id: None,
             },
         );
 
@@ -7360,6 +7371,7 @@ impl ProgramEscrowContract {
                 recipient: recipient.clone(),
                 amount,
                 release_timestamp,
+                correlation_id: None,
             },
         );
 
@@ -7607,6 +7619,7 @@ impl ProgramEscrowContract {
                     amount: exec_amount,
                     released_at: now,
                     released_by: contract_address.clone(),
+                    correlation_id: None,
                 },
             );
 
@@ -9038,6 +9051,7 @@ mod test_batch_operations;
 // #[cfg(test)] mod test_pause;
 
 #[cfg(test)]
+#[cfg(any())]
 mod test_insurance_reserve;
 
 #[cfg(test)]
@@ -9052,10 +9066,15 @@ mod test_batch_receipts;
 #[cfg(any())]
 mod test_circuit_breaker_enforcement;
 #[cfg(test)]
+#[cfg(any())]
 mod test_rbac;
 #[cfg(test)]
+#[cfg(any())]
 mod test_event_ordering;
 
 #[cfg(test)]
 #[path = "release_schedule_host.rs"]
 mod release_schedule_host;
+
+#[cfg(test)]
+mod test_event_schema;

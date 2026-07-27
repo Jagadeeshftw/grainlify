@@ -22,3 +22,7 @@ lto = true
 [profile.release-with-logs]
 inherits = "release"
 debug-assertions = true
+
+[profile.test]
+overflow-checks = true
+debug = 0

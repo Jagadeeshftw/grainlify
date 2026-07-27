@@ -33,6 +33,7 @@
 //!   which would corrupt topic-based filtering.
 use crate::CapabilityAction;
 use soroban_sdk::{contracttype, symbol_short, Address, BytesN, Env, Symbol};
+use grainlify_core::CorrelationId;
 
 // ── Version constant ─────────────────────────────────────────────────────────
 
@@ -209,6 +210,8 @@ pub struct FundsLocked {
     pub amount: i128,       //  gross amount deposited
     pub depositor: Address, // address that does the deposit
     pub deadline: u64,
+    /// Optional correlation identifier linking this event across multi-contract workflows.
+    pub correlation_id: Option<CorrelationId>,
 }
 
 /// Emit [`FundsLocked`].
@@ -246,6 +249,8 @@ pub struct FundsReleased {
     pub amount: i128,       // amount transferred to `recipient`
     pub recipient: Address, // the contributor wallet address that received the funds.
     pub timestamp: u64,
+    /// Optional correlation identifier linking this event across multi-contract workflows.
+    pub correlation_id: Option<CorrelationId>,
 }
 
 /// Emit [`FundsReleased`].
@@ -352,6 +357,8 @@ pub struct FundsRefunded {
     pub timestamp: u64,
     /// Which code path triggered this refund.
     pub trigger_type: RefundTriggerType,
+    /// Optional correlation identifier linking this event across multi-contract workflows.
+    pub correlation_id: Option<CorrelationId>,
 }
 
 /// Emit [`FundsRefunded`].
@@ -501,6 +508,8 @@ pub struct BatchFundsLocked {
     pub count: u32,         //  numbers of escrows created in this batch.
     pub total_amount: i128, // the sum of all locked amounts in this batch.
     pub timestamp: u64,
+    /// Optional correlation identifier linking this event across multi-contract workflows.
+    pub correlation_id: Option<CorrelationId>,
 }
 
 /// Emit [`BatchFundsLocked`]
