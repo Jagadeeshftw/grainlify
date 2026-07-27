@@ -32,6 +32,8 @@ function CollapsedRepliesButton({
     <button
       type="button"
       onClick={onExpand}
+      aria-expanded="false"
+      aria-label={`View ${count} more repl${count !== 1 ? 'ies' : 'y'}`}
       className="w-full text-left px-2 py-2 rounded-[8px] text-[12px] font-semibold text-[#c9983a] hover:bg-white/[0.05] transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#c9983a]"
     >
       View {count} more repl{count !== 1 ? 'ies' : 'y'}
@@ -68,6 +70,10 @@ function TopLevelComment({
   const visibleReplies = hasManyReplies && !expanded ? replies.slice(0, 2) : replies;
   const hiddenCount = replies.length - visibleReplies.length;
 
+  const handleExpand = () => {
+    setExpanded(true);
+  };
+
   return (
     <li className="space-y-3">
       <CommentCard
@@ -87,6 +93,7 @@ function TopLevelComment({
         <ol
           className="ml-8 space-y-3 border-l-2 border-white/10 pl-4"
           aria-label={`Replies to ${comment.user.login}`}
+          aria-expanded={expanded}
         >
           {visibleReplies.map((reply) => (
             <li key={reply.id}>
@@ -108,7 +115,7 @@ function TopLevelComment({
             <li>
               <CollapsedRepliesButton
                 count={hiddenCount}
-                onExpand={() => setExpanded(true)}
+                onExpand={handleExpand}
               />
             </li>
           )}
