@@ -1,13 +1,22 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { renderHook } from '@testing-library/react'
+import { renderHook, act } from '@testing-library/react'
 import { useResponsiveBreakpoint, useReducedMotion, usePrefersDarkMode } from '../useReducedMotion'
 
 function mockMatchMedia(matches: boolean) {
+  const listeners = new Set<EventListener>()
   return {
-    matches,
+    get matches() { return matches },
+    set matches(_: boolean) { /* read-only for static mock */ },
     media: '',
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
+    addEventListener: (_type: string, listener: EventListener) => {
+      listeners.add(listener)
+    },
+    removeEventListener: (_type: string, listener: EventListener) => {
+      listeners.delete(listener)
+    },
+    dispatchEvent(_event: Event) {
+      listeners.forEach((l) => l({ matches } as unknown as MediaQueryListEvent))
+    },
   }
 }
 
@@ -112,6 +121,88 @@ describe('useResponsiveBreakpoint', () => {
     rerender()
     const second = { ...result.current }
     expect(first).toEqual(second)
+  })
+
+  it('exactly 768px boundary: isMobile=false, isTablet=true', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation((query: string) => {
+        if (query === '(max-width: 767px)') return mockMatchMedia(false)
+        if (query === '(min-width: 768px) and (max-width: 1023px)') return mockMatchMedia(true)
+        if (query === '(min-width: 1024px)') return mockMatchMedia(false)
+        return mockMatchMedia(false)
+      }),
+    )
+    const { result } = renderHook(() => useResponsiveBreakpoint())
+    expect(result.current.breakpoint).toBe('md')
+    expect(result.current.isMobile).toBe(false)
+    expect(result.current.isTablet).toBe(true)
+  })
+
+  it('exactly 1024px boundary: isTablet=false, isDesktop=true', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation((query: string) => {
+        if (query === '(max-width: 767px)') return mockMatchMedia(false)
+        if (query === '(min-width: 768px) and (max-width: 1023px)') return mockMatchMedia(false)
+        if (query === '(min-width: 1024px)') return mockMatchMedia(true)
+        return mockMatchMedia(false)
+      }),
+    )
+    const { result } = renderHook(() => useResponsiveBreakpoint())
+    expect(result.current.breakpoint).toBe('lg')
+    expect(result.current.isTablet).toBe(false)
+    expect(result.current.isDesktop).toBe(true)
+  })
+
+  it('exactly 1280px boundary: isDesktop=true, isLargeDesktop=true, breakpoint=xl', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation((query: string) => {
+        if (query === '(min-width: 1280px)') return mockMatchMedia(true)
+        if (query === '(min-width: 1024px)') return mockMatchMedia(true)
+        return mockMatchMedia(false)
+      }),
+    )
+    const { result } = renderHook(() => useResponsiveBreakpoint())
+    expect(result.current.breakpoint).toBe('xl')
+    expect(result.current.isDesktop).toBe(true)
+    expect(result.current.isLargeDesktop).toBe(true)
+  })
+
+  it('transitions from mobile to desktop when breakpoint changes (resize simulation)', () => {
+    const mobileMql = { matches: true, media: '(max-width: 767px)', addEventListener: vi.fn(), removeEventListener: vi.fn() }
+    const tabletMql = { matches: false, media: '(min-width: 768px) and (max-width: 1023px)', addEventListener: vi.fn(), removeEventListener: vi.fn() }
+    const desktopMql = { matches: false, media: '(min-width: 1024px)', addEventListener: vi.fn(), removeEventListener: vi.fn() }
+    const largeDesktopMql = { matches: false, media: '(min-width: 1280px)', addEventListener: vi.fn(), removeEventListener: vi.fn() }
+
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation((query: string) => {
+        if (query === '(max-width: 767px)') return mobileMql
+        if (query === '(min-width: 768px) and (max-width: 1023px)') return tabletMql
+        if (query === '(min-width: 1024px)') return desktopMql
+        return largeDesktopMql
+      }),
+    )
+
+    const { result } = renderHook(() => useResponsiveBreakpoint())
+    expect(result.current.isMobile).toBe(true)
+    expect(result.current.breakpoint).toBe('sm')
+
+    const mobileHandler = mobileMql.addEventListener.mock.calls[0]?.[1]
+    const desktopHandler = desktopMql.addEventListener.mock.calls[0]?.[1]
+
+    act(() => {
+      mobileMql.matches = false
+      mobileHandler?.({ matches: false } as unknown as MediaQueryListEvent)
+      desktopMql.matches = true
+      desktopHandler?.({ matches: true } as unknown as MediaQueryListEvent)
+    })
+
+    expect(result.current.isMobile).toBe(false)
+    expect(result.current.isDesktop).toBe(true)
+    expect(result.current.breakpoint).toBe('lg')
   })
 })
 

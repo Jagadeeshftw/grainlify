@@ -170,6 +170,35 @@ Legend: ✅ migrated, ⏳ not yet migrated (backward-compatible, future work)
 | `useReducedMotion`      | Same as breakpoint test                   | Default false, respects `prefers-reduced-motion` |
 | `usePrefersDarkMode`    | Same as breakpoint test                   | Default false, respects `prefers-color-scheme` |
 
+### Edge Cases Covered
+
+#### `useMediaQuery`
+- **SSR safety:** When `window` is undefined (server-side render), initializes to `false`.
+- **Bidirectional changes:** Transitions from match→no-match→match are all handled correctly.
+- **Multiple instances:** Independent hooks with different queries do not interfere with each other.
+
+#### `useResponsiveBreakpoint`
+- **Boundary at exactly 768px:** `isMobile=false`, `isTablet=true` (the `max-width: 767px` query
+  does NOT match at exactly 768px).
+- **Boundary at exactly 1024px:** `isTablet=false`, `isDesktop=true` (the tablet query range is
+  `min-width: 768px` AND `max-width: 1023px`).
+- **Boundary at exactly 1280px:** `isDesktop=true`, `isLargeDesktop=true`, `breakpoint='xl'`
+  (additive — isDesktop remains true at xl).
+- **Resize simulation:** When media query listeners fire in sequence (mobile→desktop), the
+  hook correctly transitions through all states without glitches.
+
+#### `useResponsiveToken`
+- **Null values:** `null` is treated as a **defined** value (passes `!== undefined` check),
+  so `{ sm: null }` returns `null` rather than falling through to `defaultValue`.
+- **Undefined values:** `undefined` is skipped in the fallback chain, allowing the
+  resolution to continue to the next smaller breakpoint.
+- **Invalid breakpoint keys:** Extra keys like `'xs'` or `'2xl'` are ignored; they
+  are not in `BREAKPOINT_ORDER` and never matched. The fallback chain uses only the 4
+  canonical breakpoints: `xl → lg → md → sm → defaultValue`.
+- **Changing tokenMap reference:** When the caller passes a new object reference with the
+  same values, `useMemo` re-evaluates (because the dependency is `tokenMap` by reference).
+  This is the expected React behavior.
+
 ## Migration Guide (from old pattern)
 
 ### `useResponsiveBreakpoint` (old → new)

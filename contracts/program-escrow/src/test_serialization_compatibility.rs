@@ -167,6 +167,8 @@ fn serialization_compatibility_public_types_and_events() {
                 recipient_count: 2,
                 total_amount: 500,
                 remaining_balance: 8500,
+                idempotency_key: None,
+                correlation_id: None,
             }
             .into_val(&env),
         ),
@@ -178,6 +180,7 @@ fn serialization_compatibility_public_types_and_events() {
                 recipient: recipient.clone(),
                 amount: 200,
                 remaining_balance: 8800,
+                correlation_id: None,
             }
             .into_val(&env),
         ),
