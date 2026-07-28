@@ -2272,6 +2272,12 @@
                 },
                 {
                   "key": {
+                    "symbol": "correlation_id"
+                  },
+                  "val": "void"
+                },
+                {
+                  "key": {
                     "symbol": "deadline"
                   },
                   "val": {
@@ -2807,6 +2813,12 @@
                 },
                 {
                   "key": {
+                    "symbol": "correlation_id"
+                  },
+                  "val": "void"
+                },
+                {
+                  "key": {
                     "symbol": "refund_to"
                   },
                   "val": {
@@ -3240,6 +3252,12 @@
                   "val": {
                     "u64": 1
                   }
+                },
+                {
+                  "key": {
+                    "symbol": "correlation_id"
+                  },
+                  "val": "void"
                 },
                 {
                   "key": {

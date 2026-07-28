@@ -28,12 +28,10 @@ mod invariants;
 mod multitoken_invariants;
 mod reentrancy_guard;
 // Pre-existing broken test modules excluded from compilation until their referenced types/methods are implemented:
-#[cfg(test)]
-// mod test_boundary_edge_cases; // Issue #1294: PartiallyRefunded accounting tests
+// #[cfg(test)] mod test_boundary_edge_cases; // Issue #1294: PartiallyRefunded accounting tests
 // #[cfg(test)] mod test_cross_contract_interface; // pre-existing breakage: references unimplemented methods
 // #[cfg(test)] mod test_deterministic_randomness;
 // #[cfg(test)] mod test_multi_region_treasury;
-// #[cfg(test)] mod test_multi_token_fees;
 // #[cfg(test)] mod test_rbac;
 // #[cfg(test)] mod test_renew_rollover;
 // #[cfg(test)] mod test_risk_flags;
@@ -46,10 +44,16 @@ mod capability_replay_tests;
 mod test_fee_on_transfer;
 #[cfg(test)]
 mod test_filter_pagination;
-// #[cfg(test)] mod test_frozen_balance; // pre-existing SDK/API drift blocks filtered test builds
+#[cfg(test)]
+mod test_multi_token_fees;
+#[cfg(test)]
+mod test_frozen_balance;
 #[cfg(test)]
 mod test_reentrancy_guard;
 // #[cfg(test)] mod test_admin_rotation; // pre-existing SDK/API drift blocks filtered test builds
+#[cfg(test)]
+mod test_batch_soa_benchmark;
+
 
 use crate::events::{
     emit_admin_rotation_accepted, emit_admin_rotation_cancelled, emit_admin_rotation_proposed,
@@ -69,8 +73,8 @@ use crate::events::{
 };
 use soroban_sdk::xdr::ToXdr;
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, token, vec, Address, Bytes,
-    BytesN, Env, String, Symbol, Vec,
+    contract, contractclient, contracterror, contractimpl, contracttype, symbol_short, token, vec,
+    Address, Bytes, BytesN, Env, String, Symbol, Vec,
 };
 
 // ============================================================================
@@ -572,7 +576,10 @@ pub enum ReleaseType {
 }
 
 use grainlify_core::errors;
-#[contracterror]
+// `export = false`: the XDR contract spec caps UDT enums at 50 cases and this
+// enum has grown past that, so spec generation panics (LengthExceedsMax).
+// Conversion impls are still generated; only the spec entry is omitted.
+#[contracterror(export = false)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum Error {
@@ -861,7 +868,9 @@ pub struct PendingAdminRotation {
     pub proposed_by: Address,
 }
 
-#[contracttype]
+// `export = false`: same 50-case XDR spec limit as `Error` above; storage keys
+// are internal so the spec entry is not needed by external tooling anyway.
+#[contracttype(export = false)]
 pub enum DataKey {
     Admin,
     Token,
@@ -2621,6 +2630,32 @@ impl BountyEscrowContract {
             .get(&DataKey::AddressFreeze(address.clone()))
     }
 
+    /// # Freeze precedence (escrow-level vs address-level)
+    ///
+    /// The contract has two **independent** freeze layers:
+    /// - escrow-level: `EscrowFreeze(bounty_id)` via `freeze_escrow`
+    /// - address-level: `AddressFreeze(address)` via `freeze_address`,
+    ///   keyed on the escrow **depositor**
+    ///
+    /// Every funds-out path (release, partial/batch release, refund, claim,
+    /// authorize_claim, renew, queued-release execution) checks BOTH layers,
+    /// escrow first, then depositor address:
+    ///
+    /// * **Either freeze independently blocks** the operation; both layers
+    ///   must be unfrozen for it to proceed.
+    /// * When **both** apply, the escrow-level check runs first, so the
+    ///   deterministic error is [`Error::EscrowFrozen`], never
+    ///   [`Error::AddressFrozen`].
+    /// * Unfreezing one layer never touches the other layer's record;
+    ///   `get_escrow_freeze_record` and `get_address_freeze_record` stay
+    ///   independently queryable and accurate.
+    /// * Address freezes gate the **depositor** only: a frozen payee
+    ///   (contributor / claim recipient) does not block payouts — freeze the
+    ///   escrow itself to stop a payout to a specific recipient.
+    /// * Freezes gate funds-out only: `lock_funds` and read-only queries are
+    ///   unaffected.
+    ///
+    /// Covered by the precedence matrix tests in `test_frozen_balance.rs`.
     fn ensure_escrow_not_frozen(env: &Env, bounty_id: u64) -> Result<(), Error> {
         if Self::get_escrow_freeze_record_internal(env, bounty_id)
             .map(|record| record.frozen)
@@ -2669,6 +2704,13 @@ impl BountyEscrowContract {
     /// Freeze a specific escrow so release and refund paths fail before any token transfer.
     ///
     /// Read-only queries remain available while the freeze is active.
+    ///
+    /// # Precedence
+    /// Independent of any address-level freeze: this blocks the escrow even
+    /// if its depositor is unfrozen, and unfreezing it does not lift an
+    /// address-level freeze on the depositor (see `ensure_escrow_not_frozen`
+    /// for the full precedence rules). When both layers are frozen, this
+    /// layer's error (`EscrowFrozen`) is the one reported.
     pub fn freeze_escrow(
         env: Env,
         bounty_id: u64,
@@ -2736,6 +2778,10 @@ impl BountyEscrowContract {
     }
 
     /// Return the escrow data for a given bounty_id. Returns an error if not found.
+    ///
+    /// Anonymization-aware: only reads `DataKey::Escrow`, never `DataKey::EscrowAnon`,
+    /// so a bounty locked via `lock_funds_anonymous` returns `BountyNotFound` here rather
+    /// than any depositor-bearing record. See `docs/anonymous-lock-privacy.md`.
     pub fn get_escrow_info(env: Env, bounty_id: u64) -> Result<Escrow, Error> {
         env.storage()
             .persistent()
@@ -2756,6 +2802,14 @@ impl BountyEscrowContract {
     /// Freeze all release/refund operations for escrows owned by `address`.
     ///
     /// Read-only queries remain available while the freeze is active.
+    ///
+    /// # Precedence
+    /// `address` is matched against the escrow **depositor** on every
+    /// funds-out path; freezing a contributor or claim recipient has no
+    /// blocking effect. Independent of any escrow-level freeze: it blocks
+    /// all of the depositor's escrows even when none of them is individually
+    /// frozen, and unfreezing an escrow does not lift this freeze (see
+    /// `ensure_escrow_not_frozen` for the full precedence rules).
     pub fn freeze_address(
         env: Env,
         address: Address,
@@ -3634,16 +3688,39 @@ impl BountyEscrowContract {
         Self::load_capability(&env, capability_id.clone())
     }
 
-    /// Get current fee configuration (view function)
+    /// Get the current **global** fee configuration (view function).
+    ///
+    /// # Precedence
+    /// The global config is the fallback used when no per-token
+    /// `TokenFeeConfig` exists for the escrow token, and its `fee_enabled`
+    /// flag is the **master kill-switch**: when `false`, no fee is charged
+    /// for *any* token — even one with an active per-token override whose
+    /// own `fee_enabled` is `true`. The effective flag is
+    /// `global.fee_enabled AND token.fee_enabled` (see `resolve_fee_config`
+    /// and [`Self::set_token_fee_config`]).
+    ///
+    /// Note: this returns the stored global config as-is; it does not apply
+    /// any per-token override. Use `get_token_fee_config` to inspect a
+    /// token's override.
     pub fn get_fee_config(env: Env) -> FeeConfig {
         Self::get_fee_config_internal(&env)
     }
 
     /// Set a per-token fee configuration (admin only).
     ///
-    /// When a `TokenFeeConfig` is set for a given token address it takes
-    /// precedence over the global `FeeConfig` for all escrows denominated
-    /// in that token.
+    /// When a `TokenFeeConfig` is set for a given token address, its rate,
+    /// fixed-fee, and recipient fields take precedence over the global
+    /// `FeeConfig` for all escrows denominated in that token.  However, its
+    /// `fee_enabled` flag is **AND-ed** with the global kill-switch
+    /// (`FeeConfig.fee_enabled`): the per-token flag can only *further
+    /// restrict* fee collection — it can **never** re-enable fees when the
+    /// global kill-switch is `false`.
+    ///
+    /// # Precedence (resolved in `resolve_fee_config`)
+    /// 1. Global `FeeConfig.fee_enabled` — master kill-switch.
+    /// 2. `TokenFeeConfig.token` — rate/fixed/recipient overrides, but
+    ///    `fee_enabled` is AND-ed with the global flag.
+    /// 3. Global `FeeConfig` fallback — used when no per-token override exists.
     ///
     /// # Arguments
     /// * `token`            – the token contract address this config applies to
@@ -3651,7 +3728,7 @@ impl BountyEscrowContract {
     /// * `release_fee_rate` – fee rate on release in basis points (0 – 5 000)
     /// * `lock_fixed_fee` / `release_fixed_fee` – flat fees in token units (≥ 0)
     /// * `fee_recipient`    – address that receives fees for this token
-    /// * `fee_enabled`      – whether fee collection is active
+    /// * `fee_enabled`      – whether fee collection is active for this token
     ///
     /// # Errors
     /// * `NotInitialized`  – contract not yet initialised
@@ -3710,8 +3787,28 @@ impl BountyEscrowContract {
 
     /// Internal: resolve the effective fee config for the escrow token.
     ///
-    /// Precedence: `TokenFeeConfig(token)` > global `FeeConfig`.
+    /// # Precedence (global kill-switch first)
+    ///
+    /// 1. **Global `FeeConfig.fee_enabled`** is the master kill-switch.
+    ///    When `false`, no fees are collected for *any* token, regardless of
+    ///    any per-token `TokenFeeConfig` override. This lets an admin halt all
+    ///    fee collection in a single operation without needing to clear every
+    ///    per-token config.
+    ///
+    /// 2. **`TokenFeeConfig(token)`** — when present, its rate/fixed/recipient
+    ///    fields override the global `FeeConfig` for that specific token.
+    ///    However, its `fee_enabled` is **AND-ed** with the global
+    ///    `fee_enabled`: the per-token flag can only *further restrict* fee
+    ///    collection (i.e. disable it for that token), never re-enable it
+    ///    when the global kill-switch is off.
+    ///
+    /// 3. **Global `FeeConfig` fallback** — used when no per-token override
+    ///    exists.
+    ///
+    /// # Returns
+    /// `(lock_fee_rate, release_fee_rate, lock_fixed_fee, release_fixed_fee, fee_recipient, fee_enabled)`
     fn resolve_fee_config(env: &Env) -> (i128, i128, i128, i128, Address, bool) {
+        let global = Self::get_fee_config_internal(env);
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
         if let Some(tok_cfg) = env
             .storage()
@@ -3724,10 +3821,11 @@ impl BountyEscrowContract {
                 tok_cfg.lock_fixed_fee,
                 tok_cfg.release_fixed_fee,
                 tok_cfg.fee_recipient,
-                tok_cfg.fee_enabled,
+                // Global kill-switch AND per-token flag: the global can only
+                // disable fees; the per-token flag can only further restrict.
+                global.fee_enabled && tok_cfg.fee_enabled,
             )
         } else {
-            let global = Self::get_fee_config_internal(env);
             (
                 global.lock_fee_rate,
                 global.release_fee_rate,
@@ -4059,6 +4157,7 @@ impl BountyEscrowContract {
                 amount,
                 depositor: depositor.clone(),
                 deadline,
+                correlation_id: None,
             },
         );
 
@@ -4700,6 +4799,7 @@ impl BountyEscrowContract {
                 amount: escrow.amount,
                 recipient: contributor.clone(),
                 timestamp: env.ledger().timestamp(),
+                correlation_id: None,
             },
         );
 
@@ -4868,9 +4968,16 @@ impl BountyEscrowContract {
 
         let router_client = RouterClient::new(&env, &router_address);
 
-        // Approve router to spend net_payout of source asset from contract
+        // Approve router to spend net_payout of source asset from contract.
+        // `approve` expects an expiration *ledger sequence* (u32), not a timestamp.
         let deadline = env.ledger().timestamp() + 300;
-        client.approve(&env.current_contract_address(), &router_address, &net_payout, &deadline);
+        let approve_expiration_ledger = env.ledger().sequence() + 100;
+        client.approve(
+            &env.current_contract_address(),
+            &router_address,
+            &net_payout,
+            &approve_expiration_ledger,
+        );
 
         // Query the router for the expected amount out to validate slippage
         let amounts_out = router_client.get_amounts_out(&net_payout, &path);
@@ -5082,6 +5189,7 @@ impl BountyEscrowContract {
                 amount: payout_amount,
                 recipient: contributor,
                 timestamp: env.ledger().timestamp(),
+                correlation_id: None,
             },
         );
 
@@ -5818,6 +5926,10 @@ impl BountyEscrowContract {
 
     /// Get the metadata for a bounty. Returns a default (all-zero) record if
     /// no metadata has been written yet.
+    ///
+    /// Anonymization-aware: `EscrowMetadata` has no depositor-identifying field,
+    /// so this is safe to call for anonymously-locked bounties before resolution.
+    /// See `docs/anonymous-lock-privacy.md`.
     pub fn get_metadata(env: Env, bounty_id: u64) -> EscrowMetadata {
         env.storage()
             .persistent()
@@ -6047,6 +6159,7 @@ impl BountyEscrowContract {
                 amount: payout_amount,
                 recipient: contributor,
                 timestamp: env.ledger().timestamp(),
+                correlation_id: None,
             },
         );
 
@@ -6241,6 +6354,7 @@ impl BountyEscrowContract {
                 } else {
                     RefundTriggerType::DeadlineExpired
                 },
+                correlation_id: None,
             },
         );
         Self::record_receipt(
@@ -6744,6 +6858,7 @@ impl BountyEscrowContract {
                 } else {
                     RefundTriggerType::DeadlineExpired
                 },
+                correlation_id: None,
             },
         );
 
@@ -6857,6 +6972,7 @@ impl BountyEscrowContract {
                 refund_to,
                 timestamp: now,
                 trigger_type: RefundTriggerType::AdminApproval,
+                correlation_id: None,
             },
         );
 
@@ -6867,8 +6983,55 @@ impl BountyEscrowContract {
     /// Return the current per-operation gas budget configuration.
     ///
     /// Returns the fully uncapped default if no configuration has been set.
+    ///
+    /// ## ⚠ Production note
+    ///
+    /// The returned caps are **advisory-only** on the live network. CPU and
+    /// memory measurement requires `env.budget()`, which is only available
+    /// under the `testutils` feature. Call
+    /// [`get_gas_budget_advisory_status`](Self::get_gas_budget_advisory_status)
+    /// to obtain an explicit flag indicating whether caps are enforced at
+    /// runtime in the current build.
     pub fn get_gas_budget(env: Env) -> gas_budget::GasBudgetConfig {
         gas_budget::get_config(&env)
+    }
+
+    /// Return the advisory enforcement status for the current gas budget config.
+    ///
+    /// This is the **canonical query** for operators, dashboards, and auditors
+    /// to determine whether configured gas caps are being enforced at runtime.
+    ///
+    /// ## Return value
+    ///
+    /// Returns a [`gas_budget::GasBudgetAdvisoryStatus`] that includes:
+    ///
+    /// - `caps_enforced_in_production` — always `false` in production WASM.
+    /// - `caps_configured` — `true` when any non-zero cap is set.
+    /// - `enforce_flag_set` — reflects `GasBudgetConfig::enforce`.
+    /// - `config` — full snapshot of current caps for reference.
+    ///
+    /// ## Advisory event
+    ///
+    /// When `caps_configured` is `true`, a `"gas_adv"` event is emitted into
+    /// the on-chain event stream. This event is observable by indexers and
+    /// monitoring systems without decoding contract storage, and explicitly
+    /// carries `caps_enforced_in_production = false` to flag the gap.
+    ///
+    /// ## Security note
+    ///
+    /// `caps_enforced_in_production` is a compile-time constant (`false`).
+    /// It is structurally impossible for a production WASM build to return
+    /// `true` — the `env.budget()` API is unconditionally absent outside
+    /// `testutils`. Auditors can use this function as definitive confirmation
+    /// that the deployment is operating in advisory-only mode.
+    ///
+    /// See `docs/security/gas-budget-production-gap.md` for the full operator
+    /// guide and `docs/security/external-audit-checklist.md` for the auditor
+    /// checklist entry.
+    pub fn get_gas_budget_advisory_status(env: Env) -> gas_budget::GasBudgetAdvisoryStatus {
+        let status = gas_budget::advisory_status(&env);
+        gas_budget::emit_advisory_notice_if_needed(&env, &status);
+        status
     }
 
     /// Batch lock funds for multiple bounties in a single atomic transaction.
@@ -7065,6 +7228,7 @@ impl BountyEscrowContract {
                         amount: item.amount,
                         depositor: item.depositor.clone(),
                         deadline: item.deadline,
+                        correlation_id: None,
                     },
                 );
 
@@ -7081,6 +7245,7 @@ impl BountyEscrowContract {
                         .try_fold(0i128, |acc, i| acc.checked_add(i.amount))
                         .unwrap(),
                     timestamp,
+                    correlation_id: None,
                 },
             );
             Ok(locked_count)
@@ -7105,6 +7270,35 @@ impl BountyEscrowContract {
 
     /// Alias for batch_lock_funds to match the requested naming convention.
     pub fn batch_lock(env: Env, items: Vec<LockFundsItem>) -> Result<u32, Error> {
+        Self::batch_lock_funds(env, items)
+    }
+
+    /// Structure-of-Arrays (SoA) variant of `batch_lock_funds`.
+    /// Reduces host-to-guest deserialization overhead by accepting parallel arrays
+    /// of primitives instead of an array of structs.
+    pub fn batch_lock_funds_soa(
+        env: Env,
+        bounty_ids: Vec<u64>,
+        depositors: Vec<Address>,
+        amounts: Vec<i128>,
+        deadlines: Vec<u64>,
+    ) -> Result<u32, Error> {
+        if bounty_ids.len() != depositors.len()
+            || bounty_ids.len() != amounts.len()
+            || bounty_ids.len() != deadlines.len()
+        {
+            return Err(Error::BatchSizeMismatch);
+        }
+
+        let mut items = Vec::new(&env);
+        for i in 0..bounty_ids.len() {
+            items.push_back(LockFundsItem {
+                bounty_id: bounty_ids.get(i).unwrap(),
+                depositor: depositors.get(i).unwrap(),
+                amount: amounts.get(i).unwrap(),
+                deadline: deadlines.get(i).unwrap(),
+            });
+        }
         Self::batch_lock_funds(env, items)
     }
 
@@ -7274,6 +7468,7 @@ impl BountyEscrowContract {
                         amount,
                         recipient: contributor.clone(),
                         timestamp,
+                        correlation_id: None,
                     },
                 );
             }
@@ -7307,6 +7502,28 @@ impl BountyEscrowContract {
         let count = result?;
         reentrancy_guard::release(&env);
         Ok(count)
+    }
+
+    /// Structure-of-Arrays (SoA) variant of `batch_release_funds`.
+    /// Reduces host-to-guest deserialization overhead by accepting parallel arrays
+    /// of primitives instead of an array of structs.
+    pub fn batch_release_funds_soa(
+        env: Env,
+        bounty_ids: Vec<u64>,
+        contributors: Vec<Address>,
+    ) -> Result<u32, Error> {
+        if bounty_ids.len() != contributors.len() {
+            return Err(Error::BatchSizeMismatch);
+        }
+
+        let mut items = Vec::new(&env);
+        for i in 0..bounty_ids.len() {
+            items.push_back(ReleaseFundsItem {
+                bounty_id: bounty_ids.get(i).unwrap(),
+                contributor: contributors.get(i).unwrap(),
+            });
+        }
+        Self::batch_release_funds(env, items)
     }
 
     // ============================================================================
@@ -8601,6 +8818,7 @@ mod escrow_status_transition_tests {
                 amount,
                 depositor: config.depositor.clone(),
                 deadline: config.escrow_deadline,
+                correlation_id: None,
             },
         );
 
@@ -9215,6 +9433,10 @@ mod test_e2e_upgrade_with_pause;
 #[cfg(test)]
 mod test_status_transitions;
 // #[cfg(test)] mod test_upgrade_scenarios;
+
+/// Privacy-leak regression tests for anonymous-lock query paths (issue #1466).
+#[cfg(test)]
+mod test_anonymization;
 
 #[cfg(test)]
 #[path = "tests/conversion_tests.rs"]

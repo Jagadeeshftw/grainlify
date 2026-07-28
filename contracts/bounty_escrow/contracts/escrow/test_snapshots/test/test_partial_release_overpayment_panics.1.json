@@ -2046,6 +2046,12 @@
                 },
                 {
                   "key": {
+                    "symbol": "correlation_id"
+                  },
+                  "val": "void"
+                },
+                {
+                  "key": {
                     "symbol": "deadline"
                   },
                   "val": {
@@ -2370,6 +2376,12 @@
                   "val": {
                     "u64": 46
                   }
+                },
+                {
+                  "key": {
+                    "symbol": "correlation_id"
+                  },
+                  "val": "void"
                 },
                 {
                   "key": {

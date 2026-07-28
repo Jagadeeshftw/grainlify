@@ -2252,6 +2252,12 @@
                 },
                 {
                   "key": {
+                    "symbol": "correlation_id"
+                  },
+                  "val": "void"
+                },
+                {
+                  "key": {
                     "symbol": "deadline"
                   },
                   "val": {
@@ -2408,6 +2414,12 @@
                   "val": {
                     "u64": 2
                   }
+                },
+                {
+                  "key": {
+                    "symbol": "correlation_id"
+                  },
+                  "val": "void"
                 },
                 {
                   "key": {
@@ -2570,6 +2582,12 @@
                 },
                 {
                   "key": {
+                    "symbol": "correlation_id"
+                  },
+                  "val": "void"
+                },
+                {
+                  "key": {
                     "symbol": "deadline"
                   },
                   "val": {
@@ -2613,6 +2631,12 @@
             ],
             "data": {
               "map": [
+                {
+                  "key": {
+                    "symbol": "correlation_id"
+                  },
+                  "val": "void"
+                },
                 {
                   "key": {
                     "symbol": "count"
