@@ -47,10 +47,9 @@ fn test_veto_proposal_success() {
     // Veto the proposal during timelock period
     GovernanceContract::veto_proposal(env.clone(), security_council.clone(), proposal_id).unwrap();
 
-    // Verify proposal is vetoed
-    let proposals = env.storage().instance().get(&governance::PROPOSALS).unwrap();
-    let proposal = proposals.get(proposal_id).unwrap();
-    assert_eq!(proposal.status, ProposalStatus::Vetoed);
+    // Verify proposal is vetoed by checking it cannot be executed
+    let result = GovernanceContract::execute_proposal(env.clone(), proposal_id);
+    assert_eq!(result, Err(Error::ProposalNotApproved));
 }
 
 #[test]

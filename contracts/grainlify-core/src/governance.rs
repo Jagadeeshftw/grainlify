@@ -113,15 +113,15 @@ pub struct Vote {
 }
 
 /// Storage key containing the proposal map.
-pub const PROPOSALS: Symbol = symbol_short!("PROPOSALS");
+pub(crate) const PROPOSALS: Symbol = symbol_short!("PROPOSALS");
 /// Storage key containing the next governance proposal id.
-pub const PROPOSAL_COUNT: Symbol = symbol_short!("PROP_CNT");
+pub(crate) const PROPOSAL_COUNT: Symbol = symbol_short!("PROP_CNT");
 /// Storage key containing recorded votes.
-pub const VOTES: Symbol = symbol_short!("VOTES");
+pub(crate) const VOTES: Symbol = symbol_short!("VOTES");
 /// Storage key containing the immutable governance configuration.
-pub const GOVERNANCE_CONFIG: Symbol = symbol_short!("GOV_CFG");
+pub(crate) const GOVERNANCE_CONFIG: Symbol = symbol_short!("GOV_CFG");
 /// Storage key containing the Security Council address for veto power.
-pub const SECURITY_COUNCIL: Symbol = symbol_short!("SEC_COUNCIL");
+pub(crate) const SECURITY_COUNCIL: Symbol = symbol_short!("SEC_COUNCIL");
 
 /// Governance errors returned by the standalone governance contract.
 #[soroban_sdk::contracterror]
