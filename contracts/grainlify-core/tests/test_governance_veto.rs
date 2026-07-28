@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use soroban_sdk::{symbol_short, Address, BytesN, Env, Symbol};
-use crate::governance::{
+use grainlify_core::governance::{
     GovernanceContract, GovernanceConfig, ProposalStatus, VotingScheme, Error,
 };
 
