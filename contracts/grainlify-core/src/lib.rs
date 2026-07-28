@@ -828,6 +828,8 @@ mod test_contract_registry;
 mod test_config_change_timelock;
 #[cfg(test)]
 mod test_build_info_init_event;
+#[cfg(test)]
+mod test_governance_veto;
 // ==================== END MONITORING MODULE ====================
 
 #[cfg_attr(feature = "contract", contract)]

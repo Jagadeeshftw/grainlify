@@ -35,6 +35,9 @@ pub const ALREADY_VOTED: u32 = 111;
 pub const PROPOSAL_NOT_APPROVED: u32 = 112;
 pub const EXECUTION_DELAY_NOT_MET: u32 = 113;
 pub const PROPOSAL_EXPIRED: u32 = 114;
+pub const NOT_SECURITY_COUNCIL: u32 = 115;
+pub const CANNOT_VETO: u32 = 116;
+pub const SECURITY_COUNCIL_NOT_SET: u32 = 117;
 
 // 200-299: Escrow Errors
 pub const BOUNTY_EXISTS: u32 = 201;
