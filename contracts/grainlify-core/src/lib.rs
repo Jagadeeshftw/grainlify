@@ -29,7 +29,7 @@ pub mod commit_reveal;
 pub mod correlation;
 pub mod error_registry;
 pub mod errors;
-mod governance;
+pub mod governance;
 mod multisig;
 pub mod nonce;
 pub mod pseudo_randomness;
