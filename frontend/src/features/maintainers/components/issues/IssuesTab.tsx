@@ -12,6 +12,7 @@ import { IssueCardSkeleton } from '../../../../shared/components/IssueCardSkelet
 import { TimestampDisplay } from '../../../../shared/components/TimestampDisplay';
 import { CommentThread, CommentData, CommentReaction } from '../../../../shared/components';
 import RenderMarkdownContent from '../../../../app/utils/renderMarkdown';
+import { ContributionDiffViewer, type ContributionDiff } from '../../../../shared/components/ui/ContributionDiffViewer';
 
 interface Project {
   id: string;
@@ -25,6 +26,7 @@ interface IssuesTabProps {
   onRefresh?: () => void;
   initialSelectedIssueId?: string;
   initialSelectedProjectId?: string;
+  contributionDiff?: ContributionDiff | null;
   /** 'contributor' = issue detail from Dashboard (Browse): only Withdraw for own application. 'maintainer' = Maintainers Issues: Reject/Assign/Unassign */
   viewMode?: 'contributor' | 'maintainer';
 }
@@ -55,7 +57,7 @@ interface IssueFromAPI {
   last_seen_at: string;
 }
 
-export function IssuesTab({ onNavigate, selectedProjects, onRefresh, initialSelectedIssueId, initialSelectedProjectId, viewMode = 'maintainer' }: IssuesTabProps) {
+export function IssuesTab({ onNavigate, selectedProjects, onRefresh, initialSelectedIssueId, initialSelectedProjectId, contributionDiff, viewMode = 'maintainer' }: IssuesTabProps) {
   const { theme } = useTheme();
   const { userRole, user } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
@@ -970,6 +972,12 @@ Only applications submitted via the apply link above will be considered. Please 
                 Discussions
               </button>
             </div>
+
+            {contributionDiff && (
+              <div className="mb-6">
+                <ContributionDiffViewer diff={contributionDiff} status="ready" />
+              </div>
+            )}
 
             {/* Content */}
             {issueDetailTab === 'applications' && (
