@@ -3,7 +3,8 @@ import {
   validateMetricName,
   sanitizeLabelKey,
   sanitizeLabelValue,
-  defaultBusinessRegistry
+  defaultBusinessRegistry,
+  resetDefaultRegistry
 } from './businessMetrics';
 
 describe('Business Monitoring Metrics System', () => {
@@ -124,6 +125,129 @@ describe('Business Monitoring Metrics System', () => {
       defaultBusinessRegistry.incrementCounter('grainlify_bounty_created_total', 1, { ecosystem: 'soroban' });
       const exported = defaultBusinessRegistry.getMetrics();
       expect(exported.counters.some(c => c.name === 'grainlify_bounty_created_total')).toBe(true);
+    });
+  });
+
+  describe('Deterministic Output and Edge Cases', () => {
+    let registry: BusinessMetricsRegistry;
+
+    beforeEach(() => {
+      registry = new BusinessMetricsRegistry({ prefix: 'app', maxCardinalityPerMetric: 5 });
+    });
+
+    it('exports metrics in deterministic order (sorted by name and labels)', () => {
+      // Record metrics in non-alphabetical order
+      registry.incrementCounter('zebra_total', 1, { label: 'c' });
+      registry.incrementCounter('alpha_total', 1, { label: 'a' });
+      registry.incrementCounter('beta_total', 1, { label: 'b' });
+
+      const exported = registry.getMetrics();
+      expect(exported.counters[0].name).toBe('app_alpha_total');
+      expect(exported.counters[1].name).toBe('app_beta_total');
+      expect(exported.counters[2].name).toBe('app_zebra_total');
+    });
+
+    it('exports label combinations in deterministic order', () => {
+      registry.incrementCounter('test_total', 1, { z: '1', a: '2' });
+      registry.incrementCounter('test_total', 1, { m: '3' });
+
+      const exported = registry.getMetrics();
+      // Labels are sorted by key during serialization
+      expect(exported.counters[0].labels).toEqual({ a: '2', z: '1' });
+      expect(exported.counters[1].labels).toEqual({ m: '3' });
+    });
+
+    it('auto-registers metrics with default help text when not pre-registered', () => {
+      registry.incrementCounter('custom_metric_total', 5);
+      const exported = registry.getMetrics();
+      expect(exported.counters[0].name).toBe('app_custom_metric_total');
+      expect(exported.counters[0].value).toBe(5);
+    });
+
+    it('handles prefix duplication - calling with full prefixed name does not double-prefix', () => {
+      registry.incrementCounter('app_test_total', 1);
+      const exported = registry.getMetrics();
+      expect(exported.counters[0].name).toBe('app_test_total');
+      expect(exported.counters[0].name).not.toBe('app_app_test_total');
+    });
+
+    it('truncates long label values with ellipsis suffix', () => {
+      registry.incrementCounter('test_total', 1, { long: 'x'.repeat(100) });
+      const exported = registry.getMetrics();
+      expect(exported.counters[0].labels.long).toBe('x'.repeat(64) + '...');
+    });
+
+    it('uses hardcoded overflow key format for cardinality protection', () => {
+      // Record more unique label combinations than maxCardinality
+      for (let i = 0; i < 6; i++) {
+        registry.incrementCounter('test_total', 1, { id: `unique_${i}` });
+      }
+
+      const exported = registry.getMetrics();
+      const overflowMetric = exported.counters.find(c => c.labels.overflow === 'true');
+      expect(overflowMetric).toBeDefined();
+      expect(overflowMetric?.labels).toEqual({ overflow: 'true' });
+    });
+
+    it('handles empty label sets consistently', () => {
+      registry.incrementCounter('test_total', 1, {});
+      registry.incrementCounter('test_total', 1);
+
+      const exported = registry.getMetrics();
+      // Both should result in the same label key (empty)
+      expect(exported.counters).toHaveLength(1);
+      expect(exported.counters[0].value).toBe(2);
+      expect(exported.counters[0].labels).toEqual({});
+    });
+
+    it('handles special characters in label keys deterministically', () => {
+      registry.incrementCounter('test_total', 1, { 'user-id': '123', 'http.status': '200' });
+      const exported = registry.getMetrics();
+      expect(exported.counters[0].labels).toEqual({ 'user_id': '123', 'http_status': '200' });
+    });
+
+    it('handles numeric-first label keys by prefixing with underscore', () => {
+      registry.incrementCounter('test_total', 1, { '123key': 'value' });
+      const exported = registry.getMetrics();
+      expect(exported.counters[0].labels).toEqual({ _123key: 'value' });
+    });
+
+    it('handles null and undefined label values as "unknown"', () => {
+      registry.incrementCounter('test_total', 1, { null_val: null, undef_val: undefined });
+      const exported = registry.getMetrics();
+      expect(exported.counters[0].labels.null_val).toBe('unknown');
+      expect(exported.counters[0].labels.undef_val).toBe('unknown');
+    });
+
+    it('handles empty string label values as "unknown"', () => {
+      registry.incrementCounter('test_total', 1, { empty: '' });
+      const exported = registry.getMetrics();
+      expect(exported.counters[0].labels.empty).toBe('unknown');
+    });
+
+    it('resets default registry in test environment', () => {
+      // Set NODE_ENV to test for this test
+      const originalEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'test';
+
+      defaultBusinessRegistry.incrementCounter('grainlify_bounty_created_total', 10);
+      resetDefaultRegistry();
+      const exported = defaultBusinessRegistry.getMetrics();
+      expect(exported.counters.length).toBe(0);
+
+      process.env.NODE_ENV = originalEnv;
+    });
+
+    it('does not reset default registry in non-test environment', () => {
+      const originalEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+
+      defaultBusinessRegistry.incrementCounter('grainlify_bounty_created_total', 10);
+      resetDefaultRegistry();
+      const exported = defaultBusinessRegistry.getMetrics();
+      expect(exported.counters.length).toBeGreaterThan(0);
+
+      process.env.NODE_ENV = originalEnv;
     });
   });
 });
