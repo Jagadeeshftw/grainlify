@@ -688,11 +688,6 @@ pub enum ContractError {
     InvalidRoleProposal = 1207,
     RoleRotationNotAllowed = 1208,
 
-    /// FoT (fee-on-transfer) routing failed.
-    ///
-    /// This error occurs when the fee-on-transfer router cannot process the transfer.
-    FotRoutingFailed = 1209,
-
     /// Role rotation timelock is active.
     ///
     /// This error occurs when role rotation is temporarily disabled
@@ -708,6 +703,14 @@ pub enum ContractError {
     /// This error occurs when the FoT router contract returns an unexpected
     /// result or the routing calculation overflows.
     FotRoutingFailed = 1210,
+
+    /// Fee-on-transfer router quote exceeded the configured maximum multiplier.
+    ///
+    /// This error occurs when `router.quote()` returns a gross amount larger
+    /// than `net_amount * max_fot_multiplier_bps / BASIS_POINTS`, which is
+    /// rejected to prevent a malicious or misconfigured router from draining
+    /// the program's remaining balance.
+    FotRouterQuoteExceeded = 1211,
 
     // =========================================================================
     // Dynamic Pricing Errors (1300-1399)
@@ -955,6 +958,9 @@ impl ContractError {
 
             // FoT Router Errors
             ContractError::FotRoutingFailed => "FoT routing failed",
+            ContractError::FotRouterQuoteExceeded => {
+                "FoT router quote exceeded configured maximum multiplier"
+            }
 
             // Role Management Errors
             ContractError::AdminRotationInProgress => "Admin rotation already in progress",

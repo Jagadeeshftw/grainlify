@@ -122,7 +122,7 @@ mod dummy_escrow {
             _limit: u32,
         ) -> Vec<EscrowWithId> {
             let mut result = Vec::new(&env);
-             result.push_back(EscrowWithId {
+            result.push_back(EscrowWithId {
                 bounty_id: 1,
                 escrow: Escrow {
                     depositor: depositor.clone(),
@@ -131,8 +131,29 @@ mod dummy_escrow {
                     status: EscrowStatus::Locked,
                     deadline: 123456789,
                     schema_version: 1,
-                }
-             });
+                },
+            });
+            result
+        }
+
+        pub fn query_escrows_by_beneficiary(
+            env: Env,
+            beneficiary: Address,
+            _offset: u32,
+            _limit: u32,
+        ) -> Vec<EscrowWithId> {
+            let mut result = Vec::new(&env);
+            result.push_back(EscrowWithId {
+                bounty_id: 2,
+                escrow: Escrow {
+                    depositor: beneficiary.clone(),
+                    amount: 500,
+                    remaining_amount: 500,
+                    status: EscrowStatus::Released,
+                    deadline: 987654321,
+                    schema_version: 1,
+                },
+            });
             result
         }
 
@@ -217,9 +238,11 @@ fn test_get_user_portfolio() {
     // Dummy returns one locked iteration for any depositor
     assert_eq!(portfolio.as_depositor.len(), 1);
     assert_eq!(portfolio.as_depositor.get(0).unwrap().bounty_id, 1);
-    
-    // Beneficiary lists are empty out-of-the-box until tickets are aggregated
-    assert_eq!(portfolio.as_beneficiary.len(), 0);
+
+    // Beneficiary returns escrow from query_escrows_by_beneficiary
+    assert_eq!(portfolio.as_beneficiary.len(), 1);
+    assert_eq!(portfolio.as_beneficiary.get(0).unwrap().bounty_id, 2);
+    assert_eq!(portfolio.as_beneficiary.get(0).unwrap().status, EscrowStatus::Released);
 }
 
 #[test]

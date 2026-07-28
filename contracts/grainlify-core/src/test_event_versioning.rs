@@ -238,6 +238,7 @@ fn upgrade_event_struct_has_event_version_field() {
         previous_version: 1,
         timestamp: 0,
         event_version: EVENT_SCHEMA_VERSION,
+        correlation_id: None,
     };
     assert_eq!(ev.event_version, EVENT_SCHEMA_VERSION);
 }
@@ -251,6 +252,7 @@ fn read_only_mode_event_struct_has_event_version_field() {
         admin,
         timestamp: 0,
         event_version: EVENT_SCHEMA_VERSION,
+        correlation_id: None,
     };
     assert_eq!(ev.event_version, EVENT_SCHEMA_VERSION);
 }
@@ -282,6 +284,7 @@ fn migration_event_struct_has_event_version_field() {
         success: true,
         error_message: None,
         event_version: EVENT_SCHEMA_VERSION,
+        correlation_id: None,
     };
     assert_eq!(ev.event_version, EVENT_SCHEMA_VERSION);
 }
@@ -313,6 +316,7 @@ fn version_mismatch_detected_for_stale_version() {
         admin,
         timestamp: 1_000,
         event_version: 0, // stale — pre-versioning
+        correlation_id: None,
     };
     assert!(!crate::is_compatible_event_version(ev.event_version));
 }
@@ -326,6 +330,7 @@ fn version_mismatch_detected_for_future_version() {
         previous_version: 2,
         timestamp: 5_000,
         event_version: EVENT_SCHEMA_VERSION + 99, // from a future contract version
+        correlation_id: None,
     };
     assert!(!crate::is_compatible_event_version(ev.event_version));
 }
@@ -340,6 +345,7 @@ fn current_version_events_are_always_compatible() {
         previous_version: 1,
         timestamp: 0,
         event_version: EVENT_SCHEMA_VERSION,
+        correlation_id: None,
     };
     assert!(crate::is_compatible_event_version(upgrade_ev.event_version));
 
@@ -348,6 +354,7 @@ fn current_version_events_are_always_compatible() {
         admin: Address::generate(&env),
         timestamp: 0,
         event_version: EVENT_SCHEMA_VERSION,
+        correlation_id: None,
     };
     assert!(crate::is_compatible_event_version(ro_ev.event_version));
 
@@ -370,6 +377,7 @@ fn current_version_events_are_always_compatible() {
         success: true,
         error_message: None,
         event_version: EVENT_SCHEMA_VERSION,
+        correlation_id: None,
     };
     assert!(crate::is_compatible_event_version(mig_ev.event_version));
 

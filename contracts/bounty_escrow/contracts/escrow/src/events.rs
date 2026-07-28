@@ -33,6 +33,7 @@
 //!   which would corrupt topic-based filtering.
 use crate::CapabilityAction;
 use soroban_sdk::{contracttype, symbol_short, Address, BytesN, Env, Symbol};
+use grainlify_core::CorrelationId;
 
 // ── Version constant ─────────────────────────────────────────────────────────
 
@@ -209,6 +210,8 @@ pub struct FundsLocked {
     pub amount: i128,       //  gross amount deposited
     pub depositor: Address, // address that does the deposit
     pub deadline: u64,
+    /// Optional correlation identifier linking this event across multi-contract workflows.
+    pub correlation_id: Option<CorrelationId>,
 }
 
 /// Emit [`FundsLocked`].
@@ -246,6 +249,8 @@ pub struct FundsReleased {
     pub amount: i128,       // amount transferred to `recipient`
     pub recipient: Address, // the contributor wallet address that received the funds.
     pub timestamp: u64,
+    /// Optional correlation identifier linking this event across multi-contract workflows.
+    pub correlation_id: Option<CorrelationId>,
 }
 
 /// Emit [`FundsReleased`].
@@ -352,6 +357,8 @@ pub struct FundsRefunded {
     pub timestamp: u64,
     /// Which code path triggered this refund.
     pub trigger_type: RefundTriggerType,
+    /// Optional correlation identifier linking this event across multi-contract workflows.
+    pub correlation_id: Option<CorrelationId>,
 }
 
 /// Emit [`FundsRefunded`].
@@ -501,6 +508,8 @@ pub struct BatchFundsLocked {
     pub count: u32,         //  numbers of escrows created in this batch.
     pub total_amount: i128, // the sum of all locked amounts in this batch.
     pub timestamp: u64,
+    /// Optional correlation identifier linking this event across multi-contract workflows.
+    pub correlation_id: Option<CorrelationId>,
 }
 
 /// Emit [`BatchFundsLocked`]
@@ -595,6 +604,52 @@ pub fn emit_fee_routing_updated(env: &Env, event: FeeRoutingUpdated) {
     let topics = (symbol_short!("fee_rte"), event.bounty_id);
     env.events().publish(topics, event.clone());
 }
+
+/// Payload for the [`emit_fee_routing_changed`] audit event.
+///
+/// Emitted alongside [`FeeRoutingUpdated`] whenever a per-bounty fee routing
+/// change is accepted — on both the pre-lock `set_fee_routing` path and the
+/// audited post-lock `set_fee_routing_with_reason` path. It captures the
+/// previous and new destinations, the admin that made the change, whether the
+/// post-lock override path was used, and the mandatory reason supplied on
+/// that path, so indexers can reconstruct the full routing history without
+/// inspecting storage.
+///
+/// ### Topics
+/// | Index | Value |
+/// |-------|-------|
+/// | 0 | `"fee_rchg"` |
+/// | 1 | `bounty_id: u64` |
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeeRoutingChanged {
+    pub version: u32,
+    /// Bounty this routing change applies to.
+    pub bounty_id: u64,
+    /// Treasury recipient before this change (`None` on first configuration).
+    pub old_treasury_recipient: Option<Address>,
+    /// Partner recipient before this change, if any.
+    pub old_partner_recipient: Option<Address>,
+    /// Treasury recipient after this change.
+    pub new_treasury_recipient: Address,
+    /// Partner recipient after this change, if any.
+    pub new_partner_recipient: Option<Address>,
+    /// Admin that performed the change.
+    pub changed_by: Address,
+    /// `true` when the change used the post-lock `set_fee_routing_with_reason` path.
+    pub post_lock_override: bool,
+    /// Mandatory reason on the post-lock path; `None` on the pre-lock path.
+    pub reason: Option<soroban_sdk::String>,
+    /// Ledger timestamp.
+    pub timestamp: u64,
+}
+
+/// Emit [`FeeRoutingChanged`]
+pub fn emit_fee_routing_changed(env: &Env, event: FeeRoutingChanged) {
+    let topics = (symbol_short!("fee_rchg"), event.bounty_id);
+    env.events().publish(topics, event.clone());
+}
+
 
 /// Payload for the [`emit_fee_routed`] event
 ///

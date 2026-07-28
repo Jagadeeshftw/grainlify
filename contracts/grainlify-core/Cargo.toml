@@ -30,3 +30,7 @@ opt-level = "z"
 lto = true
 codegen-units = 1
 panic = "abort"
+
+[profile.test]
+overflow-checks = true
+debug = 0

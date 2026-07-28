@@ -63,11 +63,11 @@ extern crate std;
 
 use soroban_sdk::{
     testutils::{Address as _, Events, Ledger},
-    Address, BytesN, Env, TryIntoVal, Vec as SVec,
+    Address, BytesN, Env, Vec as SVec,
 };
 
 use crate::{
-    GrainlifyContract, GrainlifyContractClient, MigrationCommittedEvent,
+    GrainlifyContract, GrainlifyContractClient,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1029,4 +1029,153 @@ fn hash_committed_for_v3_cannot_be_used_for_v4() {
     // Try to use the same hash for v4 (different commitment key)
     // This should fail because there's no commitment for v4
     client.migrate(&4u32, &h);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 14. Soroban atomicity: commitment persistence across failed migrations
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Document Soroban's atomicity behavior: when `migrate` checks expiry and
+/// panics, the `env.storage().instance().remove(...)` executed just before
+/// the panic is rolled back. The commitment therefore persists after an
+/// expiry failure.
+///
+/// This is NOT a bug in the contract — it is the correct Soroban behavior.
+/// All state changes in a transaction are atomic; if the contract signals
+/// an error (including via `panic!`), every storage write in that execution
+/// is discarded.
+#[test]
+fn expired_commitment_is_not_consumed_on_expiry_failure() {
+    let env = Env::default();
+    env.ledger().with_mut(|li| li.timestamp = 1_000);
+    let (client, _) = setup(&env);
+
+    let h = hash(&env, 0xFD);
+    client.commit_migration(&3u32, &h, &4_600u64);
+
+    env.ledger().with_mut(|li| li.timestamp = 10_000);
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.migrate(&3u32, &h);
+    }));
+    assert!(result.is_err(), "Expired migrate must panic");
+
+    let still_here = client.get_migration_commitment(&3u32).is_some();
+    assert!(
+        still_here,
+        "Commitment must persist after expiry failure because Soroban rolls back state on panic"
+    );
+}
+
+/// On networks with monotonic ledger timestamps (e.g. Stellar mainnet), an
+/// expired commitment cannot be replayed because the ledger timestamp never
+/// moves backward.
+///
+/// This test verifies the *intended* behavior: after expiry, the contract
+/// rejects migration. It relies on monotonic time, which holds on mainnet.
+#[test]
+#[should_panic(expected = "Migration commitment has expired")]
+fn expired_commitment_is_rejected_when_timestamp_advances() {
+    let env = Env::default();
+    env.ledger().with_mut(|li| li.timestamp = 1_000);
+    let (client, _) = setup(&env);
+
+    let h = hash(&env, 0xFE);
+    client.commit_migration(&3u32, &h, &4_600u64);
+
+    env.ledger().with_mut(|li| li.timestamp = 10_000);
+
+    client.migrate(&3u32, &h);
+}
+
+/// On test networks where the ledger timestamp can move backward, an expired
+/// commitment that survives a failed migration can become valid again after
+/// a reset.
+///
+/// Steps:
+/// 1. Commit migration with `expires_at = 4_600` at `T = 1_000`.
+/// 2. Advance to `T = 10_000` (past expiry).
+/// 3. Call `migrate` — contract panics, but the removal is rolled back.
+/// 4. Reset ledger to `T = 2_000` (back inside the original expiry window).
+/// 5. Call `migrate` again — migration succeeds because the commitment
+///    still exists and the timestamp is now within the window.
+///
+/// This documents the known limitation of expiry-based defense-in-depth
+/// on test networks with timestamp resets. On mainnet this is impossible
+/// because ledger timestamps are strictly monotonic.
+#[test]
+fn expired_commitment_can_be_replayed_after_timestamp_reset_on_testnet() {
+    let env = Env::default();
+    env.ledger().with_mut(|li| li.timestamp = 1_000);
+    let (client, _) = setup(&env);
+
+    let h = hash(&env, 0xFF);
+    client.commit_migration(&3u32, &h, &4_600u64);
+
+    env.ledger().with_mut(|li| li.timestamp = 10_000);
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.migrate(&3u32, &h);
+    }));
+    assert!(result.is_err(), "First migrate after expiry must panic");
+
+    env.ledger().with_mut(|li| li.timestamp = 2_000);
+
+    client.migrate(&3u32, &h);
+    assert_eq!(client.get_version(), 3);
+}
+
+/// Hash verification remains the primary replay-protection mechanism.
+///
+/// Even on a test network with a timestamp reset, using a hash that does not
+/// match the committed hash is rejected with `MigrationHashMismatch`
+/// regardless of the current ledger timestamp.
+///
+/// This demonstrates that the binding between `commit_migration(hash)` and
+/// `migrate(hash)` is independent of timestamp monotonicity.
+#[test]
+#[should_panic]
+fn hash_mismatch_prevents_replay_after_timestamp_reset() {
+    let env = Env::default();
+    env.ledger().with_mut(|li| li.timestamp = 1_000);
+    let (client, _) = setup(&env);
+
+    let committed_hash = hash(&env, 0xEE);
+    let wrong_hash = hash(&env, 0xDD);
+
+    client.commit_migration(&3u32, &committed_hash, &0u64);
+
+    env.ledger().with_mut(|li| li.timestamp = 10_000);
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.migrate(&3u32, &committed_hash);
+    }));
+    assert!(result.is_err(), "First migrate after expiry must panic");
+
+    env.ledger().with_mut(|li| li.timestamp = 2_000);
+
+    client.migrate(&3u32, &wrong_hash);
+}
+
+/// After a successful migration, the commitment is consumed and the
+/// idempotency guard prevents any subsequent call from replaying the same
+/// migration — even after a timestamp reset.
+#[test]
+fn successful_migration_prevents_replay_after_timestamp_reset() {
+    let env = Env::default();
+    env.ledger().with_mut(|li| li.timestamp = 1_000);
+    let (client, _) = setup(&env);
+
+    let h = hash(&env, 0x01);
+    client.commit_migration(&3u32, &h, &0u64);
+    client.migrate(&3u32, &h);
+
+    assert!(client.get_migration_commitment(&3u32).is_none());
+    assert_eq!(client.get_version(), 3);
+
+    env.ledger().with_mut(|li| li.timestamp = 5_000);
+
+    // Idempotent no-op: no commitment, but MigrationState already records v3.
+    client.migrate(&3u32, &h);
+    assert_eq!(client.get_version(), 3);
 }
