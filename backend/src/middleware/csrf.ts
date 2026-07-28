@@ -3,6 +3,16 @@
  * 
  * Provides state parameter encoding/decoding, origin validation for open redirect prevention,
  * CSRF token verification, and Express middleware for browser-facing API requests.
+ * 
+ * Security Edge Cases Handled:
+ * - Header type validation: Safely extracts string values from headers that may be arrays, strings, or undefined
+ * - Method validation: Defaults to GET (safe method) if method header is non-string or undefined
+ * - Origin validation: Both Origin and Referer headers are validated as valid URLs before checking allowlist
+ * - Config validation: corsOrigins and frontendBaseUrl are type-checked before use
+ * - State decoding: Ensures CSRF token is non-empty after extraction from pipe-separated format
+ * - Base64 decoding: Validates input is non-empty string before decoding
+ * - Empty CSRF tokens: Falls back to legacy format if extracted token is empty
+ * - Array headers: Extracts first string element; treats non-string elements or empty arrays as missing
  */
 
 export interface SecurityConfig {
@@ -103,8 +113,8 @@ export function isAllowedRedirectURI(redirectURI: string, config: SecurityConfig
     return true;
   }
 
-  // Check explicit CORS origins
-  if (config.corsOrigins && config.corsOrigins.trim() !== '') {
+  // Check explicit CORS origins with type validation
+  if (config.corsOrigins && typeof config.corsOrigins === 'string' && config.corsOrigins.trim() !== '') {
     const origins = config.corsOrigins.split(',').map(o => o.trim()).filter(Boolean);
     for (const allowed of origins) {
       const normalizedAllowed = normalizeAllowedOrigin(allowed);
@@ -114,8 +124,8 @@ export function isAllowedRedirectURI(redirectURI: string, config: SecurityConfig
     }
   }
 
-  // Check FrontendBaseURL
-  if (config.frontendBaseUrl && config.frontendBaseUrl.trim() !== '') {
+  // Check FrontendBaseURL with type validation
+  if (config.frontendBaseUrl && typeof config.frontendBaseUrl === 'string' && config.frontendBaseUrl.trim() !== '') {
     const baseUrl = config.frontendBaseUrl.trim();
     const normalizedBase = normalizeAllowedOrigin(baseUrl);
     if (origin === normalizedBase || origin === baseUrl || origin.startsWith(normalizedBase + '/')) {
@@ -163,11 +173,15 @@ export function decodeStateWithRedirect(encodedState: string): DecodedState {
 
   try {
     const decoded = base64UrlDecode(trimmedState);
+    // Use first pipe as separator to handle redirect URIs containing pipes in query params
     const firstPipeIndex = decoded.indexOf('|');
     if (firstPipeIndex !== -1) {
       const csrfToken = decoded.substring(0, firstPipeIndex);
       const redirectURI = decoded.substring(firstPipeIndex + 1);
-      return { csrfToken, redirectURI };
+      // Ensure CSRF token is not empty after extraction
+      if (csrfToken) {
+        return { csrfToken, redirectURI };
+      }
     }
   } catch {
     // If base64 decoding fails, fall back to treating entire state as raw CSRF token
@@ -194,6 +208,9 @@ function base64UrlEncode(str: string): string {
  * Helper: Base64URL decode string
  */
 function base64UrlDecode(str: string): string {
+  if (!str || typeof str !== 'string') {
+    throw new Error('Invalid input for base64 decode');
+  }
   let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
   while (base64.length % 4 !== 0) {
     base64 += '=';
@@ -240,7 +257,8 @@ export function validateCSRFToken(tokenFromRequest: string, tokenFromStorage: st
  */
 export function createCsrfMiddleware(config: SecurityConfig = {}) {
   return function csrfMiddleware(req: RequestWithHeaders, res: ResponseWithStatus, next: NextFunction) {
-    const method = (req.method || 'GET').toUpperCase();
+    // Validate method is a string before uppercasing
+    const method = typeof req.method === 'string' ? req.method.toUpperCase() : 'GET';
 
     // Safe methods (GET, HEAD, OPTIONS) do not alter server state
     if (['GET', 'HEAD', 'OPTIONS'].includes(method)) {
@@ -248,9 +266,11 @@ export function createCsrfMiddleware(config: SecurityConfig = {}) {
     }
 
     const headers = req.headers || {};
-    const originHeader = Array.isArray(headers['origin']) ? headers['origin'][0] : headers['origin'];
-    const refererHeader = Array.isArray(headers['referer']) ? headers['referer'][0] : headers['referer'];
-    const csrfTokenHeader = Array.isArray(headers['x-csrf-token']) ? headers['x-csrf-token'][0] : headers['x-csrf-token'];
+    
+    // Safely extract headers with type validation
+    const originHeader = extractFirstStringHeader(headers['origin']);
+    const refererHeader = extractFirstStringHeader(headers['referer']);
+    const csrfTokenHeader = extractFirstStringHeader(headers['x-csrf-token']);
 
     const isBrowserRequest = Boolean(originHeader || refererHeader);
 
@@ -260,14 +280,20 @@ export function createCsrfMiddleware(config: SecurityConfig = {}) {
     }
 
     // Browser request requires valid CSRF token header
-    if (!csrfTokenHeader || typeof csrfTokenHeader !== 'string' || csrfTokenHeader.trim() === '') {
+    if (!csrfTokenHeader || csrfTokenHeader.trim() === '') {
       return res.status(403).json({ error: 'missing_csrf_token', message: 'CSRF token is required for browser-facing requests' });
     }
 
     // Determine request origin from Origin or Referer header
     let requestOrigin: string | null = null;
     if (originHeader) {
-      requestOrigin = originHeader;
+      // Validate Origin header is a valid URL format
+      try {
+        const parsed = new URL(originHeader);
+        requestOrigin = parsed.origin;
+      } catch {
+        return res.status(403).json({ error: 'disallowed_origin', message: 'Malformed Origin header' });
+      }
     } else if (refererHeader) {
       try {
         requestOrigin = new URL(refererHeader).origin;
@@ -282,5 +308,20 @@ export function createCsrfMiddleware(config: SecurityConfig = {}) {
 
     return next();
   };
+}
+
+/**
+ * Safely extracts the first string value from a header that may be a string, string array, or undefined.
+ * Returns undefined if the header is missing, not a string/array, or array is empty/contains non-strings.
+ */
+function extractFirstStringHeader(headerValue: string | string[] | undefined): string | undefined {
+  if (typeof headerValue === 'string') {
+    return headerValue;
+  }
+  if (Array.isArray(headerValue) && headerValue.length > 0) {
+    const first = headerValue[0];
+    return typeof first === 'string' ? first : undefined;
+  }
+  return undefined;
 }
 

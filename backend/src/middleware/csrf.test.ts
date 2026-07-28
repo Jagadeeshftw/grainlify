@@ -45,6 +45,20 @@ describe('CSRF and Browser Security Edge Cases', () => {
       expect(isAllowedRedirectURI('http://user:password@localhost:3000')).toBe(false);
       expect(isAllowedRedirectURI('https://admin:secret@my-app.vercel.app')).toBe(false);
     });
+
+    it('handles non-string config values gracefully', () => {
+      const configWithNonStrings = { corsOrigins: 123 as any, frontendBaseUrl: {} as any };
+      // Should not throw, just reject non-configured origins
+      expect(isAllowedRedirectURI('https://untrusted.com', configWithNonStrings)).toBe(false);
+      // Localhost still allowed regardless of config
+      expect(isAllowedRedirectURI('http://localhost:3000', configWithNonStrings)).toBe(true);
+    });
+
+    it('handles null/undefined config values gracefully', () => {
+      const configWithNulls = { corsOrigins: null as any, frontendBaseUrl: undefined as any };
+      expect(isAllowedRedirectURI('https://untrusted.com', configWithNulls)).toBe(false);
+      expect(isAllowedRedirectURI('http://localhost:3000', configWithNulls)).toBe(true);
+    });
   });
 
   describe('encodeStateWithRedirect and decodeStateWithRedirect', () => {
@@ -90,6 +104,26 @@ describe('CSRF and Browser Security Edge Cases', () => {
       expect(decodeStateWithRedirect('   ')).toEqual({ csrfToken: '', redirectURI: '' });
       expect(decodeStateWithRedirect(null as any)).toEqual({ csrfToken: '', redirectURI: '' });
       expect(encodeStateWithRedirect(null as any)).toBe('');
+    });
+
+    it('handles state with empty CSRF token after pipe separator', () => {
+      // Manually construct base64url encoded string with empty token
+      const payload = '|https://my-app.vercel.app';
+      const encoded = Buffer.from(payload, 'utf-8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      const decoded = decodeStateWithRedirect(encoded);
+      // Falls back to legacy format when CSRF token is empty
+      expect(decoded.csrfToken).toBe(encoded);
+      expect(decoded.redirectURI).toBe('');
+    });
+
+    it('handles state with only pipe separator', () => {
+      // Manually construct base64url encoded string with only pipe
+      const payload = '|';
+      const encoded = Buffer.from(payload, 'utf-8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      const decoded = decodeStateWithRedirect(encoded);
+      // Falls back to legacy format when CSRF token is empty
+      expect(decoded.csrfToken).toBe(encoded);
+      expect(decoded.redirectURI).toBe('');
     });
   });
 
@@ -222,6 +256,94 @@ describe('CSRF and Browser Security Edge Cases', () => {
       csrfMiddleware(reqInvalid, resInvalid, () => { nextInvalid = true; });
       expect(nextInvalid).toBe(false);
       expect(resInvalid.statusCode).toBe(403);
+    });
+
+    it('rejects malformed Origin header', () => {
+      const req: RequestWithHeaders = {
+        method: 'POST',
+        headers: {
+          origin: 'not-a-valid-url',
+          'x-csrf-token': 'valid_token'
+        }
+      };
+      const res = createMockRes();
+      let nextCalled = false;
+      csrfMiddleware(req, res, () => { nextCalled = true; });
+      expect(nextCalled).toBe(false);
+      expect(res.statusCode).toBe(403);
+      expect(res.body).toEqual({ error: 'disallowed_origin', message: 'Malformed Origin header' });
+    });
+
+    it('handles array headers safely (extracts first string element)', () => {
+      const req: RequestWithHeaders = {
+        method: 'POST',
+        headers: {
+          origin: ['https://app.grainlify.io', 'https://other.com'],
+          'x-csrf-token': ['valid_token']
+        }
+      };
+      const res = createMockRes();
+      let nextCalled = false;
+      csrfMiddleware(req, res, () => { nextCalled = true; });
+      expect(nextCalled).toBe(true);
+    });
+
+    it('handles array headers with non-string elements (treats as missing)', () => {
+      const req: RequestWithHeaders = {
+        method: 'POST',
+        headers: {
+          origin: [123 as any],
+          'x-csrf-token': 'valid_token'
+        }
+      };
+      const res = createMockRes();
+      let nextCalled = false;
+      csrfMiddleware(req, res, () => { nextCalled = true; });
+      // Non-browser request (no valid origin) allowed through
+      expect(nextCalled).toBe(true);
+    });
+
+    it('handles empty array headers (treats as missing)', () => {
+      const req: RequestWithHeaders = {
+        method: 'POST',
+        headers: {
+          origin: [],
+          'x-csrf-token': 'valid_token'
+        }
+      };
+      const res = createMockRes();
+      let nextCalled = false;
+      csrfMiddleware(req, res, () => { nextCalled = true; });
+      // Non-browser request (no origin) allowed through
+      expect(nextCalled).toBe(true);
+    });
+
+    it('handles non-string method header (defaults to GET)', () => {
+      const req: RequestWithHeaders = {
+        method: 123 as any,
+        headers: {
+          origin: 'https://app.grainlify.io'
+        }
+      };
+      const res = createMockRes();
+      let nextCalled = false;
+      csrfMiddleware(req, res, () => { nextCalled = true; });
+      // Defaults to GET (safe method), allowed through
+      expect(nextCalled).toBe(true);
+    });
+
+    it('handles undefined method header (defaults to GET)', () => {
+      const req: RequestWithHeaders = {
+        method: undefined as any,
+        headers: {
+          origin: 'https://app.grainlify.io'
+        }
+      };
+      const res = createMockRes();
+      let nextCalled = false;
+      csrfMiddleware(req, res, () => { nextCalled = true; });
+      // Defaults to GET (safe method), allowed through
+      expect(nextCalled).toBe(true);
     });
   });
 
