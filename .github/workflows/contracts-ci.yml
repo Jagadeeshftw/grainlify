@@ -107,3 +107,8 @@ jobs:
         run: |
           cd contracts/program-escrow
           cargo test
+
+      - name: Test program-escrow archival + pending schedules (issue 1493)
+        run: |
+          cd contracts/program-escrow
+          cargo test test_archival 2>&1
