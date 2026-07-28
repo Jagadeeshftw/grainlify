@@ -605,6 +605,52 @@ pub fn emit_fee_routing_updated(env: &Env, event: FeeRoutingUpdated) {
     env.events().publish(topics, event.clone());
 }
 
+/// Payload for the [`emit_fee_routing_changed`] audit event.
+///
+/// Emitted alongside [`FeeRoutingUpdated`] whenever a per-bounty fee routing
+/// change is accepted — on both the pre-lock `set_fee_routing` path and the
+/// audited post-lock `set_fee_routing_with_reason` path. It captures the
+/// previous and new destinations, the admin that made the change, whether the
+/// post-lock override path was used, and the mandatory reason supplied on
+/// that path, so indexers can reconstruct the full routing history without
+/// inspecting storage.
+///
+/// ### Topics
+/// | Index | Value |
+/// |-------|-------|
+/// | 0 | `"fee_rchg"` |
+/// | 1 | `bounty_id: u64` |
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeeRoutingChanged {
+    pub version: u32,
+    /// Bounty this routing change applies to.
+    pub bounty_id: u64,
+    /// Treasury recipient before this change (`None` on first configuration).
+    pub old_treasury_recipient: Option<Address>,
+    /// Partner recipient before this change, if any.
+    pub old_partner_recipient: Option<Address>,
+    /// Treasury recipient after this change.
+    pub new_treasury_recipient: Address,
+    /// Partner recipient after this change, if any.
+    pub new_partner_recipient: Option<Address>,
+    /// Admin that performed the change.
+    pub changed_by: Address,
+    /// `true` when the change used the post-lock `set_fee_routing_with_reason` path.
+    pub post_lock_override: bool,
+    /// Mandatory reason on the post-lock path; `None` on the pre-lock path.
+    pub reason: Option<soroban_sdk::String>,
+    /// Ledger timestamp.
+    pub timestamp: u64,
+}
+
+/// Emit [`FeeRoutingChanged`]
+pub fn emit_fee_routing_changed(env: &Env, event: FeeRoutingChanged) {
+    let topics = (symbol_short!("fee_rchg"), event.bounty_id);
+    env.events().publish(topics, event.clone());
+}
+
+
 /// Payload for the [`emit_fee_routed`] event
 ///
 /// Emitted when a split fee is distributed to multiple recipients.

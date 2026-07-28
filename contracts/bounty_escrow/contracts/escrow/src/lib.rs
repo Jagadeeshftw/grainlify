@@ -45,6 +45,8 @@ mod test_fee_on_transfer;
 #[cfg(test)]
 mod test_filter_pagination;
 #[cfg(test)]
+mod test_fee_routing;
+#[cfg(test)]
 mod test_multi_token_fees;
 #[cfg(test)]
 mod test_frozen_balance;
@@ -669,6 +671,9 @@ pub enum Error {
     RouterNotConfigured = 58,
     /// Slippage exceeded the maximum allowed bps
     SlippageExceeded = 59,
+    /// Per-bounty fee routing is immutable once the bounty is Locked (or any
+    /// later status); use `set_fee_routing_with_reason` for audited overrides.
+    FeeRoutingLocked = 60,
 }
 
 /// Bit flag: escrow or payout should be treated as elevated risk (indexers, UIs).
@@ -2098,11 +2103,22 @@ impl BountyEscrowContract {
 
     // ── Per-bounty fee routing ────────────────────────────────────────────────
 
-    /// Set a per-bounty fee routing override (admin only).
+    /// Set a per-bounty fee routing override (admin only, **pre-lock only**).
     ///
     /// When set, fees collected for `bounty_id` are split between
     /// `treasury_recipient` and an optional `partner_recipient` according to
     /// the supplied basis-point shares instead of using the global routing.
+    ///
+    /// # Immutability guard
+    /// Routing can only be set through this path while the bounty is still in
+    /// `Draft` status. Once it transitions to `Locked` (or any later status)
+    /// — i.e. once depositors have committed funds under the routing they
+    /// observed — this call fails with [`Error::FeeRoutingLocked`]. Anonymous
+    /// escrows are created directly in `Locked` status, so they are always
+    /// post-lock here. To change routing after lock, use the audited
+    /// [`Self::set_fee_routing_with_reason`] path, which requires a mandatory
+    /// reason and emits a `FeeRoutingChanged` event carrying the previous and
+    /// new destinations. See `docs/security/fee-routing-immutability.md`.
     ///
     /// # Invariants enforced
     /// - `treasury_bps + partner_bps == 10_000` (shares must sum to 100 %).
@@ -2110,10 +2126,15 @@ impl BountyEscrowContract {
     /// - Both shares must be in `[0, 10_000]`.
     /// - The bounty must exist in persistent storage.
     ///
+    /// # Events
+    /// Emits `FeeRoutingUpdated` (legacy) and `FeeRoutingChanged` (audit,
+    /// with previous and new destinations) on every accepted change.
+    ///
     /// # Errors
-    /// * `NotInitialized`  – contract not yet initialised.
-    /// * `BountyNotFound`  – `bounty_id` does not exist.
-    /// * `InvalidAmount`   – share invariant violated.
+    /// * `NotInitialized`    – contract not yet initialised.
+    /// * `BountyNotFound`    – `bounty_id` does not exist.
+    /// * `FeeRoutingLocked`  – bounty already `Locked` or in a later status.
+    /// * `InvalidAmount`     – share invariant violated.
     pub fn set_fee_routing(
         env: Env,
         bounty_id: u64,
@@ -2121,6 +2142,97 @@ impl BountyEscrowContract {
         treasury_bps: i128,
         partner_recipient: Option<Address>,
         partner_bps: i128,
+    ) -> Result<(), Error> {
+        Self::set_fee_routing_internal(
+            env,
+            bounty_id,
+            treasury_recipient,
+            treasury_bps,
+            partner_recipient,
+            partner_bps,
+            false,
+            None,
+        )
+    }
+
+    /// Change per-bounty fee routing **after** the bounty is locked
+    /// (admin only, audited override path).
+    ///
+    /// This is the elevated counterpart to [`Self::set_fee_routing`]: it
+    /// accepts routing changes regardless of escrow status, but demands a
+    /// non-empty `reason` string that is recorded on-chain in the
+    /// `FeeRoutingChanged` audit event together with the previous and new
+    /// destinations and the admin that made the change. Silent post-lock
+    /// re-routing is therefore impossible: every accepted change leaves an
+    /// indexable audit trail.
+    ///
+    /// Share invariants are identical to [`Self::set_fee_routing`].
+    ///
+    /// # Errors
+    /// * `NotInitialized` – contract not yet initialised.
+    /// * `BountyNotFound` – `bounty_id` does not exist.
+    /// * `InvalidAmount`  – empty `reason`, or share invariant violated.
+    pub fn set_fee_routing_with_reason(
+        env: Env,
+        bounty_id: u64,
+        treasury_recipient: Address,
+        treasury_bps: i128,
+        partner_recipient: Option<Address>,
+        partner_bps: i128,
+        reason: soroban_sdk::String,
+    ) -> Result<(), Error> {
+        // The audit trail is the entire point of this path: an empty reason
+        // would defeat it, so reject it outright.
+        if reason.len() == 0 {
+            return Err(Error::InvalidAmount);
+        }
+        Self::set_fee_routing_internal(
+            env,
+            bounty_id,
+            treasury_recipient,
+            treasury_bps,
+            partner_recipient,
+            partner_bps,
+            true,
+            Some(reason),
+        )
+    }
+
+    /// Internal: whether per-bounty fee routing is immutable for `bounty_id`.
+    ///
+    /// Routing locks as soon as depositor funds are committed: a regular
+    /// escrow is mutable only while in `Draft` status; an anonymous escrow is
+    /// created directly in `Locked` status and is therefore always locked.
+    /// Callers must have already verified that the bounty exists.
+    fn fee_routing_is_locked(env: &Env, bounty_id: u64) -> bool {
+        if let Some(escrow) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, Escrow>(&DataKey::Escrow(bounty_id))
+        {
+            escrow.status != EscrowStatus::Draft
+        } else {
+            // Anonymous escrows never pass through Draft.
+            env.storage()
+                .persistent()
+                .has(&DataKey::EscrowAnon(bounty_id))
+        }
+    }
+
+    /// Internal: shared validation, storage, and audit-event emission for the
+    /// pre-lock and post-lock fee routing paths.
+    ///
+    /// `allow_post_lock` is `true` only for the audited
+    /// `set_fee_routing_with_reason` path, which must supply `reason`.
+    fn set_fee_routing_internal(
+        env: Env,
+        bounty_id: u64,
+        treasury_recipient: Address,
+        treasury_bps: i128,
+        partner_recipient: Option<Address>,
+        partner_bps: i128,
+        allow_post_lock: bool,
+        reason: Option<soroban_sdk::String>,
     ) -> Result<(), Error> {
         if !env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::NotInitialized);
@@ -2136,6 +2248,12 @@ impl BountyEscrowContract {
                 .has(&DataKey::EscrowAnon(bounty_id))
         {
             return Err(Error::BountyNotFound);
+        }
+
+        // Immutability guard: once funds are committed (Locked or any later
+        // status), the non-audited path may not change where fees land.
+        if !allow_post_lock && Self::fee_routing_is_locked(&env, bounty_id) {
+            return Err(Error::FeeRoutingLocked);
         }
 
         // Validate share invariants.
@@ -2160,6 +2278,12 @@ impl BountyEscrowContract {
             }
         }
 
+        // Capture the outgoing routing for the audit event before overwriting.
+        let previous: Option<PerBountyFeeRouting> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::PerBountyFeeRouting(bounty_id));
+
         let routing = PerBountyFeeRouting {
             treasury_recipient: treasury_recipient.clone(),
             treasury_bps,
@@ -2176,10 +2300,26 @@ impl BountyEscrowContract {
             events::FeeRoutingUpdated {
                 version: EVENT_VERSION_V2,
                 bounty_id,
-                treasury_recipient,
+                treasury_recipient: treasury_recipient.clone(),
                 treasury_bps,
-                partner_recipient,
+                partner_recipient: partner_recipient.clone(),
                 partner_bps,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        events::emit_fee_routing_changed(
+            &env,
+            events::FeeRoutingChanged {
+                version: EVENT_VERSION_V2,
+                bounty_id,
+                old_treasury_recipient: previous.as_ref().map(|p| p.treasury_recipient.clone()),
+                old_partner_recipient: previous.as_ref().and_then(|p| p.partner_recipient.clone()),
+                new_treasury_recipient: treasury_recipient,
+                new_partner_recipient: partner_recipient,
+                changed_by: admin,
+                post_lock_override: allow_post_lock,
+                reason,
                 timestamp: env.ledger().timestamp(),
             },
         );
@@ -8818,7 +8958,6 @@ mod escrow_status_transition_tests {
                 amount,
                 depositor: config.depositor.clone(),
                 deadline: config.escrow_deadline,
-                correlation_id: None,
             },
         );
 
