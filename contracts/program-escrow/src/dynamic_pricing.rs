@@ -53,9 +53,7 @@
 //! └─────────────────────────────────────────────────────────────┘
 //! ```
 
-use soroban_sdk::{contracttype, Address, Env, String, Symbol, Vec, Map, Bytes};
-use soroban_sdk::xdr::ScVal;
-use crate::errors::ContractError;
+use soroban_sdk::{contracttype, symbol_short, Address, Env, String, Symbol, Bytes};
 
 // ============================================================================
 // Constants
@@ -378,7 +376,7 @@ impl PricingEngine {
         let deviation = combined_score.saturating_sub(5000);
         
         // Apply sensitivity factor
-        (deviation * DEMAND_SENSITIVITY / 10000)
+        deviation * DEMAND_SENSITIVITY / 10000
     }
 
     /// Calculate supply-based price adjustment
@@ -395,10 +393,10 @@ impl PricingEngine {
         // If utilization > 50%, increase fees
         if utilization > 5000 {
             let excess = utilization.saturating_sub(5000);
-            (excess * SUPPLY_SENSITIVITY / 10000)
+            excess * SUPPLY_SENSITIVITY / 10000
         } else {
             // If utilization < 50%, decrease fees
-            let deficit = 5000.saturating_sub(utilization);
+            let deficit = 5000_i128.saturating_sub(utilization);
             -(deficit * SUPPLY_SENSITIVITY / 10000)
         }
     }
@@ -464,7 +462,7 @@ impl PricingEngine {
     ) -> i128 {
         // EMA formula: EMA = (alpha * new) + ((1 - alpha) * old_EMA)
         let alpha = config.smoothing_alpha_bps;
-        let one_minus_alpha = 10000.saturating_sub(alpha);
+        let one_minus_alpha = 10000_i128.saturating_sub(alpha);
         
         let weighted_new = (new_fee * alpha) / 10000;
         let weighted_old = (state.ema_fee_bps * one_minus_alpha) / 10000;

@@ -2,6 +2,8 @@ import { ReactNode } from 'react';
 import { GitBranch, Users, Circle } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { LanguageIcon } from '../LanguageIcon';
+import { PRLinkBadge } from './PRLinkBadge';
+import { LinkedPR } from '../../../features/maintainers/types';
 
 export interface IssueCardProps {
   id: string;
@@ -25,6 +27,15 @@ export interface IssueCardProps {
   daysLeft?: string;
   variant?: 'default' | 'recommended';
   primaryTag?: string; // For the main tag (e.g., "good first issue", "bug")
+  /**
+   * Pull requests linked to this issue.
+   * Absent or empty → badge hidden (unlinked state).
+   * One PR → single-state badge (open / merged / closed / draft).
+   * Two or more → count badge.
+   */
+  linkedPRs?: LinkedPR[];
+  /** When true, badge renders a loading skeleton. */
+  linkedPRsLoading?: boolean;
 }
 
 export function IssueCard({
@@ -45,6 +56,8 @@ export function IssueCard({
   daysLeft,
   variant = 'default',
   primaryTag,
+  linkedPRs,
+  linkedPRsLoading,
 }: IssueCardProps) {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
@@ -54,10 +67,10 @@ export function IssueCard({
     return (
       <div 
         onClick={onClick}
-        className={`backdrop-blur-[30px] rounded-[16px] border p-5 transition-all cursor-pointer ${
+        className={`backdrop-blur-[25px] rounded-[16px] border p-5 shadow-elevation-1 hover:shadow-elevation-2 hover:scale-[1.02] transition-all duration-300 cursor-pointer ${
           isDark
-            ? 'bg-white/[0.08] border-white/15 hover:bg-white/[0.12]'
-            : 'bg-white/[0.15] border-white/25 hover:bg-white/[0.2]'
+            ? 'bg-white/[0.08] border-white/15'
+            : 'bg-white/[0.15] border-white/25'
         }`}
       >
         <div className="flex items-start justify-between mb-2">
@@ -108,14 +121,14 @@ export function IssueCard({
   return (
     <button
       onClick={onClick}
-      className={`w-full p-3 rounded-[16px] backdrop-blur-[40px] border transition-all text-left ${
+      className={`w-full p-3 rounded-[16px] backdrop-blur-[25px] border shadow-elevation-1 hover:shadow-elevation-2 hover:scale-[1.02] transition-all duration-300 text-left ${
         isSelected
           ? isDark
             ? 'border-[#c9983a] bg-[#c9983a]/10'
             : 'border-2 border-[#c9983a] bg-gradient-to-br from-[#c9983a]/20 to-[#d4af37]/15 shadow-sm hover:from-[#c9983a]/25 hover:to-[#d4af37]/20'
           : isDark
-            ? 'bg-white/[0.12] border-white/20 hover:bg-white/[0.15]'
-            : 'bg-white/[0.12] border-white/20 hover:bg-white/[0.15]'
+            ? 'bg-white/[0.08] border-white/15'
+            : 'bg-white/[0.12] border-white/20'
       }`}
     >
       {/* Issue Header */}
@@ -140,6 +153,15 @@ export function IssueCard({
             </div>
           )}
         </div>
+        {/* PR-linking badge — shown only when linkedPRs are present or loading */}
+        {/* Wrap in a span so click on badge doesn't bubble up to the card button */}
+        <span onClick={(e) => e.stopPropagation()}>
+          <PRLinkBadge
+            issueId={id}
+            linkedPRs={linkedPRs}
+            linkedPRsLoading={linkedPRsLoading}
+          />
+        </span>
       </div>
 
       {/* Issue Title */}

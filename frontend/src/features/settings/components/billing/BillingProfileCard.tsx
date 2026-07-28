@@ -62,10 +62,10 @@ export function BillingProfileCard({ profile, onClick }: BillingProfileCardProps
   return (
     <div
       onClick={onClick}
-      className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 hover:border-[#c9983a]/30 transition-all cursor-pointer group ${
+      className={`backdrop-blur-[25px] rounded-[24px] border p-8 shadow-elevation-1 hover:shadow-elevation-2 hover:border-[#c9983a]/30 hover:scale-[1.02] transition-all duration-300 cursor-pointer group ${
         theme === 'dark'
-          ? 'bg-[#2d2820]/[0.4] border-white/10 hover:bg-[#2d2820]/[0.5]'
-          : 'bg-white/[0.12] border-white/20 hover:bg-white/[0.16]'
+          ? 'bg-white/[0.08] border-white/15'
+          : 'bg-white/[0.12] border-white/20'
       }`}
     >
       <div className="flex items-start justify-between mb-4">

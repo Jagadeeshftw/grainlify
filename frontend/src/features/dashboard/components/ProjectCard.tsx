@@ -30,10 +30,10 @@ export function ProjectCard({ project, onClick }: ProjectCardProps) {
 
   return (
     <div
-      className={`backdrop-blur-[30px] rounded-[18px] border p-5 transition-all cursor-pointer ${
+      className={`backdrop-blur-[25px] rounded-[18px] border p-5 transition-all cursor-pointer shadow-elevation-1 hover:shadow-elevation-2 hover:scale-[1.02] ${
         theme === 'dark'
-          ? 'bg-white/[0.08] border-white/15 hover:bg-white/[0.12] hover:shadow-[0_8px_24px_rgba(201,152,58,0.15)]'
-          : 'bg-white/[0.15] border-white/25 hover:bg-white/[0.2] hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)]'
+          ? 'bg-white/[0.08] border-white/15 hover:bg-white/[0.12] hover:border-[#e8c571]/30'
+          : 'bg-white/[0.15] border-white/25 hover:bg-white/[0.2] hover:border-[#c9983a]/30'
       }`}
       onClick={() => onClick?.(project.id.toString())}
     >
@@ -61,24 +61,24 @@ export function ProjectCard({ project, onClick }: ProjectCardProps) {
       <h4 className={`text-[16px] font-bold mb-2 transition-colors ${
         theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
       }`}>{project.name}</h4>
-      <p className={`text-[12px] mb-4 line-clamp-2 transition-colors ${
+      <p className={`text-[12px] mb-3 line-clamp-2 transition-colors ${
         theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
       }`}>{project.description}</p>
 
-      <div className={`flex items-center space-x-3 text-[12px] mb-4 transition-colors ${
+      <div className={`flex items-center gap-2 text-[12px] mb-3 transition-colors ${
         theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
       }`}>
-        <div className="flex items-center space-x-1">
+        <div className="flex items-center gap-1">
           <Star className="w-3 h-3 text-[#c9983a]" />
           <span>{project.stars}</span>
         </div>
-        <div className="flex items-center space-x-1">
+        <div className="flex items-center gap-1">
           <GitFork className="w-3 h-3 text-[#c9983a]" />
           <span>{project.forks}</span>
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-2 mb-4 pb-4 border-b border-white/10">
+      <div className="grid grid-cols-3 gap-1.5 mb-3 pb-3 border-b border-white/10">
         <div className="text-center">
           <div className={`text-[18px] font-bold transition-colors ${
             theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'

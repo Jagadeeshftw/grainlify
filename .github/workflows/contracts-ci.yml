@@ -78,3 +78,32 @@ jobs:
         run: |
           cd contracts/grainlify-core
           cargo test
+
+  program-escrow:
+    name: program-escrow (unit + integration tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none, wasm32-unknown-unknown
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            contracts/program-escrow/target/
+          key: ${{ runner.os }}-program-escrow-${{ hashFiles('contracts/program-escrow/**/Cargo.lock', 'contracts/program-escrow/**') }}
+          restore-keys: |
+            ${{ runner.os }}-program-escrow-
+
+      - name: Test program-escrow
+        run: |
+          cd contracts/program-escrow
+          cargo test

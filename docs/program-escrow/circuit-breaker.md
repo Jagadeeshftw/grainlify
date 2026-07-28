@@ -8,7 +8,7 @@ The circuit breaker protects payout operations from cascading failures by tracki
 
 - `Closed` — normal operation
 - `Open` — all protected operations rejected (requires admin action)
-- `HalfOpen` — trial period; successes move to `Closed`, failures re-open
+- `HalfOpen` — trial period; successes move to `Closed`, failures re-open and restart the recovery timeout
 
 The circuit breaker lives in persistent storage under keys defined in `error_recovery::CircuitBreakerKey`.
 
@@ -35,6 +35,12 @@ Unit tests were added under `contracts/program-escrow/src/test_admin_reset.rs` v
 
 - An admin-authorized reset transitions an `Open` circuit to `Closed` and clears counters.
 - A non-authorized caller cannot reset the circuit (panics / is rejected).
+
+Additional enforcement tests now cover the full HalfOpen lifecycle:
+
+- `Open` → `HalfOpen` after `recovery_window` elapses
+- `HalfOpen` → `Closed` on a successful probe
+- `HalfOpen` → `Open` on a failed probe, with the open timer reset
 
 Note: the repository contains many existing tests; depending on the environment some test suites may not compile or run fully.
 

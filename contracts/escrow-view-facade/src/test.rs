@@ -57,6 +57,14 @@ mod dummy_escrow {
         pub escrow: Escrow,
     }
 
+    #[contracttype]
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct ProgramDelegateInfo {
+        pub program_id: String,
+        pub delegate: Option<Address>,
+        pub permissions: u32,
+    }
+
     #[contract]
     pub struct DummyEscrow;
 
@@ -114,7 +122,7 @@ mod dummy_escrow {
             _limit: u32,
         ) -> Vec<EscrowWithId> {
             let mut result = Vec::new(&env);
-             result.push_back(EscrowWithId {
+            result.push_back(EscrowWithId {
                 bounty_id: 1,
                 escrow: Escrow {
                     depositor: depositor.clone(),
@@ -123,8 +131,40 @@ mod dummy_escrow {
                     status: EscrowStatus::Locked,
                     deadline: 123456789,
                     schema_version: 1,
-                }
-             });
+                },
+            });
+            result
+        }
+
+        pub fn query_escrows_by_beneficiary(
+            env: Env,
+            beneficiary: Address,
+            _offset: u32,
+            _limit: u32,
+        ) -> Vec<EscrowWithId> {
+            let mut result = Vec::new(&env);
+            result.push_back(EscrowWithId {
+                bounty_id: 2,
+                escrow: Escrow {
+                    depositor: beneficiary.clone(),
+                    amount: 500,
+                    remaining_amount: 500,
+                    status: EscrowStatus::Released,
+                    deadline: 987654321,
+                    schema_version: 1,
+                },
+            });
+            result
+        }
+
+        pub fn query_all_delegates(env: Env, program_id: String) -> Vec<ProgramDelegateInfo> {
+            let mut result = Vec::new(&env);
+            let delegate = Address::generate(&env);
+            result.push_back(ProgramDelegateInfo {
+                program_id,
+                delegate: Some(delegate),
+                permissions: 0x3,
+            });
             result
         }
     }
@@ -198,7 +238,25 @@ fn test_get_user_portfolio() {
     // Dummy returns one locked iteration for any depositor
     assert_eq!(portfolio.as_depositor.len(), 1);
     assert_eq!(portfolio.as_depositor.get(0).unwrap().bounty_id, 1);
-    
-    // Beneficiary lists are empty out-of-the-box until tickets are aggregated
-    assert_eq!(portfolio.as_beneficiary.len(), 0);
+
+    // Beneficiary returns escrow from query_escrows_by_beneficiary
+    assert_eq!(portfolio.as_beneficiary.len(), 1);
+    assert_eq!(portfolio.as_beneficiary.get(0).unwrap().bounty_id, 2);
+    assert_eq!(portfolio.as_beneficiary.get(0).unwrap().status, EscrowStatus::Released);
+}
+
+#[test]
+fn test_query_all_delegates_via_facade() {
+    let env = Env::default();
+    let escrow_contract = env.register_contract(None, dummy_escrow::DummyEscrow);
+    let facade_contract = env.register_contract(None, EscrowViewFacade);
+    let facade_client = EscrowViewFacadeClient::new(&env, &facade_contract);
+    let program_id = String::from_str(&env, "program-audit");
+
+    let delegates = facade_client.query_all_delegates(&escrow_contract, &program_id);
+    assert_eq!(delegates.len(), 1);
+    let info = delegates.get(0).unwrap();
+    assert_eq!(info.program_id, program_id);
+    assert!(info.delegate.is_some());
+    assert_eq!(info.permissions, 0x3);
 }

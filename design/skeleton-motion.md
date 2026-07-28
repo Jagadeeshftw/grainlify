@@ -11,24 +11,76 @@
 - **Single Detail Views**: Large static blocks or detail pages should use static placeholders to avoid "motion overload".
 - **Small UI Elements**: Buttons, icons, or small tags should remain static to prevent "busy" UI.
 - **Low-End Devices**: System-level constraints should minimize animation.
+- **High-Contrast Theme**: The shimmer child element is not rendered at all — a solid `#333333` block is shown instead.
+- **Reduced-Motion Theme**: The shimmer child element is not rendered — a dark `bg-white/[0.08]` static block is shown instead.
 
-## Motion Specifications
-- **Duration**: 1.5s (range: 1.2s - 1.6s).
-- **Timing Function**: Linear (consistent movement).
-- **Contrast**: Low-contrast gradients (subtle highlights).
-- **Direction**: Left-to-right (`translateX`).
+---
 
-## Reduced Motion Behavior
-- **Requirement**: Respect `prefers-reduced-motion: reduce`.
-- **Fallback**: Motion is completely disabled. Skeletons remain as static colored blocks (`bg-white/[0.08]` or `bg-white/[0.12]`).
+## Motion Specifications (light / dark themes)
+
+| Property          | Value                     |
+|-------------------|---------------------------|
+| Duration          | 1.5 s (range: 1.2 s–1.6 s) |
+| Timing Function   | linear                    |
+| Contrast          | Low-contrast gradient (subtle highlight) |
+| Direction         | Left-to-right (`translateX`) |
+| GPU acceleration  | `transform: translateX()` (composite-only) |
+
+---
+
+## Reduced-Motion Override
+
+**Applies when:**
+1. The user has selected the `reduced-motion` theme variant, **or**
+2. The OS/browser reports `prefers-reduced-motion: reduce`
+
+**Behaviour:** All shimmer motion is completely suppressed. The `animate-shimmer` child
+element is **not rendered** by `SkeletonLoader` for these variants (not just `animation: none` —
+the element is omitted from the DOM to eliminate any invisible layer overhead).
+
+**Static fallback appearance:**
+
+| Theme          | Skeleton background          |
+|----------------|------------------------------|
+| reduced-motion | `rgba(255,255,255,0.08)` — same as dark |
+| high-contrast  | `#333333` solid opaque       |
+
+**WCAG reference:** WCAG 2.3.3 Animation from Interactions — users must be able to disable
+motion that is not essential to the functionality of content.
+
+```tsx
+// SkeletonLoader correctly suppresses shimmer for a11y variants:
+const showShimmer = theme !== 'high-contrast' && theme !== 'reduced-motion';
+
+return (
+  <div className={`relative overflow-hidden ${shapeClass} ${bgClass}`} ...>
+    {showShimmer && (
+      <div className={`absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r ${shimmerGradient}`} />
+    )}
+  </div>
+);
+```
+
+---
+
+## High-Contrast Override
+
+**Applies when:** The user has selected the `high-contrast` theme variant.
+
+**Behaviour:**
+- Background: `#333333` solid — 3.5:1 contrast on `#000000` page canvas (meets WCAG 1.4.11)
+- No shimmer animation (element not rendered)
+- The CSS class `skeleton-surface` is applied for targeted overrides via `.high-contrast .skeleton-surface`
+- No `backdrop-filter` or gradient effects
+
+---
 
 ## Implementation Examples
 
-### List Skeleton (Shimmer Recommended)
-For lists, use shimmer on the entire row or individual items to indicate loading progress across multiple elements.
+### List Skeleton (Shimmer on light/dark, static on a11y variants)
 
 ```tsx
-// Example: ActivityItemSkeleton.tsx
+// SkeletonLoader handles all variants automatically via useTheme()
 <div className="relative overflow-hidden">
   <div className="flex items-center gap-3">
     <SkeletonLoader variant="circle" width="32px" height="32px" />
@@ -40,16 +92,13 @@ For lists, use shimmer on the entire row or individual items to indicate loading
 </div>
 ```
 
-### Detail Skeleton (Static Recommended)
-For large blocks or detail views, use static placeholders to avoid excessive movement.
+### Detail Skeleton (Static recommended for all themes)
 
 ```tsx
-// Example: SingleDetailSkeleton.tsx
 <div className="space-y-6">
-  {/* Large static header */}
+  {/* Large static header — className="animate-none" opts out of shimmer */}
   <SkeletonLoader variant="default" width="100%" height="200px" className="animate-none" />
-  
-  {/* Content blocks */}
+
   <div className="grid grid-cols-2 gap-4">
     <SkeletonLoader variant="default" height="100px" />
     <SkeletonLoader variant="default" height="100px" />
@@ -57,8 +106,20 @@ For large blocks or detail views, use static placeholders to avoid excessive mov
 </div>
 ```
 
+---
+
 ## Performance Constraints
-- **GPU Acceleration**: Use `transform: translateX()` instead of `left` or `background-position` to ensure composite-only animations.
-- **Repaint Areas**: Shimmer is applied to a single absolute-positioned element within the skeleton container to minimize layout shifts.
-- **Containment**: Use `overflow: hidden` on containers to prevent shimmer bleed.
-- **Group Animation**: When possible, apply a single shimmer overlay to a container instead of individual animations on each child to reduce draw calls.
+
+- **GPU Acceleration**: Use `transform: translateX()` — composite-only, no layout recalculation.
+- **Repaint Areas**: Shimmer is a single absolute child; it clips inside `overflow: hidden` container.
+- **Containment**: Always use `overflow: hidden` on the skeleton wrapper.
+- **Group Animation**: Apply one shimmer overlay per container where possible to reduce draw calls.
+- **Reduced-motion cost**: Zero — the shimmer element is not added to the DOM, so no animation overhead.
+
+---
+
+## Theme Token Reference
+
+See `design-tokens.json`:
+- `reducedMotion.motion.skeletonShimmer` → `"static"`
+- `highContrast.skeleton.background` → `"#333333"`

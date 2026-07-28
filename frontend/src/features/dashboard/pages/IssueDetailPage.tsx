@@ -6,6 +6,7 @@ import { getMyProjects, getPublicProject } from '../../../shared/api/client';
 import { IssuesTab } from '../../maintainers/components/issues/IssuesTab';
 import { SkeletonLoader } from '../../../shared/components/SkeletonLoader';
 import { IssueCardSkeleton } from '../../../shared/components/IssueCardSkeleton';
+import type { ContributionDiff } from '../../../shared/components/ui/ContributionDiffViewer';
 
 interface ProjectForIssues {
   id: string;
@@ -16,10 +17,11 @@ interface ProjectForIssues {
 interface IssueDetailPageProps {
   issueId?: string;
   projectId?: string;
+  contributionDiff?: ContributionDiff | null;
   onClose: () => void;
 }
 
-export function IssueDetailPage({ issueId, projectId, onClose }: IssueDetailPageProps) {
+export function IssueDetailPage({ issueId, projectId, contributionDiff, onClose }: IssueDetailPageProps) {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
 
@@ -116,6 +118,7 @@ export function IssueDetailPage({ issueId, projectId, onClose }: IssueDetailPage
           selectedProjects={selectedProjects}
           initialSelectedIssueId={issueId}
           initialSelectedProjectId={projectId}
+          contributionDiff={contributionDiff}
           viewMode="contributor"
         />
       )}

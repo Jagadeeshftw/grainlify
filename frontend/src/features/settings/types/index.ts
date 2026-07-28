@@ -1,5 +1,6 @@
 // Tab types
-export type SettingsTabType = 'profile' | 'notifications' | 'payout' | 'billing' | 'terms';
+export type SettingsTabType = 'profile' | 'notifications' | 'payout' | 'billing' | 'terms' | 'referrals' | 'tax-documents';
+export type SettingsTabType = 'profile' | 'notifications' | 'payout' | 'billing' | 'terms' | 'referrals';
 
 // Billing Profile types
 export type BillingProfileStatus = 'verified' | 'missing-verification' | 'limit-reached';
@@ -58,34 +59,21 @@ export interface PayoutProject {
 }
 
 // Notification types
+export type NotificationChannel = 'inApp' | 'email' | 'push';
+export type NotificationEvent = 'payoutReceived' | 'programPublished' | 'bountyClaimed' | 'disputeOpened' | 'systemMaintenance';
+export type NotificationPreferenceState = 'enabled' | 'disabled' | 'notAvailable';
+
+export interface NotificationPreference {
+  event: NotificationEvent;
+  label: string;
+  description: string;
+  channels: {
+    [key in NotificationChannel]: NotificationPreferenceState;
+  };
+}
+
 export interface NotificationSettings {
-  // Global
-  globalBillingEmail: boolean;
-  globalBillingWeekly: boolean;
-  globalMarketingEmail: boolean;
-  globalMarketingWeekly: boolean;
-  
-  // Contributor
-  contributorProjectEmail: boolean;
-  contributorProjectWeekly: boolean;
-  contributorRewardEmail: boolean;
-  contributorRewardWeekly: boolean;
-  contributorRewardAcceptedEmail: boolean;
-  contributorRewardAcceptedWeekly: boolean;
-  
-  // Maintainer
-  maintainerProjectContributorEmail: boolean;
-  maintainerProjectContributorWeekly: boolean;
-  maintainerProjectProgramEmail: boolean;
-  maintainerProjectProgramWeekly: boolean;
-  
-  // Programs
-  programsTransactionsEmail: boolean;
-  programsTransactionsWeekly: boolean;
-  
-  // Sponsors
-  sponsorsTransactionsEmail: boolean;
-  sponsorsTransactionsWeekly: boolean;
+  preferences: NotificationPreference[];
 }
 
 // Wallet types
@@ -101,4 +89,23 @@ export interface WalletAddresses {
     usdt: string;
     xlm: string;
   };
+}
+
+// Tax Document types
+export type TaxDocumentStatus = 'available' | 'pending' | 'not-applicable';
+
+export interface TaxDocument {
+  /** Calendar year this document covers, e.g. 2024 */
+  year: number;
+  status: TaxDocumentStatus;
+  /** Total earnings for the year */
+  totalEarnings: number;
+  currency: string;
+  stellarAddress: string;
+  downloadUrl?: string;
+}
+
+export interface TaxDocumentYearRange {
+  from: number;
+  to: number;
 }

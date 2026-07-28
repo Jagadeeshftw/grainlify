@@ -1,13 +1,15 @@
 #![cfg(test)]
 
+extern crate std;
+
 use soroban_sdk::testutils::budget::Budget as _;
 use soroban_sdk::testutils::Ledger as _;
 use soroban_sdk::testutils::LedgerInfo as _;
-use soroban_sdk::{testutils::Address as _, testutils::Events, token, vec, Address, Env, String, TryIntoVal, Vec};
+use soroban_sdk::{testutils::Address as _, testutils::Events, token, vec, Address, Env, String, TryIntoVal, IntoVal, Error, Vec};
 
 use crate::{
     BatchError, BatchPayoutReplayedEvent, LockItem, ProgramData, ProgramEscrowContract,
-    ProgramEscrowContractClient, ReleaseItem,
+    ProgramEscrowContractClient, ProgramInitItem, ReleaseItem,
 };
 
 pub struct Ctx<'a> {
@@ -46,15 +48,17 @@ fn mint(ctx: &Ctx, recipient: &Address, amount: i128) {
 pub fn init_program(ctx: &Ctx, program_id: &str, amount: i128) {
     let creator = Address::generate(&ctx.env);
     mint(ctx, &creator, amount);
+    let prog_id = String::from_str(&ctx.env, program_id);
     ctx.client.init_program(
-        &String::from_str(&ctx.env, program_id),
+        &prog_id,
         &ctx.admin.clone(), // authorized_payout_key
         &ctx.token_id,
         &creator,
         &Some(amount),
         &None,
     );
-    ctx.client.publish_program();
+    // Publisher must be admin or authorized_payout_key (not an arbitrary creator).
+    ctx.client.publish_program(&prog_id, &ctx.admin);
 }
 
 #[test]
@@ -265,7 +269,11 @@ fn test_idempotent_batch_payout_replay_emits_audit_event() {
 
     let events = ctx.env.events().all();
     // Find a BatchPayoutReplayedEvent whose idempotency_key matches
+    let replay_topic: soroban_sdk::Val = soroban_sdk::symbol_short!("BatPayRp").into_val(&ctx.env);
     let replayed_event = events.iter().find(|e| {
+        if !e.1.contains(&replay_topic) {
+            return false;
+        }
         let result: Result<BatchPayoutReplayedEvent, _> = (&e.2).try_into_val(&ctx.env);
         if let Ok(ev) = result {
             ev.idempotency_key == key
@@ -419,8 +427,11 @@ fn test_idempotent_batch_payout_audit_trail_integrity() {
     ctx.client.batch_payout_idempotent(&key, &recipients, &amounts);
     
     let events_after_first = ctx.env.events().all();
+    let batch_pay_val: soroban_sdk::Val = soroban_sdk::symbol_short!("BatchPay").into_val(&ctx.env);
+    let replay_val: soroban_sdk::Val = soroban_sdk::symbol_short!("BatPayRp").into_val(&ctx.env);
+
     let payout_events_count = events_after_first.iter().filter(|e| {
-        e.0 == ctx.client.address && e.1.contains(soroban_sdk::symbol_short!("BatchPay").try_into_val(&ctx.env).unwrap())
+        e.0 == ctx.client.address && e.1.contains(&batch_pay_val)
     }).count();
     assert_eq!(payout_events_count, 1, "Expected exactly one BatchPayout event after first call");
 
@@ -431,18 +442,22 @@ fn test_idempotent_batch_payout_audit_trail_integrity() {
     
     // Check BatchPayout still only 1
     let payout_events_count_total = events_after_second.iter().filter(|e| {
-        e.0 == ctx.client.address && e.1.contains(soroban_sdk::symbol_short!("BatchPay").try_into_val(&ctx.env).unwrap())
+        e.0 == ctx.client.address && e.1.contains(&batch_pay_val)
     }).count();
     assert_eq!(payout_events_count_total, 1, "BatchPayout event must not be emitted on replay");
 
     // Check BatchPayoutReplayed count
     let replay_events_count = events_after_second.iter().filter(|e| {
-        e.0 == ctx.client.address && e.1.contains(soroban_sdk::symbol_short!("BatPayRp").try_into_val(&ctx.env).unwrap())
+        e.0 == ctx.client.address && e.1.contains(&replay_val)
     }).count();
     assert_eq!(replay_events_count, 1, "Expected exactly one BatchPayoutReplayed event after replay");
 
-    // Verify the replay event data
+    // Verify the replay event data — filter by topic first so unrelated
+    // schema-version events are not force-decoded as BatchPayoutReplayedEvent.
     let replayed_event = events_after_second.iter().find(|e| {
+        if !e.1.contains(&replay_val) {
+            return false;
+        }
         let result: Result<BatchPayoutReplayedEvent, _> = (&e.2).try_into_val(&ctx.env);
         if let Ok(ev) = result {
             ev.idempotency_key == key
@@ -488,15 +503,20 @@ fn test_idempotent_batch_payout_complex_retry_interleaving() {
 
     // Verify event counts
     let events = ctx.env.events().all();
+    let batch_pay_val: soroban_sdk::Val = soroban_sdk::symbol_short!("BatchPay").into_val(&ctx.env);
+    let replay_val: soroban_sdk::Val = soroban_sdk::symbol_short!("BatPayRp").into_val(&ctx.env);
+
     let payout_count = events.iter().filter(|e| {
-        e.0 == ctx.client.address && e.1.contains(soroban_sdk::symbol_short!("BatchPay").try_into_val(&ctx.env).unwrap())
+        e.0 == ctx.client.address && e.1.contains(&batch_pay_val)
     }).count();
     let replay_count = events.iter().filter(|e| {
-        e.0 == ctx.client.address && e.1.contains(soroban_sdk::symbol_short!("BatPayRp").try_into_val(&ctx.env).unwrap())
+        e.0 == ctx.client.address && e.1.contains(&replay_val)
     }).count();
     
     assert_eq!(payout_count, 3, "Expected 3 successful payout events");
     assert_eq!(replay_count, 2, "Expected 2 replay audit events");
+}
+
 // ============================================================================
 // Idempotency key generation convention tests
 // Issue #1262 — client SDK idempotency key generation conventions
@@ -507,11 +527,15 @@ fn test_idempotent_batch_payout_complex_retry_interleaving() {
 /// following the recommended format: {program_id}-single-{recipient_prefix}-{nonce}
 fn make_single_key(env: &Env, program_id: &str, recipient: &Address, nonce: &str) -> String {
     let addr_str = recipient.to_string();
-    // Use first 8 chars of address as recipient prefix
-    let prefix = &addr_str[..8.min(addr_str.len())];
+    let mut buf = [0u8; 128];
+    let len = addr_str.len() as usize;
+    addr_str.copy_into_slice(&mut buf[..len]);
+    let rust_str = core::str::from_utf8(&buf[..len]).unwrap();
+    // Use the trailing chars — test addresses share a long `CAAAAA…` prefix.
+    let prefix = &rust_str[len.saturating_sub(8)..];
     String::from_str(
         env,
-        &format!("{}-single-{}-{}", program_id, prefix, nonce),
+        &std::format!("{}-single-{}-{}", program_id, prefix, nonce),
     )
 }
 
@@ -520,11 +544,15 @@ fn make_single_key(env: &Env, program_id: &str, recipient: &Address, nonce: &str
 fn make_batch_key(env: &Env, program_id: &str, recipients: &soroban_sdk::Vec<Address>, nonce: &str) -> String {
     let first = recipients.get(0).unwrap();
     let addr_str = first.to_string();
-    let prefix = &addr_str[..8.min(addr_str.len())];
+    let mut buf = [0u8; 128];
+    let len = addr_str.len() as usize;
+    addr_str.copy_into_slice(&mut buf[..len]);
+    let rust_str = core::str::from_utf8(&buf[..len]).unwrap();
+    let prefix = &rust_str[len.saturating_sub(8)..];
     let count = recipients.len();
     String::from_str(
         env,
-        &format!("{}-batch-{}-{}r-{}", program_id, prefix, count, nonce),
+        &std::format!("{}-batch-{}-{}r-{}", program_id, prefix, count, nonce),
     )
 }
 
@@ -659,18 +687,18 @@ fn test_batch_key_retry_returns_original_result() {
 
     let key = make_batch_key(&ctx.env, "hackathon-2024", &recipients, "9b8c7d6e5f4a3b2c");
 
-    let result1 = ctx.client.batch_payout_by(
+    let result1 = ctx.client.batch_payout_idempotent_by(
+        &key,
         &ctx.admin,
         &recipients,
         &amounts,
-        &Some(key.clone()),
     );
 
-    let result2 = ctx.client.batch_payout_by(
+    let result2 = ctx.client.batch_payout_idempotent_by(
+        &key,
         &ctx.admin,
         &recipients,
         &amounts,
-        &Some(key.clone()),
     );
 
     assert_eq!(
@@ -724,9 +752,9 @@ fn test_key_at_max_length_accepted() {
 
     let recipient = Address::generate(&ctx.env);
     // Build a key padded to exactly 256 chars
-    let base = format!("hackathon-2024-single-GABC1234-");
+    let base = std::format!("hackathon-2024-single-GABC1234-");
     let padding = "x".repeat(256 - base.len());
-    let key_str = format!("{}{}", base, padding);
+    let key_str = std::format!("{}{}", base, padding);
     assert_eq!(key_str.len(), 256);
     let key = String::from_str(&ctx.env, &key_str);
 
@@ -736,7 +764,7 @@ fn test_key_at_max_length_accepted() {
 
 /// A key exceeding 256 characters is rejected by the contract.
 #[test]
-#[should_panic(expected = "Idempotency key exceeds maximum length")]
+#[should_panic(expected = "IdempotencyKeyInvalid")]
 fn test_key_exceeding_max_length_rejected() {
     let ctx = setup();
     init_program(&ctx, "hackathon-2024", 10_000);
@@ -754,7 +782,7 @@ fn test_key_exceeding_max_length_rejected() {
 
 /// An empty key is rejected by the contract.
 #[test]
-#[should_panic(expected = "Idempotency key cannot be empty")]
+#[should_panic(expected = "IdempotencyKeyInvalid")]
 fn test_empty_key_rejected() {
     let ctx = setup();
     init_program(&ctx, "hackathon-2024", 10_000);
@@ -804,4 +832,235 @@ fn test_no_key_allows_duplicate_operations() {
 
     // Both operations executed — balance reduced by 2000
     assert_eq!(result.remaining_balance, 8_000);
+}
+
+// ============================================================================
+// MAX_BATCH_SIZE pre-flight rejection tests (issue #1264)
+// ============================================================================
+
+/// batch_payout with exactly MAX_BATCH_SIZE recipients succeeds.
+#[test]
+fn test_batch_payout_at_max_size_succeeds() {
+    let ctx = setup();
+    let per = 10_i128;
+    init_program(&ctx, "PROG_MAX", crate::MAX_BATCH_SIZE as i128 * per);
+
+    let recipients: soroban_sdk::Vec<Address> = (0..crate::MAX_BATCH_SIZE)
+        .fold(soroban_sdk::Vec::new(&ctx.env), |mut v, _| {
+            v.push_back(Address::generate(&ctx.env));
+            v
+        });
+    let amounts: soroban_sdk::Vec<i128> = (0..crate::MAX_BATCH_SIZE)
+        .fold(soroban_sdk::Vec::new(&ctx.env), |mut v, _| {
+            v.push_back(per);
+            v
+        });
+
+    let result = ctx.client.try_batch_payout(&recipients, &amounts);
+    assert!(result.is_ok(), "batch at MAX_BATCH_SIZE must succeed");
+}
+
+/// batch_payout with MAX_BATCH_SIZE + 1 recipients returns BatchTooLarge (410).
+#[test]
+fn test_batch_payout_over_max_returns_batch_too_large() {
+    let ctx = setup();
+    let oversized = crate::MAX_BATCH_SIZE + 1;
+    init_program(&ctx, "PROG_OVER", oversized as i128 * 10);
+
+    let recipients: soroban_sdk::Vec<Address> = (0..oversized)
+        .fold(soroban_sdk::Vec::new(&ctx.env), |mut v, _| {
+            v.push_back(Address::generate(&ctx.env));
+            v
+        });
+    let amounts: soroban_sdk::Vec<i128> = (0..oversized)
+        .fold(soroban_sdk::Vec::new(&ctx.env), |mut v, _| {
+            v.push_back(10_i128);
+            v
+        });
+
+    let result = ctx.client.try_batch_payout(&recipients, &amounts);
+    let expected_err = Error::from_contract_error(410);
+    assert!(
+        matches!(result, Err(Ok(e)) if e == expected_err),
+        "expected BatchError::BatchTooLarge, got: {:?}",
+        result
+    );
+}
+
+/// Pre-flight rejection must leave contract balance unchanged (no partial state).
+#[test]
+fn test_batch_too_large_leaves_balance_unchanged() {
+    let ctx = setup();
+    let oversized = crate::MAX_BATCH_SIZE + 1;
+    let initial: i128 = oversized as i128 * 10;
+    init_program(&ctx, "PROG_BAL", initial);
+
+    let recipients: soroban_sdk::Vec<Address> = (0..oversized)
+        .fold(soroban_sdk::Vec::new(&ctx.env), |mut v, _| {
+            v.push_back(Address::generate(&ctx.env));
+            v
+        });
+    let amounts: soroban_sdk::Vec<i128> = (0..oversized)
+        .fold(soroban_sdk::Vec::new(&ctx.env), |mut v, _| {
+            v.push_back(10_i128);
+            v
+        });
+
+    let _ = ctx.client.try_batch_payout(&recipients, &amounts);
+
+    let prog = ctx.client.get_program_info_v2(&String::from_str(&ctx.env, "PROG_BAL"));
+    assert_eq!(prog.remaining_balance, initial, "balance must be unchanged after BatchTooLarge rejection");
+}
+
+/// batch_payout_by also rejects oversized batches with BatchTooLarge.
+#[test]
+fn test_batch_payout_by_over_max_returns_batch_too_large() {
+    let ctx = setup();
+    let oversized = crate::MAX_BATCH_SIZE + 1;
+    init_program(&ctx, "PROG_BY", oversized as i128 * 10);
+
+    let recipients: soroban_sdk::Vec<Address> = (0..oversized)
+        .fold(soroban_sdk::Vec::new(&ctx.env), |mut v, _| {
+            v.push_back(Address::generate(&ctx.env));
+            v
+        });
+    let amounts: soroban_sdk::Vec<i128> = (0..oversized)
+        .fold(soroban_sdk::Vec::new(&ctx.env), |mut v, _| {
+            v.push_back(10_i128);
+            v
+        });
+
+    let result = ctx.client.try_batch_payout_by(&ctx.admin, &recipients, &amounts);
+    let expected_err = Error::from_contract_error(410);
+    assert!(
+        matches!(result, Err(Ok(e)) if e == expected_err),
+        "expected BatchError::BatchTooLarge, got: {:?}",
+        result
+    );
+}
+
+// ============================================================================
+// batch_initialize_programs duplicate-id detection tests (issue #1474)
+// ============================================================================
+
+/// Adjacent duplicate program_ids are rejected.
+#[test]
+fn test_batch_init_duplicate_adjacent_ids_rejected() {
+    let ctx = setup();
+    let items = vec![
+        &ctx.env,
+        ProgramInitItem {
+            program_id: String::from_str(&ctx.env, "PROG_A"),
+            authorized_payout_key: ctx.admin.clone(),
+            token_address: ctx.token_id.clone(),
+            reference_hash: None,
+        },
+        ProgramInitItem {
+            program_id: String::from_str(&ctx.env, "PROG_A"),
+            authorized_payout_key: ctx.admin.clone(),
+            token_address: ctx.token_id.clone(),
+            reference_hash: None,
+        },
+    ];
+    let res = ctx.client.try_batch_initialize_programs(&items);
+    assert!(matches!(res, Err(Ok(BatchError::DuplicateProgramId))));
+}
+
+/// Non-adjacent duplicate program_ids at start and end are rejected.
+#[test]
+fn test_batch_init_duplicate_non_adjacent_ids_rejected() {
+    let ctx = setup();
+    let items = vec![
+        &ctx.env,
+        ProgramInitItem {
+            program_id: String::from_str(&ctx.env, "PROG_A"),
+            authorized_payout_key: ctx.admin.clone(),
+            token_address: ctx.token_id.clone(),
+            reference_hash: None,
+        },
+        ProgramInitItem {
+            program_id: String::from_str(&ctx.env, "PROG_B"),
+            authorized_payout_key: ctx.admin.clone(),
+            token_address: ctx.token_id.clone(),
+            reference_hash: None,
+        },
+        ProgramInitItem {
+            program_id: String::from_str(&ctx.env, "PROG_A"),
+            authorized_payout_key: ctx.admin.clone(),
+            token_address: ctx.token_id.clone(),
+            reference_hash: None,
+        },
+    ];
+    let res = ctx.client.try_batch_initialize_programs(&items);
+    assert!(matches!(res, Err(Ok(BatchError::DuplicateProgramId))));
+}
+
+/// Duplicate buried in the middle of a larger batch is rejected.
+#[test]
+fn test_batch_init_duplicate_middle_of_batch_rejected() {
+    let ctx = setup();
+    let items = vec![
+        &ctx.env,
+        ProgramInitItem {
+            program_id: String::from_str(&ctx.env, "P1"),
+            authorized_payout_key: ctx.admin.clone(),
+            token_address: ctx.token_id.clone(),
+            reference_hash: None,
+        },
+        ProgramInitItem {
+            program_id: String::from_str(&ctx.env, "P2"),
+            authorized_payout_key: ctx.admin.clone(),
+            token_address: ctx.token_id.clone(),
+            reference_hash: None,
+        },
+        ProgramInitItem {
+            program_id: String::from_str(&ctx.env, "P3"),
+            authorized_payout_key: ctx.admin.clone(),
+            token_address: ctx.token_id.clone(),
+            reference_hash: None,
+        },
+        ProgramInitItem {
+            program_id: String::from_str(&ctx.env, "P2"),
+            authorized_payout_key: ctx.admin.clone(),
+            token_address: ctx.token_id.clone(),
+            reference_hash: None,
+        },
+    ];
+    let res = ctx.client.try_batch_initialize_programs(&items);
+    assert!(matches!(res, Err(Ok(BatchError::DuplicateProgramId))));
+}
+
+/// All-unique program_ids in a batch of 5 succeeds.
+#[test]
+fn test_batch_init_all_unique_ids_succeeds() {
+    let ctx = setup();
+    let ids = ["A", "B", "C", "D", "E"];
+    let items: soroban_sdk::Vec<ProgramInitItem> = ids.iter().fold(soroban_sdk::Vec::new(&ctx.env), |mut v, id| {
+        v.push_back(ProgramInitItem {
+            program_id: String::from_str(&ctx.env, id),
+            authorized_payout_key: ctx.admin.clone(),
+            token_address: ctx.token_id.clone(),
+            reference_hash: None,
+        });
+        v
+    });
+    let result = ctx.client.try_batch_initialize_programs(&items);
+    assert!(result.is_ok(), "All-unique batch should succeed");
+}
+
+/// Single-element batch (no duplicates possible) succeeds.
+#[test]
+fn test_batch_init_single_element_succeeds() {
+    let ctx = setup();
+    let items = vec![
+        &ctx.env,
+        ProgramInitItem {
+            program_id: String::from_str(&ctx.env, "ONLY"),
+            authorized_payout_key: ctx.admin.clone(),
+            token_address: ctx.token_id.clone(),
+            reference_hash: None,
+        },
+    ];
+    let result = ctx.client.try_batch_initialize_programs(&items);
+    assert!(result.is_ok());
 }

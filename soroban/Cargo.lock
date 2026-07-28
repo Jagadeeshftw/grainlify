@@ -585,6 +585,7 @@ name = "escrow"
 version = "0.0.0"
 dependencies = [
  "ed25519-dalek",
+ "ethnum",
  "grainlify-core",
  "rand",
  "soroban-sdk 23.4.1",
@@ -592,9 +593,9 @@ dependencies = [
 
 [[package]]
 name = "ethnum"
-version = "1.5.2"
+version = "1.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca81e6b4777c89fd810c25a4be2b1bd93ea034fbe58e6a75216a34c6b82c539b"
+checksum = "40404c3f5f511ec4da6fe866ddf6a717c309fdbb69fbbad7b0f3edab8f2e835f"
 
 [[package]]
 name = "ff"
@@ -652,7 +653,15 @@ dependencies = [
 name = "grainlify-core"
 version = "0.1.0"
 dependencies = [
+ "ethnum",
  "soroban-sdk 21.7.7",
+]
+
+[[package]]
+name = "grainlify-stream"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk 23.4.1",
 ]
 
 [[package]]
@@ -992,6 +1001,7 @@ dependencies = [
 name = "program-escrow"
 version = "0.0.0"
 dependencies = [
+ "ethnum",
  "soroban-sdk 23.4.1",
 ]
 

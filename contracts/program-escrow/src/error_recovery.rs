@@ -21,7 +21,7 @@
 // All circuit breaker state is stored in persistent storage keyed by
 // `CircuitBreakerKey::*`.
 
-use soroban_sdk::{contracttype, symbol_short, Address, Env, String, Vec};
+use soroban_sdk::{contracttype, symbol_short, Address, Env, String, Symbol, Vec};
 
 /// Maximum number of full failure records retained in hot contract storage.
 /// Older records are moved into compact per-program archives.
@@ -359,10 +359,12 @@ fn transition_to_half_open_timeout(env: &Env) {
         .set(&CircuitBreakerKey::SuccessCount, &0u32);
 
 // Emit event indicating automatic timeout transition
-env.events().publish(
-    (symbol_short!("circuit"), symbol_short!("cb_timeout")),
-    (symbol_short!("auto_half"), env.ledger().timestamp()),
-);
+    env.events().publish(
+        (symbol_short!("circuit"), Symbol::new(env, "cb_timeout")),
+        (symbol_short!("auto_half"), env.ledger().timestamp()),
+    );
+}
+
 /// **Call this after a FAILED protected operation.**
 ///
 /// Increments the failure counter and opens the circuit if the threshold
@@ -573,7 +575,8 @@ pub fn archive_circuit_breaker_logs(env: &Env, program_id: String) -> CompactFai
     let mut archived = Vec::new(env);
 
     while log.len() > 0 {
-        let entry = log.remove(0);
+        let entry = log.get(0).unwrap();
+        log.remove(0);
         if entry.program_id == program_id {
             archived.push_back(entry);
         } else {
@@ -644,7 +647,7 @@ mod circuit_log_archive_tests {
 
             for i in 0..55u32 {
                 env.ledger().set_timestamp(1_000 + i as u64);
-                record_failure(&env, program_id.clone(), symbol_short!("payout"), 5_000 + i);
+                record_failure(&env, program_id.clone(), symbol_short!("payout"), 5_000 + i, None);
             }
 
             let log = get_error_log(&env);
@@ -675,11 +678,11 @@ mod circuit_log_archive_tests {
             set_circuit_admin(&env, admin, None);
 
             env.ledger().set_timestamp(2_000);
-            record_failure(&env, program_a.clone(), symbol_short!("payout"), 7);
+            record_failure(&env, program_a.clone(), symbol_short!("payout"), 7, None);
             env.ledger().set_timestamp(2_001);
-            record_failure(&env, program_b.clone(), symbol_short!("refund"), 8);
+            record_failure(&env, program_b.clone(), symbol_short!("refund"), 8, None);
             env.ledger().set_timestamp(2_002);
-            record_failure(&env, program_a.clone(), symbol_short!("payout"), 9);
+            record_failure(&env, program_a.clone(), symbol_short!("payout"), 9, None);
 
             let archive = archive_circuit_breaker_logs(&env, program_a.clone());
             assert_eq!(archive.archived_count, 2);
@@ -860,7 +863,8 @@ fn normalize_error_log_limit(requested: u32) -> u32 {
 
 fn prune_error_log(env: &Env, log: &mut Vec<ErrorEntry>, max_entries: u32) {
     while log.len() > max_entries {
-        let entry = log.remove(0);
+        let entry = log.get(0).unwrap();
+        log.remove(0);
         let mut archived = Vec::new(env);
         let program_id = entry.program_id.clone();
         archived.push_back(entry);

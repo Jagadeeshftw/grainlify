@@ -25,7 +25,7 @@
 
 use super::*;
 use soroban_sdk::{
-    testutils::{Address as _, MockAuth, MockAuthInvoke},
+    testutils::{Address as _, Ledger, MockAuth, MockAuthInvoke},
     token, Address, Env, IntoVal, String,
 };
 
@@ -136,6 +136,8 @@ fn setup(
         &None,
         &None,
     );
+    // Delegate / capability ops require Active status; publish after init.
+    client.publish_program(&program_id, &admin);
     (client, program_id, payout_key, admin)
 }
 
@@ -224,6 +226,28 @@ fn test_rbac_delegate_cannot_rotate() {
     let nonce = client.get_rotation_nonce(&program_id);
     // Delegate must not be able to rotate.
     client.rotate_payout_key(&program_id, &delegate, &new_key, &nonce);
+}
+
+#[test]
+fn test_query_all_delegates_reflects_set_and_revoke_sequence() {
+    let env = Env::default();
+    let (client, program_id, payout_key, _admin) = setup(&env);
+    let delegate = Address::generate(&env);
+    let permissions = DELEGATE_PERMISSION_RELEASE | DELEGATE_PERMISSION_UPDATE_META;
+
+    client.set_program_delegate(&program_id, &payout_key, &delegate, &permissions);
+
+    let delegates = client.query_all_delegates(&program_id);
+    assert_eq!(delegates.len(), 1);
+    let info = delegates.get(0).unwrap();
+    assert_eq!(info.program_id, program_id);
+    assert_eq!(info.delegate, Some(delegate));
+    assert_eq!(info.permissions, permissions);
+
+    client.revoke_program_delegate(&program_id, &payout_key);
+
+    let delegates_after_revoke = client.query_all_delegates(&program_id);
+    assert_eq!(delegates_after_revoke.len(), 0);
 }
 
 /// Rotation on a non-existent program must panic.
@@ -351,11 +375,16 @@ fn test_rbac_admin_rotation_proposal_expires_before_acceptance() {
     assert_eq!(proposal_ttl, MAX_ROLE_TRANSITION_PERIOD);
 
     env.ledger().set_timestamp(transition.deadline + 1);
-    mock_accept_admin_auth(&env, &contract_id, &proposed_admin);
-    let result = client.try_accept_admin();
-    assert!(
-        matches!(result, Err(Ok(ContractError::RoleTransitionExpired))),
-        "acceptance after the TTL must fail with RoleTransitionExpired"
+    env.mock_all_auths();
+    // Invoke directly so expiry clearing is not masked by client try_* auth mapping.
+    let result = env.as_contract(&contract_id, || {
+        ProgramEscrowContract::accept_admin(env.clone())
+    });
+    assert_eq!(
+        result,
+        Err(ContractError::RoleTransitionExpired),
+        "acceptance after the TTL must fail with RoleTransitionExpired, got: {:?}",
+        result
     );
 
     assert_eq!(client.get_admin().unwrap(), admin);
