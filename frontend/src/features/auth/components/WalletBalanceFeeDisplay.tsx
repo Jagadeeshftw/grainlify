@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { Info, AlertTriangle, Clock, AlertCircle } from 'lucide-react';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
 import { SkeletonLoader } from '../../../shared/components/SkeletonLoader';
@@ -8,6 +8,52 @@ import {
   formatWalletUsd,
   staleBalanceAriaLabel,
 } from './walletFeeDisclosureCopy';
+
+// ---------------------------------------------------------------------------
+// Fee Disclosure Behavior Documentation
+// ---------------------------------------------------------------------------
+/*
+EDGE CASES AND BEHAVIOR:
+
+1. NULL BALANCE (Not Connected):
+   - balance=null renders nothing regardless of other props
+   - This is the primary "wallet not connected" state
+
+2. INSUFFICIENT BALANCE:
+   - Triggered when parsed balance <= 0 (handles comma-separated formats)
+   - Shows alert banner with red text
+   - Fee row opacity reduced to 60%
+   - aria-invalid set on balance row
+
+3. FEE AVAILABILITY:
+   - feeAvailable = estimatedFee !== null
+   - When available: shows InfoTooltip with fee disclosure text
+   - When unavailable: shows AlertCircle with aria-label explaining wallet will show exact fee
+
+4. USD EQUIVALENTS:
+   - Balance USD: shows "USD equivalent unavailable" if null
+   - Fee USD: shows sub-cent as "< $0.01", otherwise formatted to 2 decimals
+   - Fee USD line omitted if feeUsdEquivalent is null (even if native fee available)
+
+5. STALE DATA:
+   - isStale=true shows clock icon and yellow banner
+   - If lastUpdated provided: shows "X ago" in aria-label and title
+   - If lastUpdated null: shows generic "Balance may be outdated" aria-label
+
+6. DETERMINISTIC BEHAVIOR:
+   - Tooltip IDs use incrementing counter (tooltipCounter) instead of Math.random()
+   - This ensures consistent IDs across renders and test retries
+   - Each tooltip instance gets a unique ID (tooltip-0, tooltip-1, etc.)
+
+7. LOADING STATE:
+   - isLoading=true shows skeleton with aria-busy="true"
+   - Overrides all other states (takes precedence over balance=null, etc.)
+*/
+
+// ---------------------------------------------------------------------------
+// Deterministic tooltip ID counter
+// ---------------------------------------------------------------------------
+let tooltipCounter = 0;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -45,7 +91,11 @@ function InfoTooltip({
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const tooltipId = useRef(`tooltip-${Math.random().toString(36).slice(2, 8)}`).current;
+  const tooltipId = useMemo(() => {
+    const id = `tooltip-${tooltipCounter}`;
+    tooltipCounter += 1;
+    return id;
+  }, []);
 
   useEffect(() => {
     if (!open) return;
