@@ -248,6 +248,32 @@ impl EscrowViewFacade {
             Vec::new(&env)
         }
     }
+
+    /// Query a recipient's payout history through the program-escrow contract.
+    ///
+    /// This is a read-only proxy over [`ProgramEscrow::query_payouts_by_recipient`].
+    /// If the target contract returns an error (e.g. invalid pagination) an empty
+    /// vector is returned to preserve the facade's best-effort query semantics.
+    ///
+    /// # Arguments
+    /// * `program_contract` — Address of the deployed `program-escrow` contract
+    /// * `recipient`        — Recipient address to filter by
+    /// * `offset`           — Number of matching records to skip (pagination)
+    /// * `limit`            — Maximum records to return (pagination, max 200)
+    pub fn query_recipient_history(
+        env: Env,
+        program_contract: Address,
+        recipient: Address,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<program_escrow::PayoutRecord> {
+        let client = program_escrow::Client::new(&env, &program_contract);
+        let result = client.try_query_payouts_by_recipient(&recipient, &offset, &limit);
+        match result {
+            Ok(Ok(records)) => records,
+            _ => Vec::new(&env),
+        }
+    }
 }
 
 #[cfg(test)]

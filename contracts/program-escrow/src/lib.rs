@@ -5426,12 +5426,17 @@ impl ProgramEscrowContract {
     /// # Returns
     /// The updated `ProgramData`.
     ///
+    /// # Lazy Recipient Index
+    /// One `PayoutRecord` per recipient is appended to
+    /// `program_data.payout_history`.  Records are added **after** each
+    /// transfer succeeds.  Idempotency replays do not append.
+    /// Use `query_recipient_history` for per-recipient queries.
+    ///
     /// # Security
     /// - Requires authorization from the `authorized_payout_key`.
     /// - Protected by reentrancy guard.
     /// - Respects circuit breaker and threshold limits.
     /// - Idempotency key ensures deterministic behavior on retries.
-    /// Execute a batch payout to multiple winners.
     pub fn batch_payout(
         env: Env,
         recipients: soroban_sdk::Vec<Address>,
@@ -5774,6 +5779,10 @@ impl ProgramEscrowContract {
     /// - If `idempotency_key` is provided and new, executes the payout and stores the key.
     /// - If `idempotency_key` is None, behaves like regular batch_payout.
     ///
+    /// # Lazy Recipient Index
+    /// On first execution one `PayoutRecord` per recipient is appended to
+    /// `program_data.payout_history`.  On replay all appends are **skipped**.
+    ///
     /// # Security
     /// - Requires authorization from the `authorized_payout_key`.
     /// - Protected by reentrancy guard.
@@ -5878,12 +5887,16 @@ impl ProgramEscrowContract {
     /// # Returns
     /// The updated `ProgramData`.
     ///
+    /// # Lazy Recipient Index
+    /// On success a `PayoutRecord` is appended to `program_data.payout_history`.
+    /// Use `query_recipient_history` to retrieve per-recipient records.
+    /// Idempotency replays do not append duplicate records.
+    ///
     /// # Security
     /// - Requires authorization from the `authorized_payout_key`.
     /// - Protected by reentrancy guard.
     /// - Respects circuit breaker and threshold limits.
     /// - Idempotency key ensures deterministic behavior on retries.
-    /// Execute a single payout to one winner.
     pub fn single_payout(
         env: Env,
         recipient: Address,
@@ -6112,6 +6125,11 @@ impl ProgramEscrowContract {
     /// - If `idempotency_key` is provided and already used, returns the stored result without re-executing.
     /// - If `idempotency_key` is provided and new, executes the payout and stores the key.
     /// - If `idempotency_key` is None, behaves like regular single_payout.
+    ///
+    /// # Lazy Recipient Index
+    /// On first execution a `PayoutRecord` is appended to
+    /// `program_data.payout_history`.  On replay the append is **skipped**,
+    /// so the history length equals the count of unique keys.
     ///
     /// # Security
     /// - Requires authorization from the `authorized_payout_key`.
@@ -6836,6 +6854,11 @@ impl ProgramEscrowContract {
     }
 
     /// Query payout history by recipient with pagination
+    ///
+    /// Returns all `PayoutRecord` entries matching the given `recipient` from
+    /// the lazily-populated `payout_history` vector, in chronological order.
+    /// This is an O(n) linear scan over the full payout history — there is no
+    /// pre-built inverted index.
     pub fn query_payouts_by_recipient(
         env: Env,
         recipient: Address,
@@ -6851,6 +6874,24 @@ impl ProgramEscrowContract {
         Self::paginate_filtered(&env, program_data.payout_history, offset, limit, |record| {
             record.recipient == recipient
         })
+    }
+
+    /// Query recipient payout history with pagination.
+    ///
+    /// Delegates to [`query_payouts_by_recipient`]; exists as a named alias
+    /// for clarity.  The same O(n) linear-scan semantics apply.
+    ///
+    /// # Arguments
+    /// * `recipient` - Recipient address to filter by
+    /// * `offset`    - Number of matching records to skip
+    /// * `limit`     - Maximum records to return (max 200)
+    pub fn query_recipient_history(
+        env: Env,
+        recipient: Address,
+        offset: u32,
+        limit: u32,
+    ) -> Result<soroban_sdk::Vec<PayoutRecord>, BatchError> {
+        Self::query_payouts_by_recipient(env, recipient, offset, limit)
     }
 
     /// Query idempotency key status
@@ -7600,3 +7641,5 @@ mod test_batch_receipts;
 mod test_circuit_breaker_enforcement;
 #[cfg(test)]
 mod test_rbac;
+#[cfg(test)]
+mod recipient_index_tests;
