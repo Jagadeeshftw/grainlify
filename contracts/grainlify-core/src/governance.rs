@@ -121,7 +121,7 @@ pub(crate) const VOTES: Symbol = symbol_short!("VOTES");
 /// Storage key containing the immutable governance configuration.
 pub(crate) const GOVERNANCE_CONFIG: Symbol = symbol_short!("GOV_CFG");
 /// Storage key containing the Security Council address for veto power.
-pub(crate) const SECURITY_COUNCIL: Symbol = symbol_short!("SEC_COUNCIL");
+pub(crate) const SECURITY_COUNCIL: Symbol = symbol_short!("SEC_CNCL");
 
 /// Governance errors returned by the standalone governance contract.
 #[soroban_sdk::contracterror]

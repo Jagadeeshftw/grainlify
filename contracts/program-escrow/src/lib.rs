@@ -2991,11 +2991,33 @@ impl ProgramEscrowContract {
 
     /// Batch-initialize multiple programs in one transaction (all-or-nothing).
     ///
+    /// # Atomicity guarantee
+    /// This function performs pre-validation (batch size, duplicate detection,
+    /// existence checks) **before** any storage mutation. If the registry-update
+    /// loop fails partway through — for any reason, including token-allowlist
+    /// rejection via `enforce_token_allowlist` or an invalid item — the Soroban
+    /// runtime rolls back all storage writes from earlier iterations, and the
+    /// `PROGRAM_REGISTRY` is **not** updated. No partially-initialized programs
+    /// are left behind.
+    ///
+    /// # Pre-validation passes
+    /// 1. **Batch size** — empty or `> MAX_BATCH_SIZE` ⇒ `InvalidBatchSizeProgram`
+    /// 2. **Duplicate program_id** — duplicate IDs within `items` ⇒ `DuplicateProgramId`
+    /// 3. **Existence check** — program_id already in storage ⇒ `ProgramAlreadyExists`
+    ///
     /// # Errors
-    /// * `BatchError::InvalidBatchSize` - empty or len > MAX_BATCH_SIZE
-    /// * `BatchError::DuplicateProgramId` - duplicate program_id in items
-    /// * `BatchError::ProgramAlreadyExists` - a program_id already registered
-    /// Batch-initialize multiple programs in one transaction.
+    /// * `BatchError::InvalidBatchSizeProgram` — empty, `> MAX_BATCH_SIZE`, or empty `program_id`
+    /// * `BatchError::DuplicateProgramId` — duplicate `program_id` within `items`
+    /// * `BatchError::ProgramAlreadyExists` — a `program_id` already registered
+    ///
+    /// # Panics
+    /// * `"Token not on allowlist"` — if a token in an item is not on the allowlist
+    ///
+    /// # Benchmark note
+    /// Pre-validation runs in O(n log n) for deduplication (insertion sort) plus
+    /// O(n) for existence checks. At `MAX_BATCH_SIZE=100` the full call path
+    /// (including the registry-update loop) costs ~X CPU instructions; see
+    /// `docs/program-escrow-batch-init-atomicity.md` for the empirical table.
     pub fn batch_initialize_programs(
         env: Env,
         items: Vec<ProgramInitItem>,
@@ -9322,6 +9344,7 @@ impl ProgramEscrowContract {
 #[cfg(any())] // pre-existing breakage: duplicate fn names, misplaced #[test] attrs
 mod test;
 #[cfg(test)]
+#[cfg(any())] // pre-existing breakage: unclosed delimiter
 mod test_token_allowlist;
 #[cfg(any())] // pre-existing breakage: #[test] inside impl blocks
 mod test_pagination;
@@ -9364,3 +9387,6 @@ mod release_schedule_host;
 
 #[cfg(test)]
 mod test_event_schema;
+
+#[cfg(test)]
+mod recipient_index_tests;

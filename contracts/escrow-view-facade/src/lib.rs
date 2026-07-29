@@ -69,7 +69,11 @@ impl QueryCache {
         program_id: &String,
     ) -> ProgramData {
         let key = QueryCacheKey::ProgramData(escrow.clone(), program_id.clone());
-        if let Some(cached) = env.storage().temporary().get::<QueryCacheKey, ProgramData>(&key) {
+        if let Some(cached) = env
+            .storage()
+            .temporary()
+            .get::<QueryCacheKey, ProgramData>(&key)
+        {
             return cached;
         }
         let client = EscrowDataClient::new(env, escrow);
@@ -81,7 +85,11 @@ impl QueryCache {
     /// Get [`FeeConfig`] for `escrow`, caching the result.
     pub fn get_or_load_fee_config(env: &Env, escrow: &Address) -> FeeConfig {
         let key = QueryCacheKey::FeeConfig(escrow.clone());
-        if let Some(cached) = env.storage().temporary().get::<QueryCacheKey, FeeConfig>(&key) {
+        if let Some(cached) = env
+            .storage()
+            .temporary()
+            .get::<QueryCacheKey, FeeConfig>(&key)
+        {
             return cached;
         }
         let client = EscrowDataClient::new(env, escrow);
@@ -182,10 +190,10 @@ impl EscrowViewFacade {
             } else {
                 false
             };
-            
+
             // Map the imported AnonymousParty (since EscrowInfo returns depositor which is AnonymousParty)
             // Note: `get_escrow_info` returns `Escrow` which has `depositor: Address` directly
-            
+
             Some(EscrowSummary {
                 bounty_id,
                 depositor: info.depositor,
@@ -213,7 +221,7 @@ impl EscrowViewFacade {
         let mut summaries = Vec::new(&env);
 
         let client = bounty_escrow::Client::new(&env, &escrow_contract);
-        
+
         let pause_flags_res = client.try_get_pause_flags();
         let is_paused = if let Ok(Ok(flags)) = pause_flags_res {
             flags.lock_paused || flags.release_paused || flags.refund_paused
@@ -230,12 +238,14 @@ impl EscrowViewFacade {
                 } else {
                     (0, 0, String::from_str(&env, ""))
                 };
-                
-                 let status = match info.status {
+
+                let status = match info.status {
                     bounty_escrow::EscrowStatus::Locked => EscrowStatus::Locked,
                     bounty_escrow::EscrowStatus::Released => EscrowStatus::Released,
                     bounty_escrow::EscrowStatus::Refunded => EscrowStatus::Refunded,
-                    bounty_escrow::EscrowStatus::PartiallyRefunded => EscrowStatus::PartiallyRefunded,
+                    bounty_escrow::EscrowStatus::PartiallyRefunded => {
+                        EscrowStatus::PartiallyRefunded
+                    }
                 };
 
                 summaries.push_back(EscrowSummary {
@@ -257,17 +267,13 @@ impl EscrowViewFacade {
 
     /// Retrieve an aggregated view of a user's portolio, including both
     /// the escrows they deposited into and escrows they are listed to receive.
-    pub fn get_user_portfolio(
-        env: Env,
-        escrow_contract: Address,
-        user: Address,
-    ) -> UserPortfolio {
+    pub fn get_user_portfolio(env: Env, escrow_contract: Address, user: Address) -> UserPortfolio {
         let client = bounty_escrow::Client::new(&env, &escrow_contract);
 
         // 1. Get escrows where user is depositor
         let mut as_depositor = Vec::new(&env);
         let depositor_ids_res = client.try_query_escrows_by_depositor(&user, &0, &100);
-        
+
         // Optimize: Fetch pause flags once
         let pause_flags_res = client.try_get_pause_flags();
         let is_paused = if let Ok(Ok(flags)) = pause_flags_res {
@@ -280,7 +286,7 @@ impl EscrowViewFacade {
             for escrow_with_id in escrows_with_id.iter() {
                 let id = escrow_with_id.bounty_id;
                 let info = escrow_with_id.escrow;
-                
+
                 let metadata_res = client.try_get_metadata(&id);
                 let (repo_id, issue_id, bounty_type) = if let Ok(Ok(meta)) = metadata_res {
                     (meta.repo_id, meta.issue_id, meta.bounty_type)
@@ -292,7 +298,9 @@ impl EscrowViewFacade {
                     bounty_escrow::EscrowStatus::Locked => EscrowStatus::Locked,
                     bounty_escrow::EscrowStatus::Released => EscrowStatus::Released,
                     bounty_escrow::EscrowStatus::Refunded => EscrowStatus::Refunded,
-                    bounty_escrow::EscrowStatus::PartiallyRefunded => EscrowStatus::PartiallyRefunded,
+                    bounty_escrow::EscrowStatus::PartiallyRefunded => {
+                        EscrowStatus::PartiallyRefunded
+                    }
                 };
 
                 as_depositor.push_back(EscrowSummary {
@@ -312,8 +320,7 @@ impl EscrowViewFacade {
 
         // 2. Get escrows where user is the designated beneficiary/contributor
         let mut as_beneficiary = Vec::new(&env);
-        let beneficiary_ids_res =
-            client.try_query_escrows_by_beneficiary(&user, &0, &100);
+        let beneficiary_ids_res = client.try_query_escrows_by_beneficiary(&user, &0, &100);
 
         if let Ok(Ok(escrows_with_id)) = beneficiary_ids_res {
             for escrow_with_id in escrows_with_id.iter() {
@@ -331,7 +338,9 @@ impl EscrowViewFacade {
                     bounty_escrow::EscrowStatus::Locked => EscrowStatus::Locked,
                     bounty_escrow::EscrowStatus::Released => EscrowStatus::Released,
                     bounty_escrow::EscrowStatus::Refunded => EscrowStatus::Refunded,
-                    bounty_escrow::EscrowStatus::PartiallyRefunded => EscrowStatus::PartiallyRefunded,
+                    bounty_escrow::EscrowStatus::PartiallyRefunded => {
+                        EscrowStatus::PartiallyRefunded
+                    }
                 };
 
                 as_beneficiary.push_back(EscrowSummary {
@@ -381,17 +390,39 @@ impl EscrowViewFacade {
         }
     }
 
+    /// Query the payout history for a specific recipient within a program.
+    ///
+    /// Uses the lazy-initialized inverted index on the program-escrow contract
+    /// for O(1) lookup. Returns an empty `Vec` if the recipient has never
+    /// received a payout from this program (including when the index key is
+    /// simply absent).
+    ///
+    /// # Atomicity
+    /// Reads directly from the underlying contract storage in the same
+    /// transaction — writes are immediately visible, no caching window.
+    pub fn query_recipient_history(
+        env: Env,
+        program_contract: Address,
+        program_id: String,
+        recipient: Address,
+    ) -> Vec<program_escrow::PayoutRecord> {
+        let client = program_escrow::Client::new(&env, &program_contract);
+        let result = client.try_query_recipient_history(&program_id, &recipient);
+
+        if let Ok(Ok(records)) = result {
+            records
+        } else {
+            Vec::new(&env)
+        }
+    }
+
     // ========================================================================
     // Cached Query Methods
     // ========================================================================
 
     /// Fetch [`ProgramData`] for `program_id` on `escrow`, using the
     /// per-invocation [`QueryCache`] to avoid redundant cross-contract calls.
-    pub fn query_program_data_cached(
-        env: Env,
-        escrow: Address,
-        program_id: String,
-    ) -> ProgramData {
+    pub fn query_program_data_cached(env: Env, escrow: Address, program_id: String) -> ProgramData {
         QueryCache::get_or_load_program_data(&env, &escrow, &program_id)
     }
 
@@ -417,4 +448,3 @@ impl EscrowViewFacade {
 mod test;
 #[cfg(test)]
 mod test_cross_contract_safety;
-

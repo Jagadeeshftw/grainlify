@@ -7,6 +7,12 @@
         "max_actual_fee_charged_stroops": 250000,
         "notes": "Provisional threshold for CI wiring. Replace with a baseline-derived value after the first successful testnet capture."
       }
+    },
+    "batch_initialize_programs": {
+      "100": {
+        "max_actual_fee_charged_stroops": 500000,
+        "notes": "Provisional threshold for CI wiring. Replace with a baseline-derived value after the first successful testnet capture."
+      }
     }
   }
 }
