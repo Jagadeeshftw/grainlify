@@ -64,7 +64,23 @@ This document specifies the current behavior, security-sensitive edge cases, and
 | **Auth Middleware** | Request missing `Authorization` header | HTTP 401 (`missing_bearer_token`) | Prevents unauthenticated access to protected routes |
 | **Auth Middleware** | `Authorization` header with non-Bearer scheme (`Basic ...`) | HTTP 401 (`missing_bearer_token`) | Enforces Bearer JWT standard |
 | **Auth Middleware** | `Authorization` header with `Bearer ` but empty payload | HTTP 401 (`missing_bearer_token`) | Rejects empty tokens |
+| **Auth Middleware** | `Authorization` header that is whitespace-only | HTTP 401 (`missing_bearer_token`) | Rejects blank headers after trimming |
 | **Auth Middleware** | Corrupted or expired JWT payload | HTTP 401 (`invalid_token`) | Prevents access with forged/expired tokens |
+| **Auth Middleware** | JWT token with trailing whitespace after token | HTTP 200 (allowed) | Whitespace is trimmed before parsing — token remains valid |
+| **Auth Middleware** | Expired JWT token (past `exp` claim) | HTTP 401 (`invalid_token`) | Prevents reuse of stale tokens |
+| **Auth Middleware** | `Authorization` header with `bearer ` (lowercase) | HTTP 200 (allowed) | Case-insensitive scheme matching |
+| **RequireRole** | Empty `roles` argument slice (`RequireRole()`) | HTTP 403 (`insufficient_role`) | No roles configured → no access granted |
+| **RequireRole** | Role not present in Fiber locals | HTTP 403 (`missing_role`) | Missing `role` local treated as denial |
+| **RequireRole** | Role does not match any allowed role | HTTP 403 (`insufficient_role`) | Non-matching roles are rejected |
+| **RequireScopedAdmin** | Pool is nil | HTTP 503 (`db_not_configured`) | Prevents nil-pointer panic on DB query |
+| **RequireScopedAdmin** | Authenticated user has global `admin` role | HTTP 200 (allowed) bypass | Global admins skip scoped lookup |
+| **RequireScopedAdmin** | Missing `user_id` in Fiber locals | HTTP 401 (`invalid_user`) | Prevents access without identity |
+| **RequireScopedAdmin** | Route param `scopeID` is empty | HTTP 400 (`missing_scope_id`) | Ensures a valid scope is targeted |
+| **RequireScopedAdmin** | User is not admin and no scoped admin record exists | HTTP 403 (`insufficient_role`) | Non-admin without scoped grant is denied |
+| **JWT** | `JWT_SECRET` is empty during `IssueJWT` | Error returned (token not issued) | Prevents unsigned/weak token issuance |
+| **JWT** | `JWT_SECRET` is empty during `ParseJWT` | Error returned (parse failure) | Prevents verification with empty secret |
+| **JWT** | Token signed with a different algorithm (e.g. ES256 instead of HS256) | Error returned (unexpected signing method) | Enforces HS256-only policy |
+| **JWT** | Malformed token string (non-JWT format) | Error returned (parse failure) | Prevents garbage input from passing |
 
 ---
 
@@ -87,6 +103,18 @@ To ensure future changes do not introduce security regressions or break existing
 5. **Determinism & Retry Stability Invariant:**
    - State parameter encoding, decoding, and origin validation helper functions MUST be pure and strictly deterministic across retries, re-renders, and concurrent evaluations. Calling `encodeStateWithRedirect`, `decodeStateWithRedirect`, or `isAllowedRedirectURI` 100 times sequentially with identical input parameters MUST produce identical output results without state leakage or side effects.
 
+6. **JWT Signing Invariant:**
+   - All JWTs MUST be signed with HS256. Any other signing method (ES256, RS256, etc.) MUST be rejected by `ParseJWT`.
+
+7. **Role Hierarchy Invariant:**
+   - The global `admin` role MUST bypass all scoped RBAC checks (`RequireScopedAdmin`). No database query is executed for admin users.
+
+8. **Empty Roles Invariant:**
+   - Calling `RequireRole()` with no arguments MUST deny all requests (returns `insufficient_role`). An empty allowed set implies no role is permitted.
+
+9. **Nil Pool Invariant:**
+   - `RequireScopedAdmin` MUST check for a nil `*pgxpool.Pool` and return HTTP 503 (`db_not_configured`) before attempting any database operation, preventing nil-pointer panics.
+
 ---
 
 ## 4. Test Coverage Reference
@@ -94,5 +122,7 @@ To ensure future changes do not introduce security regressions or break existing
 The regression surface is explicitly covered and pinned down by unit test suites:
 - **Go Handlers & OAuth Edge Cases:** `backend/internal/handlers/github_oauth_test.go`
 - **Go Auth Middleware Edge Cases:** `backend/internal/auth/middleware_test.go`
+- **Go JWT Edge Cases:** `backend/internal/auth/jwt_test.go`
+- **Go Scoped Admin Handler Edge Cases:** `backend/internal/handlers/scoped_admin_test.go`
 - **TypeScript CSRF & Security Edge Cases:** `backend/src/middleware/csrf.test.ts`
 
