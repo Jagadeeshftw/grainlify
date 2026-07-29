@@ -1064,3 +1064,291 @@ fn test_batch_init_single_element_succeeds() {
     let result = ctx.client.try_batch_initialize_programs(&items);
     assert!(result.is_ok());
 }
+
+// ============================================================================
+// batch_initialize_programs partial-failure atomicity tests (issue #1499)
+// ============================================================================
+
+/// Batch with a valid (listed-token) item followed by an unlisted-token item.
+///
+/// Pre-validation (duplicate + existence) passes, but the token-allowlist
+/// enforcement panics partway through the registry-update loop.  Because
+/// the panic occurs before `PROGRAM_REGISTRY` is committed, the Soroban
+/// runtime rolls back all storage writes from earlier iterations.
+#[test]
+fn test_batch_init_atomicity_token_allowlist_mid_batch() {
+    let ctx = setup();
+
+    // Enable token allowlist enforcement by adding one permitted token.
+    let allowed = Address::generate(&ctx.env);
+    let unlisted = Address::generate(&ctx.env);
+    ctx.client.add_allowed_token(&allowed);
+
+    let items = vec![
+        &ctx.env,
+        ProgramInitItem {
+            program_id: String::from_str(&ctx.env, "PROG_A"),
+            authorized_payout_key: ctx.admin.clone(),
+            token_address: allowed.clone(),
+            reference_hash: None,
+        },
+        ProgramInitItem {
+            program_id: String::from_str(&ctx.env, "PROG_B"),
+            authorized_payout_key: ctx.admin.clone(),
+            token_address: unlisted.clone(),
+            reference_hash: None,
+        },
+    ];
+
+    let res = ctx.client.try_batch_initialize_programs(&items);
+    assert!(
+        res.is_err(),
+        "batch with unlisted token must fail, got {:?}",
+        res
+    );
+
+    // ── No program must be left partially initialised ────────────────────
+    for pid in &["PROG_A", "PROG_B"] {
+        assert!(
+            !ctx.client.program_exists_by_id(&String::from_str(&ctx.env, pid)),
+            "{} must NOT exist after a failed batch",
+            pid
+        );
+    }
+
+    // ── Registry must not have been updated ──────────────────────────────
+    assert!(
+        !ctx.client.program_exists(),
+        "PROGRAM_REGISTRY must not be updated after a failed batch"
+    );
+}
+
+/// Batch with a valid item followed by an empty `program_id`.
+///
+/// Pre-validation passes (empty is not a duplicate and does not already exist),
+/// but the empty-id guard inside the loop fires after the first item's data
+/// has been written.  The `Err` return triggers a Soroban rollback so that
+/// the first item is not persisted either.
+#[test]
+fn test_batch_init_atomicity_empty_program_id_mid_batch() {
+    let ctx = setup();
+
+    let items = vec![
+        &ctx.env,
+        ProgramInitItem {
+            program_id: String::from_str(&ctx.env, "PROG_A"),
+            authorized_payout_key: ctx.admin.clone(),
+            token_address: ctx.token_id.clone(),
+            reference_hash: None,
+        },
+        ProgramInitItem {
+            program_id: String::from_str(&ctx.env, ""),
+            authorized_payout_key: ctx.admin.clone(),
+            token_address: ctx.token_id.clone(),
+            reference_hash: None,
+        },
+    ];
+
+    let res = ctx.client.try_batch_initialize_programs(&items);
+    assert!(
+        matches!(res, Err(Ok(BatchError::InvalidBatchSizeProgram))),
+        "expected InvalidBatchSizeProgram, got {:?}",
+        res
+    );
+
+    // ── No program must be left partially initialised ────────────────────
+    assert!(
+        !ctx.client.program_exists_by_id(&String::from_str(&ctx.env, "PROG_A")),
+        "PROG_A must NOT exist after a failed batch"
+    );
+
+    // ── Registry must not have been updated ──────────────────────────────
+    assert!(
+        !ctx.client.program_exists(),
+        "PROGRAM_REGISTRY must not be updated after a failed batch"
+    );
+}
+
+/// Three-item batch: [valid-listed, unlisted, valid-listed].
+///
+/// Items 0 and 2 are individually valid, but item 1's unlisted token causes
+/// a panic mid-loop.  All three must be rolled back — no partially
+/// initialised programs and no registry update.
+#[test]
+fn test_batch_init_atomicity_valid_unlisted_valid() {
+    let ctx = setup();
+
+    let allowed = Address::generate(&ctx.env);
+    let unlisted = Address::generate(&ctx.env);
+    ctx.client.add_allowed_token(&allowed);
+
+    let items = vec![
+        &ctx.env,
+        ProgramInitItem {
+            program_id: String::from_str(&ctx.env, "PROG_A"),
+            authorized_payout_key: ctx.admin.clone(),
+            token_address: allowed.clone(),
+            reference_hash: None,
+        },
+        ProgramInitItem {
+            program_id: String::from_str(&ctx.env, "PROG_B"),
+            authorized_payout_key: ctx.admin.clone(),
+            token_address: unlisted.clone(),
+            reference_hash: None,
+        },
+        ProgramInitItem {
+            program_id: String::from_str(&ctx.env, "PROG_C"),
+            authorized_payout_key: ctx.admin.clone(),
+            token_address: allowed.clone(),
+            reference_hash: None,
+        },
+    ];
+
+    let res = ctx.client.try_batch_initialize_programs(&items);
+    assert!(
+        res.is_err(),
+        "batch with unlisted token at position 1 must fail, got {:?}",
+        res
+    );
+
+    for pid in &["PROG_A", "PROG_B", "PROG_C"] {
+        assert!(
+            !ctx.client.program_exists_by_id(&String::from_str(&ctx.env, pid)),
+            "{} must NOT exist after a failed batch",
+            pid
+        );
+    }
+
+    assert!(
+        !ctx.client.program_exists(),
+        "PROGRAM_REGISTRY must not be updated after a failed batch"
+    );
+}
+
+/// First initialise one program via the single-item path, then attempt a
+/// failing batch.  The pre-existing program and registry must survive.
+#[test]
+fn test_batch_init_atomicity_registry_unaffected_after_failure() {
+    let ctx = setup();
+    let creator = Address::generate(&ctx.env);
+
+    // ── Seed one program via the single-item path ────────────────────────
+    ctx.client.init_program(
+        &String::from_str(&ctx.env, "SOLO"),
+        &ctx.admin,
+        &ctx.token_id,
+        &creator,
+        &None,
+        &None,
+    );
+    ctx.client.publish_program(&String::from_str(&ctx.env, "SOLO"), &ctx.admin);
+
+    assert!(
+        ctx.client.program_exists_by_id(&String::from_str(&ctx.env, "SOLO")),
+        "SOLO should exist after direct init"
+    );
+    assert!(
+        ctx.client.program_exists(),
+        "registry should exist after direct init"
+    );
+
+    // ── Enable token allowlist enforcement ────────────────────────────────
+    let allowed = Address::generate(&ctx.env);
+    let unlisted = Address::generate(&ctx.env);
+    ctx.client.add_allowed_token(&allowed);
+
+    // ── Attempt a failing batch ───────────────────────────────────────────
+    let items = vec![
+        &ctx.env,
+        ProgramInitItem {
+            program_id: String::from_str(&ctx.env, "BATCH_A"),
+            authorized_payout_key: ctx.admin.clone(),
+            token_address: allowed.clone(),
+            reference_hash: None,
+        },
+        ProgramInitItem {
+            program_id: String::from_str(&ctx.env, "BATCH_B"),
+            authorized_payout_key: ctx.admin.clone(),
+            token_address: unlisted.clone(),
+            reference_hash: None,
+        },
+    ];
+
+    let res = ctx.client.try_batch_initialize_programs(&items);
+    assert!(
+        res.is_err(),
+        "batch with unlisted token must fail, got {:?}",
+        res
+    );
+
+    // ── Pre-existing program must survive ────────────────────────────────
+    assert!(
+        ctx.client.program_exists_by_id(&String::from_str(&ctx.env, "SOLO")),
+        "SOLO must still exist after a failed batch"
+    );
+
+    // ── Batch programs must not exist ────────────────────────────────────
+    for pid in &["BATCH_A", "BATCH_B"] {
+        assert!(
+            !ctx.client.program_exists_by_id(&String::from_str(&ctx.env, pid)),
+            "{} must NOT exist after a failed batch",
+            pid
+        );
+    }
+
+    // ── Registry still contains only the original program ────────────────
+    assert!(
+        ctx.client.program_exists(),
+        "registry should still exist (the original SOLO program)"
+    );
+}
+
+// ============================================================================
+// Pre-validation CPU cost benchmark (issue #1499)
+// ============================================================================
+
+/// Measure CPU instructions consumed by `batch_initialize_programs` at various
+/// batch sizes.  Results are printed via `eprintln!` for manual review.
+///
+/// The pre-validation passes (duplicate detection + existence checks) dominate
+/// at small sizes; the registry-update loop dominates at large sizes.  This
+/// benchmark provides an empirical cross-reference for the duplicate-check
+/// gas-optimisation issue.
+#[test]
+fn test_batch_init_prevalidation_bench() {
+    let ctx = setup();
+
+    for &size in &[1u32, 10u32, 50u32, 100u32] {
+        let mut items = soroban_sdk::Vec::new(&ctx.env);
+        for i in 0..size {
+            let pid = format!("BENCH_{}", i);
+            items.push_back(ProgramInitItem {
+                program_id: String::from_str(&ctx.env, &pid),
+                authorized_payout_key: ctx.admin.clone(),
+                token_address: ctx.token_id.clone(),
+                reference_hash: None,
+            });
+        }
+
+        let cpu_before = ctx.env.budget().get_cpu_instructions();
+        let res = ctx.client.try_batch_initialize_programs(&items);
+        let cpu_after = ctx.env.budget().get_cpu_instructions();
+        let cpu_cost = cpu_after - cpu_before;
+
+        assert!(res.is_ok(), "batch size {} should succeed", size);
+
+        eprintln!(
+            "batch_initialize_programs | size={:>3} | cpu_instructions={}",
+            size, cpu_cost
+        );
+
+        // Sanity: each program costs at least some instructions. A batch of
+        // 100 must stay well within the 100 M Soroban budget limit.
+        assert!(
+            cpu_cost < 10_000_000,
+            "batch size {} exceeded 10M CPU instructions ({})",
+            size,
+            cpu_cost
+        );
+    }
+}
