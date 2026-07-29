@@ -10,6 +10,8 @@ import {
 } from "../../../shared/api/client";
 import { SkeletonLoader } from "../../../shared/components/SkeletonLoader";
 import { useOptimisticData } from "../../../shared/hooks/useOptimisticData";
+import { RecommendationCard } from "../components/RecommendationCard";
+import { RecommendationCardSkeleton } from "../components/RecommendationCardSkeleton";
 
 // Helper function to format numbers (e.g., 1234 -> "1.2K", 1234567 -> "1.2M")
 const formatNumber = (num: number): string => {
@@ -298,6 +300,45 @@ export function DiscoverPage({
     loadRecommendedIssues();
   }, [projects, fetchIssues]);
 
+  const projectRecommendationCards = projects
+    .slice(0, 4)
+    .map((project) => ({
+      id: `project-${project.id}`,
+      type: "project-pick" as const,
+      title: project.name,
+      description: project.description || "A strong fit for your recent contribution patterns.",
+      rationale: project.tags[0] ? `Matches your ${project.tags[0]} activity` : "Matches your recent ecosystem activity",
+      eyebrow: "Recommended project",
+      icon: project.icon,
+      accentClass: project.color,
+      tags: project.tags.slice(0, 3),
+      stats: [
+        { label: "Stars", value: project.stars },
+        { label: "Forks", value: project.forks },
+      ],
+      onClick: () => setSelectedProjectId(String(project.id)),
+    }));
+
+  const contributorRecommendationCards = projects
+    .slice(0, 3)
+    .map((project, index) => ({
+      id: `contributor-${project.id}`,
+      type: "contributor-pick" as const,
+      title: project.ecosystem_name || `Contributor match ${index + 1}`,
+      description: `A contributor-led signal aligned to ${project.name} and your recent ${project.tags[0] || "engineering"} interests.`,
+      rationale: project.tags[0] ? `Matches your ${project.tags[0]} focus` : "Matches your recent contribution style",
+      eyebrow: "Recommended contributor",
+      icon: project.icon,
+      accentClass: project.color,
+      tags: [project.ecosystem_name || "Community", project.tags[0] || "Open source"].filter(Boolean),
+      stats: [{ label: "Focus", value: project.tags[0] || "Open" }],
+    }));
+
+  const personalizedRecommendations = [
+    ...projectRecommendationCards,
+    ...contributorRecommendationCards,
+  ];
+
   // If an issue is selected, show the detail page instead
   if (selectedIssue) {
     return (
@@ -378,7 +419,7 @@ export function DiscoverPage({
         </div>
       </div>
 
-      {/* Recommended Projects */}
+      {/* Personalized recommendations */}
       <div className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-6 md:p-8 transition-colors ${theme === 'dark'
         ? 'bg-white/[0.08] border-white/10'
         : 'bg-white/[0.12] border-white/20'
@@ -387,147 +428,44 @@ export function DiscoverPage({
           <Zap className="w-5 h-5 md:w-6 md:h-6 text-[#c9983a] drop-shadow-sm" />
           <h3 className={`text-xl md:text-[24px] font-bold transition-colors ${theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
             }`}>
-            Recommended Projects ({projects.length})
+            Personalized recommendations ({personalizedRecommendations.length})
           </h3>
         </div>
         <p className={`text-[13px] md:text-[14px] mb-6 transition-colors ${theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
           }`}>
-          Finding best suited your interests and expertise
+          Project picks and contributor picks arranged to match your interests and expertise.
         </p>
 
         {isLoadingProjects ? (
-          <div className="flex flex-col md:flex-row gap-4 md:gap-6 overflow-x-auto pb-2">
-            {[...Array(4)].map((_, idx) => (
-              <div key={idx} className={`flex-shrink-0 w-full md:w-[320px] rounded-[20px] border p-6 ${theme === 'dark' ? 'bg-white/[0.08] border-white/15' : 'bg-white/[0.15] border-white/25'
-                }`}>
-                {/* Icon and Heart button */}
-                <div className="flex items-start justify-between mb-4">
-                  <SkeletonLoader
-                    variant="default"
-                    className="w-12 h-12 rounded-[14px]"
-                  />
-                  <SkeletonLoader
-                    variant="default"
-                    className="w-5 h-5 rounded-full"
-                  />
-                </div>
-
-                {/* Title */}
-                <SkeletonLoader className="h-5 w-3/4 mb-2" />
-
-                {/* Description */}
-                <SkeletonLoader className="h-3 w-full mb-1" />
-                <SkeletonLoader className="h-3 w-5/6 mb-4" />
-
-                {/* Stars and Forks */}
-                <div className="flex items-center space-x-4 mb-4">
-                  <SkeletonLoader className="h-4 w-16" />
-                  <SkeletonLoader className="h-4 w-16" />
-                </div>
-
-                {/* Tags */}
-                <div className="flex flex-wrap gap-2">
-                  <SkeletonLoader className="h-7 w-20 rounded-[10px]" />
-                  <SkeletonLoader className="h-7 w-24 rounded-[10px]" />
-                </div>
-              </div>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {[...Array(6)].map((_, idx) => (
+              <RecommendationCardSkeleton key={idx} />
             ))}
           </div>
-        ) : projects.length === 0 ? (
+        ) : personalizedRecommendations.length === 0 ? (
           <div className={`p-8 rounded-[16px] border text-center ${theme === 'dark'
             ? 'bg-white/[0.08] border-white/15 text-[#d4d4d4]'
             : 'bg-white/[0.15] border-white/25 text-[#7a6b5a]'
             }`}>
-            <p className="text-[16px] font-semibold">No recommended projects found</p>
+            <p className="text-[16px] font-semibold">No recommended picks found yet</p>
+            <p className="mt-2 text-sm">Try checking back later or explore other projects manually.</p>
           </div>
         ) : (
-          <div className="flex flex-col md:flex-row gap-4 md:gap-6 md:overflow-x-auto pb-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-            {projects.map((project) => (
-              <div
-                key={project.id}
-                onClick={() => setSelectedProjectId(String(project.id))}
-                className={`backdrop-blur-[30px] rounded-[20px] border p-6 transition-all cursor-pointer flex-shrink-0 w-full md:w-[320px] ${theme === 'dark'
-                  ? 'bg-white/[0.08] border-white/15 hover:bg-white/[0.12] hover:shadow-[0_8px_24px_rgba(201,152,58,0.15)]'
-                  : 'bg-white/[0.15] border-white/25 hover:bg-white/[0.2] hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)]'
-                  }`}
-              >
-                <div className="flex items-start justify-between mb-4">
-                  {project.icon.startsWith("http") ? (
-                    <img
-                      src={project.icon}
-                      alt={project.name}
-                      className="w-12 h-12 rounded-[14px] border border-white/20 flex-shrink-0"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).src =
-                          `https://github.com/github.png?size=40`;
-                      }}
-                    />
-                  ) : (
-                    <div
-                      className={`w-12 h-12 rounded-[14px] bg-gradient-to-br ${project.color} flex items-center justify-center shadow-md text-2xl`}
-                    >
-                      {project.icon}
-                    </div>
-                  )}
-                  <button className="text-[#c9983a] hover:text-[#a67c2e] transition-colors">
-                    <Heart className="w-5 h-5" />
-                  </button>
-                </div>
-
-                <h4
-                  className={`text-[18px] font-bold mb-2 transition-colors ${
-                    theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"
-                  }`}
-                >
-                  {project.name}
-                </h4>
-                <p
-                  className={`text-[13px] mb-4 line-clamp-2 transition-colors ${
-                    theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"
-                  }`}
-                >
-                  {project.description}
-                </p>
-
-                <div
-                  className={`flex items-center space-x-4 text-[13px] mb-4 transition-colors ${
-                    theme === "dark" ? "text-[#d4d4d4]" : "text-[#7a6b5a]"
-                  }`}
-                >
-                  <div className="flex items-center space-x-1">
-                    <Star className="w-3.5 h-3.5 text-[#c9983a]" />
-                    <span>{project.stars}</span>
-                  </div>
-                  <div className="flex items-center space-x-1">
-                    <GitFork className="w-3.5 h-3.5 text-[#c9983a]" />
-                    <span>{project.forks}</span>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  {project.ecosystem_name && (
-                    <span
-                      className={`px-3 py-1.5 rounded-[10px] border text-[12px] font-semibold ${theme === 'dark'
-                        ? 'bg-white/10 border-white/25 text-[#e8dfd0]'
-                        : 'bg-white/20 border-white/30 text-[#2d2820]'
-                        }`}
-                    >
-                      {project.ecosystem_name}
-                    </span>
-                  )}
-                  {project.tags.map((tag, idx) => (
-                    <span
-                      key={idx}
-                      className={`px-3 py-1.5 rounded-[10px] border text-[12px] font-semibold shadow-[0_2px_8px_rgba(201,152,58,0.15)] ${theme === 'dark'
-                        ? 'bg-[#c9983a]/15 border-[#c9983a]/30 text-[#f5c563]'
-                        : 'bg-[#c9983a]/20 border-[#c9983a]/35 text-[#8b6f3a]'
-                        }`}
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              </div>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {personalizedRecommendations.map((item) => (
+              <RecommendationCard
+                key={item.id}
+                title={item.title}
+                description={item.description}
+                rationale={item.rationale}
+                eyebrow={item.eyebrow}
+                variant={item.type}
+                icon={item.icon}
+                accentClass={item.accentClass}
+                tags={item.tags}
+                stats={item.stats}
+                onClick={item.onClick}
+              />
             ))}
           </div>
         )}

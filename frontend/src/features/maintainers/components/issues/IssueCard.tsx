@@ -26,10 +26,10 @@ export function IssueCard({ issue, index, onClick }: IssueCardProps) {
 
   return (
     <div
-      className={`backdrop-blur-[25px] rounded-[16px] border p-4 hover:border-[#c9983a]/30 hover:shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition-all duration-300 cursor-pointer group/issue ${
+      className={`backdrop-blur-[25px] rounded-[16px] border p-4 shadow-elevation-1 hover:shadow-elevation-2 hover:border-[#c9983a]/30 hover:scale-[1.02] transition-all duration-300 cursor-pointer group/issue ${
         theme === 'dark'
-          ? 'bg-white/[0.08] border-white/10 hover:bg-white/[0.12]'
-          : 'bg-white/[0.15] border-white/25 hover:bg-white/[0.22]'
+          ? 'bg-white/[0.08] border-white/15'
+          : 'bg-white/[0.15] border-white/25'
       }`}
       style={{ animationDelay: `${index * 60}ms` }}
       onClick={onClick}
@@ -126,7 +126,7 @@ export function IssueCard({ issue, index, onClick }: IssueCardProps) {
           theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
         }`}>{issue.user}</span>
         <span className={`text-[11px] ml-auto transition-colors ${
-          theme === 'dark' ? 'text-[#9a8b7a]' : 'text-[#9a8b7a]'
+          theme === 'dark' ? 'text-[#b8a898]' : 'text-[#9a8b7a]'
         }`}>{issue.timeAgo}</span>
       </div>
     </div>

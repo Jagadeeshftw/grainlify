@@ -16,7 +16,7 @@ mod test {
 
     #[test]
     fn test_storage_schema_version_constant() {
-        assert_eq!(STORAGE_SCHEMA_VERSION, 1);
+        assert_eq!(STORAGE_SCHEMA_VERSION, 2);
     }
 
     #[test]
@@ -25,7 +25,7 @@ mod test {
         let (client, _admin) = setup_test(&env);
 
         let layout = client.verify_storage_layout();
-        assert_eq!(layout.schema_version, 1);
+        assert_eq!(layout.schema_version, 2);
         assert!(layout.admin_set);
         assert!(layout.pause_flags_set);
         assert!(layout.maintenance_mode_set);
@@ -56,5 +56,47 @@ mod test {
                 .get(&DataKey::ReadOnlyMode)
                 .unwrap();
         });
+    }
+
+    #[test]
+    fn test_legacy_and_registry_storage_consistency() {
+        let env = Env::default();
+        let (client, _admin) = setup_test(&env);
+        
+        let program_id = soroban_sdk::String::from_str(&env, "prog-123");
+        let creator = Address::generate(&env);
+        let payout_key = Address::generate(&env);
+        let token_address = Address::generate(&env);
+        
+        // initialize program
+        client.initialize_program(
+            &program_id,
+            &payout_key,
+            &token_address,
+            &creator,
+            &None,
+            &None,
+        );
+        
+        // Assert get_program_info and get_program_info_v2 return the exact same data
+        let info1 = client.get_program_info();
+        let info2 = client.get_program_info_v2(&program_id);
+        
+        assert_eq!(info1.program_id, info2.program_id);
+        assert_eq!(info1.authorized_payout_key, info2.authorized_payout_key);
+        assert_eq!(info1.token_address, info2.token_address);
+        assert_eq!(info1.total_funds, info2.total_funds);
+        assert_eq!(info1.remaining_balance, info2.remaining_balance);
+        
+        // lock funds (legacy)
+        let amount = 1000;
+        client.lock_program_funds(&amount);
+        
+        let info1_after = client.get_program_info();
+        let info2_after = client.get_program_info_v2(&program_id);
+        
+        assert_eq!(info1_after.total_funds, info2_after.total_funds);
+        assert_eq!(info1_after.remaining_balance, info2_after.remaining_balance);
+        assert_eq!(info1_after.total_funds, amount);
     }
 }

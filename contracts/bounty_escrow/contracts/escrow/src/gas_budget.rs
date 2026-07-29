@@ -13,19 +13,61 @@
 //! available only via the `testutils` feature of `soroban-sdk` and is not
 //! accessible to WASM contracts running on the Stellar network.
 //!
+//! ## ⚠ Production Gap — Caps are Advisory-Only Outside `testutils`
+//!
+//! **This is the most important operational fact about this module.**
+//!
+//! When the contract runs on the live Stellar network (production WASM build),
+//! `env.budget()` is **not available**. Therefore:
+//!
+//! - `GasBudgetConfig` values are stored and fully readable via
+//!   `get_gas_budget` / `get_gas_budget_advisory_status` — they are not lost.
+//! - Cap *enforcement* (`GasBudgetConfig::enforce = true`) has **no runtime
+//!   effect** in production. No CPU or memory measurements occur; breaches
+//!   cannot be detected; `Error::GasBudgetExceeded` is never returned.
+//! - Cap values act as **documented policy** and off-chain tooling guidance
+//!   only.
+//!
+//! Operators and auditors MUST NOT rely on `GasBudgetConfig` as an active
+//! production safeguard against runaway resource consumption.
+//!
+//! ## Indirect Production Mitigations
+//!
+//! Although per-operation gas caps cannot be measured at runtime, the
+//! following contract-level controls partially substitute in production:
+//!
+//! | Mitigation | How it helps |
+//! |-----------|-------------|
+//! | `MAX_BATCH_SIZE` (default: 20) | Hard-caps the number of items per batch call, bounding the worst-case CPU cost of `batch_lock_funds` / `batch_release_funds` by construction. |
+//! | Per-operation amount caps (`lock_funds` max amount) | Limits token-transfer volume per call, indirectly capping computation. |
+//! | Soroban network-level resource limits | The Stellar network enforces absolute CPU (~100B instructions) and memory (~40 MB) hard limits per transaction, independent of contract logic. Transactions exceeding these are rejected before execution. |
+//! | `GasBudgetAdvisoryStatus::caps_enforced_in_production` flag | Always `false`; readable on-chain so indexers and dashboards can surface the gap to operators. |
+//!
 //! ## Enforcement model
 //!
 //! | Environment           | Cap enforcement                                         |
 //! |-----------------------|---------------------------------------------------------|
-//! | Production / on-chain | Configuration is stored and observable; caps serve as   |
-//! |                       | documented policy. No runtime measurement is possible.  |
+//! | Production / on-chain | Configuration stored + observable; caps are **policy    |
+//! |                       | only**. No runtime measurement. `caps_enforced` = false |
 //! | Test (`testutils`)    | Actual CPU and memory deltas are measured and compared  |
 //! |                       | against the configured caps. Breaches produce           |
 //! |                       | `Error::GasBudgetExceeded` or warning events.           |
 //!
 //! Returning `Err(Error::GasBudgetExceeded)` causes the Soroban host to revert
 //! **all** storage writes and token transfers made during that transaction
-//! atomically, so cap enforcement is both safe and loss-free.
+//! atomically, so cap enforcement is both safe and loss-free — but only in the
+//! test environment.
+//!
+//! ## Querying advisory status in production
+//!
+//! Call `BountyEscrowContract::get_gas_budget_advisory_status` to obtain a
+//! [`GasBudgetAdvisoryStatus`] value that explicitly exposes whether caps are
+//! being enforced at runtime. This is the canonical signal for operators,
+//! dashboards, and auditors to detect the advisory-only state.
+//!
+//! An `advisory_notice` event (`"gas_adv"` topic) is emitted by that call
+//! whenever a non-zero cap is configured, making the gap observable in the
+//! event stream without requiring callers to decode storage.
 //!
 //! ## Tuning caps
 //!
@@ -34,6 +76,13 @@
 //! values to derive conservative caps, then configure them via
 //! `BountyEscrowContract::set_gas_budget`. See `GAS_TESTS.md` for the full
 //! profiling workflow.
+//!
+//! ## Cross-references
+//!
+//! - `contracts/bounty_escrow/docs/security/gas-budget-production-gap.md` —
+//!   full operator and auditor guide for this limitation.
+//! - `contracts/bounty_escrow/docs/security/external-audit-checklist.md` —
+//!   auditor checklist entry for this gap.
 
 use soroban_sdk::{contracttype, Env};
 
@@ -125,6 +174,108 @@ pub fn set_config(env: &Env, config: GasBudgetConfig) {
     env.storage()
         .instance()
         .set(&crate::DataKey::GasBudgetConfig, &config);
+}
+
+// ============================================================================
+// Production advisory status — available in ALL builds (no testutils gate).
+//
+// These types and helpers expose the enforcement gap to operators, dashboards,
+// and auditors at runtime without requiring any testutils API access.
+// ============================================================================
+
+/// Advisory status returned by
+/// `BountyEscrowContract::get_gas_budget_advisory_status`.
+///
+/// ## Security note
+///
+/// `caps_enforced_in_production` is a **compile-time constant** (`false`).
+/// It is structurally impossible for a production WASM build to return `true`
+/// here because the `env.budget()` API is unconditionally absent.  Auditors
+/// can rely on this field as a definitive indicator of the enforcement gap.
+///
+/// The field is exposed through the contract ABI so indexers, monitoring
+/// dashboards, and operator tooling can surface the advisory-only state
+/// without inspecting source code.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GasBudgetAdvisoryStatus {
+    /// Always `false` in production WASM builds.
+    ///
+    /// `env.budget()` is unavailable outside `testutils`; no CPU or memory
+    /// measurement occurs at runtime.  Configured caps serve as policy
+    /// documentation only.
+    pub caps_enforced_in_production: bool,
+    /// `true` when at least one operation has a non-zero CPU or memory cap.
+    ///
+    /// When `caps_configured` is `true` and `caps_enforced_in_production` is
+    /// `false`, the deployment is in the advisory-only state: caps are recorded
+    /// but not measured.  Operators should treat the contract as uncapped from
+    /// a resource-consumption perspective.
+    pub caps_configured: bool,
+    /// `true` when `GasBudgetConfig::enforce` is set to `true` in storage.
+    ///
+    /// Even when this is `true`, enforcement has no runtime effect in
+    /// production (see `caps_enforced_in_production`).
+    pub enforce_flag_set: bool,
+    /// Snapshot of the currently configured caps for reference.
+    pub config: GasBudgetConfig,
+}
+
+/// Return `true` when any operation budget has a non-zero cap configured.
+///
+/// Used internally by [`advisory_status`] and by
+/// `BountyEscrowContract::get_gas_budget_advisory_status`.
+pub fn is_any_cap_configured(cfg: &GasBudgetConfig) -> bool {
+    let ops = [
+        &cfg.lock,
+        &cfg.release,
+        &cfg.refund,
+        &cfg.partial_release,
+        &cfg.batch_lock,
+        &cfg.batch_release,
+    ];
+    ops.iter()
+        .any(|op| op.max_cpu_instructions > 0 || op.max_memory_bytes > 0)
+}
+
+/// Build and return the [`GasBudgetAdvisoryStatus`] for the current config.
+///
+/// This function is available in **all** build configurations (no `testutils`
+/// gate) and is safe to call from production WASM.
+pub fn advisory_status(env: &Env) -> GasBudgetAdvisoryStatus {
+    let config = get_config(env);
+    let caps_configured = is_any_cap_configured(&config);
+    GasBudgetAdvisoryStatus {
+        // compile-time constant: always false outside testutils
+        caps_enforced_in_production: cfg!(any(test, feature = "testutils")),
+        caps_configured,
+        enforce_flag_set: config.enforce,
+        config,
+    }
+}
+
+/// Emit a `GasBudgetAdvisoryNotice` event when non-zero caps are configured.
+///
+/// This is the production-safe advisory signal described in the module docs.
+/// It is emitted unconditionally (no `testutils` gate) so it appears in the
+/// on-chain event stream on every call to
+/// `BountyEscrowContract::get_gas_budget_advisory_status`.
+///
+/// Callers that do not care about advisory events can ignore this; the
+/// call still returns [`GasBudgetAdvisoryStatus`] regardless.
+pub fn emit_advisory_notice_if_needed(env: &Env, status: &GasBudgetAdvisoryStatus) {
+    if !status.caps_configured {
+        return; // nothing to warn about
+    }
+    env.events().publish(
+        (soroban_sdk::symbol_short!("gas_adv"),),
+        crate::events::GasBudgetAdvisoryNotice {
+            caps_enforced_in_production: status.caps_enforced_in_production,
+            caps_configured: status.caps_configured,
+            enforce_flag_set: status.enforce_flag_set,
+            timestamp: env.ledger().timestamp(),
+        },
+    );
 }
 
 // ============================================================================

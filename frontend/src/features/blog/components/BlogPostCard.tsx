@@ -10,14 +10,22 @@ export function BlogPostCard({ post }: BlogPostCardProps) {
   const { theme } = useTheme();
 
   return (
-    <div className="backdrop-blur-[30px] bg-white/[0.15] rounded-[20px] border border-white/25 p-6 hover:bg-white/[0.2] hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] transition-all cursor-pointer group">
+    <div className={`backdrop-blur-[25px] rounded-[20px] border p-6 shadow-elevation-1 hover:shadow-elevation-2 hover:scale-[1.02] transition-all duration-300 cursor-pointer group ${
+        theme === 'dark'
+          ? 'bg-white/[0.08] border-white/15'
+          : 'bg-white/[0.15] border-white/25'
+      }`}>
       <div className="w-16 h-16 rounded-[16px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] flex items-center justify-center shadow-lg text-3xl mb-4 border border-white/15 group-hover:scale-110 transition-transform duration-300">
         {post.icon}
       </div>
       
       {post.category && (
         <div className="flex items-center gap-2 mb-3">
-          <span className="px-3 py-1 bg-[#c9983a]/20 border border-[#c9983a]/35 rounded-[8px] text-[11px] font-semibold text-[#8b6f3a]">
+          <span className={`px-3 py-1 rounded-[8px] text-[11px] font-semibold border ${
+            theme === 'dark'
+              ? 'bg-[#c9983a]/20 border-[#c9983a]/40 text-[#e8c571]'
+              : 'bg-[#c9983a]/20 border-[#c9983a]/35 text-[#8b6f3a]'
+          }`}>
             {post.category}
           </span>
         </div>
@@ -35,8 +43,8 @@ export function BlogPostCard({ post }: BlogPostCardProps) {
         {post.excerpt}
       </p>
 
-      <div className={`flex items-center gap-3 text-[12px] pb-4 border-b border-white/10 mb-4 transition-colors ${
-        theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
+      <div className={`flex items-center gap-3 text-[12px] pb-4 border-b mb-4 transition-colors ${
+        theme === 'dark' ? 'text-[#d4d4d4] border-white/10' : 'text-[#7a6b5a] border-white/10'
       }`}>
         <span className="flex items-center gap-1">
           <Calendar className="w-3.5 h-3.5" />

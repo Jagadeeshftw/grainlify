@@ -980,6 +980,52 @@ export const assignApplicant = (
     },
   );
 
+// Notifications
+export const getNotifications = (params?: {
+  type?: string;
+  read?: boolean;
+  limit?: number;
+  offset?: number;
+}) => {
+  const queryParams = new URLSearchParams();
+  if (params?.type) queryParams.append("type", params.type);
+  if (params?.read !== undefined) queryParams.append("read", String(params.read));
+  if (params?.limit) queryParams.append("limit", String(params.limit));
+  if (params?.offset) queryParams.append("offset", String(params.offset));
+  const query = queryParams.toString() ? `?${queryParams.toString()}` : "";
+  return apiRequest<{
+    notifications: Array<{
+      id: string;
+      type: string;
+      title: string;
+      body: string;
+      read: boolean;
+      created_at: string;
+      action_url?: string;
+      actor?: { name: string; avatar_url: string };
+    }>;
+    unread_count: number;
+    total: number;
+    limit: number;
+    offset: number;
+  }>(`/notifications${query}`, { requiresAuth: true });
+};
+
+export const getNotificationCount = () =>
+  apiRequest<{ count: number }>("/notifications/count", { requiresAuth: true });
+
+export const markNotificationRead = (notificationId: string) =>
+  apiRequest<{ ok: boolean }>(`/notifications/${notificationId}/read`, {
+    requiresAuth: true,
+    method: "POST",
+  });
+
+export const markAllNotificationsRead = () =>
+  apiRequest<{ ok: boolean }>("/notifications/read-all", {
+    requiresAuth: true,
+    method: "POST",
+  });
+
 export const unassignApplicant = (projectId: string, issueNumber: number) =>
   apiRequest<{ ok: boolean }>(
     `/projects/${projectId}/issues/${issueNumber}/unassign`,

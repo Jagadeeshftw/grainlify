@@ -19,6 +19,7 @@ wasm_tests = []
 
 [dependencies]
 soroban-sdk = "=21.7.7"
+ethnum = "1.5"
 
 [dev-dependencies]
 soroban-sdk = { version = "=21.7.7", features = ["testutils"] }
@@ -29,3 +30,7 @@ opt-level = "z"
 lto = true
 codegen-units = 1
 panic = "abort"
+
+[profile.test]
+overflow-checks = true
+debug = 0

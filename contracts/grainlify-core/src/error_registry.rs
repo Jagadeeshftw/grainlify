@@ -52,6 +52,7 @@ pub const GRAINLIFY_CORE_REGISTRY: &[RegistryEntry] = &[
     (105, "TimelockDelayTooHigh"),
     (106, "SnapshotRestoreAdminPending"),
     (107, "SnapshotPruned"),
+    (108, "InvalidPagination"),
 ];
 
 /// Returns `true` if any two entries in `registry` share the same numeric code.

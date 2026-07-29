@@ -77,6 +77,18 @@
         "description": "Return the full circuit breaker error log (last N entries).",
         "parameters": [],
         "authorization": "none"
+      },
+      {
+        "name": "get_fee_config",
+        "description": "Return current fee configuration including insurance reserve basis points.",
+        "parameters": [],
+        "authorization": "none"
+      },
+      {
+        "name": "get_insurance_reserve_balance",
+        "description": "Return current insurance reserve balance in native token units.",
+        "parameters": [],
+        "authorization": "none"
       }
     ],
     "admin": [
@@ -214,6 +226,35 @@
           { "name": "threshold_amount", "type": "i128" }
         ],
         "authorization": "admin"
+      },
+      {
+        "name": "update_fee_config",
+        "description": "Update fee configuration including insurance reserve basis points. None values leave fields unchanged.",
+        "parameters": [
+          { "name": "lock_fee_rate", "type": "Option<i128>" },
+          { "name": "payout_fee_rate", "type": "Option<i128>" },
+          { "name": "lock_fixed_fee", "type": "Option<i128>" },
+          { "name": "payout_fixed_fee", "type": "Option<i128>" },
+          { "name": "fee_recipient", "type": "Option<Address>" },
+          { "name": "fee_enabled", "type": "Option<bool>" },
+          { "name": "insurance_reserve_bps", "type": "Option<u32>" }
+        ],
+        "authorization": "admin",
+        "errors": [
+          { "code": 704, "message": "Invalid insurance reserve basis-point rate" }
+        ]
+      },
+      {
+        "name": "withdraw_insurance_reserve",
+        "description": "Withdraw funds from the insurance reserve. Requires admin authorization and emits audit event.",
+        "parameters": [
+          { "name": "target", "type": "Address" },
+          { "name": "amount", "type": "i128" }
+        ],
+        "authorization": "admin",
+        "errors": [
+          { "code": 705, "message": "Insurance reserve balance insufficient for withdrawal" }
+        ]
       }
     ]
   },

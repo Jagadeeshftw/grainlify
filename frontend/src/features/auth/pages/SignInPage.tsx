@@ -1,13 +1,25 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
-import { ArrowLeft, Github } from 'lucide-react';
+import { ArrowLeft, Github, Wallet } from 'lucide-react';
 import { getGitHubLoginUrl } from '../../../shared/api/client';
+import { WalletConnectionModal } from '../components/WalletConnectionModal';
+import { OAuthErrorBanner } from '../components/OAuthErrorBanner';
+import { classifyOAuthError } from '../types/oauthErrors';
+import type { OAuthErrorState } from '../types/oauthErrors';
+import type { WalletProviderId } from '../types';
 
 export function SignInPage() {
   const { theme } = useTheme();
   const navigate = useNavigate();
   const [isRedirecting, setIsRedirecting] = useState(false);
+  const [walletModalOpen, setWalletModalOpen] = useState(false);
+  const [oauthError, setOauthError] = useState<OAuthErrorState | null>(null);
+
+  const handleWalletConnect = (_providerId: WalletProviderId) => {
+    // TODO: integrate with Stellar wallet SDK per provider
+    setWalletModalOpen(false);
+  };
 
   // Persist returnTo so after OAuth we can redirect back to the intended page (e.g. dashboard?tab=browse&project=...&issue=...)
   useEffect(() => {
@@ -24,27 +36,39 @@ export function SignInPage() {
     if (token) {
       // If there's a token in the URL, redirect to the proper callback handler
       navigate(`/auth/callback?token=${token}`, { replace: true });
+      return;
+    }
+
+    // Check for OAuth error params returned from GitHub redirect
+    const errorParam = params.get('error');
+    if (errorParam) {
+      setOauthError(classifyOAuthError(errorParam));
     }
   }, [navigate]);
 
-  const handleGithubSign = async () => {
-        setLoading(true);
-            try {
-                    const provider = new GithubAuthProvider();
-                            console.log("sign in false ",false)
-                                    const github1 = await signInWithPopup(auth, provider);
-                                            console.log("Redirecting to :", github1);
-                                                    // subject to github login
-                                                            window.location.href = github1;
+  const handleGitHubSignIn = useCallback(() => {
+    if (isRedirecting) return;
+    setOauthError(null);
+    setIsRedirecting(true);
+    const githubUrl = getGitHubLoginUrl();
+    window.location.href = githubUrl;
+  }, [isRedirecting]);
 
-                                                                } catch (error) {
-                                                                        console.log(error);
-                                                                            }
-                                                                            };
+  const handleRetry = useCallback(() => {
+    setOauthError(null);
+    handleGitHubSignIn();
+  }, [handleGitHubSignIn]);
 
-  
+  const handleContactSupport = useCallback(() => {
+    window.open('mailto:support@grainlify.com?subject=GitHub OAuth Error', '_blank');
+  }, []);
+
+  const handleDismissError = useCallback(() => {
+    setOauthError(null);
+  }, []);
 
   return (
+    <>
     <div className={`min-h-screen flex items-center justify-center px-6 relative overflow-hidden transition-colors ${
       theme === 'dark'
         ? 'bg-gradient-to-br from-[#1a1512] via-[#231c17] to-[#2d241d]'
@@ -88,6 +112,16 @@ export function SignInPage() {
             }`}>Sign in with your GitHub account</p>
           </div>
 
+          {/* OAuth Error Banner */}
+          {oauthError && (
+            <OAuthErrorBanner
+              error={oauthError}
+              onRetry={handleRetry}
+              onContactSupport={handleContactSupport}
+              onDismiss={handleDismissError}
+            />
+          )}
+
           {/* GitHub Sign In */}
           <div className="space-y-6">
             <button
@@ -121,6 +155,19 @@ export function SignInPage() {
               </div>
             </div>
 
+            {/* Connect Wallet */}
+            <button
+              onClick={() => setWalletModalOpen(true)}
+              className={`w-full py-4 rounded-[12px] font-medium transition-all flex items-center justify-center space-x-3 border focus:outline-none focus:ring-2 focus:ring-[#c9983a]/50 ${
+                theme === 'dark'
+                  ? 'bg-white/[0.06] border-white/15 text-[#f5efe5] hover:bg-white/[0.12]'
+                  : 'bg-white/[0.15] border-white/25 text-[#2d2820] hover:bg-white/[0.30]'
+              }`}
+            >
+              <Wallet className="w-5 h-5 text-[#c9983a]" />
+              <span>Connect Stellar Wallet</span>
+            </button>
+
             <div className={`backdrop-blur-[25px] border rounded-[12px] p-4 transition-colors ${
               theme === 'dark'
                 ? 'bg-white/[0.06] border-white/10'
@@ -147,5 +194,12 @@ export function SignInPage() {
         </div>
       </div>
     </div>
+    {walletModalOpen && (
+      <WalletConnectionModal
+        onClose={() => setWalletModalOpen(false)}
+        onConnect={handleWalletConnect}
+      />
+    )}
+    </>
   );
 }

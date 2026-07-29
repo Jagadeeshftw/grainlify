@@ -1,0 +1,49 @@
+/**
+ * @file Coach mark animations and reduced-motion hardening.
+ *
+ * Animations are opacity-only to comply with WCAG 2.3.3 and the project's
+ * reducedMotion tokens. No transform-based transitions are used.
+ */
+
+@keyframes coach-mark-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes coach-mark-ring-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 4px rgba(201, 152, 58, 0.15);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(201, 152, 58, 0.08);
+  }
+}
+
+.animate-coach-mark-in {
+  animation: coach-mark-fade-in 300ms cubic-bezier(0, 0, 0.2, 1) both;
+}
+
+.animate-coach-mark-backdrop-in {
+  animation: coach-mark-fade-in 200ms cubic-bezier(0, 0, 0.2, 1) both;
+}
+
+.animate-coach-mark-ring-in {
+  animation:
+    coach-mark-fade-in 200ms cubic-bezier(0, 0, 0.2, 1) both,
+    coach-mark-ring-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite 300ms;
+}
+
+/* Reduced motion: instant appearance, no pulse */
+@media (prefers-reduced-motion: reduce) {
+  .animate-coach-mark-in,
+  .animate-coach-mark-backdrop-in,
+  .animate-coach-mark-ring-in {
+    animation: none;
+    opacity: 1;
+  }
+}
