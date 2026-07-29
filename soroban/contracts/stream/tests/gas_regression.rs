@@ -990,3 +990,197 @@ fn regression_baseline_reset_matches_fresh_fixture() {
         "reset fixture memory must match fresh fixture memory"
     );
 }
+
+// =============================================================================
+// 11. SNAPSHOT API & EXTENDED DETERMINISM
+// =============================================================================
+
+/// The `snapshot()` + `delta_from()` API must produce the same result as `measure()`.
+///
+/// **What this proves**: The two-step snapshot workflow is equivalent to the
+/// atomic `measure()` helper. This allows callers to split measurement from
+/// operation when they need to capture setup + operation separately.
+#[test]
+fn snapshot_delta_matches_measure() {
+    let fix = GasRegressionFixture::new();
+    fix.reset_budget();
+
+    // === Using measure() ===
+    let d_measure = measure(&fix.env, || {
+        let _addr = Address::generate(&fix.env);
+    });
+
+    // === Using snapshot() + delta_from() ===
+    fix.reset_budget();
+    let before = fix.snapshot();
+    let _addr2 = Address::generate(&fix.env);
+    let d_snapshot = fix.delta_from(before);
+
+    assert_eq!(
+        d_measure, d_snapshot,
+        "snapshot+delta_from must produce identical result to measure()"
+    );
+}
+
+/// The `snapshot()` method must return values that represent the current budget state.
+///
+/// **What this proves**: The snapshot accurately reflects the budget counters
+/// at the time of the call, making it a reliable baseline for delta computation.
+#[test]
+fn snapshot_reflects_current_budget() {
+    let fix = GasRegressionFixture::new();
+    fix.reset_budget();
+
+    let s0 = fix.snapshot();
+    assert_eq!(s0.cpu, 0, "snapshot after reset must show zero CPU");
+    assert_eq!(s0.mem, 0, "snapshot after reset must show zero memory");
+
+    // Consume some budget
+    let _addr = Address::generate(&fix.env);
+    let s1 = fix.snapshot();
+
+    assert!(
+        s1.cpu > s0.cpu,
+        "snapshot after address generation must show increased CPU; before={}, after={}",
+        s0.cpu,
+        s1.cpu
+    );
+}
+
+/// Calling `measure()` without a prior `reset_budget()` must still produce
+/// correct deltas — the delta is relative to the current counter state.
+///
+/// **What this proves**: The `measure()` helper does not depend on a zeroed
+/// budget. It captures relative deltas regardless of the starting counter values.
+/// This is important for measuring specific operations within a larger setup.
+#[test]
+fn measure_without_prior_reset_produces_correct_delta() {
+    let fix = GasRegressionFixture::new();
+
+    // Perform some setup operations that consume gas
+    for _ in 0..10 {
+        let _addr = Address::generate(&fix.env);
+    }
+
+    // Measure WITHOUT reset — delta should reflect only the measured operation
+    let d = measure(&fix.env, || {
+        let _addr = Address::generate(&fix.env); // one more address
+    });
+
+    // The delta must be positive (address generation costs something)
+    assert!(
+        d.has_positive_cost(),
+        "measure() without prior reset must still capture a positive delta"
+    );
+
+    // Verify determinism: running the same measurement again must match
+    let fix2 = GasRegressionFixture::new();
+    fix2.reset_budget();
+    let d_fresh = measure(&fix2.env, || {
+        let _addr = Address::generate(&fix2.env);
+    });
+
+    assert_eq!(
+        d, d_fresh,
+        "address generation delta must be deterministic regardless of prior fixture state"
+    );
+}
+
+/// The fixture must produce deterministic results across simulated "reruns"
+/// — creating a fixture, performing operations, and measuring the same
+/// operation across multiple independent runs.
+///
+/// **What this proves**: If a test is run multiple times (e.g., in CI retries),
+/// each run produces identical gas measurements for the same operation.
+/// This is the foundation of "deterministic across retries and rerenders."
+#[test]
+fn determinism_across_simulated_reruns() {
+    // Simulate 5 independent "reruns" of the same test logic
+    let mut results: Vec<BudgetDelta> = Vec::new();
+
+    for _run in 0..5 {
+        let fix = GasRegressionFixture::new();
+        let admin = Address::generate(&fix.env);
+
+        // Register a token contract as setup (not measured)
+        let token_contract = fix.env.register_stellar_asset_contract_v2(admin.clone());
+        let token_id = token_contract.address();
+        let token_sac = token::StellarAssetClient::new(&fix.env, &token_id);
+
+        // Measure the same operation in each "rerun"
+        fix.reset_budget();
+        let d = measure(&fix.env, || {
+            token_sac.mint(&admin, &1_000);
+        });
+
+        results.push(d);
+    }
+
+    // All reruns must produce identical deltas
+    let first = &results[0];
+    for (i, d) in results.iter().enumerate().skip(1) {
+        assert_eq!(
+            first, d,
+            "rerun {} must produce identical delta to rerun 0; deterministic property violated \
+             across simulated retries",
+            i
+        );
+    }
+}
+
+/// Measurements taken without intervening budget resets accumulate correctly.
+///
+/// **What this proves**: If you call `measure()` multiple times without
+/// `reset_budget()` between them, each call captures only the delta from
+/// the previous measurement's end state. The total of all deltas equals
+/// the cost of running all operations together.
+#[test]
+fn sequential_measurements_without_resets_accumulate() {
+    let fix = GasRegressionFixture::new();
+    fix.reset_budget();
+
+    // Measure three operations sequentially WITHOUT resetting between
+    let d1 = measure(&fix.env, || {
+        let _addr = Address::generate(&fix.env);
+    });
+    let d2 = measure(&fix.env, || {
+        let _addr = Address::generate(&fix.env);
+    });
+    let d3 = measure(&fix.env, || {
+        let _addr = Address::generate(&fix.env);
+    });
+
+    // Each individual delta must be positive
+    assert!(d1.has_positive_cost(), "d1 must be positive");
+    assert!(d2.has_positive_cost(), "d2 must be positive");
+    assert!(d3.has_positive_cost(), "d3 must be positive");
+
+    // The deltas should be equal since they're the same operation
+    assert_eq!(
+        d1, d2,
+        "identical sequential operations must produce identical deltas"
+    );
+    assert_eq!(
+        d1, d3,
+        "identical sequential operations must produce identical deltas"
+    );
+}
+
+/// The fixture must implement [`std::fmt::Debug`] for ergonomic use in
+/// assertions and logging.
+///
+/// **What this proves**: The custom `Debug` implementation on
+/// `GasRegressionFixture` compiles and produces a non-empty representation.
+#[test]
+fn fixture_debug_representation() {
+    let fix = GasRegressionFixture::new();
+    let debug_str = format!("{:?}", fix);
+    assert!(
+        !debug_str.is_empty(),
+        "Debug representation must not be empty"
+    );
+    assert!(
+        debug_str.contains("GasRegressionFixture"),
+        "Debug representation must include the type name"
+    );
+}

@@ -100,8 +100,30 @@ pub fn measure<F: FnOnce()>(env: &Env, f: F) -> BudgetDelta {
 ///   identical gas measurements on the same binary.
 /// - Fixture creation is O(1) and does not interact with ledger state.
 /// - No shared mutable state between fixture instances.
+///
+/// # Determinism Across Retries and Rerenders
+///
+/// For the **same binary build**, all of the following are guaranteed deterministic:
+///
+/// | Aspect | Guarantee |
+/// |--------|-----------|
+/// | Fixture creation | `new()` always produces identical initial budget state |
+/// | Budget reset | `reset_budget()` always produces zero state |
+/// | Measurement delta | Same operation + same inputs = identical `BudgetDelta` |
+/// | Snapshot delta | `snapshot()` + operation + delta = identical result |
+///
+/// Cross-binary, cross-SDK-version, and cross-compiler-flag builds **may** differ.
+/// This is expected and does not indicate a regression.
 pub struct GasRegressionFixture {
     pub env: Env,
+}
+
+impl core::fmt::Debug for GasRegressionFixture {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("GasRegressionFixture")
+            .field("env", &"<Env>")
+            .finish()
+    }
 }
 
 impl GasRegressionFixture {
@@ -136,8 +158,68 @@ impl GasRegressionFixture {
     ///
     /// Always call this immediately before the operation being measured to
     /// ensure only that operation's cost is captured.
+    ///
+    /// # Determinism
+    ///
+    /// After `reset_budget()`, the budget counters are **always** at zero,
+    /// regardless of prior fixture history. This is verified by
+    /// `reproducibility_reset_produces_canonical_state`.
     pub fn reset_budget(&self) {
         self.env.cost_estimate().budget().reset_unlimited();
+    }
+
+    /// Captures the current budget meters as a raw starting point.
+    ///
+    /// Use this when you need to record a budget baseline at one point in
+    /// execution and compute the delta later. This is useful for measuring
+    /// setup + operation separately.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let fix = GasRegressionFixture::new();
+    /// let before = fix.snapshot();
+    /// // perform setup + operation
+    /// let delta = fix.delta_from(before);
+    /// assert!(delta.has_positive_cost());
+    /// ```
+    ///
+    /// # Determinism
+    ///
+    /// For the same fixture state, `snapshot()` always returns the same pair
+    /// of values on the same binary.
+    pub fn snapshot(&self) -> BudgetDelta {
+        BudgetDelta {
+            cpu: self.env.cost_estimate().budget().cpu_instruction_cost(),
+            mem: self.env.cost_estimate().budget().memory_bytes_cost(),
+        }
+    }
+
+    /// Computes the budget delta from a previously captured snapshot to the current state.
+    ///
+    /// This is the inverse of [`snapshot()`](Self::snapshot): it returns the resources
+    /// consumed between the two points. The result uses `saturating_sub` so it never
+    /// underflows even if the budget was reset between the snapshot and this call.
+    ///
+    /// # Determinism
+    ///
+    /// For the same sequence of operations between `snapshot()` and `delta_from()`,
+    /// this always returns identical values on the same binary.
+    pub fn delta_from(&self, before: BudgetDelta) -> BudgetDelta {
+        BudgetDelta {
+            cpu: self
+                .env
+                .cost_estimate()
+                .budget()
+                .cpu_instruction_cost()
+                .saturating_sub(before.cpu),
+            mem: self
+                .env
+                .cost_estimate()
+                .budget()
+                .memory_bytes_cost()
+                .saturating_sub(before.mem),
+        }
     }
 }
 
