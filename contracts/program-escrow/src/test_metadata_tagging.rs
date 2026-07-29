@@ -1,6 +1,3 @@
-#![cfg(test)]
-extern crate std;
-
 use crate::*;
 use soroban_sdk::{testutils::Address as _, token, Address, Env, String, Vec as SdkVec};
 
@@ -359,7 +356,7 @@ fn test_program_metadata_serialization() {
         custom_fields: SdkVec::new(&s.env),
     };
 
-    s.escrow.update_program_metadata(&program_id, &metadata);
+    s.escrow.update_program_metadata(&program_id, &s.backend, &metadata);
     let retrieved = s.escrow.get_program_metadata(&program_id);
     assert_eq!(
         retrieved.program_name,
@@ -692,4 +689,266 @@ fn test_compress_case_sensitivity() {
     assert_eq!(meta.custom_fields.len(), 1);
     let f0 = meta.custom_fields.get(0).unwrap();
     assert_eq!(f0.key, String::from_str(&s.env, "Sponsor"));
+}
+
+// ============================================================================
+// Boundary & consistency tests for custom_fields limits (Issue #1498)
+// ============================================================================
+
+/// Create a ProgramMetadata with `n` custom fields (all identical keys/values).
+fn metadata_with_n_fields(env: &Env, n: u32) -> ProgramMetadata {
+    let mut custom_fields: Vec<ProgramMetadataField> = Vec::new(env);
+    for _ in 0..n {
+        custom_fields.push_back(ProgramMetadataField {
+            key: String::from_str(env, "k"),
+            value: String::from_str(env, "v"),
+        });
+    }
+    ProgramMetadata {
+        program_name: Some(String::from_str(env, "Boundary Test")),
+        program_type: None,
+        ecosystem: None,
+        tags: Vec::new(env),
+        start_date: None,
+        end_date: None,
+        custom_fields,
+    }
+}
+
+/// Create a ProgramMetadata with a single custom field whose key and value
+/// have the given byte lengths (max 257).
+fn metadata_with_key_value_len(env: &Env, key_len: u32, value_len: u32) -> ProgramMetadata {
+    let mut custom_fields: Vec<ProgramMetadataField> = Vec::new(env);
+    let buf_k = [b'k'; 257];
+    let buf_v = [b'v'; 257];
+    let key_s = core::str::from_utf8(&buf_k[..key_len as usize]).unwrap();
+    let val_s = core::str::from_utf8(&buf_v[..value_len as usize]).unwrap();
+    custom_fields.push_back(ProgramMetadataField {
+        key: String::from_str(env, key_s),
+        value: String::from_str(env, val_s),
+    });
+    ProgramMetadata {
+        program_name: Some(String::from_str(env, "Boundary Test")),
+        program_type: None,
+        ecosystem: None,
+        tags: Vec::new(env),
+        start_date: None,
+        end_date: None,
+        custom_fields,
+    }
+}
+
+// ── Field-count boundary (soft limit MAX_PROGRAM_METADATA_CUSTOM_FIELDS = 10) ──
+
+#[test]
+fn test_init_accept_max_program_metadata_custom_fields() {
+    let s = Setup::new();
+    let program_id = String::from_str(&s.env, "InitMaxSoftFields");
+    let metadata = metadata_with_n_fields(&s.env, MAX_PROGRAM_METADATA_CUSTOM_FIELDS);
+    s.escrow.init_program_with_metadata(
+        &program_id, &s.backend, &s.token.address, &s.organizer, &None, &Some(metadata),
+    );
+    let retrieved = s.escrow.get_program_metadata(&program_id);
+    assert!(retrieved.is_some());
+    assert_eq!(
+        retrieved.unwrap().custom_fields.len(),
+        MAX_PROGRAM_METADATA_CUSTOM_FIELDS as u32,
+    );
+}
+
+#[test]
+#[should_panic(expected = "Metadata custom fields exceed limit")]
+fn test_init_reject_over_soft_limit_custom_fields() {
+    let s = Setup::new();
+    let program_id = String::from_str(&s.env, "InitOverSoft");
+    let metadata = metadata_with_n_fields(&s.env, MAX_PROGRAM_METADATA_CUSTOM_FIELDS + 1);
+    s.escrow.init_program_with_metadata(
+        &program_id, &s.backend, &s.token.address, &s.organizer, &None, &Some(metadata),
+    );
+}
+
+#[test]
+fn test_update_accept_max_program_metadata_custom_fields() {
+    let s = Setup::new();
+    let program_id = String::from_str(&s.env, "UpdMaxSoft");
+    s.escrow.init_program_with_metadata(
+        &program_id, &s.backend, &s.token.address, &s.organizer, &None, &None,
+    );
+    s.escrow.publish_program(&program_id, &s.backend);
+    let metadata = metadata_with_n_fields(&s.env, MAX_PROGRAM_METADATA_CUSTOM_FIELDS);
+    s.escrow.update_program_metadata_by(&program_id, &s.backend, &metadata);
+    let retrieved = s.escrow.get_program_metadata(&program_id);
+    assert!(retrieved.is_some());
+    assert_eq!(
+        retrieved.unwrap().custom_fields.len(),
+        MAX_PROGRAM_METADATA_CUSTOM_FIELDS as u32,
+    );
+}
+
+#[test]
+#[should_panic(expected = "Metadata custom fields exceed limit")]
+fn test_update_reject_over_soft_limit_custom_fields() {
+    let s = Setup::new();
+    let program_id = String::from_str(&s.env, "UpdOverSoft");
+    s.escrow.init_program_with_metadata(
+        &program_id, &s.backend, &s.token.address, &s.organizer, &None, &None,
+    );
+    s.escrow.publish_program(&program_id, &s.backend);
+    let metadata = metadata_with_n_fields(&s.env, MAX_PROGRAM_METADATA_CUSTOM_FIELDS + 1);
+    s.escrow.update_program_metadata_by(&program_id, &s.backend, &metadata);
+}
+
+// ── Key-length boundary (MAX_CUSTOM_FIELD_KEY_LEN = 64) ──
+
+#[test]
+fn test_init_accept_max_key_len() {
+    let s = Setup::new();
+    let program_id = String::from_str(&s.env, "InitMaxKeyLen");
+    let metadata = metadata_with_key_value_len(&s.env, MAX_CUSTOM_FIELD_KEY_LEN, 1);
+    s.escrow.init_program_with_metadata(
+        &program_id, &s.backend, &s.token.address, &s.organizer, &None, &Some(metadata),
+    );
+    let retrieved = s.escrow.get_program_metadata(&program_id);
+    assert!(retrieved.is_some());
+    assert_eq!(retrieved.unwrap().custom_fields.len(), 1);
+}
+
+#[test]
+#[should_panic(expected = "CustomFieldKeyTooLong")]
+fn test_init_reject_over_key_len() {
+    let s = Setup::new();
+    let program_id = String::from_str(&s.env, "InitOverKeyLen");
+    let metadata = metadata_with_key_value_len(&s.env, MAX_CUSTOM_FIELD_KEY_LEN + 1, 1);
+    s.escrow.init_program_with_metadata(
+        &program_id, &s.backend, &s.token.address, &s.organizer, &None, &Some(metadata),
+    );
+}
+
+#[test]
+fn test_update_accept_max_key_len() {
+    let s = Setup::new();
+    let program_id = String::from_str(&s.env, "UpdMaxKeyLen");
+    s.escrow.init_program_with_metadata(
+        &program_id, &s.backend, &s.token.address, &s.organizer, &None, &None,
+    );
+    s.escrow.publish_program(&program_id, &s.backend);
+    let metadata = metadata_with_key_value_len(&s.env, MAX_CUSTOM_FIELD_KEY_LEN, 1);
+    s.escrow.update_program_metadata_by(&program_id, &s.backend, &metadata);
+    let retrieved = s.escrow.get_program_metadata(&program_id);
+    assert!(retrieved.is_some());
+    assert_eq!(retrieved.unwrap().custom_fields.len(), 1);
+}
+
+#[test]
+#[should_panic(expected = "CustomFieldKeyTooLong")]
+fn test_update_reject_over_key_len() {
+    let s = Setup::new();
+    let program_id = String::from_str(&s.env, "UpdOverKeyLen");
+    s.escrow.init_program_with_metadata(
+        &program_id, &s.backend, &s.token.address, &s.organizer, &None, &None,
+    );
+    s.escrow.publish_program(&program_id, &s.backend);
+    let metadata = metadata_with_key_value_len(&s.env, MAX_CUSTOM_FIELD_KEY_LEN + 1, 1);
+    s.escrow.update_program_metadata_by(&program_id, &s.backend, &metadata);
+}
+
+// ── Value-length boundary (MAX_CUSTOM_FIELD_VALUE_LEN = 256) ──
+
+#[test]
+fn test_init_accept_max_value_len() {
+    let s = Setup::new();
+    let program_id = String::from_str(&s.env, "InitMaxValLen");
+    let metadata = metadata_with_key_value_len(&s.env, 1, MAX_CUSTOM_FIELD_VALUE_LEN);
+    s.escrow.init_program_with_metadata(
+        &program_id, &s.backend, &s.token.address, &s.organizer, &None, &Some(metadata),
+    );
+    let retrieved = s.escrow.get_program_metadata(&program_id);
+    assert!(retrieved.is_some());
+    assert_eq!(retrieved.unwrap().custom_fields.len(), 1);
+}
+
+#[test]
+#[should_panic(expected = "CustomFieldValueTooLong")]
+fn test_init_reject_over_value_len() {
+    let s = Setup::new();
+    let program_id = String::from_str(&s.env, "InitOverValLen");
+    let metadata = metadata_with_key_value_len(&s.env, 1, MAX_CUSTOM_FIELD_VALUE_LEN + 1);
+    s.escrow.init_program_with_metadata(
+        &program_id, &s.backend, &s.token.address, &s.organizer, &None, &Some(metadata),
+    );
+}
+
+#[test]
+fn test_update_accept_max_value_len() {
+    let s = Setup::new();
+    let program_id = String::from_str(&s.env, "UpdMaxValLen");
+    s.escrow.init_program_with_metadata(
+        &program_id, &s.backend, &s.token.address, &s.organizer, &None, &None,
+    );
+    s.escrow.publish_program(&program_id, &s.backend);
+    let metadata = metadata_with_key_value_len(&s.env, 1, MAX_CUSTOM_FIELD_VALUE_LEN);
+    s.escrow.update_program_metadata_by(&program_id, &s.backend, &metadata);
+    let retrieved = s.escrow.get_program_metadata(&program_id);
+    assert!(retrieved.is_some());
+    assert_eq!(retrieved.unwrap().custom_fields.len(), 1);
+}
+
+#[test]
+#[should_panic(expected = "CustomFieldValueTooLong")]
+fn test_update_reject_over_value_len() {
+    let s = Setup::new();
+    let program_id = String::from_str(&s.env, "UpdOverValLen");
+    s.escrow.init_program_with_metadata(
+        &program_id, &s.backend, &s.token.address, &s.organizer, &None, &None,
+    );
+    s.escrow.publish_program(&program_id, &s.backend);
+    let metadata = metadata_with_key_value_len(&s.env, 1, MAX_CUSTOM_FIELD_VALUE_LEN + 1);
+    s.escrow.update_program_metadata_by(&program_id, &s.backend, &metadata);
+}
+
+// ── Shared validation function direct tests ──
+
+#[test]
+fn test_shared_validation_accepts_max_custom_fields() {
+    let env = Env::default();
+    let metadata = metadata_with_n_fields(&env, MAX_CUSTOM_FIELDS);
+    validate_metadata_custom_fields(&metadata);
+}
+
+#[test]
+#[should_panic(expected = "CustomFieldsLimitExceeded")]
+fn test_shared_validation_rejects_over_max_custom_fields() {
+    let env = Env::default();
+    let metadata = metadata_with_n_fields(&env, MAX_CUSTOM_FIELDS + 1);
+    validate_metadata_custom_fields(&metadata);
+}
+
+#[test]
+fn test_shared_validation_accepts_max_key_len() {
+    let env = Env::default();
+    let metadata = metadata_with_key_value_len(&env, MAX_CUSTOM_FIELD_KEY_LEN, 1);
+    validate_metadata_custom_fields(&metadata);
+}
+
+#[test]
+#[should_panic(expected = "CustomFieldKeyTooLong")]
+fn test_shared_validation_rejects_over_key_len() {
+    let env = Env::default();
+    let metadata = metadata_with_key_value_len(&env, MAX_CUSTOM_FIELD_KEY_LEN + 1, 1);
+    validate_metadata_custom_fields(&metadata);
+}
+
+#[test]
+fn test_shared_validation_accepts_max_value_len() {
+    let env = Env::default();
+    let metadata = metadata_with_key_value_len(&env, 1, MAX_CUSTOM_FIELD_VALUE_LEN);
+    validate_metadata_custom_fields(&metadata);
+}
+
+#[test]
+#[should_panic(expected = "CustomFieldValueTooLong")]
+fn test_shared_validation_rejects_over_value_len() {
+    let env = Env::default();
+    let metadata = metadata_with_key_value_len(&env, 1, MAX_CUSTOM_FIELD_VALUE_LEN + 1);
+    validate_metadata_custom_fields(&metadata);
 }
