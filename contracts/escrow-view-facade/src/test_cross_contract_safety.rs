@@ -25,15 +25,13 @@ use soroban_sdk::{
     Address, Env, String, Vec,
 };
 
-use crate::{EscrowViewFacade, EscrowViewFacadeClient, EscrowStatus};
+use crate::{EscrowStatus, EscrowViewFacade, EscrowViewFacadeClient};
 
 // ── Minimal mock escrow ───────────────────────────────────────────────────────
 
 mod mock_escrow {
-    use soroban_sdk::{
-        contract, contractimpl, contracttype, Address, Env, String, Vec,
-    };
     use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, String, Vec};
 
     #[contracttype]
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -129,6 +127,15 @@ mod mock_escrow {
         ) -> Vec<EscrowWithId> {
             Vec::new(&env)
         }
+
+        pub fn query_escrows_by_beneficiary(
+            env: Env,
+            _beneficiary: Address,
+            _offset: u32,
+            _limit: u32,
+        ) -> Vec<EscrowWithId> {
+            Vec::new(&env)
+        }
     }
 }
 
@@ -155,7 +162,10 @@ fn test_get_escrow_summary_is_read_only() {
     let result = facade.get_escrow_summary(&escrow_id, &1u64);
 
     // Must return a summary (mock always has data)
-    assert!(result.is_some(), "facade must return summary for existing escrow");
+    assert!(
+        result.is_some(),
+        "facade must return summary for existing escrow"
+    );
 
     // Verify no auth was required from the caller — facade must not have
     // called any auth-gated function on the underlying contract.
@@ -165,12 +175,15 @@ fn test_get_escrow_summary_is_read_only() {
     for (addr, invocation) in auths.iter() {
         let fn_name = invocation.function.fn_name.to_string();
         // State-mutating function names that must NEVER appear
-        let mutating = ["lock", "release", "refund", "set_", "update_", "pause", "unpause", "withdraw"];
+        let mutating = [
+            "lock", "release", "refund", "set_", "update_", "pause", "unpause", "withdraw",
+        ];
         for bad in mutating.iter() {
             assert!(
                 !fn_name.contains(bad),
                 "facade must not call mutating function '{}' (called by {:?})",
-                fn_name, addr
+                fn_name,
+                addr
             );
         }
     }
@@ -194,10 +207,15 @@ fn test_get_escrow_summaries_batch_is_read_only() {
     // No mutating calls
     for (_, invocation) in env.auths().iter() {
         let fn_name = invocation.function.fn_name.to_string();
-        let mutating = ["lock", "release", "refund", "set_", "update_", "pause", "unpause"];
+        let mutating = [
+            "lock", "release", "refund", "set_", "update_", "pause", "unpause",
+        ];
         for bad in mutating.iter() {
-            assert!(!fn_name.contains(bad),
-                "batch facade must not call mutating function '{}'", fn_name);
+            assert!(
+                !fn_name.contains(bad),
+                "batch facade must not call mutating function '{}'",
+                fn_name
+            );
         }
     }
 }
@@ -217,10 +235,15 @@ fn test_get_user_portfolio_is_read_only() {
     // No mutating calls
     for (_, invocation) in env.auths().iter() {
         let fn_name = invocation.function.fn_name.to_string();
-        let mutating = ["lock", "release", "refund", "set_", "update_", "pause", "unpause"];
+        let mutating = [
+            "lock", "release", "refund", "set_", "update_", "pause", "unpause",
+        ];
         for bad in mutating.iter() {
-            assert!(!fn_name.contains(bad),
-                "portfolio facade must not call mutating function '{}'", fn_name);
+            assert!(
+                !fn_name.contains(bad),
+                "portfolio facade must not call mutating function '{}'",
+                fn_name
+            );
         }
     }
 }
@@ -240,7 +263,10 @@ fn test_unprivileged_caller_can_query_facade() {
     let _ = unprivileged; // facade doesn't take a caller param — anyone can call
 
     let result = facade.get_escrow_summary(&escrow_id, &1u64);
-    assert!(result.is_some(), "unprivileged caller must be able to query facade");
+    assert!(
+        result.is_some(),
+        "unprivileged caller must be able to query facade"
+    );
 }
 
 #[test]
@@ -255,8 +281,10 @@ fn test_two_different_callers_get_identical_results() {
     // Call again (simulating a different caller — facade has no caller param)
     let result_b = facade.get_escrow_summary(&escrow_id, &1u64);
 
-    assert_eq!(result_a, result_b,
-        "facade must return identical results regardless of who calls it");
+    assert_eq!(
+        result_a, result_b,
+        "facade must return identical results regardless of who calls it"
+    );
 }
 
 #[test]
@@ -288,8 +316,10 @@ fn test_missing_escrow_returns_none() {
     let nonexistent = Address::generate(&env);
 
     let result = facade.get_escrow_summary(&nonexistent, &999u64);
-    assert!(result.is_none(),
-        "facade must return None for nonexistent escrow, not panic");
+    assert!(
+        result.is_none(),
+        "facade must return None for nonexistent escrow, not panic"
+    );
 }
 
 #[test]
@@ -306,8 +336,11 @@ fn test_batch_with_missing_escrows_returns_empty_vec() {
     ids.push_back(2u64);
 
     let results = facade.get_escrow_summaries(&nonexistent, &ids);
-    assert_eq!(results.len(), 0,
-        "batch must return empty vec for nonexistent contract, not panic");
+    assert_eq!(
+        results.len(),
+        0,
+        "batch must return empty vec for nonexistent contract, not panic"
+    );
 }
 
 #[test]
@@ -358,8 +391,10 @@ fn test_paused_contract_reflected_in_summary() {
 
     let summary = facade.get_escrow_summary(&escrow_id, &1u64).unwrap();
     // Mock returns all paused=false
-    assert!(!summary.is_paused,
-        "facade must accurately reflect pause state from underlying contract");
+    assert!(
+        !summary.is_paused,
+        "facade must accurately reflect pause state from underlying contract"
+    );
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

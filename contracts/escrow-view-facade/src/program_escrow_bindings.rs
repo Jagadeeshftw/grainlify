@@ -21,11 +21,9 @@ pub struct PayoutRecord {
 #[contractclient(name = "Client")]
 pub trait ProgramEscrowContract {
     fn query_all_delegates(env: Env, program_id: String) -> Vec<ProgramDelegateInfo>;
-
-    fn query_payouts_by_recipient(
+    fn query_recipient_history(
         env: Env,
+        program_id: String,
         recipient: Address,
-        offset: u32,
-        limit: u32,
-    ) -> Result<Vec<PayoutRecord>, Error>;
+    ) -> Vec<PayoutRecord>;
 }

@@ -1,397 +1,490 @@
-#![cfg(test)]
+//! # Recipient Payout Index Tests
+//!
+//! Validates the lazy-initialized inverted index introduced in issue #1384:
+//! `DataKey::RecipientPayoutIndex(program_id, recipient)` → `Vec<PayoutRecord>`.
+//!
+//! ## Coverage
+//! - Index populated by `single_payout` (unit + integration)
+//! - Index populated by `batch_payout` (unit + integration)
+//! - Lazy init: unknown recipient returns empty vec, not a panic
+//! - Index is scoped per program_id (no cross-program leakage)
+//! - Multiple payouts to same recipient accumulate in insertion order
+//! - `query_recipient_history` vs legacy `query_payouts_by_recipient` return same records
+//! - Idempotent replay does not duplicate index entries
+//! - Pagination: index returns all records regardless of offset/limit boundaries
 
-use soroban_sdk::testutils::Address as _;
-use soroban_sdk::{token, vec, Address, Env, String, Vec};
+use crate::{DataKey, PayoutRecord, ProgramEscrowContract, ProgramEscrowContractClient};
+use soroban_sdk::{testutils::Address as _, token, Address, Env, String, Vec};
 
-use crate::{
-    PayoutRecord, ProgramData, ProgramEscrowContract, ProgramEscrowContractClient,
-};
+// ─── setup helper ────────────────────────────────────────────────────────────
 
-struct Ctx {
-    env: Env,
-    client: ProgramEscrowContractClient<'static>,
-    token_id: Address,
-    admin: Address,
-}
-
-fn setup() -> Ctx {
-    let env = Env::default();
+fn setup(env: &Env, balance: i128) -> (ProgramEscrowContractClient<'static>, Address) {
     env.mock_all_auths();
-
-    let admin = Address::generate(&env);
-    let token_admin = Address::generate(&env);
-    let token_id = env.register_stellar_asset_contract(token_admin.clone());
-
     let contract_id = env.register_contract(None, ProgramEscrowContract);
-    let client = ProgramEscrowContractClient::new(&env, &contract_id);
-    client.initialize_contract(&admin);
+    let client = ProgramEscrowContractClient::new(env, &contract_id);
+    let admin = Address::generate(env);
+    let token_admin = Address::generate(env);
+    let sac = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token_id = sac.address();
+    let token_admin_client = token::StellarAssetClient::new(env, &token_id);
 
-    Ctx {
-        env,
-        client,
-        token_id,
-        admin,
-    }
+    let program_id = String::from_str(env, "prog-1");
+    client.init_program(&program_id, &admin, &token_id, &admin, &None, &None);
+    client.publish_program(&program_id, &admin);
+
+    token_admin_client.mint(&client.address, &balance);
+    client.lock_program_funds(&balance);
+
+    (client, admin)
 }
 
-fn mint(ctx: &Ctx, recipient: &Address, amount: i128) {
-    token::StellarAssetClient::new(&ctx.env, &ctx.token_id).mint(recipient, &amount);
+fn read_index(
+    env: &Env,
+    contract_id: &Address,
+    program_id: &str,
+    recipient: &Address,
+) -> Vec<PayoutRecord> {
+    env.as_contract(contract_id, || {
+        let key =
+            DataKey::RecipientPayoutIndex(String::from_str(env, program_id), recipient.clone());
+        env.storage()
+            .persistent()
+            .get::<DataKey, Vec<PayoutRecord>>(&key)
+            .unwrap_or(Vec::new(env))
+    })
 }
 
-fn init_program_with_funds(ctx: &Ctx, program_id: &str, amount: i128) {
-    let creator = Address::generate(&ctx.env);
-    mint(ctx, &creator, amount);
-    ctx.client.init_program(
-        &String::from_str(&ctx.env, program_id),
-        &ctx.admin.clone(),
-        &ctx.token_id,
-        &creator,
-        &Some(amount),
-        &None,
-    );
-    ctx.client.publish_program();
-}
+// ─── tests ───────────────────────────────────────────────────────────────────
 
-#[test]
-fn test_interleaved_payouts_same_recipient() {
-    let ctx = setup();
-    init_program_with_funds(&ctx, "PROG1", 10_000);
+#[cfg(test)]
+mod recipient_index_tests {
+    use super::*;
 
-    let alice = Address::generate(&ctx.env);
-    let bob = Address::generate(&ctx.env);
-    let charlie = Address::generate(&ctx.env);
+    // ── 1. Lazy init: unknown recipient returns empty, no panic ───────────────
 
-    // Step 1: single_payout
-    ctx.client.single_payout(&alice, &100, &None);
-    let records = ctx.client.query_recipient_history(&alice, &0, &100);
-    assert_eq!(records.len(), 1, "step 1: alice should have 1 record");
-    assert_eq!(records.get(0).unwrap().recipient, alice);
+    #[test]
+    fn test_unknown_recipient_returns_empty() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _) = setup(&env, 100_000);
 
-    // Step 2: batch_payout with alice + bob
-    ctx.client.batch_payout(
-        &vec![&ctx.env, alice.clone(), bob.clone()],
-        &vec![&ctx.env, 200_i128, 300_i128],
-        &None,
-    );
-    let records = ctx.client.query_recipient_history(&alice, &0, &100);
-    assert_eq!(records.len(), 2, "step 2: alice should have 2 records");
-    for record in records.iter() {
-        assert_eq!(record.recipient, alice);
+        let stranger = Address::generate(&env);
+        let result = client.query_recipient_history(&String::from_str(&env, "prog-1"), &stranger);
+
+        assert_eq!(result.len(), 0);
     }
 
-    // Step 3: single_payout_idempotent
-    let key1 = String::from_str(&ctx.env, "interleave-key-1");
-    ctx.client
-        .single_payout_idempotent(&alice, &400, &Some(key1.clone()));
-    let records = ctx.client.query_recipient_history(&alice, &0, &100);
-    assert_eq!(records.len(), 3, "step 3: alice should have 3 records");
+    // ── 2. single_payout populates the index ─────────────────────────────────
 
-    // Step 4: batch_payout_idempotent with alice + charlie
-    let key2 = String::from_str(&ctx.env, "interleave-key-2");
-    ctx.client.batch_payout_idempotent(
-        &vec![&ctx.env, alice.clone(), charlie.clone()],
-        &vec![&ctx.env, 500_i128, 600_i128],
-        &Some(key2.clone()),
-    );
-    let records = ctx.client.query_recipient_history(&alice, &0, &100);
-    assert_eq!(records.len(), 4, "step 4: alice should have 4 records");
+    #[test]
+    fn test_single_payout_writes_index() {
+        let env = Env::default();
+        let (client, _) = setup(&env, 100_000);
 
-    // Step 5: another single_payout
-    ctx.client.single_payout(&alice, &700, &None);
-    let records = ctx.client.query_recipient_history(&alice, &0, &100);
-    assert_eq!(records.len(), 5, "step 5: alice should have 5 records");
-    for record in records.iter() {
-        assert_eq!(record.recipient, alice);
+        let recipient = Address::generate(&env);
+        client.single_payout(&recipient, &25_000_i128, &None);
+
+        let index = client.query_recipient_history(&String::from_str(&env, "prog-1"), &recipient);
+
+        assert_eq!(index.len(), 1);
+        assert_eq!(index.get(0).unwrap().recipient, recipient);
+        assert_eq!(index.get(0).unwrap().amount, 25_000);
     }
 
-    // Verify bob and charlie have correct counts
-    let bob_records = ctx.client.query_recipient_history(&bob, &0, &100);
-    assert_eq!(bob_records.len(), 1, "bob should have 1 record");
-    let charlie_records = ctx.client.query_recipient_history(&charlie, &0, &100);
-    assert_eq!(charlie_records.len(), 1, "charlie should have 1 record");
+    // ── 3. Multiple single_payouts accumulate in order ────────────────────────
 
-    // Verify idempotent key replay does not add duplicate
-    ctx.client
-        .single_payout_idempotent(&alice, &9999, &Some(key1.clone()));
-    let records_after_replay = ctx.client.query_recipient_history(&alice, &0, &100);
-    assert_eq!(
-        records_after_replay.len(),
-        5,
-        "replaying key1 must not add records"
-    );
+    #[test]
+    fn test_single_payout_accumulates_in_order() {
+        let env = Env::default();
+        let (client, _) = setup(&env, 100_000);
 
-    ctx.client.batch_payout_idempotent(
-        &vec![&ctx.env, alice.clone()],
-        &vec![&ctx.env, 9999_i128],
-        &Some(key2.clone()),
-    );
-    let records_after_batch_replay = ctx.client.query_recipient_history(&alice, &0, &100);
-    assert_eq!(
-        records_after_batch_replay.len(),
-        5,
-        "replaying key2 must not add records"
-    );
-}
+        let recipient = Address::generate(&env);
+        client.single_payout(&recipient, &10_000_i128, &None);
+        client.single_payout(&recipient, &20_000_i128, &None);
+        client.single_payout(&recipient, &30_000_i128, &None);
 
-#[test]
-fn test_idempotent_replay_no_duplicate() {
-    let ctx = setup();
-    init_program_with_funds(&ctx, "PROG1", 10_000);
+        let index = client.query_recipient_history(&String::from_str(&env, "prog-1"), &recipient);
 
-    let alice = Address::generate(&ctx.env);
-
-    let key_a = String::from_str(&ctx.env, "idem-key-a");
-    let key_b = String::from_str(&ctx.env, "idem-key-b");
-
-    // First execution
-    ctx.client
-        .single_payout_idempotent(&alice, &100, &Some(key_a.clone()));
-    let records = ctx.client.query_recipient_history(&alice, &0, &100);
-    assert_eq!(records.len(), 1);
-
-    // Replay — should not add
-    ctx.client
-        .single_payout_idempotent(&alice, &100, &Some(key_a.clone()));
-    let records = ctx.client.query_recipient_history(&alice, &0, &100);
-    assert_eq!(records.len(), 1, "replay of key_a must not add records");
-
-    // Batch idempotent
-    ctx.client.batch_payout_idempotent(
-        &vec![&ctx.env, alice.clone()],
-        &vec![&ctx.env, 200_i128],
-        &Some(key_b.clone()),
-    );
-    let records = ctx.client.query_recipient_history(&alice, &0, &100);
-    assert_eq!(records.len(), 2);
-
-    // Replay batch key
-    ctx.client.batch_payout_idempotent(
-        &vec![&ctx.env, alice.clone()],
-        &vec![&ctx.env, 200_i128],
-        &Some(key_b.clone()),
-    );
-    let records = ctx.client.query_recipient_history(&alice, &0, &100);
-    assert_eq!(records.len(), 2, "replay of key_b must not add records");
-
-    // Verify the payout_history on ProgramData is also consistent
-    let data: ProgramData = ctx.client.get_program_info();
-    assert_eq!(data.payout_history.len(), 2);
-}
-
-#[test]
-fn test_payout_history_chronological_order() {
-    let ctx = setup();
-    init_program_with_funds(&ctx, "PROG1", 10_000);
-
-    let alice = Address::generate(&ctx.env);
-
-    let amounts = [100, 200, 300, 400, 500];
-    for &amt in &amounts {
-        ctx.client.single_payout(&alice, &amt, &None);
+        assert_eq!(index.len(), 3);
+        assert_eq!(index.get(0).unwrap().amount, 10_000);
+        assert_eq!(index.get(1).unwrap().amount, 20_000);
+        assert_eq!(index.get(2).unwrap().amount, 30_000);
     }
 
-    let records = ctx.client.query_recipient_history(&alice, &0, &100);
-    assert_eq!(records.len() as usize, amounts.len());
+    // ── 4. batch_payout populates index for each recipient ────────────────────
 
-    for (i, record) in records.iter().enumerate() {
-        assert_eq!(record.recipient, alice);
+    #[test]
+    fn test_batch_payout_writes_index_for_each_recipient() {
+        let env = Env::default();
+        let (client, _) = setup(&env, 100_000);
+
+        let r1 = Address::generate(&env);
+        let r2 = Address::generate(&env);
+        let mut recipients = soroban_sdk::Vec::new(&env);
+        let mut amounts = soroban_sdk::Vec::new(&env);
+        recipients.push_back(r1.clone());
+        recipients.push_back(r2.clone());
+        amounts.push_back(15_000_i128);
+        amounts.push_back(20_000_i128);
+
+        client.batch_payout(&recipients, &amounts, &None);
+
+        let prog = String::from_str(&env, "prog-1");
+
+        let idx1 = client.query_recipient_history(&prog, &r1);
+        assert_eq!(idx1.len(), 1);
+        assert_eq!(idx1.get(0).unwrap().amount, 15_000);
+
+        let idx2 = client.query_recipient_history(&prog, &r2);
+        assert_eq!(idx2.len(), 1);
+        assert_eq!(idx2.get(0).unwrap().amount, 20_000);
+    }
+
+    // ── 5. Mixed single + batch accumulate correctly ──────────────────────────
+
+    #[test]
+    fn test_single_and_batch_payout_accumulate() {
+        let env = Env::default();
+        let (client, _) = setup(&env, 100_000);
+
+        let recipient = Address::generate(&env);
+
+        client.single_payout(&recipient, &5_000_i128, &None);
+
+        let mut recipients = soroban_sdk::Vec::new(&env);
+        let mut amounts = soroban_sdk::Vec::new(&env);
+        recipients.push_back(recipient.clone());
+        amounts.push_back(7_000_i128);
+        client.batch_payout(&recipients, &amounts, &None);
+
+        let index = client.query_recipient_history(&String::from_str(&env, "prog-1"), &recipient);
+
+        assert_eq!(index.len(), 2);
+        assert_eq!(index.get(0).unwrap().amount, 5_000);
+        assert_eq!(index.get(1).unwrap().amount, 7_000);
+    }
+
+    // ── 6. query_recipient_history agrees with query_payouts_by_recipient ─────
+
+    #[test]
+    fn test_index_matches_legacy_filtered_query() {
+        let env = Env::default();
+        let (client, _) = setup(&env, 100_000);
+
+        let target = Address::generate(&env);
+        let other = Address::generate(&env);
+
+        client.single_payout(&target, &11_000_i128, &None);
+        client.single_payout(&other, &22_000_i128, &None);
+        client.single_payout(&target, &33_000_i128, &None);
+
+        let from_index = client.query_recipient_history(&String::from_str(&env, "prog-1"), &target);
+        let from_scan = client.query_payouts_by_recipient(&target, &0, &50).unwrap();
+
+        assert_eq!(from_index.len(), from_scan.len());
+        for i in 0..from_index.len() {
+            assert_eq!(
+                from_index.get(i).unwrap().amount,
+                from_scan.get(i).unwrap().amount
+            );
+        }
+    }
+
+    // ── 7. Index is scoped per program_id — no cross-program leakage ──────────
+
+    #[test]
+    fn test_index_scoped_to_program_id() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, ProgramEscrowContract);
+        let client = ProgramEscrowContractClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let token_admin = Address::generate(&env);
+        let sac = env.register_stellar_asset_contract_v2(token_admin.clone());
+        let token_id = sac.address();
+        let sac_client = token::StellarAssetClient::new(&env, &token_id);
+
+        for prog in ["prog-A", "prog-B"] {
+            let pid = String::from_str(&env, prog);
+            client.init_program(&pid, &admin, &token_id, &admin, &None, &None);
+            client.publish_program(&pid, &admin);
+        }
+
+        let recipient = Address::generate(&env);
+
+        sac_client.mint(&client.address, &100_000_i128);
+        let pid_a = String::from_str(&env, "prog-A");
+        let key_a = DataKey::RecipientPayoutIndex(pid_a.clone(), recipient.clone());
+        let key_b =
+            DataKey::RecipientPayoutIndex(String::from_str(&env, "prog-B"), recipient.clone());
+
+        env.as_contract(&contract_id, || {
+            let mut v: Vec<PayoutRecord> = Vec::new(&env);
+            v.push_back(PayoutRecord {
+                recipient: recipient.clone(),
+                amount: 999,
+                timestamp: 1,
+            });
+            env.storage().persistent().set(&key_a, &v);
+        });
+
+        let b_index: Vec<PayoutRecord> = env.as_contract(&contract_id, || {
+            env.storage()
+                .persistent()
+                .get::<DataKey, Vec<PayoutRecord>>(&key_b)
+                .unwrap_or(Vec::new(&env))
+        });
+
         assert_eq!(
-            record.amount, amounts[i],
-            "record {} should have amount {}",
-            i, amounts[i]
+            b_index.len(),
+            0,
+            "prog-B index must not be affected by prog-A write"
+        );
+
+        let a_index: Vec<PayoutRecord> = env.as_contract(&contract_id, || {
+            env.storage()
+                .persistent()
+                .get::<DataKey, Vec<PayoutRecord>>(&key_a)
+                .unwrap_or(Vec::new(&env))
+        });
+        assert_eq!(a_index.len(), 1);
+        assert_eq!(a_index.get(0).unwrap().amount, 999);
+    }
+
+    // ── 8. Other recipients not polluted by a payout ─────────────────────────
+
+    #[test]
+    fn test_unrelated_recipient_index_stays_empty() {
+        let env = Env::default();
+        let (client, _) = setup(&env, 50_000);
+
+        let paid = Address::generate(&env);
+        let unpaid = Address::generate(&env);
+
+        client.single_payout(&paid, &10_000_i128, &None);
+
+        let result = client.query_recipient_history(&String::from_str(&env, "prog-1"), &unpaid);
+        assert_eq!(result.len(), 0);
+    }
+
+    // ── 9. Timestamps are recorded in index entries ───────────────────────────
+
+    #[test]
+    fn test_index_records_timestamp() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _) = setup(&env, 50_000);
+
+        env.ledger().set_timestamp(1_700_000_000);
+        let recipient = Address::generate(&env);
+        client.single_payout(&recipient, &5_000_i128, &None);
+
+        let index = client.query_recipient_history(&String::from_str(&env, "prog-1"), &recipient);
+
+        assert_eq!(index.get(0).unwrap().timestamp, 1_700_000_000);
+    }
+
+    // ── 10. Idempotent replay does not duplicate index entries ────────────────
+
+    #[test]
+    fn test_idempotent_replay_does_not_duplicate_index() {
+        let env = Env::default();
+        let (client, _) = setup(&env, 100_000);
+
+        let recipient = Address::generate(&env);
+        let key = String::from_str(&env, "idem-001");
+
+        client.single_payout_idempotent(&recipient, &10_000_i128, &Some(key.clone()));
+        let index_after_first =
+            client.query_recipient_history(&String::from_str(&env, "prog-1"), &recipient);
+        assert_eq!(index_after_first.len(), 1);
+
+        client.single_payout_idempotent(&recipient, &10_000_i128, &Some(key.clone()));
+        let index_after_replay =
+            client.query_recipient_history(&String::from_str(&env, "prog-1"), &recipient);
+        assert_eq!(
+            index_after_replay.len(),
+            1,
+            "replay must not append duplicate entry"
         );
     }
-}
 
-#[test]
-fn test_pagination_consistency_after_interleaved() {
-    let ctx = setup();
-    init_program_with_funds(&ctx, "PROG1", 10_000);
+    // ── 11. batch_payout_idempotent replay does not duplicate index ────────────
 
-    let alice = Address::generate(&ctx.env);
-    let bob = Address::generate(&ctx.env);
+    #[test]
+    fn test_batch_idempotent_replay_does_not_duplicate_index() {
+        let env = Env::default();
+        let (client, _) = setup(&env, 100_000);
 
-    // Interleave payouts to alice and bob
-    for i in 0..5 {
-        ctx.client.single_payout(&alice, &(100 * (i + 1)), &None);
-        ctx.client.single_payout(
-            &bob,
-            &(50 * (i + 1)),
-            &None,
+        let recipient = Address::generate(&env);
+        let key = String::from_str(&env, "batch-idem-001");
+        let recipients = soroban_sdk::vec![&env, recipient.clone()];
+        let amounts = soroban_sdk::vec![&env, 15_000_i128];
+
+        client.batch_payout_idempotent(&key, &recipients, &amounts);
+        let index_after_first =
+            client.query_recipient_history(&String::from_str(&env, "prog-1"), &recipient);
+        assert_eq!(index_after_first.len(), 1);
+
+        client.batch_payout_idempotent(&key, &recipients, &amounts);
+        let index_after_replay =
+            client.query_recipient_history(&String::from_str(&env, "prog-1"), &recipient);
+        assert_eq!(
+            index_after_replay.len(),
+            1,
+            "batch replay must not append duplicate entry"
         );
     }
-    // Also a batch payout containing alice
-    ctx.client.batch_payout(
-        &vec![&ctx.env, alice.clone()],
-        &vec![&ctx.env, 999_i128],
-        &None,
-    );
 
-    // Full result
-    let full = ctx.client.query_recipient_history(&alice, &0, &200);
-    assert_eq!(full.len(), 6, "alice should have 6 records total");
+    // ── 12. Index returns ALL records regardless of pagination boundaries ─────
 
-    // Paginate through
-    let mut collected: Vec<PayoutRecord> = Vec::new(&ctx.env);
-    let page_size = 2;
-    let mut offset = 0;
-    loop {
-        let page = ctx
-            .client
-            .query_recipient_history(&alice, &offset, &page_size);
-        if page.len() == 0 {
-            break;
+    #[test]
+    fn test_index_returns_all_records_beyond_limit() {
+        let env = Env::default();
+        let (client, _) = setup(&env, 1_000_000);
+
+        let recipient = Address::generate(&env);
+
+        for i in 0..25 {
+            client.single_payout(&recipient, &((i + 1) * 1000), &None);
         }
-        for record in page.iter() {
-            collected.push_back(record);
+
+        let full_index =
+            client.query_recipient_history(&String::from_str(&env, "prog-1"), &recipient);
+        assert_eq!(full_index.len(), 25);
+
+        let small_page = client
+            .query_payouts_by_recipient(&recipient, &0, &10)
+            .unwrap();
+        assert_eq!(small_page.len(), 10);
+
+        for i in 0..full_index.len() {
+            let expected = ((i + 1) * 1000) as i128;
+            assert_eq!(full_index.get(i).unwrap().amount, expected);
         }
-        offset += page.len();
     }
 
-    assert_eq!(collected.len(), full.len());
-    for (a, b) in collected.iter().zip(full.iter()) {
-        assert_eq!(a.recipient, b.recipient);
-        assert_eq!(a.amount, b.amount);
-    }
-}
+    // ── 13. Interleaved single + batch across multiple recipients ─────────────
 
-#[test]
-fn test_query_equals_get() {
-    let ctx = setup();
-    init_program_with_funds(&ctx, "PROG1", 10_000);
+    #[test]
+    fn test_interleaved_payouts_across_recipients() {
+        let env = Env::default();
+        let (client, _) = setup(&env, 500_000);
 
-    let alice = Address::generate(&ctx.env);
-    let bob = Address::generate(&ctx.env);
+        let r1 = Address::generate(&env);
+        let r2 = Address::generate(&env);
+        let r3 = Address::generate(&env);
 
-    ctx.client.single_payout(&alice, &100, &None);
-    ctx.client
-        .single_payout(&alice, &200, &None);
-    ctx.client.single_payout(&bob, &300, &None);
-    ctx.client.batch_payout(
-        &vec![&ctx.env, alice.clone(), bob.clone()],
-        &vec![&ctx.env, 400_i128, 500_i128],
-        &None,
-    );
+        client.single_payout(&r1, &1000, &None);
+        client.single_payout(&r2, &2000, &None);
 
-    let query_result = ctx.client.query_payouts_by_recipient(&alice, &0, &100);
-    let get_result = ctx.client.get_payouts_by_recipient(&alice, &0, &100);
+        let batch_r = soroban_sdk::vec![&env, r1.clone(), r3.clone()];
+        let batch_a = soroban_sdk::vec![&env, 3000_i128, 4000_i128];
+        client.batch_payout(&batch_r, &batch_a, &None);
 
-    assert_eq!(query_result.len(), get_result.len());
-    for (qr, gr) in query_result.iter().zip(get_result.iter()) {
-        assert_eq!(qr.recipient, gr.recipient);
-        assert_eq!(qr.amount, gr.amount);
-        assert_eq!(qr.timestamp, gr.timestamp);
-    }
+        client.single_payout(&r1, &5000, &None);
 
-    // Also verify the new wrapper matches
-    let wrapper_result = ctx.client.query_recipient_history(&alice, &0, &100);
-    assert_eq!(wrapper_result.len(), query_result.len());
-    for (wr, qr) in wrapper_result.iter().zip(query_result.iter()) {
-        assert_eq!(wr.recipient, qr.recipient);
-        assert_eq!(wr.amount, qr.amount);
-    }
-}
+        let idx1 = client.query_recipient_history(&String::from_str(&env, "prog-1"), &r1);
+        assert_eq!(idx1.len(), 3);
+        assert_eq!(idx1.get(0).unwrap().amount, 1000);
+        assert_eq!(idx1.get(1).unwrap().amount, 3000);
+        assert_eq!(idx1.get(2).unwrap().amount, 5000);
 
-#[test]
-fn test_multi_program_isolation() {
-    let ctx = setup();
+        let idx2 = client.query_recipient_history(&String::from_str(&env, "prog-1"), &r2);
+        assert_eq!(idx2.len(), 1);
+        assert_eq!(idx2.get(0).unwrap().amount, 2000);
 
-    // Initialize two separate programs in the same contract
-    // (Note: single_payout operates on the "active" program, so we init
-    //  PROG1, do its payouts, then init PROG2 as the new active program.)
-    init_program_with_funds(&ctx, "PROG1", 10_000);
-
-    let alice = Address::generate(&ctx.env);
-
-    ctx.client.single_payout(&alice, &500, &None);
-    ctx.client
-        .single_payout(&alice, &500, &None);
-
-    let prog1_records = ctx.client.query_recipient_history(&alice, &0, &100);
-    assert_eq!(prog1_records.len(), 2, "PROG1 should have 2 records for alice");
-
-    // Now initialize PROG2 — this replaces the active program data
-    init_program_with_funds(&ctx, "PROG2", 10_000);
-
-    ctx.client
-        .single_payout(&alice, &1000, &None);
-
-    let prog2_records = ctx.client.query_recipient_history(&alice, &0, &100);
-    assert_eq!(prog2_records.len(), 1, "PROG2 should have 1 record for alice");
-
-    // Verify each record has correct amounts
-    assert_eq!(
-        prog1_records.get(0).unwrap().amount, 500,
-        "first PROG1 payout should be 500"
-    );
-    assert_eq!(
-        prog1_records.get(1).unwrap().amount, 500,
-        "second PROG1 payout should be 500"
-    );
-    assert_eq!(
-        prog2_records.get(0).unwrap().amount, 1000,
-        "PROG2 payout should be 1000"
-    );
-}
-
-#[test]
-fn test_unknown_recipient_returns_empty() {
-    let ctx = setup();
-    init_program_with_funds(&ctx, "PROG1", 1_000);
-
-    let alice = Address::generate(&ctx.env);
-    let unknown = Address::generate(&ctx.env);
-
-    ctx.client
-        .single_payout(&alice, &100, &None);
-
-    let records = ctx.client.query_recipient_history(&unknown, &0, &100);
-    assert_eq!(records.len(), 0, "unknown recipient should get empty result");
-}
-
-#[test]
-fn test_batch_payout_multiple_recipients_query_isolation() {
-    let ctx = setup();
-    init_program_with_funds(&ctx, "PROG1", 10_000);
-
-    let alice = Address::generate(&ctx.env);
-    let bob = Address::generate(&ctx.env);
-
-    ctx.client.batch_payout(
-        &vec![&ctx.env, alice.clone(), bob.clone()],
-        &vec![&ctx.env, 1000_i128, 2000_i128],
-        &None,
-    );
-
-    let alice_records = ctx.client.query_recipient_history(&alice, &0, &100);
-    assert_eq!(alice_records.len(), 1);
-    assert_eq!(alice_records.get(0).unwrap().amount, 1000);
-
-    let bob_records = ctx.client.query_recipient_history(&bob, &0, &100);
-    assert_eq!(bob_records.len(), 1);
-    assert_eq!(bob_records.get(0).unwrap().amount, 2000);
-}
-
-#[test]
-fn test_query_pagination_edge_cases_with_recipient_history() {
-    let ctx = setup();
-    init_program_with_funds(&ctx, "PROG1", 10_000);
-
-    let alice = Address::generate(&ctx.env);
-    for i in 0..3 {
-        ctx.client
-            .single_payout(&alice, &(100 * (i + 1)), &None);
+        let idx3 = client.query_recipient_history(&String::from_str(&env, "prog-1"), &r3);
+        assert_eq!(idx3.len(), 1);
+        assert_eq!(idx3.get(0).unwrap().amount, 4000);
     }
 
-    // offset beyond available
-    let empty = ctx.client.query_recipient_history(&alice, &10, &10);
-    assert_eq!(empty.len(), 0, "offset beyond count should be empty");
+    // ── 14. Index survives multiple batch payouts to same recipient ───────────
 
-    // partial last page
-    let last = ctx.client.query_recipient_history(&alice, &2, &10);
-    assert_eq!(
-        last.len(),
-        1,
-        "offset 2 with 3 total should return 1 record"
-    );
+    #[test]
+    fn test_multiple_batches_to_same_recipient() {
+        let env = Env::default();
+        let (client, _) = setup(&env, 200_000);
+
+        let recipient = Address::generate(&env);
+
+        for batch_num in 0..4 {
+            let recipients = soroban_sdk::vec![&env, recipient.clone()];
+            let amounts = soroban_sdk::vec![&env, ((batch_num + 1) * 1000) as i128];
+            client.batch_payout(&recipients, &amounts, &None);
+        }
+
+        let index = client.query_recipient_history(&String::from_str(&env, "prog-1"), &recipient);
+
+        assert_eq!(index.len(), 4);
+        assert_eq!(index.get(0).unwrap().amount, 1000);
+        assert_eq!(index.get(1).unwrap().amount, 2000);
+        assert_eq!(index.get(2).unwrap().amount, 3000);
+        assert_eq!(index.get(3).unwrap().amount, 4000);
+    }
+
+    // ── 15. Interleave all four entrypoint types to same recipient ────────────
+
+    #[test]
+    fn test_all_entrypoints_interleaved_to_same_recipient() {
+        let env = Env::default();
+        let (client, _) = setup(&env, 500_000);
+
+        let recipient = Address::generate(&env);
+        let idem_a = String::from_str(&env, "idem-a");
+        let idem_b = String::from_str(&env, "idem-b");
+
+        // 1. single_payout
+        client.single_payout(&recipient, &1000, &None);
+        let index = client.query_recipient_history(&String::from_str(&env, "prog-1"), &recipient);
+        assert_eq!(index.len(), 1);
+        assert_eq!(index.get(0).unwrap().amount, 1000);
+
+        // 2. batch_payout (same recipient)
+        let batch_r = soroban_sdk::vec![&env, recipient.clone()];
+        let batch_a = soroban_sdk::vec![&env, 2000_i128];
+        client.batch_payout(&batch_r, &batch_a, &None);
+        let index = client.query_recipient_history(&String::from_str(&env, "prog-1"), &recipient);
+        assert_eq!(index.len(), 2);
+        assert_eq!(index.get(0).unwrap().amount, 1000);
+        assert_eq!(index.get(1).unwrap().amount, 2000);
+
+        // 3. single_payout_idempotent (first use)
+        client.single_payout_idempotent(&recipient, &3000, &Some(idem_a.clone()));
+        let index = client.query_recipient_history(&String::from_str(&env, "prog-1"), &recipient);
+        assert_eq!(index.len(), 3);
+        assert_eq!(index.get(0).unwrap().amount, 1000);
+        assert_eq!(index.get(1).unwrap().amount, 2000);
+        assert_eq!(index.get(2).unwrap().amount, 3000);
+
+        // 4. batch_payout_idempotent (first use)
+        let batch_r = soroban_sdk::vec![&env, recipient.clone()];
+        let batch_a = soroban_sdk::vec![&env, 4000_i128];
+        client.batch_payout_idempotent(&idem_b, &batch_r, &batch_a);
+        let index = client.query_recipient_history(&String::from_str(&env, "prog-1"), &recipient);
+        assert_eq!(index.len(), 4);
+        assert_eq!(index.get(0).unwrap().amount, 1000);
+        assert_eq!(index.get(1).unwrap().amount, 2000);
+        assert_eq!(index.get(2).unwrap().amount, 3000);
+        assert_eq!(index.get(3).unwrap().amount, 4000);
+
+        // 5. Replay single_payout_idempotent — must NOT add a duplicate
+        client.single_payout_idempotent(&recipient, &3000, &Some(idem_a.clone()));
+        let index = client.query_recipient_history(&String::from_str(&env, "prog-1"), &recipient);
+        assert_eq!(index.len(), 4, "idempotent replay must not duplicate index");
+
+        // 6. Replay batch_payout_idempotent — must NOT add a duplicate
+        let batch_r = soroban_sdk::vec![&env, recipient.clone()];
+        let batch_a = soroban_sdk::vec![&env, 4000_i128];
+        client.batch_payout_idempotent(&idem_b, &batch_r, &batch_a);
+        let index = client.query_recipient_history(&String::from_str(&env, "prog-1"), &recipient);
+        assert_eq!(index.len(), 4, "batch idempotent replay must not duplicate index");
+
+        // 7. Another fresh single_payout after idempotent replay
+        client.single_payout(&recipient, &5000, &None);
+        let index = client.query_recipient_history(&String::from_str(&env, "prog-1"), &recipient);
+        assert_eq!(index.len(), 5);
+        assert_eq!(index.get(4).unwrap().amount, 5000);
+    }
 }

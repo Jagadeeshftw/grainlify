@@ -1,6 +1,30 @@
 #![no_std]
+//! # Escrow View Facade
+//!
+//! Read-only aggregation of bounty-escrow data for frontend consumption; also proxies
+//! delegate queries to program-escrow. Returns `None` / empty vecs instead of trapping
+//! when underlying contracts return errors, making it safe to call from UI code.
+//!
+//! ## ABI Stability
+//!
+//! The complete public interface of this contract — including stability classifications
+//! (`STABLE` / `EVOLVING` / `INTERNAL`), breaking-change rules, and all types that are
+//! duplicated in facade bindings — is documented in the cross-contract ABI stability matrix:
+//!
+//! **[`docs/abi-stability-matrix.md`](../../../../docs/abi-stability-matrix.md)**
+//!
+//! ### Synchronization risks in this crate
+//! - `EscrowStatus` (local re-declaration in this file) must stay in sync with
+//!   `bounty-escrow`'s canonical enum. Variant reorder or removal is XDR-breaking.
+//! - `bounty_escrow_bindings.rs` mirrors `EscrowStatus`, `EscrowMetadata`, `PauseFlags`,
+//!   `Escrow`, `EscrowWithId`, and `AnonymousParty` from `bounty-escrow`. All must be
+//!   updated in the same PR as any change to their canonical counterparts.
+//! - `program_escrow_bindings.rs` mirrors `ProgramDelegateInfo` from `program-escrow`.
+//!   Field additions or reorders must be applied to the binding simultaneously.
 
 use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, String, Vec};
+
+use program_escrow::{FeeConfig, ProgramData};
 
 mod bounty_escrow {
     include!("bounty_escrow_bindings.rs");
@@ -10,7 +34,82 @@ mod program_escrow {
     include!("program_escrow_bindings.rs");
 }
 
-/// Represents the status of an escrow in the underlying contract.
+/// Cross-contract client for ProgramEscrow data queries used by the cache.
+#[soroban_sdk::contractclient(name = "EscrowDataClient")]
+pub trait ProgramEscrowDataQueryTrait {
+    fn get_program_info_v2(env: Env, program_id: String) -> ProgramData;
+    fn get_fee_config(env: Env) -> FeeConfig;
+}
+
+/// Storage keys for the [`QueryCache`] in Soroban temporary storage.
+///
+/// # Note: Keep in sync with `view-facade/src/lib.rs` `QueryCacheKey`.
+#[contracttype]
+pub enum QueryCacheKey {
+    ProgramData(Address, String),
+    FeeConfig(Address),
+}
+
+/// Per-invocation read-through cache for ProgramEscrow queries.
+///
+/// When the facade aggregates data from multiple escrow contracts or makes
+/// repeated reads of the same contract within a single transaction, this
+/// cache eliminates redundant cross-contract calls.
+///
+/// # Safety
+/// - Read-only: never mutates persistent storage.
+/// - Temporary storage is automatically discarded at transaction end.
+pub struct QueryCache;
+
+impl QueryCache {
+    /// Get [`ProgramData`] for `program_id` on `escrow`, caching the result.
+    pub fn get_or_load_program_data(
+        env: &Env,
+        escrow: &Address,
+        program_id: &String,
+    ) -> ProgramData {
+        let key = QueryCacheKey::ProgramData(escrow.clone(), program_id.clone());
+        if let Some(cached) = env
+            .storage()
+            .temporary()
+            .get::<QueryCacheKey, ProgramData>(&key)
+        {
+            return cached;
+        }
+        let client = EscrowDataClient::new(env, escrow);
+        let data = client.get_program_info_v2(program_id);
+        env.storage().temporary().set(&key, &data);
+        data
+    }
+
+    /// Get [`FeeConfig`] for `escrow`, caching the result.
+    pub fn get_or_load_fee_config(env: &Env, escrow: &Address) -> FeeConfig {
+        let key = QueryCacheKey::FeeConfig(escrow.clone());
+        if let Some(cached) = env
+            .storage()
+            .temporary()
+            .get::<QueryCacheKey, FeeConfig>(&key)
+        {
+            return cached;
+        }
+        let client = EscrowDataClient::new(env, escrow);
+        let config = client.get_fee_config();
+        env.storage().temporary().set(&key, &config);
+        config
+    }
+
+    /// Remove a cached [`ProgramData`] entry (for testing).
+    pub fn invalidate_program_data(env: &Env, escrow: &Address, program_id: &String) {
+        let key = QueryCacheKey::ProgramData(escrow.clone(), program_id.clone());
+        env.storage().temporary().remove(&key);
+    }
+
+    /// Remove a cached [`FeeConfig`] entry (for testing).
+    pub fn invalidate_fee_config(env: &Env, escrow: &Address) {
+        let key = QueryCacheKey::FeeConfig(escrow.clone());
+        env.storage().temporary().remove(&key);
+    }
+}
 /// Must match `EscrowStatus` in BountyEscrow.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -91,10 +190,10 @@ impl EscrowViewFacade {
             } else {
                 false
             };
-            
+
             // Map the imported AnonymousParty (since EscrowInfo returns depositor which is AnonymousParty)
             // Note: `get_escrow_info` returns `Escrow` which has `depositor: Address` directly
-            
+
             Some(EscrowSummary {
                 bounty_id,
                 depositor: info.depositor,
@@ -122,7 +221,7 @@ impl EscrowViewFacade {
         let mut summaries = Vec::new(&env);
 
         let client = bounty_escrow::Client::new(&env, &escrow_contract);
-        
+
         let pause_flags_res = client.try_get_pause_flags();
         let is_paused = if let Ok(Ok(flags)) = pause_flags_res {
             flags.lock_paused || flags.release_paused || flags.refund_paused
@@ -139,12 +238,14 @@ impl EscrowViewFacade {
                 } else {
                     (0, 0, String::from_str(&env, ""))
                 };
-                
-                 let status = match info.status {
+
+                let status = match info.status {
                     bounty_escrow::EscrowStatus::Locked => EscrowStatus::Locked,
                     bounty_escrow::EscrowStatus::Released => EscrowStatus::Released,
                     bounty_escrow::EscrowStatus::Refunded => EscrowStatus::Refunded,
-                    bounty_escrow::EscrowStatus::PartiallyRefunded => EscrowStatus::PartiallyRefunded,
+                    bounty_escrow::EscrowStatus::PartiallyRefunded => {
+                        EscrowStatus::PartiallyRefunded
+                    }
                 };
 
                 summaries.push_back(EscrowSummary {
@@ -166,17 +267,13 @@ impl EscrowViewFacade {
 
     /// Retrieve an aggregated view of a user's portolio, including both
     /// the escrows they deposited into and escrows they are listed to receive.
-    pub fn get_user_portfolio(
-        env: Env,
-        escrow_contract: Address,
-        user: Address,
-    ) -> UserPortfolio {
+    pub fn get_user_portfolio(env: Env, escrow_contract: Address, user: Address) -> UserPortfolio {
         let client = bounty_escrow::Client::new(&env, &escrow_contract);
 
         // 1. Get escrows where user is depositor
         let mut as_depositor = Vec::new(&env);
         let depositor_ids_res = client.try_query_escrows_by_depositor(&user, &0, &100);
-        
+
         // Optimize: Fetch pause flags once
         let pause_flags_res = client.try_get_pause_flags();
         let is_paused = if let Ok(Ok(flags)) = pause_flags_res {
@@ -189,7 +286,7 @@ impl EscrowViewFacade {
             for escrow_with_id in escrows_with_id.iter() {
                 let id = escrow_with_id.bounty_id;
                 let info = escrow_with_id.escrow;
-                
+
                 let metadata_res = client.try_get_metadata(&id);
                 let (repo_id, issue_id, bounty_type) = if let Ok(Ok(meta)) = metadata_res {
                     (meta.repo_id, meta.issue_id, meta.bounty_type)
@@ -201,7 +298,9 @@ impl EscrowViewFacade {
                     bounty_escrow::EscrowStatus::Locked => EscrowStatus::Locked,
                     bounty_escrow::EscrowStatus::Released => EscrowStatus::Released,
                     bounty_escrow::EscrowStatus::Refunded => EscrowStatus::Refunded,
-                    bounty_escrow::EscrowStatus::PartiallyRefunded => EscrowStatus::PartiallyRefunded,
+                    bounty_escrow::EscrowStatus::PartiallyRefunded => {
+                        EscrowStatus::PartiallyRefunded
+                    }
                 };
 
                 as_depositor.push_back(EscrowSummary {
@@ -219,8 +318,45 @@ impl EscrowViewFacade {
             }
         }
 
-        // 2. Setup standard user beneficiary functionality (tickets)
-        let as_beneficiary = Vec::new(&env);
+        // 2. Get escrows where user is the designated beneficiary/contributor
+        let mut as_beneficiary = Vec::new(&env);
+        let beneficiary_ids_res = client.try_query_escrows_by_beneficiary(&user, &0, &100);
+
+        if let Ok(Ok(escrows_with_id)) = beneficiary_ids_res {
+            for escrow_with_id in escrows_with_id.iter() {
+                let id = escrow_with_id.bounty_id;
+                let info = escrow_with_id.escrow;
+
+                let metadata_res = client.try_get_metadata(&id);
+                let (repo_id, issue_id, bounty_type) = if let Ok(Ok(meta)) = metadata_res {
+                    (meta.repo_id, meta.issue_id, meta.bounty_type)
+                } else {
+                    (0, 0, String::from_str(&env, ""))
+                };
+
+                let status = match info.status {
+                    bounty_escrow::EscrowStatus::Locked => EscrowStatus::Locked,
+                    bounty_escrow::EscrowStatus::Released => EscrowStatus::Released,
+                    bounty_escrow::EscrowStatus::Refunded => EscrowStatus::Refunded,
+                    bounty_escrow::EscrowStatus::PartiallyRefunded => {
+                        EscrowStatus::PartiallyRefunded
+                    }
+                };
+
+                as_beneficiary.push_back(EscrowSummary {
+                    bounty_id: id,
+                    depositor: info.depositor,
+                    amount: info.amount,
+                    remaining_amount: info.remaining_amount,
+                    status,
+                    deadline: info.deadline,
+                    repo_id,
+                    issue_id,
+                    bounty_type,
+                    is_paused,
+                });
+            }
+        }
 
         UserPortfolio {
             as_depositor,
@@ -234,6 +370,11 @@ impl EscrowViewFacade {
     /// the target program has no active delegate or the query fails for any
     /// reason, this function returns an empty vector to preserve the facade's
     /// read-only auditing semantics.
+    ///
+    /// **Atomicity Guarantee**: This query reads directly from the underlying
+    /// contract in the same transaction. If a delegate was revoked via
+    /// `emergency_revoke_delegate`, it will be instantly omitted from these
+    /// results, with no caching or stale-read window.
     pub fn query_all_delegates(
         env: Env,
         program_contract: Address,
@@ -249,30 +390,57 @@ impl EscrowViewFacade {
         }
     }
 
-    /// Query a recipient's payout history through the program-escrow contract.
+    /// Query the payout history for a specific recipient within a program.
     ///
-    /// This is a read-only proxy over [`ProgramEscrow::query_payouts_by_recipient`].
-    /// If the target contract returns an error (e.g. invalid pagination) an empty
-    /// vector is returned to preserve the facade's best-effort query semantics.
+    /// Uses the lazy-initialized inverted index on the program-escrow contract
+    /// for O(1) lookup. Returns an empty `Vec` if the recipient has never
+    /// received a payout from this program (including when the index key is
+    /// simply absent).
     ///
-    /// # Arguments
-    /// * `program_contract` — Address of the deployed `program-escrow` contract
-    /// * `recipient`        — Recipient address to filter by
-    /// * `offset`           — Number of matching records to skip (pagination)
-    /// * `limit`            — Maximum records to return (pagination, max 200)
+    /// # Atomicity
+    /// Reads directly from the underlying contract storage in the same
+    /// transaction — writes are immediately visible, no caching window.
     pub fn query_recipient_history(
         env: Env,
         program_contract: Address,
+        program_id: String,
         recipient: Address,
-        offset: u32,
-        limit: u32,
     ) -> Vec<program_escrow::PayoutRecord> {
         let client = program_escrow::Client::new(&env, &program_contract);
-        let result = client.try_query_payouts_by_recipient(&recipient, &offset, &limit);
-        match result {
-            Ok(Ok(records)) => records,
-            _ => Vec::new(&env),
+        let result = client.try_query_recipient_history(&program_id, &recipient);
+
+        if let Ok(Ok(records)) = result {
+            records
+        } else {
+            Vec::new(&env)
         }
+    }
+
+    // ========================================================================
+    // Cached Query Methods
+    // ========================================================================
+
+    /// Fetch [`ProgramData`] for `program_id` on `escrow`, using the
+    /// per-invocation [`QueryCache`] to avoid redundant cross-contract calls.
+    pub fn query_program_data_cached(env: Env, escrow: Address, program_id: String) -> ProgramData {
+        QueryCache::get_or_load_program_data(&env, &escrow, &program_id)
+    }
+
+    /// Fetch [`FeeConfig`] for `escrow`, using the per-invocation [`QueryCache`].
+    pub fn query_fee_config_cached(env: Env, escrow: Address) -> FeeConfig {
+        QueryCache::get_or_load_fee_config(&env, &escrow)
+    }
+
+    /// Aggregated query returning both [`ProgramData`] and [`FeeConfig`] in a
+    /// single call, with per-invocation caching for efficiency.
+    pub fn query_program_balance_and_fee(
+        env: Env,
+        escrow: Address,
+        program_id: String,
+    ) -> (ProgramData, FeeConfig) {
+        let data = QueryCache::get_or_load_program_data(&env, &escrow, &program_id);
+        let fees = QueryCache::get_or_load_fee_config(&env, &escrow);
+        (data, fees)
     }
 }
 
@@ -280,4 +448,3 @@ impl EscrowViewFacade {
 mod test;
 #[cfg(test)]
 mod test_cross_contract_safety;
-
