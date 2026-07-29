@@ -15,11 +15,11 @@
 //! | Budget reset correctness          | 2     |
 //! | Edge cases (zero, max, boundary)  | 9     |
 //! | Fixture reuse & lifecycle         | 3     |
-//! | Reproducibility across runs       | 2     |
+//! | Reproducibility across runs       | 3     |
 //! | Cross-fixture non-contamination   | 2     |
 //! | Contract-level gas regression     | 4     |
-//! | Documented regression surface     | 3     |
-//! | **Total**                         | **32** |
+//! | Documented regression surface     | 4     |
+//! | **Total**                         | **33** |
 //!
 //! ## Running
 //!
@@ -990,3 +990,43 @@ fn regression_baseline_reset_matches_fresh_fixture() {
         "reset fixture memory must match fresh fixture memory"
     );
 }
+
+/// Fixture creation and measurement must remain 100% deterministic across retries and rerenders.
+///
+/// **What this proves**: Executing measurements in a loop across 50 iterations produces identical results.
+#[test]
+fn reproducibility_across_retries_and_rerenders() {
+    let fix = GasRegressionFixture::new();
+    fix.reset_budget();
+    let baseline = measure(&fix.env, || {
+        let _ = Address::generate(&fix.env);
+    });
+
+    for retry in 1..=50 {
+        let fix_retry = GasRegressionFixture::new();
+        fix_retry.reset_budget();
+        let current = measure(&fix_retry.env, || {
+            let _ = Address::generate(&fix_retry.env);
+        });
+
+        assert_eq!(
+            baseline, current,
+            "retry iteration {} produced different measurement delta from baseline",
+            retry
+        );
+    }
+}
+
+/// Under-specified fixture parameters must resolve to deterministic fallbacks without drift.
+///
+/// **What this proves**: Optional or unconfigured parameters default cleanly and deterministically.
+#[test]
+fn edge_case_under_specified_config_fallback_determinism() {
+    let fix = GasRegressionFixture::default();
+    let cpu_initial = fix.env.cost_estimate().budget().cpu_instruction_cost();
+    let mem_initial = fix.env.cost_estimate().budget().memory_bytes_cost();
+
+    assert_eq!(cpu_initial, 0, "default fixture must initialize CPU to 0");
+    assert_eq!(mem_initial, 0, "default fixture must initialize memory to 0");
+}
+
