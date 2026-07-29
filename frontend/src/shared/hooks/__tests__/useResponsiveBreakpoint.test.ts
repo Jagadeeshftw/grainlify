@@ -170,6 +170,67 @@ describe('useResponsiveBreakpoint', () => {
     expect(result.current.isLargeDesktop).toBe(true)
   })
 
+  it('exactly 767px boundary: isMobile=true, isTablet=false (off-by-one safety)', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation((query: string) => {
+        if (query === '(max-width: 767px)') return mockMatchMedia(true)
+        if (query === '(min-width: 768px) and (max-width: 1023px)') return mockMatchMedia(false)
+        return mockMatchMedia(false)
+      }),
+    )
+    const { result } = renderHook(() => useResponsiveBreakpoint())
+    expect(result.current.breakpoint).toBe('sm')
+    expect(result.current.isMobile).toBe(true)
+    expect(result.current.isTablet).toBe(false)
+  })
+
+  it('exactly 1023px boundary: isTablet=true, isDesktop=false (off-by-one safety)', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation((query: string) => {
+        if (query === '(max-width: 767px)') return mockMatchMedia(false)
+        if (query === '(min-width: 768px) and (max-width: 1023px)') return mockMatchMedia(true)
+        if (query === '(min-width: 1024px)') return mockMatchMedia(false)
+        return mockMatchMedia(false)
+      }),
+    )
+    const { result } = renderHook(() => useResponsiveBreakpoint())
+    expect(result.current.breakpoint).toBe('md')
+    expect(result.current.isTablet).toBe(true)
+    expect(result.current.isDesktop).toBe(false)
+  })
+
+  it('exactly 1279px boundary: isDesktop=true, isLargeDesktop=false (off-by-one safety)', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation((query: string) => {
+        if (query === '(max-width: 767px)') return mockMatchMedia(false)
+        if (query === '(min-width: 768px) and (max-width: 1023px)') return mockMatchMedia(false)
+        if (query === '(min-width: 1024px)') return mockMatchMedia(true)
+        if (query === '(min-width: 1280px)') return mockMatchMedia(false)
+        return mockMatchMedia(false)
+      }),
+    )
+    const { result } = renderHook(() => useResponsiveBreakpoint())
+    expect(result.current.breakpoint).toBe('lg')
+    expect(result.current.isDesktop).toBe(true)
+    expect(result.current.isLargeDesktop).toBe(false)
+  })
+
+  it('when no media query matches, falls back to sm breakpoint', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation(() => mockMatchMedia(false)),
+    )
+    const { result } = renderHook(() => useResponsiveBreakpoint())
+    expect(result.current.breakpoint).toBe('sm')
+    expect(result.current.isMobile).toBe(false)
+    expect(result.current.isTablet).toBe(false)
+    expect(result.current.isDesktop).toBe(false)
+    expect(result.current.isLargeDesktop).toBe(false)
+  })
+
   it('transitions from mobile to desktop when breakpoint changes (resize simulation)', () => {
     const mobileMql = { matches: true, media: '(max-width: 767px)', addEventListener: vi.fn(), removeEventListener: vi.fn() }
     const tabletMql = { matches: false, media: '(min-width: 768px) and (max-width: 1023px)', addEventListener: vi.fn(), removeEventListener: vi.fn() }

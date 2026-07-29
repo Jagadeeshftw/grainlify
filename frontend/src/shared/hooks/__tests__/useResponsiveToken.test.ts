@@ -151,4 +151,122 @@ describe('useResponsiveToken', () => {
     const { result } = renderHook(() => useResponsiveToken({}, 'fallback'))
     expect(result.current).toBe('fallback')
   })
+
+  it('does NOT cascade up to larger breakpoints — only down', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation((query: string) => {
+        if (query === '(max-width: 767px)') return mockMatchMedia(true)
+        return mockMatchMedia(false)
+      }),
+    )
+    const tokens = { md: 'tablet-value', lg: 'desktop-value' }
+    const { result } = renderHook(() => useResponsiveToken(tokens, 'fallback'))
+    expect(result.current).toBe('fallback')
+  })
+
+  it('at mobile (sm) with no tokens defined anywhere, returns defaultValue', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation((query: string) => {
+        if (query === '(max-width: 767px)') return mockMatchMedia(true)
+        return mockMatchMedia(false)
+      }),
+    )
+    const { result } = renderHook(() => useResponsiveToken({}, 'default-val'))
+    expect(result.current).toBe('default-val')
+  })
+
+  it('cascades from lg down to sm when only sm token is defined', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation((query: string) => {
+        if (query === '(min-width: 1024px)') return mockMatchMedia(true)
+        return mockMatchMedia(false)
+      }),
+    )
+    const tokens = { sm: 'only-mobile' }
+    const { result } = renderHook(() => useResponsiveToken(tokens, 'fallback'))
+    expect(result.current).toBe('only-mobile')
+  })
+
+  it('treats undefined values in token map as missing (skips them in cascade)', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation((query: string) => {
+        if (query === '(min-width: 1024px)') return mockMatchMedia(true)
+        return mockMatchMedia(false)
+      }),
+    )
+    const tokens: Record<string, string | undefined> = { sm: 'mobile', md: undefined, lg: undefined }
+    const { result } = renderHook(() => useResponsiveToken(tokens as Partial<Record<string, string>>, 'fallback'))
+    expect(result.current).toBe('mobile')
+  })
+
+  it('handles numeric zero (0) as a valid defined value', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation((query: string) => {
+        if (query === '(min-width: 1024px)') return mockMatchMedia(true)
+        return mockMatchMedia(false)
+      }),
+    )
+    const tokens = { sm: 0, md: 1 }
+    const { result } = renderHook(() => useResponsiveToken(tokens, -1))
+    expect(result.current).toBe(1)
+  })
+
+  it('handles false as a valid defined boolean value', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation((query: string) => {
+        if (query === '(min-width: 1024px)') return mockMatchMedia(true)
+        return mockMatchMedia(false)
+      }),
+    )
+    const tokens = { lg: false }
+    const { result } = renderHook(() => useResponsiveToken(tokens, true))
+    expect(result.current).toBe(false)
+  })
+
+  it('at tablet (md), xl-only token map returns default (no cascade up)', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation((query: string) => {
+        if (query === '(min-width: 768px) and (max-width: 1023px)') return mockMatchMedia(true)
+        return mockMatchMedia(false)
+      }),
+    )
+    const tokens = { xl: 'large-desktop-only' }
+    const { result } = renderHook(() => useResponsiveToken(tokens, 'fallback'))
+    expect(result.current).toBe('fallback')
+  })
+
+  it('at large desktop (xl), cascades to lg when lg token exists and xl does not', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation((query: string) => {
+        if (query === '(min-width: 1280px)') return mockMatchMedia(true)
+        if (query === '(min-width: 1024px)') return mockMatchMedia(true)
+        return mockMatchMedia(false)
+      }),
+    )
+    const tokens = { lg: 'desktop-value' }
+    const { result } = renderHook(() => useResponsiveToken(tokens, 'fallback'))
+    expect(result.current).toBe('desktop-value')
+  })
+
+  it('at large desktop (xl), cascades past lg when lg is undefined', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation((query: string) => {
+        if (query === '(min-width: 1280px)') return mockMatchMedia(true)
+        if (query === '(min-width: 1024px)') return mockMatchMedia(true)
+        return mockMatchMedia(false)
+      }),
+    )
+    const tokens: Record<string, string | undefined> = { lg: undefined, md: 'tablet-value' }
+    const { result } = renderHook(() => useResponsiveToken(tokens as Partial<Record<string, string>>, 'fallback'))
+    expect(result.current).toBe('tablet-value')
+  })
 })
