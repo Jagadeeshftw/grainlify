@@ -771,6 +771,38 @@ impl ProgramMetadata {
     }
 }
 
+/// Validate `custom_fields` size/length limits.
+///
+/// Enforced identically by both `init_program_with_metadata` and
+/// `update_program_metadata` so that metadata accepted at creation is never
+/// rejected on update (or vice versa).
+///
+/// # Limits
+/// | Constraint | Constant | Value |
+/// |---|---|---|
+/// | Max entries | `MAX_CUSTOM_FIELDS` | 20 |
+/// | Max key length | `MAX_CUSTOM_FIELD_KEY_LEN` | 64 bytes |
+/// | Max value length | `MAX_CUSTOM_FIELD_VALUE_LEN` | 256 bytes |
+///
+/// # Panics
+/// - `"CustomFieldsLimitExceeded"` if `custom_fields.len() > MAX_CUSTOM_FIELDS`.
+/// - `"CustomFieldKeyTooLong"` if any key exceeds `MAX_CUSTOM_FIELD_KEY_LEN` bytes.
+/// - `"CustomFieldValueTooLong"` if any value exceeds `MAX_CUSTOM_FIELD_VALUE_LEN` bytes.
+pub fn validate_metadata_custom_fields(metadata: &ProgramMetadata) {
+    let num_fields = metadata.custom_fields.len();
+    if num_fields > MAX_CUSTOM_FIELDS {
+        panic!("CustomFieldsLimitExceeded");
+    }
+    for field in metadata.custom_fields.iter() {
+        if field.key.len() > MAX_CUSTOM_FIELD_KEY_LEN {
+            panic!("CustomFieldKeyTooLong");
+        }
+        if field.value.len() > MAX_CUSTOM_FIELD_VALUE_LEN {
+            panic!("CustomFieldValueTooLong");
+        }
+    }
+}
+
 /// Program lifecycle status.
 ///
 /// Programs start in `Draft` state after `init_program` and transition to
@@ -2188,6 +2220,8 @@ mod test_circuit_breaker_enforcement;
 mod fot_routing;
 #[cfg(test)]
 mod test_fot_routing;
+#[cfg(test)]
+mod test_metadata_tagging;
 mod threshold_monitor;
 #[cfg(test)]
 mod threshold_monitor_prop_tests;
@@ -2961,6 +2995,11 @@ impl ProgramEscrowContract {
                     panic!("Program name cannot be empty if provided");
                 }
             }
+            // Enforce custom_fields size/length limits (shared with update path).
+            if meta.custom_fields.len() > MAX_PROGRAM_METADATA_CUSTOM_FIELDS {
+                panic!("Metadata custom fields exceed limit");
+            }
+            validate_metadata_custom_fields(meta);
         }
 
         let mut program_data = Self::initialize_program(
@@ -4716,18 +4755,8 @@ impl ProgramEscrowContract {
         // ── (1) Validate custom_fields size — applies to all callers ──────────
         // Bounds storage size regardless of who calls, preventing unbounded
         // storage growth even via the admin path.
-        let num_fields = metadata.custom_fields.len();
-        if num_fields > MAX_CUSTOM_FIELDS {
-            panic!("CustomFieldsLimitExceeded");
-        }
-        for field in metadata.custom_fields.iter() {
-            if field.key.len() > MAX_CUSTOM_FIELD_KEY_LEN {
-                panic!("CustomFieldKeyTooLong");
-            }
-            if field.value.len() > MAX_CUSTOM_FIELD_VALUE_LEN {
-                panic!("CustomFieldValueTooLong");
-            }
-        }
+        // Shared with init_program_with_metadata; keep both paths in sync.
+        validate_metadata_custom_fields(&metadata);
 
         // ── (2) Rate-limit delegate-invoked writes ────────────────────────────
         // Admin and program owner bypass this check — they are trusted parties
