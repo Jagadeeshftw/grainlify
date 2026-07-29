@@ -1,13 +1,17 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
 import { ArrowLeft, Github } from 'lucide-react';
 import { getGitHubLoginUrl } from '../../../shared/api/client';
+import { OAuthErrorBanner } from '../components/OAuthErrorBanner';
+import { classifyOAuthError } from '../types/oauthErrors';
+import type { OAuthErrorState } from '../types/oauthErrors';
 
 export function SignUpPage() {
   const { theme } = useTheme();
   const navigate = useNavigate();
   const [isRedirecting, setIsRedirecting] = useState(false);
+  const [oauthError, setOauthError] = useState<OAuthErrorState | null>(null);
 
   // Check for OAuth callback token in URL (fallback for wrong redirect URL)
   useEffect(() => {
@@ -17,18 +21,38 @@ export function SignUpPage() {
     if (token) {
       // If there's a token in the URL, redirect to the proper callback handler
       navigate(`/auth/callback?token=${token}`, { replace: true });
+      return;
+    }
+
+    // Check for OAuth error params returned from GitHub redirect
+    const errorParam = params.get('error');
+    if (errorParam) {
+      setOauthError(classifyOAuthError(errorParam));
     }
   }, [navigate]);
 
-  const handleGitHubSignUp = () => {
+  const handleGitHubSignUp = useCallback(() => {
     if (isRedirecting) return;
-    console.log('Sign up button clicked');
+    setOauthError(null);
     setIsRedirecting(true);
     const githubUrl = getGitHubLoginUrl();
     console.log('Redirecting to:', githubUrl);
     // Redirect to GitHub OAuth
     window.location.href = githubUrl;
-  };
+  }, [isRedirecting]);
+
+  const handleRetry = useCallback(() => {
+    setOauthError(null);
+    handleGitHubSignUp();
+  }, [handleGitHubSignUp]);
+
+  const handleContactSupport = useCallback(() => {
+    window.open('mailto:support@grainlify.com?subject=GitHub OAuth Error', '_blank');
+  }, []);
+
+  const handleDismissError = useCallback(() => {
+    setOauthError(null);
+  }, []);
 
   return (
     <div className={`min-h-screen flex items-center justify-center px-6 py-12 relative overflow-hidden transition-colors ${
@@ -73,6 +97,16 @@ export function SignUpPage() {
               theme === 'dark' ? 'text-[#d4c5b0]' : 'text-[#7a6b5a]'
             }`}>Create your account with GitHub</p>
           </div>
+
+          {/* OAuth Error Banner */}
+          {oauthError && (
+            <OAuthErrorBanner
+              error={oauthError}
+              onRetry={handleRetry}
+              onContactSupport={handleContactSupport}
+              onDismiss={handleDismissError}
+            />
+          )}
 
           {/* GitHub Sign Up */}
           <div className="space-y-6">

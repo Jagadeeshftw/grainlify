@@ -9,7 +9,6 @@
     "generate-favicon": "node scripts/generate-favicon.mjs",
     "test": "vitest --run",
     "test:watch": "vitest"
-    "test": "vitest run"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
@@ -80,28 +79,19 @@
   "devDependencies": {
     "@tailwindcss/vite": "4.1.12",
     "@testing-library/dom": "^10.4.0",
-    "@testing-library/jest-dom": "^6.6.3",
-    "@testing-library/react": "^16.3.0",
-    "@testing-library/user-event": "^14.5.2",
-    "@types/react": "^19.2.9",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "4.7.0",
-    "@vitest/coverage-v8": "^4.1.10",
-    "jsdom": "^25.0.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
     "@types/react": "^19.2.9",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "4.7.0",
-    "@vitest/coverage-v8": "^4.1.9",
+    "@vitest/coverage-v8": "^4.1.10",
     "jsdom": "^29.1.1",
     "sharp": "^0.34.5",
     "tailwindcss": "4.1.12",
     "to-ico": "^1.1.5",
     "vite": "6.3.5",
-    "vitest": "^2.1.9"
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.10"
   },
   "pnpm": {
     "overrides": {
