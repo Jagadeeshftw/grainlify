@@ -225,6 +225,7 @@ export class BusinessMetricsRegistry {
 
   /**
    * Exports all recorded metrics in structured format.
+   * Output is deterministic: metrics are sorted by name and label string.
    */
   public getMetrics(): { counters: MetricValue[]; gauges: MetricValue[]; histograms: HistogramValue[] } {
     const now = Date.now();
@@ -232,9 +233,13 @@ export class BusinessMetricsRegistry {
     const gauges: MetricValue[] = [];
     const histograms: HistogramValue[] = [];
 
-    // Export counters
-    for (const [name, map] of this.counters.entries()) {
-      for (const [labelStr, val] of map.entries()) {
+    // Export counters (sorted by name, then label string for determinism)
+    const sortedCounterNames = Array.from(this.counters.keys()).sort();
+    for (const name of sortedCounterNames) {
+      const map = this.counters.get(name)!;
+      const sortedLabelKeys = Array.from(map.keys()).sort();
+      for (const labelStr of sortedLabelKeys) {
+        const val = map.get(labelStr)!;
         counters.push({
           name,
           type: 'counter',
@@ -245,9 +250,13 @@ export class BusinessMetricsRegistry {
       }
     }
 
-    // Export gauges
-    for (const [name, map] of this.gauges.entries()) {
-      for (const [labelStr, val] of map.entries()) {
+    // Export gauges (sorted by name, then label string for determinism)
+    const sortedGaugeNames = Array.from(this.gauges.keys()).sort();
+    for (const name of sortedGaugeNames) {
+      const map = this.gauges.get(name)!;
+      const sortedLabelKeys = Array.from(map.keys()).sort();
+      for (const labelStr of sortedLabelKeys) {
+        const val = map.get(labelStr)!;
         gauges.push({
           name,
           type: 'gauge',
@@ -258,12 +267,16 @@ export class BusinessMetricsRegistry {
       }
     }
 
-    // Export histograms
-    for (const [name, map] of this.histograms.entries()) {
+    // Export histograms (sorted by name, then label string for determinism)
+    const sortedHistogramNames = Array.from(this.histograms.keys()).sort();
+    for (const name of sortedHistogramNames) {
+      const map = this.histograms.get(name)!;
       const def = this.definitions.get(name);
       const buckets = def?.buckets ?? DEFAULT_HISTOGRAM_BUCKETS;
 
-      for (const [labelStr, entry] of map.entries()) {
+      const sortedLabelKeys = Array.from(map.keys()).sort();
+      for (const labelStr of sortedLabelKeys) {
+        const entry = map.get(labelStr)!;
         const bucketList: HistogramBucket[] = buckets.map((le, idx) => ({
           le,
           count: entry.bucketCounts[idx],
@@ -347,6 +360,17 @@ export class BusinessMetricsRegistry {
  * Standard Singleton Business Metrics Instance for Production Visibility
  */
 export const defaultBusinessRegistry = new BusinessMetricsRegistry({ prefix: 'grainlify' });
+
+/**
+ * Resets the default registry state. Use only in test environments.
+ * This ensures deterministic behavior across test runs and rerenders.
+ */
+export function resetDefaultRegistry(): void {
+  // @ts-ignore - Safe to access in test environment
+  if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'test') {
+    defaultBusinessRegistry.reset();
+  }
+}
 
 // Pre-register standard application domain metrics
 defaultBusinessRegistry.register({ name: 'grainlify_bounty_created_total', help: 'Total bounties created', type: 'counter' });

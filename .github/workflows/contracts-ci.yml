@@ -1,27 +1,14 @@
 name: Smart Contracts CI
 
 on:
-  pull_request:
-    paths:
-      - "soroban/**"
-      - "contracts/**"
-      - ".github/workflows/contracts-ci.yml"
   push:
-    branches:
-      - main
-      - develop
-      - master
-    paths:
-      - "soroban/**"
-      - "contracts/**"
-      - ".github/workflows/contracts-ci.yml"
-
-env:
-  CARGO_TERM_COLOR: always
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
 
 jobs:
-  soroban-rust:
-    name: Soroban workspace (build + test)
+  build-test:
+    name: build-test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

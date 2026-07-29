@@ -17,6 +17,8 @@ pub enum ProposalStatus {
     Executed,
     /// Proposal has expired without being finalized.
     Expired,
+    /// Proposal has been vetoed by Security Council during timelock period.
+    Vetoed,
 }
 
 /// Types of votes a participant can cast.
@@ -111,13 +113,15 @@ pub struct Vote {
 }
 
 /// Storage key containing the proposal map.
-pub const PROPOSALS: Symbol = symbol_short!("PROPOSALS");
+pub(crate) const PROPOSALS: Symbol = symbol_short!("PROPOSALS");
 /// Storage key containing the next governance proposal id.
-pub const PROPOSAL_COUNT: Symbol = symbol_short!("PROP_CNT");
+pub(crate) const PROPOSAL_COUNT: Symbol = symbol_short!("PROP_CNT");
 /// Storage key containing recorded votes.
-pub const VOTES: Symbol = symbol_short!("VOTES");
+pub(crate) const VOTES: Symbol = symbol_short!("VOTES");
 /// Storage key containing the immutable governance configuration.
-pub const GOVERNANCE_CONFIG: Symbol = symbol_short!("GOV_CFG");
+pub(crate) const GOVERNANCE_CONFIG: Symbol = symbol_short!("GOV_CFG");
+/// Storage key containing the Security Council address for veto power.
+pub(crate) const SECURITY_COUNCIL: Symbol = symbol_short!("SEC_COUNCIL");
 
 /// Governance errors returned by the standalone governance contract.
 #[soroban_sdk::contracterror]
@@ -154,6 +158,12 @@ pub enum Error {
     ProposalExpired = 14,
     /// Proposer has insufficient balance for stake.
     InsufficientBalance = 15,
+    /// Caller is not authorized to veto (not Security Council).
+    NotSecurityCouncil = 16,
+    /// Proposal cannot be vetoed (not in Approved state or already executed).
+    CannotVeto = 17,
+    /// Security Council not set.
+    SecurityCouncilNotSet = 18,
 }
 
 /// Validates the immutable governance configuration used during initialization.
@@ -465,5 +475,84 @@ impl GovernanceContract {
             .instance()
             .get(&GOVERNANCE_CONFIG)
             .ok_or(Error::NotInitialized)
+    }
+
+    /// Vetos an approved proposal during the timelock period.
+    ///
+    /// Only the Security Council can invoke this function to emergency veto
+    /// a proposal that has been approved but not yet executed.
+    ///
+    /// # Arguments
+    /// * `security_council` - The Security Council address invoking the veto.
+    /// * `proposal_id` - ID of the proposal to veto.
+    ///
+    /// # Errors
+    /// * `SecurityCouncilNotSet` - Security Council address not configured.
+    /// * `NotSecurityCouncil` - Caller is not the Security Council.
+    /// * `ProposalNotFound` - Proposal does not exist.
+    /// * `CannotVeto` - Proposal is not in Approved state or already executed.
+    pub fn veto_proposal(env: Env, security_council: Address, proposal_id: u32) -> Result<(), Error> {
+        security_council.require_auth();
+
+        let stored_council: Address = env
+            .storage()
+            .instance()
+            .get(&SECURITY_COUNCIL)
+            .ok_or(Error::SecurityCouncilNotSet)?;
+
+        if stored_council != security_council {
+            return Err(Error::NotSecurityCouncil);
+        }
+
+        let mut proposals: Map<u32, Proposal> = env
+            .storage()
+            .instance()
+            .get(&PROPOSALS)
+            .ok_or(Error::ProposalsNotFound)?;
+        let mut proposal = proposals.get(proposal_id).ok_or(Error::ProposalNotFound)?;
+
+        // Can only veto proposals that are Approved (in timelock period)
+        if proposal.status != ProposalStatus::Approved {
+            return Err(Error::CannotVeto);
+        }
+
+        // Check if proposal is still in timelock period (not yet executable)
+        let current_time = env.ledger().timestamp();
+        if current_time >= proposal.voting_end + proposal.execution_delay {
+            return Err(Error::CannotVeto);
+        }
+
+        proposal.status = ProposalStatus::Vetoed;
+        proposals.set(proposal_id, proposal);
+        env.storage().instance().set(&PROPOSALS, &proposals);
+
+        env.events()
+            .publish((symbol_short!("gov_veto"),), (proposal_id, security_council));
+
+        Ok(())
+    }
+
+    /// Sets the Security Council address for veto power.
+    ///
+    /// This should be called during governance initialization or updated through
+    /// a separate governance process.
+    ///
+    /// # Arguments
+    /// * `admin` - The admin address authorizing the change.
+    /// * `security_council` - The new Security Council address.
+    pub fn set_security_council(env: Env, admin: Address, security_council: Address) -> Result<(), Error> {
+        admin.require_auth();
+        env.storage()
+            .instance()
+            .set(&SECURITY_COUNCIL, &security_council);
+        Ok(())
+    }
+
+    /// Returns the current Security Council address.
+    pub fn get_security_council(env: Env) -> Result<Address, Error> {
+        env.storage()
+            .instance()
+            .get(&SECURITY_COUNCIL)
+            .ok_or(Error::SecurityCouncilNotSet)
     }
 }
