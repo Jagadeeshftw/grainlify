@@ -71,6 +71,8 @@ Captures Soroban budget meters before and after an operation.
 - Returns identical values for same binary, same `Env` state, same operation
 - Uses `saturating_sub` to prevent underflow
 - Does not modify the operation being measured
+- Works correctly **with or without** a prior `reset_budget()` call — the delta
+  is always relative to the current counter state
 
 **Gas-Sensitive Execution Paths:**
 
@@ -83,6 +85,28 @@ Captures Soroban budget meters before and after an operation.
    - Cost: ~100 CPU instructions (SDK estimate)
    - Sensitivity: SDK version, host implementation
    - Regression Surface: Soroban SDK changes to budget accounting
+
+### 4. snapshot() / delta_from() Two-Step API
+
+Allows splitting measurement into explicit pre/post snapshots.
+
+**Key Properties:**
+- `snapshot()` captures current budget counters at a point in time
+- `delta_from(before)` computes resources consumed between the snapshot and now
+- Equivalent to `measure()` when used correctly (verified by test)
+- Useful for measuring setup + operation separately
+
+**Gas-Sensitive Execution Paths:**
+
+1. **Snapshot Capture (`snapshot()`)**:
+   - Cost: 2 budget reads (same as `measure()` before half)
+   - Sensitivity: SDK version, host implementation
+   - Regression Surface: Soroban SDK changes to budget accounting
+
+2. **Delta Computation (`delta_from()`)**:
+   - Cost: 2 budget reads + saturating arithmetic
+   - Sensitivity: None (pure Rust arithmetic)
+   - Regression Surface: None (pure Rust code)
 
 ## Gas-Sensitive Execution Paths
 
@@ -204,6 +228,66 @@ Captures Soroban budget meters before and after an operation.
 - Assertion: No resource leaks or state corruption
 - Regression Surface: Fixture lifecycle management
 
+### Edge Case 6: Snapshot API Correctness
+
+**Behavior:** The `snapshot()` + `delta_from()` two-step API produces the same
+result as the atomic `measure()` helper.
+
+**Guardrails:**
+- Test: `snapshot_delta_matches_measure`
+- Assertion: snapshot+delta_from yields identical result to measure()
+- Regression Surface: Budget accounting inconsistency
+
+### Edge Case 7: Snapshot State Reflection
+
+**Behavior:** `snapshot()` returns values that accurately reflect the current
+budget state at the time of the call.
+
+**Guardrails:**
+- Test: `snapshot_reflects_current_budget`
+- Assertion: Snapshot after reset shows zero; after work shows increased counters
+- Regression Surface: Snapshot returning stale values
+
+### Edge Case 8: Measurement Without Prior Reset
+
+**Behavior:** Calling `measure()` without a prior `reset_budget()` correctly
+captures the delta from the current counter state, not from zero.
+
+**Guardrails:**
+- Test: `measure_without_prior_reset_produces_correct_delta`
+- Assertion: Delta matches measurement from a fresh fixture with reset
+- Regression Surface: Measurement assuming zeroed budget
+
+### Edge Case 9: Determinism Across Retries
+
+**Behavior:** The same operation produces identical gas measurements across
+independent simulated "reruns" — exactly as would happen in CI retries.
+
+**Guardrails:**
+- Test: `determinism_across_simulated_reruns`
+- Assertion: All 5 reruns produce identical BudgetDelta values
+- Regression Surface: SDK nondeterminism, fixture state leakage
+
+### Edge Case 10: Sequential Accumulation Without Resets
+
+**Behavior:** Multiple `measure()` calls without intervening `reset_budget()`
+correctly accumulate — each captures only the delta from the previous end state.
+
+**Guardrails:**
+- Test: `sequential_measurements_without_resets_accumulate`
+- Assertion: Identical sequential operations produce identical deltas
+- Regression Surface: Measurement cross-contamination
+
+### Edge Case 11: Debug Representation
+
+**Behavior:** `GasRegressionFixture` implements `std::fmt::Debug` for ergonomic
+use in assertions, logging, and panic messages.
+
+**Guardrails:**
+- Test: `fixture_debug_representation`
+- Assertion: Debug string is non-empty and contains the type name
+- Regression Surface: Accidental removal of Debug derive
+
 ## Regression Surface
 
 ### What Constitutes a Regression
@@ -226,6 +310,10 @@ A gas regression is detected when:
    - Detected by: `cross_fixture_no_contamination_shared_env_default`
    - Indicates: Shared mutable state bug
 
+5. **Retry Determinism Failure**: Same operation produces different results across reruns
+   - Detected by: `determinism_across_simulated_reruns`
+   - Indicates: SDK nondeterminism, environment contamination, or test infrastructure bug
+
 ### Protected Against
 
 The guardrails protect against:
@@ -235,6 +323,7 @@ The guardrails protect against:
 3. **Host Changes**: Soroban host implementation changes
 4. **Fixture Bugs**: Any regression in the test infrastructure itself
 5. **Environment Contamination**: Tests affecting each other
+6. **Retry Nondeterminism**: Tests producing different results across CI retries
 
 ### Not Protected Against
 
@@ -254,7 +343,9 @@ For the same binary build, the following are guaranteed deterministic:
 1. **Fixture Creation**: `GasRegressionFixture::new()` always produces identical initial state
 2. **Budget Reset**: `reset_budget()` always produces zero state
 3. **Measurement**: Same operation + same inputs = identical `BudgetDelta`
-4. **Contract Operations**: Same contract call + same inputs = identical gas cost
+4. **Snapshot**: `snapshot()` at the same fixture state returns identical values
+5. **Delta Computation**: `delta_from(before)` produces identical results for the same operation sequence
+6. **Contract Operations**: Same contract call + same inputs = identical gas cost
 
 ### What is NOT Deterministic
 
@@ -318,6 +409,48 @@ assert!(d_batch.cpu > d_single.cpu);
 
 **Guardrails:** Ensures batch operations scale predictably.
 
+### Pattern 4: Snapshot-Based Split Measurement
+
+```rust
+let fix = GasRegressionFixture::new();
+
+// Capture baseline before setup
+let before_setup = fix.snapshot();
+
+// Perform setup (not measured separately)
+let admin = Address::generate(&fix.env);
+let token_contract = fix.env.register_stellar_asset_contract_v2(admin.clone());
+
+// Measure operation cost from setup baseline
+let setup_cost = fix.delta_from(before_setup);
+
+// Reset and measure specific operation
+fix.reset_budget();
+let d_operation = measure(&fix.env, || {
+    token_sac.mint(&admin, &1_000);
+});
+```
+
+**Guardrails:** Enables measuring setup and operation costs separately.
+
+### Pattern 5: Determinism Across Retries Verification
+
+```rust
+let mut results = Vec::new();
+for _ in 0..5 {
+    let fix = GasRegressionFixture::new();
+    // ... setup ...
+    fix.reset_budget();
+    let d = measure(&fix.env, || { operation() });
+    results.push(d);
+}
+assert_eq!(results[0], results[1]);
+// All results must be identical — this is the retry-determinism guarantee
+```
+
+**Guardrails:** Verifies the test infrastructure produces identical results
+across independent runs (simulating CI retries).
+
 ## Test Coverage Summary
 
 | Category | Tests | Purpose |
@@ -330,8 +463,9 @@ assert!(d_batch.cpu > d_single.cpu);
 | Reproducibility Across Runs | 2 | Verify same-process reproducibility |
 | Cross-Fixture Non-Contamination | 2 | Verify no state leak between fixtures |
 | Contract-Level Gas Regression | 4 | Verify fixture works with real contracts |
-| Documented Regression Surface | 3 | Pin down baseline costs |
-| **Total** | **32** | **Comprehensive coverage** |
+| Documented Regression Surface | 2 | Pin down baseline costs (noop, address generation) |
+| Snapshot API & Extended Determinism | 6 | Verify snapshot API, retry determinism, debug impl |
+| **Total** | **37** | **Comprehensive coverage** |
 
 ## Running the Guardrails
 
