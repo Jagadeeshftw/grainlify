@@ -11,7 +11,7 @@
  */
 
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { useReducedMotion } from '@/shared/hooks/useReducedMotion';
 import {
   pageTransitionVariants,

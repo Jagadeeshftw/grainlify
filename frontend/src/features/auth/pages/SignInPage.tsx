@@ -53,6 +53,7 @@ export function SignInPage() {
   
 
   return (
+    <>
     <div className={`min-h-screen flex items-center justify-center px-6 relative overflow-hidden transition-colors ${
       theme === 'dark'
         ? 'bg-gradient-to-br from-[#1a1512] via-[#231c17] to-[#2d241d]'
@@ -174,5 +175,6 @@ export function SignInPage() {
         onConnect={handleWalletConnect}
       />
     )}
+    </>
   );
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Copy, Check, RefreshCw } from 'lucide-react';
-import { useTheme } from '../../../../shared/contexts/ThemeContext';
+import { useTheme } from '../../../shared/contexts/ThemeContext';
 
 interface WalletQRPaneProps {
   /** WalletConnect URI (wc:...) used to generate the QR code */

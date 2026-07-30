@@ -11,11 +11,42 @@ import {
   CheckCircle,
   Star,
   Quote,
+  Pause,
+  Play,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { useTheme } from "../../../shared/contexts/ThemeContext";
 import { useLandingStats } from "../../../shared/hooks/useLandingStats";
-import { useEffect } from "react";
+import { useEffect, useCallback, useRef, useState } from "react";
+import {
+  Carousel,
+  CarouselContent,
+  CarouselItem,
+  type CarouselApi,
+} from "../../../app/components/ui/carousel";
 import { useNavigate } from "react-router-dom";
+
+// ---------------------------------------------------------------------------
+// Hook: detects prefers-reduced-motion media query
+// ---------------------------------------------------------------------------
+function useReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const handler = (e: MediaQueryListEvent) => setReduced(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+
+  return reduced;
+}
 
 export function LandingPage() {
   const { theme } = useTheme();
@@ -415,7 +446,11 @@ function WhyChooseUs() {
 
 function Testimonials() {
   const { theme } = useTheme();
+  const prefersReducedMotion = useReducedMotion();
 
+  // ---------------------------------------------------------------------------
+  // Data
+  // ---------------------------------------------------------------------------
   const testimonials = [
     {
       name: "Sarah Chen",
@@ -446,10 +481,126 @@ function Testimonials() {
     },
   ];
 
+  // ---------------------------------------------------------------------------
+  // Carousel API state
+  // ---------------------------------------------------------------------------
+  const [api, setApi] = useState<CarouselApi>();
+  const [current, setCurrent] = useState(0);
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    if (!api) return;
+    setCount(api.scrollSnapList().length);
+    setCurrent(api.selectedScrollSnap());
+    const onSelect = () => setCurrent(api.selectedScrollSnap());
+    api.on("select", onSelect);
+    return () => {
+      api.off("select", onSelect);
+    };
+  }, [api]);
+
+  // ---------------------------------------------------------------------------
+  // Autoplay state
+  // ---------------------------------------------------------------------------
+  const AUTOPLAY_INTERVAL = 5000; // ms
+  const [isManuallyPaused, setIsManuallyPaused] = useState(false);
+  const [isHoverPaused, setIsHoverPaused] = useState(false);
+  const [isFocusPaused, setIsFocusPaused] = useState(false);
+  const [isTouchPaused, setIsTouchPaused] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Derived: autoplay should run when nothing pauses it and reduced-motion is off
+  const isPlaying =
+    !prefersReducedMotion &&
+    !isManuallyPaused &&
+    !isHoverPaused &&
+    !isFocusPaused &&
+    !isTouchPaused;
+
+  // Advance to next slide
+  const advance = useCallback(() => {
+    api?.scrollNext();
+  }, [api]);
+
+  // Start / stop interval based on isPlaying
+  useEffect(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (isPlaying) {
+      timerRef.current = setInterval(advance, AUTOPLAY_INTERVAL);
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [isPlaying, advance]);
+
+  // Reset timer after manual navigation
+  const resetTimer = useCallback(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (isPlaying) {
+      timerRef.current = setInterval(advance, AUTOPLAY_INTERVAL);
+    }
+  }, [isPlaying, advance]);
+
+  // ---------------------------------------------------------------------------
+  // Event handlers
+  // ---------------------------------------------------------------------------
+  const handleMouseEnter = () => setIsHoverPaused(true);
+  const handleMouseLeave = () => setIsHoverPaused(false);
+
+  // Use focusin/focusout so any descendant focus is detected
+  const handleFocusIn = () => setIsFocusPaused(true);
+  const handleFocusOut = (e: React.FocusEvent<HTMLElement>) => {
+    // Only resume if focus leaves the carousel entirely
+    const sectionEl = e.currentTarget;
+    if (!sectionEl.contains(e.relatedTarget as Node | null)) {
+      setIsFocusPaused(false);
+    }
+  };
+
+  const handleTouchStart = () => setIsTouchPaused(true);
+
+  const handlePlayPauseToggle = () => {
+    setIsManuallyPaused((prev) => !prev);
+    // Touch users already set isTouchPaused; clicking play should also clear it
+    setIsTouchPaused(false);
+  };
+
+  const handleDotClick = (index: number) => {
+    api?.scrollTo(index);
+    resetTimer();
+  };
+
+  const handlePrevClick = () => {
+    api?.scrollPrev();
+    resetTimer();
+  };
+
+  const handleNextClick = () => {
+    api?.scrollNext();
+    resetTimer();
+  };
+
+  // ---------------------------------------------------------------------------
+  // aria-live: "off" during autoplay, "polite" when paused so screen readers
+  // announce the slide content without being interrupted by auto-advances.
+  // ---------------------------------------------------------------------------
+  const ariaLive: React.AriaAttributes["aria-live"] =
+    isPlaying && !prefersReducedMotion ? "off" : "polite";
+
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
   return (
     <section
       id="testimonials"
+      aria-label="Testimonials"
+      aria-roledescription="carousel"
       className="relative py-20 sm:py-24 md:py-32 px-4 sm:px-6"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onFocusCapture={handleFocusIn}
+      onBlurCapture={handleFocusOut}
+      onTouchStart={handleTouchStart}
     >
       <div className="max-w-7xl mx-auto">
         {/* Section Header */}
@@ -470,65 +621,186 @@ function Testimonials() {
           </p>
         </div>
 
-        {/* Testimonials Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {testimonials.map((testimonial, index) => (
-            <div
-              key={index}
-              className={`backdrop-blur-[40px] border rounded-[24px] p-8 transition-all hover:border-[#c9983a]/30 hover:shadow-[0_12px_36px_rgba(201,152,58,0.15)] ${
-                theme === "dark"
-                  ? "bg-white/[0.08] border-white/15 hover:bg-white/[0.12]"
-                  : "bg-white/[0.15] border-white/25 hover:bg-white/[0.2]"
-              }`}
-            >
-              <Quote className="w-10 h-10 text-[#c9983a]/30 mb-6" />
+        {/* Carousel */}
+        <Carousel
+          opts={{
+            loop: true,
+            align: "start",
+          }}
+          setApi={setApi}
+          className="w-full"
+        >
+          {/* Slide list — aria-live region */}
+          <div aria-live={ariaLive} aria-atomic="false" aria-relevant="additions">
+            <CarouselContent className="-ml-4">
+              {testimonials.map((testimonial, index) => (
+                <CarouselItem
+                  key={index}
+                  aria-label={`Testimonial ${index + 1} of ${testimonials.length}`}
+                  className="pl-4 md:basis-1/2 lg:basis-1/3"
+                >
+                  <div
+                    className={`h-full backdrop-blur-[40px] border rounded-[24px] p-8 transition-all hover:border-[#c9983a]/30 hover:shadow-[0_12px_36px_rgba(201,152,58,0.15)] ${
+                      theme === "dark"
+                        ? "bg-white/[0.08] border-white/15 hover:bg-white/[0.12]"
+                        : "bg-white/[0.15] border-white/25 hover:bg-white/[0.2]"
+                    }`}
+                  >
+                    <Quote
+                      className="w-10 h-10 text-[#c9983a]/30 mb-6"
+                      aria-hidden="true"
+                    />
 
-              {/* Rating */}
-              <div className="flex space-x-1 mb-6">
-                {[...Array(testimonial.rating)].map((_, i) => (
-                  <Star
-                    key={i}
-                    className="w-5 h-5 fill-[#c9983a] text-[#c9983a]"
-                  />
-                ))}
-              </div>
+                    {/* Star Rating */}
+                    <div
+                      role="img"
+                      aria-label={`${testimonial.rating} out of 5 stars`}
+                      className="flex space-x-1 mb-6"
+                    >
+                      {[...Array(testimonial.rating)].map((_, i) => (
+                        <Star
+                          key={i}
+                          className="w-5 h-5 fill-[#c9983a] text-[#c9983a]"
+                          aria-hidden="true"
+                        />
+                      ))}
+                    </div>
 
-              {/* Content */}
-              <p
-                className={`mb-6 transition-colors ${
-                  theme === "dark" ? "text-[#e8dfd0]" : "text-[#2d2820]"
-                }`}
+                    {/* Quote content */}
+                    <blockquote
+                      aria-label={`Quote from ${testimonial.name}`}
+                      className={`mb-6 transition-colors ${
+                        theme === "dark" ? "text-[#f5f5f5]" : "text-[#2d2820]"
+                      }`}
+                    >
+                      {testimonial.content}
+                    </blockquote>
+
+                    {/* Author */}
+                    <div className="flex items-center space-x-4">
+                      <img
+                        src={testimonial.avatar}
+                        alt={`${testimonial.name}, ${testimonial.role}`}
+                        className="w-12 h-12 rounded-full object-cover border-2 border-[#c9983a]/30"
+                      />
+                      <div>
+                        <div
+                          className={`font-semibold transition-colors ${
+                            theme === "dark"
+                              ? "text-[#e8dfd0]"
+                              : "text-[#2d2820]"
+                          }`}
+                        >
+                          {testimonial.name}
+                        </div>
+                        <div
+                          className={`text-sm transition-colors ${
+                            theme === "dark"
+                              ? "text-[#d4d4d4]"
+                              : "text-[#7a6b5a]"
+                          }`}
+                        >
+                          {testimonial.role}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </CarouselItem>
+              ))}
+            </CarouselContent>
+          </div>
+
+          {/* Controls bar: play/pause · dot indicators · prev/next */}
+          <div className="mt-8 flex items-center justify-center gap-4">
+            {/* Play / Pause toggle — hidden for reduced-motion users */}
+            {!prefersReducedMotion && (
+              <button
+                type="button"
+                aria-label={
+                  isManuallyPaused
+                    ? "Play testimonial carousel"
+                    : "Pause testimonial carousel"
+                }
+                aria-pressed={isManuallyPaused}
+                onClick={handlePlayPauseToggle}
+                className={`flex items-center justify-center w-8 h-8 rounded-full border transition-colors
+                  focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f1b400]
+                  ${
+                    theme === "dark"
+                      ? "border-white/20 text-[#c9983a] hover:border-[#c9983a]/50 hover:bg-white/10"
+                      : "border-black/20 text-[#c9983a] hover:border-[#c9983a]/50 hover:bg-black/5"
+                  }`}
               >
-                {testimonial.content}
-              </p>
+                {isManuallyPaused ? (
+                  <Play className="w-4 h-4" aria-hidden="true" />
+                ) : (
+                  <Pause className="w-4 h-4" aria-hidden="true" />
+                )}
+              </button>
+            )}
 
-              {/* Author */}
-              <div className="flex items-center space-x-4">
-                <img
-                  src={testimonial.avatar}
-                  alt={testimonial.name}
-                  className="w-12 h-12 rounded-full object-cover border-2 border-[#c9983a]/30"
+            {/* Prev arrow */}
+            <button
+              type="button"
+              aria-label="Previous testimonial"
+              onClick={handlePrevClick}
+              className={`flex items-center justify-center w-8 h-8 rounded-full border transition-colors
+                focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f1b400]
+                ${
+                  theme === "dark"
+                    ? "border-white/20 text-[#c9983a] hover:border-[#c9983a]/50 hover:bg-white/10"
+                    : "border-black/20 text-[#c9983a] hover:border-[#c9983a]/50 hover:bg-black/5"
+                }`}
+            >
+              <ChevronLeft className="w-4 h-4" aria-hidden="true" />
+            </button>
+
+            {/* Dot indicators */}
+            <div
+              role="group"
+              aria-label="Carousel slide indicators"
+              className="flex items-center gap-2"
+            >
+              {Array.from({ length: count }).map((_, index) => (
+                <button
+                  key={index}
+                  type="button"
+                  aria-label={`Go to testimonial ${index + 1} of ${count}`}
+                  aria-current={index === current ? "true" : undefined}
+                  onClick={() => handleDotClick(index)}
+                  className={`rounded-full transition-all
+                    focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f1b400]
+                    ${
+                      index === current
+                        ? "w-2.5 h-2.5 bg-[#c9983a]"
+                        : `w-2 h-2 ${
+                            theme === "dark"
+                              ? "bg-white/30 hover:bg-[#e8c77f]"
+                              : "bg-black/20 hover:bg-[#c9983a]"
+                          }`
+                    }`}
+                  style={{ minWidth: "24px", minHeight: "24px", padding: "7px" }}
                 />
-                <div>
-                  <div
-                    className={`font-semibold transition-colors ${
-                      theme === "dark" ? "text-[#e8dfd0]" : "text-[#2d2820]"
-                    }`}
-                  >
-                    {testimonial.name}
-                  </div>
-                  <div
-                    className={`text-sm transition-colors ${
-                      theme === "dark" ? "text-[#b8a898]" : "text-[#7a6b5a]"
-                    }`}
-                  >
-                    {testimonial.role}
-                  </div>
-                </div>
-              </div>
+              ))}
             </div>
-          ))}
-        </div>
+
+            {/* Next arrow */}
+            <button
+              type="button"
+              aria-label="Next testimonial"
+              onClick={handleNextClick}
+              className={`flex items-center justify-center w-8 h-8 rounded-full border transition-colors
+                focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f1b400]
+                ${
+                  theme === "dark"
+                    ? "border-white/20 text-[#c9983a] hover:border-[#c9983a]/50 hover:bg-white/10"
+                    : "border-black/20 text-[#c9983a] hover:border-[#c9983a]/50 hover:bg-black/5"
+                }`}
+            >
+              <ChevronRight className="w-4 h-4" aria-hidden="true" />
+            </button>
+          </div>
+        </Carousel>
       </div>
     </section>
   );
