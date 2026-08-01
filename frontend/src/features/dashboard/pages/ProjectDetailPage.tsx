@@ -744,7 +744,7 @@ export function ProjectDetailPage({ onBack, onIssueClick, projectId: propProject
               <SkeletonLoader className="h-4 w-3/4" />
             </div>
           ) : project?.readme ? (
-            <ReadmeEmbed content={project.readme} theme={theme} />
+            <ReadmeEmbed content={project.readme} theme={theme} isLoading={isLoading} />
           ) : description ? (
             <p className={`text-[15px] leading-relaxed transition-colors ${
               theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#4a3f2f]'

@@ -17,7 +17,9 @@
 
 import React, { createContext, useContext, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { ImageOff } from 'lucide-react';
+import { SkeletonLoader } from '../../../shared/components/SkeletonLoader';
 import { isDarkVariant, type Theme } from '../../../shared/contexts/ThemeContext';
 
 // ---------------------------------------------------------------------------
@@ -33,6 +35,8 @@ export interface ReadmeEmbedProps {
   content: string;
   /** Current theme from useTheme() */
   theme: Theme;
+  /** Optional loading state for the overview card */
+  isLoading?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -109,7 +113,7 @@ function ReadmeImage({
  * Container: max-w-[72ch] (optimal reading measure), word-break to prevent
  * long URLs from overflowing at 375 px.
  */
-export function ReadmeEmbed({ content, theme }: ReadmeEmbedProps) {
+export function ReadmeEmbed({ content, theme, isLoading = false }: ReadmeEmbedProps) {
   const dark = isDarkVariant(theme);
   const inPre = useContext(InPreContext);
 
@@ -131,12 +135,38 @@ export function ReadmeEmbed({ content, theme }: ReadmeEmbedProps) {
   const tableEvenBg = dark ? 'bg-white/[0.04]' : 'bg-black/[0.02]';
   const tableCellText = dark ? 'text-[#d4d4d4]' : 'text-[#4a3f2f]';
 
+  if (isLoading) {
+    return (
+      <div
+        role="status"
+        aria-live="polite"
+        className="max-w-[72ch] space-y-3"
+      >
+        <SkeletonLoader className="h-4 w-full" />
+        <SkeletonLoader className="h-4 w-full" />
+        <SkeletonLoader className="h-4 w-3/4" />
+      </div>
+    );
+  }
+
+  if (!content?.trim()) {
+    return (
+      <div className={`max-w-[72ch] rounded-[12px] border px-4 py-4 text-[14px] ${dark ? 'border-white/10 bg-white/[0.04] text-[#d4d4d4]' : 'border-black/[0.08] bg-black/[0.02] text-[#4a3f2f]'}`}>
+        <p className="mb-2 font-semibold">No README content available.</p>
+        <p className="leading-relaxed">
+          Visit the repository page for the latest project details and setup instructions.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div
-      className="max-w-[72ch] break-words"
+      className="max-w-[72ch] break-words overflow-hidden"
       // Constrain the README to a readable measure and prevent overflow
     >
       <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
         components={{
           // ── Headings: offset +2 so README h1 never outranks page h1 ──────
           h1: ({ children, ...props }) => (
@@ -246,10 +276,10 @@ export function ReadmeEmbed({ content, theme }: ReadmeEmbedProps) {
               <pre
                 role="region"
                 aria-label="Code block"
-                className={`mb-4 overflow-x-auto rounded-[12px] p-4 font-mono text-[13px] ${
+                className={`mb-4 overflow-x-auto rounded-[12px] border p-4 font-mono text-[13px] leading-6 ${
                   dark
-                    ? 'bg-white/[0.12] border border-white/20 text-[#e8dfd0]'
-                    : 'bg-white/[0.20] border border-white/30 text-[#2d2820]'
+                    ? 'border-white/20 bg-white/[0.12] text-[#e8dfd0]'
+                    : 'border-white/30 bg-white/[0.20] text-[#2d2820]'
                 }`}
                 {...props}
               >
@@ -330,10 +360,10 @@ export function ReadmeEmbed({ content, theme }: ReadmeEmbedProps) {
 
           // ── Tables: new — previously unhandled ────────────────────────────
           table: ({ children, ...props }) => (
-            <div className="overflow-x-auto mb-4 rounded-[12px]">
+            <div className="mb-4 overflow-x-auto rounded-[12px]">
               <table
                 role="table"
-                className={`w-full text-[14px] border-collapse ${
+                className={`w-full min-w-[280px] border-collapse text-[14px] ${
                   dark ? 'border border-white/10' : 'border border-black/[0.08]'
                 }`}
                 {...props}
@@ -356,6 +386,7 @@ export function ReadmeEmbed({ content, theme }: ReadmeEmbedProps) {
           tr: ({ children, ...props }) => (
             <tr
               className={`border-b ${tableBorder} odd:bg-transparent even:${tableEvenBg}`}
+              role="row"
               {...props}
             >
               {children}
