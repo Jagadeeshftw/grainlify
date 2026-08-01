@@ -1,4 +1,4 @@
-#![cfg(test)]
+﻿#![cfg(test)]
 
 use super::*;
 use soroban_sdk::{
@@ -117,7 +117,7 @@ fn test_operator_can_trigger_program_releases() {
         },
     }]);
 
-    assert_eq!(setup.client.trigger_program_releases(), 0);
+    assert_eq!(setup.client.trigger_program_releases(&None), 0);
 }
 
 #[test]
@@ -134,7 +134,7 @@ fn test_admin_cannot_trigger_releases() {
         },
     }]);
 
-    setup.client.trigger_program_releases();
+    setup.client.trigger_program_releases(&None);
 }
 
 #[test]
@@ -299,4 +299,148 @@ fn test_new_circuit_admin_can_reset_after_rotation() {
 
     setup.env.mock_all_auths();
     setup.client.reset_circuit_breaker(&new_pauser);
+}
+
+
+fn setup_delegate_test(setup: &RbacSetup, permission: u32) -> (String, Address) {
+    let program_id = String::from_str(&setup.env, "RBAC-Test");
+    let delegate = Address::generate(&setup.env);
+    
+    // First publish the program so we can add a delegate (delegates can't be added to Drafts)
+    setup.env.mock_auths(&[MockAuth {
+        address: &setup.operator,
+        invoke: &MockAuthInvoke {
+            contract: &setup.contract_id,
+            fn_name: "publish_program",
+            args: (program_id.clone(),).into_val(&setup.env),
+            sub_invokes: &[],
+        },
+    }]);
+    setup.client.publish_program(&program_id);
+    
+    setup.env.mock_auths(&[MockAuth {
+        address: &setup.operator,
+        invoke: &MockAuthInvoke {
+            contract: &setup.contract_id,
+            fn_name: "set_program_delegate",
+            args: (program_id.clone(), delegate.clone(), permission).into_val(&setup.env),
+            sub_invokes: &[],
+        },
+    }]);
+    setup.client.set_program_delegate(&program_id, &delegate, &permission);
+    (program_id, delegate)
+}
+
+#[test]
+#[should_panic]
+fn test_delegate_update_meta_cannot_set_spend_threshold() {
+    let setup = RbacSetup::new();
+    let (program_id, delegate) = setup_delegate_test(&setup, DELEGATE_PERMISSION_UPDATE_META);
+
+    setup.env.mock_auths(&[MockAuth {
+        address: &delegate,
+        invoke: &MockAuthInvoke {
+            contract: &setup.contract_id,
+            fn_name: "set_program_spend_threshold",
+            args: (program_id.clone(), 1000i128).into_val(&setup.env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    setup.client.set_program_spend_threshold(&program_id, &1000i128);
+}
+
+#[test]
+#[should_panic]
+fn test_delegate_update_meta_cannot_set_cb_threshold() {
+    let setup = RbacSetup::new();
+    let (program_id, delegate) = setup_delegate_test(&setup, DELEGATE_PERMISSION_UPDATE_META);
+
+    setup.env.mock_auths(&[MockAuth {
+        address: &delegate,
+        invoke: &MockAuthInvoke {
+            contract: &setup.contract_id,
+            fn_name: "set_program_circuit_breaker_threshold",
+            args: (program_id.clone(), Some(10u32)).into_val(&setup.env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    setup.client.set_program_circuit_breaker_threshold(&program_id, &Some(10u32));
+}
+
+#[test]
+#[should_panic]
+fn test_delegate_release_cannot_set_spend_threshold() {
+    let setup = RbacSetup::new();
+    let (program_id, delegate) = setup_delegate_test(&setup, DELEGATE_PERMISSION_RELEASE);
+
+    setup.env.mock_auths(&[MockAuth {
+        address: &delegate,
+        invoke: &MockAuthInvoke {
+            contract: &setup.contract_id,
+            fn_name: "set_program_spend_threshold",
+            args: (program_id.clone(), 1000i128).into_val(&setup.env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    setup.client.set_program_spend_threshold(&program_id, &1000i128);
+}
+
+#[test]
+#[should_panic]
+fn test_delegate_release_cannot_set_cb_threshold() {
+    let setup = RbacSetup::new();
+    let (program_id, delegate) = setup_delegate_test(&setup, DELEGATE_PERMISSION_RELEASE);
+
+    setup.env.mock_auths(&[MockAuth {
+        address: &delegate,
+        invoke: &MockAuthInvoke {
+            contract: &setup.contract_id,
+            fn_name: "set_program_circuit_breaker_threshold",
+            args: (program_id.clone(), Some(10u32)).into_val(&setup.env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    setup.client.set_program_circuit_breaker_threshold(&program_id, &Some(10u32));
+}
+
+#[test]
+#[should_panic]
+fn test_delegate_refund_cannot_set_spend_threshold() {
+    let setup = RbacSetup::new();
+    let (program_id, delegate) = setup_delegate_test(&setup, DELEGATE_PERMISSION_REFUND);
+
+    setup.env.mock_auths(&[MockAuth {
+        address: &delegate,
+        invoke: &MockAuthInvoke {
+            contract: &setup.contract_id,
+            fn_name: "set_program_spend_threshold",
+            args: (program_id.clone(), 1000i128).into_val(&setup.env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    setup.client.set_program_spend_threshold(&program_id, &1000i128);
+}
+
+#[test]
+#[should_panic]
+fn test_delegate_refund_cannot_set_cb_threshold() {
+    let setup = RbacSetup::new();
+    let (program_id, delegate) = setup_delegate_test(&setup, DELEGATE_PERMISSION_REFUND);
+
+    setup.env.mock_auths(&[MockAuth {
+        address: &delegate,
+        invoke: &MockAuthInvoke {
+            contract: &setup.contract_id,
+            fn_name: "set_program_circuit_breaker_threshold",
+            args: (program_id.clone(), Some(10u32)).into_val(&setup.env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    setup.client.set_program_circuit_breaker_threshold(&program_id, &Some(10u32));
 }

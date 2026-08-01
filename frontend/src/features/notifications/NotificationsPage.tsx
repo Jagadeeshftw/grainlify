@@ -3,6 +3,7 @@ import { Bell, Award, GitPullRequest, GitMerge, Wallet, AlertTriangle, CheckChec
 import { useTheme } from "../../shared/contexts/ThemeContext";
 import { getNotifications, markNotificationRead, markAllNotificationsRead } from "../../shared/api/client";
 import { groupNotificationsByDate, formatTimeAgo } from "../../shared/utils/notifications";
+import { TimestampDisplay } from "../../shared/components/TimestampDisplay";
 import type { Notification, NotificationType, NotificationFilterMode } from "../../shared/types/notifications";
 import { EmptyState } from "../../shared/components/EmptyState";
 
@@ -372,9 +373,11 @@ export function NotificationsPage() {
                             {notification.title}
                           </p>
                           <div className="flex items-center gap-2 flex-shrink-0">
-                            <span className={`text-[11px] whitespace-nowrap ${darkTheme ? "text-[#8a7e70]" : "text-[#9f8b74]"}`}>
-                              {formatTimeAgo(notification.createdAt)}
-                            </span>
+                            <TimestampDisplay
+                              timestamp={notification.createdAt}
+                              fallbackText={formatTimeAgo(notification.createdAt)}
+                              className={`text-[11px] whitespace-nowrap ${darkTheme ? "text-[#8a7e70]" : "text-[#9f8b74]"}`}
+                            />
                             {!notification.read && <span className="w-2 h-2 bg-[#c9983a] rounded-full flex-shrink-0" aria-label="Unread" />}
                             <button
                               onClick={(e) => {

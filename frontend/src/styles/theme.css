@@ -364,7 +364,32 @@ textarea:focus-visible,
    so the OS/browser preference is respected even when the user
    hasn't explicitly selected the reduced-motion theme.
    ============================================================ */
+/* ============================================================
+   OSW LIVE INDICATOR — pulsing gold ring for "Happening Now"
+   Respects .reduced-motion theme and OS prefers-reduced-motion.
+   Reference: design/specs/open-source-week-agenda.md §7.2
+   ============================================================ */
+
+@keyframes osw-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(201, 152, 58, 0.6); }
+  50%       { box-shadow: 0 0 0 5px rgba(201, 152, 58, 0); }
+}
+
+.osw-live-indicator {
+  animation: osw-pulse 2s ease-in-out infinite;
+}
+
+/* Reduced-motion theme: static ring, no animation */
+.reduced-motion .osw-live-indicator {
+  animation: none !important;
+  box-shadow: 0 0 0 2px rgba(201, 152, 58, 0.6);
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .osw-live-indicator {
+    animation: none !important;
+    box-shadow: 0 0 0 2px rgba(201, 152, 58, 0.6);
+  }
   .animate-slide-in-right {
     animation: none;
     opacity: 1;

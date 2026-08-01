@@ -1,4 +1,5 @@
 @import './fonts.css';
 @import './tailwind.css';
+@import './responsive.css';
 @import './theme.css';
 @import '../shared/styles/scrollbar.css';

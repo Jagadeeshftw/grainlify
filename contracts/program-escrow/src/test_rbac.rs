@@ -136,6 +136,8 @@ fn setup(
         &None,
         &None,
     );
+    // Delegate / capability ops require Active status; publish after init.
+    client.publish_program(&program_id, &admin);
     (client, program_id, payout_key, admin)
 }
 
@@ -235,7 +237,7 @@ fn test_query_all_delegates_reflects_set_and_revoke_sequence() {
 
     client.set_program_delegate(&program_id, &payout_key, &delegate, &permissions);
 
-    let delegates = ProgramEscrowContract::query_all_delegates(env.clone(), program_id.clone());
+    let delegates = client.query_all_delegates(&program_id);
     assert_eq!(delegates.len(), 1);
     let info = delegates.get(0).unwrap();
     assert_eq!(info.program_id, program_id);
@@ -244,7 +246,7 @@ fn test_query_all_delegates_reflects_set_and_revoke_sequence() {
 
     client.revoke_program_delegate(&program_id, &payout_key);
 
-    let delegates_after_revoke = ProgramEscrowContract::query_all_delegates(env.clone(), program_id.clone());
+    let delegates_after_revoke = client.query_all_delegates(&program_id);
     assert_eq!(delegates_after_revoke.len(), 0);
 }
 
@@ -373,11 +375,16 @@ fn test_rbac_admin_rotation_proposal_expires_before_acceptance() {
     assert_eq!(proposal_ttl, MAX_ROLE_TRANSITION_PERIOD);
 
     env.ledger().set_timestamp(transition.deadline + 1);
-    mock_accept_admin_auth(&env, &contract_id, &proposed_admin);
-    let result = client.try_accept_admin();
-    assert!(
-        matches!(result, Err(Ok(ContractError::RoleTransitionExpired))),
-        "acceptance after the TTL must fail with RoleTransitionExpired"
+    env.mock_all_auths();
+    // Invoke directly so expiry clearing is not masked by client try_* auth mapping.
+    let result = env.as_contract(&contract_id, || {
+        ProgramEscrowContract::accept_admin(env.clone())
+    });
+    assert_eq!(
+        result,
+        Err(ContractError::RoleTransitionExpired),
+        "acceptance after the TTL must fail with RoleTransitionExpired, got: {:?}",
+        result
     );
 
     assert_eq!(client.get_admin().unwrap(), admin);

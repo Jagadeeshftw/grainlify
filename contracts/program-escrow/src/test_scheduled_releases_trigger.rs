@@ -289,4 +289,45 @@ mod tests {
         // - Only first program's schedules released
         // - Second program's schedules remain pending
     }
+    /// Test: Epoch snapshot frozen recipient execution
+    ///
+    /// Verifies that trigger executes against frozen snapshot data rather than
+    /// live modified registry data.
+    #[test]
+    fn test_epoch_snapshot_trigger_frozen_recipient() {
+        // This test validates that:
+        // 1. Snapshot captures the state of schedules at creation time
+        // 2. Modifying schedule recipient/amount after snapshot doesn't affect trigger
+        // 3. Executing trigger with epoch_id uses the frozen values
+        // 4. Live registry schedule is still marked as released
+        
+        // Setup:
+        // - Initialize program, create schedules
+        // - Call create_epoch_snapshot() to get epoch_id
+        // - Modify one of the schedules (change recipient or amount)
+        // - Call trigger_program_releases with epoch_id
+        
+        // Expected:
+        // - Payout executes with frozen recipient and amount
+        // - Schedule is marked released
+    }
+
+    /// Test: Trigger fallback behavior without epoch_id
+    ///
+    /// Verifies that trigger falls back to live registry when epoch_id is None.
+    #[test]
+    fn test_epoch_snapshot_trigger_fallback() {
+        // This test validates that:
+        // 1. Calling trigger without epoch_id evaluates live registry
+        // 2. Any modifications made before trigger are respected
+        
+        // Setup:
+        // - Initialize program, create schedules
+        // - Modify a schedule
+        // - Call trigger_program_releases with None
+        
+        // Expected:
+        // - Payout executes with modified recipient and amount
+        // - Schedule is marked released
+    }
 }

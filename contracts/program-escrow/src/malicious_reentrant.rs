@@ -1,4 +1,4 @@
-//! # Malicious Reentrant Contract
+﻿//! # Malicious Reentrant Contract
 //!
 //! This is a test-only contract that attempts to perform reentrancy attacks
 //! on the ProgramEscrow contract. It's used to verify that reentrancy guards
@@ -23,7 +23,7 @@ use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, E
 pub trait ProgramEscrowTrait {
     fn single_payout(env: Env, recipient: Address, amount: i128);
     fn batch_payout(env: Env, recipients: Vec<Address>, amounts: Vec<i128>);
-    fn trigger_program_releases(env: Env) -> u32;
+    fn trigger_program_releases(env: Env, epoch_id: Option<u64>) -> u32;
 }
 
 /// Attack modes for the malicious contract
@@ -244,7 +244,7 @@ impl MaliciousReentrantContract {
         let target = Self::get_target(env);
 
         let client = crate::ProgramEscrowContractClient::new(env, &target);
-        client.trigger_program_releases();
+        client.trigger_program_releases(&None);
     }
 
     /// Attempt nested reentrancy with depth tracking
@@ -356,3 +356,4 @@ impl MaliciousReentrantContract {
         client.single_payout(&recipient, &amount);
     }
 }
+

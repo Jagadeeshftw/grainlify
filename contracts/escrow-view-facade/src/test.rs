@@ -1,13 +1,13 @@
 #![cfg(test)]
 
-use soroban_sdk::{testutils::Address as _, Address, Env, String, BytesN};
-use crate::{EscrowViewFacade, EscrowViewFacadeClient, EscrowStatus};
+use crate::{EscrowStatus, EscrowViewFacade, EscrowViewFacadeClient};
+use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, String};
 
 // Dummy Escrow contract implementation to mock `BountyEscrow` calls
 mod dummy_escrow {
-    use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, String, Vec, BytesN};
     use soroban_sdk::testutils::Address as _;
-    
+    use soroban_sdk::{contract, contractimpl, contracttype, Address, BytesN, Env, String, Vec};
+
     // Use matching signatures to our defined binding
     #[contracttype]
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -94,7 +94,10 @@ mod dummy_escrow {
             }
         }
 
-        pub fn get_metadata(env: Env, bounty_id: u64) -> Result<EscrowMetadata, soroban_sdk::Error> {
+        pub fn get_metadata(
+            env: Env,
+            bounty_id: u64,
+        ) -> Result<EscrowMetadata, soroban_sdk::Error> {
             Ok(EscrowMetadata {
                 repo_id: 42,
                 issue_id: bounty_id * 10,
@@ -122,7 +125,7 @@ mod dummy_escrow {
             _limit: u32,
         ) -> Vec<EscrowWithId> {
             let mut result = Vec::new(&env);
-             result.push_back(EscrowWithId {
+            result.push_back(EscrowWithId {
                 bounty_id: 1,
                 escrow: Escrow {
                     depositor: depositor.clone(),
@@ -131,8 +134,29 @@ mod dummy_escrow {
                     status: EscrowStatus::Locked,
                     deadline: 123456789,
                     schema_version: 1,
-                }
-             });
+                },
+            });
+            result
+        }
+
+        pub fn query_escrows_by_beneficiary(
+            env: Env,
+            beneficiary: Address,
+            _offset: u32,
+            _limit: u32,
+        ) -> Vec<EscrowWithId> {
+            let mut result = Vec::new(&env);
+            result.push_back(EscrowWithId {
+                bounty_id: 2,
+                escrow: Escrow {
+                    depositor: beneficiary.clone(),
+                    amount: 500,
+                    remaining_amount: 500,
+                    status: EscrowStatus::Released,
+                    deadline: 987654321,
+                    schema_version: 1,
+                },
+            });
             result
         }
 
@@ -152,10 +176,10 @@ mod dummy_escrow {
 #[test]
 fn test_get_escrow_summary() {
     let env = Env::default();
-    
+
     // Register Dummy Escrow
     let escrow_contract = env.register_contract(None, dummy_escrow::DummyEscrow);
-    
+
     // Register Facade
     let facade_contract = env.register_contract(None, EscrowViewFacade);
     let facade_client = EscrowViewFacadeClient::new(&env, &facade_contract);
@@ -163,7 +187,7 @@ fn test_get_escrow_summary() {
     // Test a happy path: retrieve escrow 1
     let summary_opt = facade_client.get_escrow_summary(&escrow_contract, &1);
     assert!(summary_opt.is_some());
-    
+
     let summary = summary_opt.unwrap();
     assert_eq!(summary.bounty_id, 1);
     assert_eq!(summary.amount, 1000);
@@ -197,7 +221,7 @@ fn test_get_escrow_summaries_batch() {
     ids.push_back(3); // missing
 
     let summaries = facade_client.get_escrow_summaries(&escrow_contract, &ids);
-    
+
     // Should skip missing 3
     assert_eq!(summaries.len(), 2);
     assert_eq!(summaries.get(0).unwrap().bounty_id, 1);
@@ -206,7 +230,7 @@ fn test_get_escrow_summaries_batch() {
 
 #[test]
 fn test_get_user_portfolio() {
-     let env = Env::default();
+    let env = Env::default();
     let escrow_contract = env.register_contract(None, dummy_escrow::DummyEscrow);
     let facade_contract = env.register_contract(None, EscrowViewFacade);
     let facade_client = EscrowViewFacadeClient::new(&env, &facade_contract);
@@ -217,9 +241,14 @@ fn test_get_user_portfolio() {
     // Dummy returns one locked iteration for any depositor
     assert_eq!(portfolio.as_depositor.len(), 1);
     assert_eq!(portfolio.as_depositor.get(0).unwrap().bounty_id, 1);
-    
-    // Beneficiary lists are empty out-of-the-box until tickets are aggregated
-    assert_eq!(portfolio.as_beneficiary.len(), 0);
+
+    // Beneficiary returns escrow from query_escrows_by_beneficiary
+    assert_eq!(portfolio.as_beneficiary.len(), 1);
+    assert_eq!(portfolio.as_beneficiary.get(0).unwrap().bounty_id, 2);
+    assert_eq!(
+        portfolio.as_beneficiary.get(0).unwrap().status,
+        EscrowStatus::Released
+    );
 }
 
 #[test]

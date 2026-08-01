@@ -1,4 +1,4 @@
-//! # Reentrancy Guard Tests
+﻿//! # Reentrancy Guard Tests
 //!
 //! Comprehensive test suite for reentrancy protection in the ProgramEscrow contract.
 //!
@@ -366,7 +366,7 @@ fn test_trigger_releases_normal_execution() {
     env.ledger().set_timestamp(release_timestamp + 1);
 
     // Trigger releases (should succeed)
-    let released_count = client.trigger_program_releases();
+    let released_count = client.trigger_program_releases(&None);
 
     assert_eq!(released_count, 1);
 }
@@ -411,7 +411,7 @@ fn test_trigger_releases_blocks_reentrancy() {
     crate::reentrancy_guard::set_entered(&env);
 
     // This should panic
-    client.trigger_program_releases();
+    client.trigger_program_releases(&None);
 }
 
 // ============================================================================
@@ -890,7 +890,7 @@ fn test_reentrancy_guard_model_documentation() {
                 mode
             );
 
-            println!("✓ {} attack correctly blocked", description);
+            println!("âœ“ {} attack correctly blocked", description);
         }
     }
 
@@ -1170,3 +1170,4 @@ fn test_cross_function_schedule_manual_to_single_payout_blocked() {
     // single_payout must be blocked by the shared guard
     client.single_payout(&recipient, &(amount / 2));
 }
+

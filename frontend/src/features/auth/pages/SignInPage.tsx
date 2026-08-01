@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Github, Wallet } from 'lucide-react';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
 import { getGitHubLoginUrl } from '../../../shared/api/client';
 import { WalletConnectionModal } from '../components/WalletConnectionModal';
+import { OAuthErrorBanner } from '../components/OAuthErrorBanner';
+import { classifyOAuthError } from '../types/oauthErrors';
+import type { OAuthErrorState } from '../types/oauthErrors';
 import type { WalletProviderId } from '../types';
 
 export function SignInPage() {
@@ -11,6 +15,7 @@ export function SignInPage() {
   const navigate = useNavigate();
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [walletModalOpen, setWalletModalOpen] = useState(false);
+  const [oauthError, setOauthError] = useState<OAuthErrorState | null>(null);
 
   const handleWalletConnect = (_providerId: WalletProviderId) => {
     setWalletModalOpen(false);
@@ -30,6 +35,13 @@ export function SignInPage() {
 
     if (token) {
       navigate(`/auth/callback?token=${token}`, { replace: true });
+      return;
+    }
+
+    // Check for OAuth error params returned from GitHub redirect
+    const errorParam = params.get('error');
+    if (errorParam) {
+      setOauthError(classifyOAuthError(errorParam));
     }
   }, [navigate]);
 
@@ -49,6 +61,35 @@ export function SignInPage() {
           : 'bg-gradient-to-br from-[#e8dfd0] via-[#d4c5b0] to-[#c9b89a]'
       }`}
     >
+  const handleGitHubSignIn = useCallback(() => {
+    if (isRedirecting) return;
+    setOauthError(null);
+    setIsRedirecting(true);
+    const githubUrl = getGitHubLoginUrl();
+    window.location.href = githubUrl;
+  }, [isRedirecting]);
+
+  const handleRetry = useCallback(() => {
+    setOauthError(null);
+    handleGitHubSignIn();
+  }, [handleGitHubSignIn]);
+
+  const handleContactSupport = useCallback(() => {
+    window.open('mailto:support@grainlify.com?subject=GitHub OAuth Error', '_blank');
+  }, []);
+
+  const handleDismissError = useCallback(() => {
+    setOauthError(null);
+  }, []);
+
+  return (
+    <>
+    <div className={`min-h-screen flex items-center justify-center px-6 relative overflow-hidden transition-colors ${
+      theme === 'dark'
+        ? 'bg-gradient-to-br from-[#1a1512] via-[#231c17] to-[#2d241d]'
+        : 'bg-gradient-to-br from-[#e8dfd0] via-[#d4c5b0] to-[#c9b89a]'
+    }`}>
+      {/* Background Effects */}
       <div className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full bg-[#c9983a]/30 blur-3xl animate-pulse" />
       <div className="absolute bottom-1/4 right-1/4 w-96 h-96 rounded-full bg-[#d4af37]/20 blur-3xl animate-pulse" />
 
@@ -97,6 +138,17 @@ export function SignInPage() {
             </p>
           </div>
 
+          {/* OAuth Error Banner */}
+          {oauthError && (
+            <OAuthErrorBanner
+              error={oauthError}
+              onRetry={handleRetry}
+              onContactSupport={handleContactSupport}
+              onDismiss={handleDismissError}
+            />
+          )}
+
+          {/* GitHub Sign In */}
           <div className="space-y-6">
             <button
               onClick={handleGitHubSignIn}
@@ -181,5 +233,12 @@ export function SignInPage() {
         />
       )}
     </div>
+    {walletModalOpen && (
+      <WalletConnectionModal
+        onClose={() => setWalletModalOpen(false)}
+        onConnect={handleWalletConnect}
+      />
+    )}
+    </>
   );
 }

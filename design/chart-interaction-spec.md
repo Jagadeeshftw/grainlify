@@ -86,6 +86,8 @@
 
 ## 3. World Map — Hover, Focus & Color Scale
 
+> **Mobile touch extension:** Pinch-zoom, single-finger pan, double-tap-to-zoom, on-screen zoom/reset fallback, and tap-tooltip behaviour are specified in [`design/specs/data-page-map-mobile-gestures.md`](./specs/data-page-map-mobile-gestures.md). Desktop hover/focus rules in this section remain the source of truth for fine pointers.
+
 ### Country region states
 | State   | Fill                        | Stroke              |
 |---------|-----------------------------|---------------------|
@@ -103,6 +105,7 @@
 - Country label: `13px / 600`
 - Value: monospace `11px / 500` in `#c9983a`
 - Position: fixed top-right of map container
+- **Touch:** open on tap (after double-tap window); dismiss on tap-outside — see mobile gesture spec §7
 
 ### Color scale legend
 - Height: `6px`, border radius `3px`
@@ -176,6 +179,7 @@
 - [x] `prefers-reduced-motion`: disables shimmer (see skeleton-motion.md)
 - [x] Text contrast: body `9.4:1`, muted `4.6:1` ✓
 - [x] Touch targets: min `44×44px` on mobile
+- [x] Map gestures: pinch / pan / double-tap + button fallback — see [`data-page-map-mobile-gestures.md`](./specs/data-page-map-mobile-gestures.md)
 
 ---
 
@@ -187,6 +191,8 @@
 | md 768px   | 2-col grid, legend inline in header                |
 | lg 1024px  | Full 2-col, export button in chart top-right       |
 | xl 1280px  | Max-width hit, map shows country labels            |
+
+Map touch-gesture / scroll contract for 375–428 px: [`data-page-map-mobile-gestures.md`](./specs/data-page-map-mobile-gestures.md) §8.
 
 ---
 

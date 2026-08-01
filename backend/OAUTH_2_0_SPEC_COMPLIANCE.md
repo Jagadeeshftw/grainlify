@@ -145,7 +145,17 @@ The implementation maintains backward compatibility:
 | **Scalability** | Requires DB lookup | No DB lookup needed |
 | **Complexity** | Simpler | Slightly more complex |
 
+## Security Edge Cases & Regression Safety
+
+For a detailed breakdown of security edge cases (origin domain spoofing, scheme validation, state payload tampering, single-use state deletion, and auth middleware edge cases), refer to [SECURITY_EDGE_CASES.md](file:///c:/Users/Ososanwo%20Idris/Documents/grainlify/backend/SECURITY_EDGE_CASES.md).
+
+Explicit regression test coverage is pinned down in:
+- `backend/internal/handlers/github_oauth_test.go`
+- `backend/internal/auth/middleware_test.go`
+- `backend/src/middleware/csrf.test.ts`
+
 ## Conclusion
 
 Our implementation now follows the OAuth 2.0 specification recommendation by encoding the redirect_uri in the state parameter, while maintaining all security measures (CSRF protection, open redirect prevention). This is the industry-standard approach used by major platforms.
+
 

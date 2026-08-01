@@ -831,52 +831,606 @@
 
 /* ─── CSS Print Overrides ──────────────────────────────────────────────────── */
 
+/**
+ * @print-color-fidelity
+ *   Both -webkit-print-color-adjust and print-color-adjust are set to `exact`
+ *   so Chromium, Safari, and Firefox all retain:
+ *     - Gold border frames (--cert-gold-border: #c9983a)
+ *     - Dark background (#0C0E14)
+ *     - Radial glow overlays
+ *   NOTE: The user's browser print dialog may override this via its own
+ *   "Background graphics" checkbox. Engineering must document this in the
+ *   Download PDF UI: show a warning banner when background graphics are
+ *   disabled ("For best results, enable Background graphics in your print
+ *   dialog."). See design/specs/print-stylesheet-certificates-summary.md §6.
+ *
+ * @grayscale-fallback
+ *   All text is set to a dark-on-light fallback when background graphics
+ *   are disabled: see the .cs-sheet grayscale rules below.
+ *   Gold accent text (#f1b400) meets 4.5:1 only against the dark canvas.
+ *   Against plain white it is only 1.8:1 — therefore every gold accent is
+ *   also rendered in bold weight + underline decoration so it is never a
+ *   colour-only differentiator. (WCAG 1.4.1, 1.4.3)
+ */
+
 @media print {
-  /* Set exact orientation & paper layout */
+  /* ── Paper size: certificate (A4 landscape) ── */
   @page {
     size: A4 landscape;
     margin: 0;
   }
 
-  body {
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-    background-color: var(--cert-bg-dark) !important;
+  /* ── Paper size override for Letter landscape (opt-in via JS before print) ── */
+  @page :left,
+  @page :right {
+    /* Inherits from @page above; no bleed required */
   }
 
-  /* Hide screen controls, actions, navigation, wrappers */
+  /* ── Global print baseline ── */
+  *,
+  *::before,
+  *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  body {
+    background-color: var(--cert-bg-dark) !important;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* ── Hide every screen-only element ── */
+  /* App chrome: nav, sidebars, headers, footers */
+  nav,
+  aside,
+  header:not(.cert-header):not(.cs-header),
+  footer:not(.cert-footer):not(.cs-footer),
+  /* Grainlify-specific chrome classes */
   .cert-section-container,
+  .cert-programs-list,
   .cert-toast,
   .cert-modal-backdrop,
   .cert-modal-header,
   .cert-modal-actions-pane,
   .cert-modal-mobile-footer,
-  .no-print {
+  .cert-btn,
+  .cert-row-actions,
+  .cert-status-badge,
+  /* Generic utility */
+  .no-print,
+  /* Summary sheet print trigger (never appears in print output) */
+  .cs-print-btn {
     display: none !important;
   }
 
-  /* Force print target to expand to paper dimensions */
+  /* ── Certificate card: A4 landscape full-bleed ── */
   .cert-root {
-    position: absolute;
-    left: 0;
-    top: 0;
+    position: fixed;
+    inset: 0;
     width: 297mm;
     height: 210mm;
-    padding: 20mm; /* Outer print margins */
+    padding: 20mm;
+    box-sizing: border-box;
     aspect-ratio: 1.414 / 1;
+
+    /* Never split a certificate across pages */
+    break-inside: avoid;
+    page-break-inside: avoid; /* legacy */
     page-break-after: avoid;
+  }
+
+  .cert-border-frame { inset: 12mm; }
+
+  /* ── Summary sheet: A4 portrait (default) ── */
+  .cs-sheet {
+    position: relative;
+    width: 210mm;
+    min-height: 297mm;
+    margin: 0 auto;
+    padding: 15mm 18mm;
+    box-sizing: border-box;
+    background-color: #ffffff !important;
+    color: #1a1a1a !important;
+
+    /* Force each section to stay together */
+    break-inside: avoid;
     page-break-inside: avoid;
   }
 
-  .cert-border-frame {
-    inset: 10mm;
+  /* US Letter override: engineering sets data-paper="letter" on <body>
+     or calls setPaperSize("letter") before window.print() */
+  .cs-sheet--letter {
+    width: 8.5in;
+    min-height: 11in;
+    padding: 0.75in 0.875in;
   }
 
-  .cert-verify-block {
-    left: 10mm;
+  /* Each card section must not break across pages */
+  .cs-card,
+  .cs-section--stats,
+  .cs-cert-item {
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
-  .cert-signatures {
-    right: 10mm;
+  /* Force a page break before the second column on narrow print widths */
+  .cs-col--right {
+    break-before: auto;
   }
+
+  /* ── Print colour palette override ──
+     When background graphics ARE printed: colours remain as designed.
+     When background graphics are DISABLED by browser: text falls back to
+     dark-on-white. The rules below ensure legibility in both cases.       */
+
+  /* Header identity text */
+  .cs-name  { color: #111111 !important; }
+  .cs-role  { color: #333333 !important; }
+  .cs-meta  { color: #555555 !important; }
+
+  /* Stats row */
+  .cs-stat-value { color: #111111 !important; font-weight: 800; }
+  .cs-stat-label { color: #444444 !important; }
+
+  /* Gold accent text: bold + underline ensures non-color differentiation */
+  .cs-cert-badge--gold,
+  .cs-lang-chip:first-child {
+    font-weight: 700 !important;
+    text-decoration: underline !important;
+  }
+
+  /* Card headings */
+  .cs-card-heading { color: #111111 !important; border-bottom: 1pt solid #cccccc; }
+
+  /* Footer */
+  .cs-footer-text,
+  .cs-footer-date { color: #666666 !important; }
+
+  /* ── Brand section in print ── */
+  .cs-brand-icon { color: #c9983a !important; }
+  .cs-brand-wordmark { color: #111111 !important; }
+  .cs-brand-tag {
+    color: #c9983a !important;
+    font-weight: 700 !important;
+    text-decoration: underline !important;
+  }
+
+  /* ── Heatmap cells: translate CSS colour classes to grey-safe fills ── */
+  .cs-heat-0 { background-color: #eeeeee !important; }
+  .cs-heat-1 { background-color: #c9b08a !important; } /* desaturated gold */
+  .cs-heat-2 { background-color: #b8893a !important; }
+  .cs-heat-3 { background-color: #9a6e1e !important; }
+  .cs-heat-4 { background-color: #7a520e !important; }
+
+  /* ── Ecosystem and language chips ── */
+  .cs-eco-chip,
+  .cs-lang-chip {
+    border: 1pt solid #999999 !important;
+    background-color: #f5f5f5 !important;
+    color: #111111 !important;
+  }
+
+  /* ── Certificate items ── */
+  .cs-cert-item {
+    border-left: 3pt solid #c9983a !important;
+    background-color: #fafafa !important;
+    color: #111111 !important;
+  }
+  .cs-cert-item--gold   { border-left-color: #c9983a !important; }
+  .cs-cert-item--blue   { border-left-color: #1d4ed8 !important; }
+  .cs-cert-item--silver { border-left-color: #57534e !important; }
+
+  .cs-cert-id { color: #555555 !important; }
+
+  /* ── Rules ── */
+  .cs-rule { border-color: #cccccc !important; }
+  .cs-stat-divider { background-color: #cccccc !important; }
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ContributorSummarySheet — Screen Styles                                    */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── Sheet root (screen preview) ─────────────────────────────────────────── */
+
+.cs-sheet {
+  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  color: var(--cert-text-hi);
+  background-color: var(--cert-bg-dark);
+  padding: 40px 48px;
+  box-sizing: border-box;
+  max-width: 794px; /* ~A4 width in pixels at 96dpi */
+  margin: 0 auto;
+  position: relative;
+}
+
+/* ─── Header ───────────────────────────────────────────────────────────────── */
+
+.cs-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0;
+}
+
+.cs-identity {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.cs-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 2px solid var(--cert-gold-border);
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.cs-avatar--fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--cert-gold-glow), transparent);
+  border: 2px solid var(--cert-gold-border);
+}
+
+.cs-avatar-initials {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--cert-gold);
+}
+
+.cs-identity-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cs-name {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--cert-text-hi);
+  margin: 0;
+  line-height: 1.2;
+}
+
+.cs-role {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--cert-gold);
+  margin: 0;
+}
+
+.cs-meta {
+  font-size: 12px;
+  color: var(--cert-text-mid);
+  margin: 0;
+}
+
+.cs-meta-sep {
+  color: var(--cert-text-lo);
+}
+
+/* Brand block (top right) */
+.cs-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.cs-brand-icon {
+  width: 24px;
+  height: 24px;
+  color: var(--cert-gold);
+}
+
+.cs-brand-wordmark {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+  color: var(--cert-text-hi);
+}
+
+.cs-brand-tag {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--cert-gold);
+}
+
+/* ─── Horizontal rule ──────────────────────────────────────────────────────── */
+
+.cs-rule {
+  border: none;
+  border-top: 1px solid var(--cert-border-light);
+  margin: 16px 0;
+}
+
+/* ─── Stats row ────────────────────────────────────────────────────────────── */
+
+.cs-section--stats {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 12px 0;
+}
+
+.cs-stat-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+}
+
+.cs-stat-value {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--cert-text-hi);
+  line-height: 1.2;
+}
+
+.cs-stat-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--cert-text-lo);
+  margin-top: 2px;
+}
+
+.cs-stat-divider {
+  width: 1px;
+  height: 36px;
+  background-color: var(--cert-border-light);
+  flex-shrink: 0;
+}
+
+/* ─── Two-column body ──────────────────────────────────────────────────────── */
+
+.cs-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-top: 4px;
+}
+
+.cs-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ─── Card sections ────────────────────────────────────────────────────────── */
+
+.cs-card {
+  background: var(--cert-bg-glass);
+  border: 1px solid var(--cert-border-light);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.cs-card-heading {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--cert-text-lo);
+  margin: 0 0 12px 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--cert-border-light);
+}
+
+/* ─── Heatmap thumbnail ────────────────────────────────────────────────────── */
+
+.cs-heatmap {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+}
+
+.cs-heatmap-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+}
+
+.cs-heatmap-cell {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 3px;
+  min-width: 0;
+}
+
+.cs-heat-0 { background-color: rgba(255,255,255,0.06); }
+.cs-heat-1 { background-color: rgba(201,152,58,0.25); }
+.cs-heat-2 { background-color: rgba(201,152,58,0.50); }
+.cs-heat-3 { background-color: rgba(201,152,58,0.75); }
+.cs-heat-4 { background-color: var(--cert-gold); }
+
+.cs-heatmap-label {
+  font-size: 8px;
+  color: var(--cert-text-lo);
+  text-align: center;
+}
+
+/* ─── Language chips ───────────────────────────────────────────────────────── */
+
+.cs-lang-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cs-lang-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--cert-text-hi);
+  padding: 5px 10px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--cert-border-light);
+  border-radius: 6px;
+}
+
+.cs-lang-rank {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--cert-gold);
+  min-width: 16px;
+}
+
+/* ─── Ecosystem chips ──────────────────────────────────────────────────────── */
+
+.cs-eco-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cs-eco-chip {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 100px;
+  background: rgba(59,130,246,0.15);
+  border: 1px solid rgba(59,130,246,0.30);
+  color: #93c5fd;
+}
+
+/* ─── Certificate list ─────────────────────────────────────────────────────── */
+
+.cs-cert-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cs-cert-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border-left: 3px solid var(--cert-gold-border);
+  background: rgba(255,255,255,0.04);
+}
+
+.cs-cert-item--gold   { border-left-color: var(--cert-gold-border); }
+.cs-cert-item--blue   { border-left-color: var(--cert-blue-border); }
+.cs-cert-item--silver { border-left-color: var(--cert-silver-border); }
+
+.cs-cert-badge {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  align-self: flex-start;
+}
+
+.cs-cert-badge--gold {
+  background: rgba(201,152,58,0.20);
+  border: 1px solid rgba(201,152,58,0.40);
+  color: var(--cert-gold);
+}
+
+.cs-cert-badge--blue {
+  background: rgba(59,130,246,0.20);
+  border: 1px solid rgba(59,130,246,0.40);
+  color: var(--cert-blue);
+}
+
+.cs-cert-badge--silver {
+  background: rgba(168,162,158,0.20);
+  border: 1px solid rgba(168,162,158,0.40);
+  color: var(--cert-silver);
+}
+
+.cs-cert-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--cert-text-hi);
+}
+
+.cs-cert-id {
+  font-size: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--cert-text-lo);
+}
+
+.cs-empty {
+  font-size: 13px;
+  color: var(--cert-text-mid);
+  text-align: center;
+  padding: 16px 0;
+}
+
+/* ─── Footer ───────────────────────────────────────────────────────────────── */
+
+.cs-footer {
+  margin-top: 8px;
+}
+
+.cs-footer-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.cs-footer-text {
+  font-size: 10px;
+  color: var(--cert-text-lo);
+}
+
+.cs-footer-date {
+  font-size: 10px;
+  color: var(--cert-text-lo);
+}
+
+/* ─── Print trigger button (screen-only, hidden in @media print) ──────────── */
+
+.cs-print-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 12px;
+  cursor: pointer;
+  background: rgba(201, 152, 58, 0.15);
+  border: 1px solid rgba(201, 152, 58, 0.30);
+  color: var(--cert-gold);
+  transition: all 0.15s;
+}
+
+.cs-print-btn:hover {
+  background: rgba(201, 152, 58, 0.25);
+  border-color: rgba(201, 152, 58, 0.50);
+  color: #e8c77f;
+}
+
+.cs-print-btn:focus {
+  outline: 2px solid var(--cert-gold);
+  outline-offset: 2px;
 }

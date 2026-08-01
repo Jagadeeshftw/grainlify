@@ -25,9 +25,15 @@
 //! cargo test -p program-escrow -- --test-output immediate
 //! ```
 
-use super::super::{
+#![cfg(test)]
+
+extern crate std;
+
+use crate::release_schedule_host::{
     release_schedule, EscrowError, ReleaseEntry, Storage, RELEASE_HISTORY,
 };
+use std::vec;
+use std::vec::Vec;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

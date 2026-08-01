@@ -473,6 +473,19 @@ pub enum ContractError {
     /// insufficient balance or transfer issues.
     FeeCollectionFailed = 703,
 
+    /// Invalid insurance reserve basis-point rate.
+    ///
+    /// This error occurs when `insurance_reserve_bps` exceeds `MAX_FEE_RATE`
+    /// or when the sum of `insurance_reserve_bps` and any fee rate would
+    /// exceed `BASIS_POINTS` (100 %).
+    InvalidInsuranceReserveBps = 704,
+
+    /// Insurance reserve withdrawal failed.
+    ///
+    /// Emitted when `withdraw_insurance_reserve` is called but the on-chain
+    /// reserve balance is zero or the requested amount exceeds the balance.
+    InsufficientInsuranceReserve = 705,
+
     // =========================================================================
     // Circuit Breaker Errors (800-899)
     // =========================================================================
@@ -505,15 +518,6 @@ pub enum ContractError {
     /// This error occurs when the circuit breaker threshold
     /// is not in the valid range (1-100).
     InvalidCircuitBreakerThreshold = 804,
-
-    // =========================================================================
-    // FoT Router Errors (1300-1399)
-    // =========================================================================
-    /// FoT routing failed.
-    ///
-    /// This error occurs when the fee-on-transfer router contract
-    /// returns an invalid result or the routing call fails.
-    FotRoutingFailed = 1300,
     
     // =========================================================================
     // Threshold Monitoring Errors (900-999)
@@ -684,15 +688,90 @@ pub enum ContractError {
     InvalidRoleProposal = 1207,
     RoleRotationNotAllowed = 1208,
 
-    /// Rotation timelock has not yet expired.
+    /// Role rotation timelock is active.
     ///
-    /// This error occurs when `accept_admin` or `accept_controller` is called
-    /// before the mandatory 24-hour delay since the proposal has elapsed.
-    /// The caller must wait until `proposed_at + ROTATION_TIMELOCK_DELAY` seconds
-    /// have passed before accepting the role.
+    /// This error occurs when role rotation is temporarily disabled
+    /// due to contract state (e.g., emergency mode, dispute, etc.).
     RotationTimelockActive = 1209,
+
+    // =========================================================================
+    // FoT Router Errors (1210-1219)
+    // =========================================================================
+
+    /// Fee-on-transfer routing failed.
+    ///
+    /// This error occurs when the FoT router contract returns an unexpected
+    /// result or the routing calculation overflows.
+    FotRoutingFailed = 1210,
+
+    /// Fee-on-transfer router quote exceeded the configured maximum multiplier.
+    ///
+    /// This error occurs when `router.quote()` returns a gross amount larger
+    /// than `net_amount * max_fot_multiplier_bps / BASIS_POINTS`, which is
+    /// rejected to prevent a malicious or misconfigured router from draining
+    /// the program's remaining balance.
+    FotRouterQuoteExceeded = 1211,
+
+    // =========================================================================
+    // Dynamic Pricing Errors (1300-1399)
+    // =========================================================================
+
+    /// Oracle data is stale.
+    ///
+    /// This error occurs when oracle data exceeds the staleness threshold.
+    OracleDataStale = 1300,
+
+    /// Oracle data is invalid.
+    ///
+    /// This error occurs when oracle data fails validation checks.
+    OracleDataInvalid = 1301,
+
+    /// Price change exceeds limit.
+    ///
+    /// This error occurs when a price change would exceed the maximum allowed change.
+    PriceChangeExceedsLimit = 1302,
+
+    /// Update too soon.
+    ///
+    /// This error occurs when attempting to update prices before the minimum interval.
+    UpdateTooSoon = 1303,
+
+    /// Dynamic pricing configuration invalid.
+    ///
+    /// This error occurs when dynamic pricing configuration parameters are invalid.
+    InvalidDynamicPricingConfig = 1304,
+
+    /// Pricing calculation overflow.
+    ///
+    /// This error occurs when pricing calculations would overflow.
+    PricingCalculationOverflow = 1305,
+
+    /// Oracle not configured.
+    ///
+    /// This error occurs when attempting to use oracle without configuration.
+    OracleNotConfigured = 1306,
+
+    /// Oracle call failed.
+    ///
+    /// This error occurs when oracle data retrieval fails.
+    OracleCallFailed = 1307,
+
+    /// Dynamic pricing not enabled.
+    ///
+    /// This error occurs when dynamic pricing operations are attempted while disabled.
+    DynamicPricingNotEnabled = 1308,
 }
 
+/// Explicit error enum for all batch payout failure modes.
+///
+/// Used as the `Err` variant of `batch_payout` / `batch_payout_by` so callers
+/// receive a typed, stable error code instead of an opaque panic string.
+///
+/// ## Error Code Ranges
+/// Codes 3100–3199 are reserved for batch-payout errors.
+///
+/// ## Upgrade Safety
+/// Codes are stable. New variants may be added; existing codes will not change.
 #[soroban_sdk::contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
@@ -827,6 +906,8 @@ impl ContractError {
             ContractError::InvalidFeeRate => "Invalid fee rate",
             ContractError::FeeRecipientNotSet => "Fee recipient not set",
             ContractError::FeeCollectionFailed => "Fee collection failed",
+            ContractError::InvalidInsuranceReserveBps => "Invalid insurance reserve basis-point rate",
+            ContractError::InsufficientInsuranceReserve => "Insurance reserve balance insufficient for withdrawal",
 
             // Circuit Breaker Errors
             ContractError::CircuitBreakerOpen => "Circuit breaker is open",
@@ -856,6 +937,17 @@ impl ContractError {
             ContractError::BatchItemNotFound => "Batch item not found",
             ContractError::BatchItemAlreadyProcessed => "Batch item already processed",
             ContractError::MaxRetriesExceeded => "Maximum retries exceeded",
+            
+            // Dynamic Pricing Errors
+            ContractError::OracleDataStale => "Oracle data is stale",
+            ContractError::OracleDataInvalid => "Oracle data is invalid",
+            ContractError::PriceChangeExceedsLimit => "Price change exceeds limit",
+            ContractError::UpdateTooSoon => "Update too soon",
+            ContractError::InvalidDynamicPricingConfig => "Invalid dynamic pricing configuration",
+            ContractError::PricingCalculationOverflow => "Pricing calculation overflow",
+            ContractError::OracleNotConfigured => "Oracle not configured",
+            ContractError::OracleCallFailed => "Oracle call failed",
+            ContractError::DynamicPricingNotEnabled => "Dynamic pricing not enabled",
 
             // Token Allowlist Errors
             ContractError::TokenNotAllowed => "Token is not on the allowlist",
@@ -866,6 +958,9 @@ impl ContractError {
 
             // FoT Router Errors
             ContractError::FotRoutingFailed => "FoT routing failed",
+            ContractError::FotRouterQuoteExceeded => {
+                "FoT router quote exceeded configured maximum multiplier"
+            }
 
             // Role Management Errors
             ContractError::AdminRotationInProgress => "Admin rotation already in progress",

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { getNotifications, getNotificationCount, markAllNotificationsRead } from "../api/client";
 import { groupNotificationsByDate, formatTimeAgo } from "../utils/notifications";
+import { TimestampDisplay } from "./TimestampDisplay";
 import type { Notification, NotificationType } from "../types/notifications";
 import {
   DropdownMenu,
@@ -354,13 +355,13 @@ export function NotificationsDropdown({ showMobileNav, closeMobileNav }: Notific
                             >
                               {notification.body}
                             </p>
-                            <p
+                            <TimestampDisplay
+                              timestamp={notification.createdAt}
+                              fallbackText={formatTimeAgo(notification.createdAt)}
                               className={`text-[11px] mt-0.5 ${
                                 darkTheme ? "text-[#8a7e70]" : "text-[#9f8b74]"
                               }`}
-                            >
-                              {formatTimeAgo(notification.createdAt)}
-                            </p>
+                            />
                           </div>
                           {!notification.read && (
                             <span

@@ -376,6 +376,89 @@
             "key": {
               "vec": [
                 {
+                  "symbol": "RecipientPayoutIndex"
+                },
+                {
+                  "string": "test-prog"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "RecipientPayoutIndex"
+                    },
+                    {
+                      "string": "test-prog"
+                    },
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "vec": [
+                    {
+                      "map": [
+                        {
+                          "key": {
+                            "symbol": "amount"
+                          },
+                          "val": {
+                            "i128": {
+                              "hi": 0,
+                              "lo": 1000
+                            }
+                          }
+                        },
+                        {
+                          "key": {
+                            "symbol": "recipient"
+                          },
+                          "val": {
+                            "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
+                          }
+                        },
+                        {
+                          "key": {
+                            "symbol": "timestamp"
+                          },
+                          "val": {
+                            "u64": 0
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4095
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+            "key": {
+              "vec": [
+                {
                   "symbol": "SuccessCount"
                 }
               ]
@@ -670,6 +753,18 @@
                               },
                               "val": {
                                 "u32": 0
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "fot_router"
+                              },
+                              "val": {
+                                "vec": [
+                                  {
+                                    "symbol": "None"
+                                  }
+                                ]
                               }
                             },
                             {
@@ -1052,6 +1147,18 @@
                             },
                             {
                               "key": {
+                                "symbol": "fot_router"
+                              },
+                              "val": {
+                                "vec": [
+                                  {
+                                    "symbol": "None"
+                                  }
+                                ]
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "initial_liquidity"
                               },
                               "val": {
@@ -1066,7 +1173,39 @@
                                 "symbol": "payout_history"
                               },
                               "val": {
-                                "vec": []
+                                "vec": [
+                                  {
+                                    "map": [
+                                      {
+                                        "key": {
+                                          "symbol": "amount"
+                                        },
+                                        "val": {
+                                          "i128": {
+                                            "hi": 0,
+                                            "lo": 1000
+                                          }
+                                        }
+                                      },
+                                      {
+                                        "key": {
+                                          "symbol": "recipient"
+                                        },
+                                        "val": {
+                                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
+                                        }
+                                      },
+                                      {
+                                        "key": {
+                                          "symbol": "timestamp"
+                                        },
+                                        "val": {
+                                          "u64": 0
+                                        }
+                                      }
+                                    ]
+                                  }
+                                ]
                               }
                             },
                             {
@@ -1090,7 +1229,7 @@
                               "val": {
                                 "i128": {
                                   "hi": 0,
-                                  "lo": 5000
+                                  "lo": 4000
                                 }
                               }
                             },
@@ -2352,6 +2491,18 @@
                 },
                 {
                   "key": {
+                    "symbol": "fot_router"
+                  },
+                  "val": {
+                    "vec": [
+                      {
+                        "symbol": "None"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "key": {
                     "symbol": "initial_liquidity"
                   },
                   "val": {
@@ -2583,6 +2734,18 @@
                   },
                   "val": {
                     "u32": 0
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "fot_router"
+                  },
+                  "val": {
+                    "vec": [
+                      {
+                        "symbol": "None"
+                      }
+                    ]
                   }
                 },
                 {
@@ -3001,6 +3164,18 @@
                   },
                   "val": {
                     "u32": 0
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "fot_router"
+                  },
+                  "val": {
+                    "vec": [
+                      {
+                        "symbol": "None"
+                      }
+                    ]
                   }
                 },
                 {
@@ -3438,6 +3613,18 @@
                   },
                   "val": {
                     "u32": 0
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "fot_router"
+                  },
+                  "val": {
+                    "vec": [
+                      {
+                        "symbol": "None"
+                      }
+                    ]
                   }
                 },
                 {

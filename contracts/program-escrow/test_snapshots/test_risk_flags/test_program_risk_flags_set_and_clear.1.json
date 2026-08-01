@@ -411,6 +411,18 @@
                             },
                             {
                               "key": {
+                                "symbol": "fot_router"
+                              },
+                              "val": {
+                                "vec": [
+                                  {
+                                    "symbol": "None"
+                                  }
+                                ]
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "initial_liquidity"
                               },
                               "val": {
@@ -753,6 +765,18 @@
                               },
                               "val": {
                                 "u32": 0
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "fot_router"
+                              },
+                              "val": {
+                                "vec": [
+                                  {
+                                    "symbol": "None"
+                                  }
+                                ]
                               }
                             },
                             {
@@ -1727,6 +1751,18 @@
                 },
                 {
                   "key": {
+                    "symbol": "fot_router"
+                  },
+                  "val": {
+                    "vec": [
+                      {
+                        "symbol": "None"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "key": {
                     "symbol": "initial_liquidity"
                   },
                   "val": {
@@ -1977,6 +2013,18 @@
                   },
                   "val": {
                     "u32": 0
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "fot_router"
+                  },
+                  "val": {
+                    "vec": [
+                      {
+                        "symbol": "None"
+                      }
+                    ]
                   }
                 },
                 {
@@ -2235,6 +2283,18 @@
                 },
                 {
                   "key": {
+                    "symbol": "fot_router"
+                  },
+                  "val": {
+                    "vec": [
+                      {
+                        "symbol": "None"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "key": {
                     "symbol": "initial_liquidity"
                   },
                   "val": {
@@ -2406,6 +2466,18 @@
                   },
                   "val": {
                     "u32": 0
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "fot_router"
+                  },
+                  "val": {
+                    "vec": [
+                      {
+                        "symbol": "None"
+                      }
+                    ]
                   }
                 },
                 {

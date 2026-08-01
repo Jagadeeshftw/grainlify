@@ -7,6 +7,7 @@ import {
 } from '../types';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
 import { WalletQRPane } from './WalletQRPane';
+import { WalletBalanceFeeDisplay } from './WalletBalanceFeeDisplay';
 
 // ---------------------------------------------------------------------------
 // Provider registry
@@ -135,6 +136,25 @@ export function WalletConnectionModal({ onClose, onConnect }: WalletConnectionMo
   // Simulated WalletConnect URI — in production this comes from the WC SDK
   const [wcUri, setWcUri] = useState('wc:00e46b69-d0cc-4b3e-b6a2-cee442f97188@1?bridge=https%3A%2F%2Fbridge.walletconnect.org&key=91303dedf64285cfbacea');
 
+  // Simulated wallet balance state — in production this comes from the connected wallet SDK
+  const [walletBalance, setWalletBalance] = useState<{
+    balance: string | null;
+    usdEquivalent: number | null;
+    estimatedFee: string | null;
+    feeUsdEquivalent: number | null;
+    isLoading: boolean;
+    isStale: boolean;
+    lastUpdated: Date | null;
+  }>({
+    balance: '1,245.80',
+    usdEquivalent: 312.45,
+    estimatedFee: '0.00001',
+    feeUsdEquivalent: 0.0000025,
+    isLoading: false,
+    isStale: false,
+    lastUpdated: new Date(),
+  });
+
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
@@ -217,6 +237,18 @@ export function WalletConnectionModal({ onClose, onConnect }: WalletConnectionMo
         <p className={`px-6 pb-4 text-[13px] ${isDark ? 'text-[#b8a898]' : 'text-[#7a6b5a]'}`}>
           Select a wallet to connect to Grainlify on the Stellar network.
         </p>
+
+        {/* Wallet balance & fee disclosure */}
+        <WalletBalanceFeeDisplay
+          balance={walletBalance.balance}
+          ticker="XLM"
+          usdEquivalent={walletBalance.usdEquivalent}
+          estimatedFee={walletBalance.estimatedFee}
+          feeUsdEquivalent={walletBalance.feeUsdEquivalent}
+          isLoading={walletBalance.isLoading}
+          isStale={walletBalance.isStale}
+          lastUpdated={walletBalance.lastUpdated}
+        />
 
         {/* Provider grid */}
         <div className="px-6 pb-4 grid grid-cols-2 gap-3">
