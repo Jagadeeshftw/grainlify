@@ -17,6 +17,24 @@
 //! preserve backwards compatibility with legacy metadata stored under
 //! `DataKey::Metadata`.  The public `ProgramMetadata` struct is unchanged
 //! so all existing query APIs remain source-compatible.
+//!
+//! # Size/Length Limits for Custom Fields
+//!
+//! Both `init_program_with_metadata` and `update_program_metadata` enforce
+//! identical limits on `ProgramMetadata::custom_fields` via the shared
+//! [`validate_metadata_custom_fields`] function in `lib.rs`:
+//!
+//! | Limit | Constant | Value |
+//! |---|---|---|
+//! | Max fields (soft)  | `MAX_PROGRAM_METADATA_CUSTOM_FIELDS` | 10 |
+//! | Max fields (hard)  | `MAX_CUSTOM_FIELDS` | 20 |
+//! | Max key length     | `MAX_CUSTOM_FIELD_KEY_LEN` | 64 bytes |
+//! | Max value length   | `MAX_CUSTOM_FIELD_VALUE_LEN` | 256 bytes |
+//!
+//! These limits prevent unbounded storage growth and ensure consistent
+//! rejection behaviour regardless of which entry point is used. Both paths
+//! share the same validation logic so that metadata accepted at creation
+//! is never rejected on update (or vice versa).
 
 use soroban_sdk::{contracttype, Env, String, Vec};
 

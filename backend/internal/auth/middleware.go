@@ -73,6 +73,11 @@ func RequireRole(roles ...string) fiber.Handler {
 				"error": "missing_role",
 			})
 		}
+		if len(allowed) == 0 {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error": "insufficient_role",
+			})
+		}
 		if _, ok := allowed[role]; !ok {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 				"error": "insufficient_role",
@@ -91,12 +96,19 @@ func RequireScopedAdmin(pool *pgxpool.Pool, scopeType, scopeIDParam string) fibe
 	return func(c *fiber.Ctx) error {
 		role, _ := c.Locals(LocalRole).(string)
 
-		// Global admins always pass.
+		// Global admins always pass before any other check.
 		if role == "admin" {
 			return c.Next()
 		}
 
+		if pool == nil {
+			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "db_not_configured"})
+		}
+
 		sub, _ := c.Locals(LocalUserID).(string)
+		if sub == "" {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid_user"})
+		}
 		userID, err := uuid.Parse(sub)
 		if err != nil {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid_user"})

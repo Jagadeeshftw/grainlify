@@ -361,12 +361,12 @@ fn test_delegate_update_meta_cannot_set_cb_threshold() {
         invoke: &MockAuthInvoke {
             contract: &setup.contract_id,
             fn_name: "set_program_circuit_breaker_threshold",
-            args: (program_id.clone(), Some(10u8)).into_val(&setup.env),
+            args: (program_id.clone(), Some(10u32)).into_val(&setup.env),
             sub_invokes: &[],
         },
     }]);
 
-    setup.client.set_program_circuit_breaker_threshold(&program_id, &Some(10u8));
+    setup.client.set_program_circuit_breaker_threshold(&program_id, &Some(10u32));
 }
 
 #[test]
@@ -399,12 +399,12 @@ fn test_delegate_release_cannot_set_cb_threshold() {
         invoke: &MockAuthInvoke {
             contract: &setup.contract_id,
             fn_name: "set_program_circuit_breaker_threshold",
-            args: (program_id.clone(), Some(10u8)).into_val(&setup.env),
+            args: (program_id.clone(), Some(10u32)).into_val(&setup.env),
             sub_invokes: &[],
         },
     }]);
 
-    setup.client.set_program_circuit_breaker_threshold(&program_id, &Some(10u8));
+    setup.client.set_program_circuit_breaker_threshold(&program_id, &Some(10u32));
 }
 
 #[test]
@@ -437,10 +437,10 @@ fn test_delegate_refund_cannot_set_cb_threshold() {
         invoke: &MockAuthInvoke {
             contract: &setup.contract_id,
             fn_name: "set_program_circuit_breaker_threshold",
-            args: (program_id.clone(), Some(10u8)).into_val(&setup.env),
+            args: (program_id.clone(), Some(10u32)).into_val(&setup.env),
             sub_invokes: &[],
         },
     }]);
 
-    setup.client.set_program_circuit_breaker_threshold(&program_id, &Some(10u8));
+    setup.client.set_program_circuit_breaker_threshold(&program_id, &Some(10u32));
 }

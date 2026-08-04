@@ -1,19 +1,23 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../shared/contexts/AuthContext';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
+import { getGitHubLoginUrl } from '../../../shared/api/client';
+import { OAuthErrorPanel } from '../components/OAuthErrorPanel';
+import { classifyOAuthError } from '../types/oauthErrors';
+import type { OAuthErrorState } from '../types/oauthErrors';
 
 export function AuthCallbackPage() {
   const navigate = useNavigate();
   const { login, isAuthenticated } = useAuth();
   const { theme } = useTheme();
-  const [error, setError] = useState<string | null>(null);
+  const [oauthError, setOauthError] = useState<OAuthErrorState | null>(null);
   const [isProcessing, setIsProcessing] = useState(true);
   const hasProcessed = useRef(false);
 
   // Redirect to dashboard (or returnTo from "review their application" link) once authenticated
   useEffect(() => {
-    if (isAuthenticated && !error) {
+    if (isAuthenticated && !oauthError) {
       const returnTo = sessionStorage.getItem('authReturnTo');
       sessionStorage.removeItem('authReturnTo');
       if (returnTo && returnTo.startsWith('/dashboard')) {
@@ -24,7 +28,7 @@ export function AuthCallbackPage() {
         navigate('/dashboard', { replace: true });
       }
     }
-  }, [isAuthenticated, error, navigate]);
+  }, [isAuthenticated, oauthError, navigate]);
 
   useEffect(() => {
     // Prevent running twice in React Strict Mode
@@ -34,34 +38,8 @@ export function AuthCallbackPage() {
     
     const handleCallback = async () => {
       hasProcessed.current = true;
-                                                                                                
-                                                                                                                                                  
-          
 
-                                                                                                                                                            
-                                                                                                                                          
-                                                                                                                                                                                      
-
-                                                                                                                                                                
-                                                                                                                                                                                            
-                                                                                                                                                                                                                  
-                                                                                                                                                                                                                        
-                                                                                                                                                                                                                                    
-                                                                                                                                                                                                                                                      
-
-                                                                                                                                                                                                                                          
-                                                                                                                                                                                                                                                          
-                                                                                                                                                                                                                                                                
-                                                                                                                                                                                                                                                                    
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              
-                                                                                                                                                                                                                                                                                          
-                                                                                                                                                                                                                                                                                            
-                                                                     
-                                                                                                                      
-                                                                                                                                        
-                                                            
-      
-  try {
+      try {
         // Get the token from URL parameters
         const params = new URLSearchParams(window.location.search);
         const token = params.get('token');
@@ -75,23 +53,15 @@ export function AuthCallbackPage() {
 
         if (errorParam) {
           console.error('OAuth Error:', errorParam);
-          if (errorParam === 'access_denied') {
-                setError('Login was cancelled. Please try again.');
-                } else {
-                    setError(errorParam || 'An unexpected error occurred');
-                    }
-          }
+          setOauthError(classifyOAuthError(errorParam));
           setIsProcessing(false);
-          // Redirect to signin after 3 seconds
-          setTimeout(() => navigate('/signin'), 3000);
           return;
-        
+        }
 
         if (!token) {
           console.error('No token found in URL');
-          setError('No authentication token received');
+          setOauthError(classifyOAuthError('No authentication token received'));
           setIsProcessing(false);
-          setTimeout(() => navigate('/signin'), 3000);
           return;
         }
 
@@ -103,14 +73,26 @@ export function AuthCallbackPage() {
         // The redirect will happen via the useEffect watching isAuthenticated
       } catch (err) {
         console.error('Authentication failed:', err);
-        setError(err instanceof Error ? err.message : 'Authentication failed');
+        setOauthError(classifyOAuthError(err instanceof Error ? err : 'Authentication failed'));
         setIsProcessing(false);
-        setTimeout(() => navigate('/signin'), 3000);
       }
-    } 
+    };
   
     handleCallback();
- }, [login, navigate]);
+  }, [login, navigate]);
+
+  const handleRetry = useCallback(() => {
+    setOauthError(null);
+    setIsProcessing(true);
+    hasProcessed.current = false;
+    // Re-initiate OAuth flow
+    const githubUrl = getGitHubLoginUrl();
+    window.location.href = githubUrl;
+  }, []);
+
+  const handleContactSupport = useCallback(() => {
+    window.open('mailto:support@grainlify.com?subject=GitHub OAuth Error', '_blank');
+  }, []);
 
   return (
     <div className={`min-h-screen flex items-center justify-center transition-colors ${
@@ -123,39 +105,12 @@ export function AuthCallbackPage() {
           ? 'bg-[#2d2820]/[0.4] border-white/10'
           : 'bg-white/[0.35] border-white'
       }`}>
-        {error ? (
-          <div className="text-center">
-            <div className="mb-4">
-              <svg
-                className="mx-auto h-12 w-12 text-red-500"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </div>
-            <h2 className={`text-xl mb-2 transition-colors ${
-              theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-            }`}>
-              Authentication Failed
-            </h2>
-            <p className={`text-sm transition-colors ${
-              theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'
-            }`}>
-              {error}
-            </p>
-            <p className={`text-xs mt-4 transition-colors ${
-              theme === 'dark' ? 'text-[#a3a3a3]' : 'text-[#8a7d6f]'
-            }`}>
-              Redirecting to sign in...
-            </p>
-          </div>
+        {oauthError ? (
+          <OAuthErrorPanel
+            error={oauthError}
+            onRetry={handleRetry}
+            onContactSupport={handleContactSupport}
+          />
         ) : isProcessing ? (
           <div className="text-center">
             <div className="mb-4">

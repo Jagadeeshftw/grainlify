@@ -1,9 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
 import { ArrowLeft, Github, Wallet } from 'lucide-react';
 import { getGitHubLoginUrl } from '../../../shared/api/client';
 import { WalletConnectionModal } from '../components/WalletConnectionModal';
+import { OAuthErrorBanner } from '../components/OAuthErrorBanner';
+import { classifyOAuthError } from '../types/oauthErrors';
+import type { OAuthErrorState } from '../types/oauthErrors';
 import type { WalletProviderId } from '../types';
 
 export function SignInPage() {
@@ -11,6 +14,7 @@ export function SignInPage() {
   const navigate = useNavigate();
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [walletModalOpen, setWalletModalOpen] = useState(false);
+  const [oauthError, setOauthError] = useState<OAuthErrorState | null>(null);
 
   const handleWalletConnect = (_providerId: WalletProviderId) => {
     // TODO: integrate with Stellar wallet SDK per provider
@@ -32,25 +36,36 @@ export function SignInPage() {
     if (token) {
       // If there's a token in the URL, redirect to the proper callback handler
       navigate(`/auth/callback?token=${token}`, { replace: true });
+      return;
+    }
+
+    // Check for OAuth error params returned from GitHub redirect
+    const errorParam = params.get('error');
+    if (errorParam) {
+      setOauthError(classifyOAuthError(errorParam));
     }
   }, [navigate]);
 
-  const handleGithubSign = async () => {
-        setLoading(true);
-            try {
-                    const provider = new GithubAuthProvider();
-                            console.log("sign in false ",false)
-                                    const github1 = await signInWithPopup(auth, provider);
-                                            console.log("Redirecting to :", github1);
-                                                    // subject to github login
-                                                            window.location.href = github1;
+  const handleGitHubSignIn = useCallback(() => {
+    if (isRedirecting) return;
+    setOauthError(null);
+    setIsRedirecting(true);
+    const githubUrl = getGitHubLoginUrl();
+    window.location.href = githubUrl;
+  }, [isRedirecting]);
 
-                                                                } catch (error) {
-                                                                        console.log(error);
-                                                                            }
-                                                                            };
+  const handleRetry = useCallback(() => {
+    setOauthError(null);
+    handleGitHubSignIn();
+  }, [handleGitHubSignIn]);
 
-  
+  const handleContactSupport = useCallback(() => {
+    window.open('mailto:support@grainlify.com?subject=GitHub OAuth Error', '_blank');
+  }, []);
+
+  const handleDismissError = useCallback(() => {
+    setOauthError(null);
+  }, []);
 
   return (
     <>
@@ -96,6 +111,16 @@ export function SignInPage() {
               theme === 'dark' ? 'text-[#d4c5b0]' : 'text-[#7a6b5a]'
             }`}>Sign in with your GitHub account</p>
           </div>
+
+          {/* OAuth Error Banner */}
+          {oauthError && (
+            <OAuthErrorBanner
+              error={oauthError}
+              onRetry={handleRetry}
+              onContactSupport={handleContactSupport}
+              onDismiss={handleDismissError}
+            />
+          )}
 
           {/* GitHub Sign In */}
           <div className="space-y-6">

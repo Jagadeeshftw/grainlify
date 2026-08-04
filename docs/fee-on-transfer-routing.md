@@ -54,8 +54,8 @@ receives the intended net amount after FoT deductions.
 Only the contract admin may set or clear the router configuration.
 
 ```rust
-// Set router with 1 % slippage tolerance
-contract.set_fot_router(&router_address, &100);
+// Set router with 1 % slippage tolerance and a 1.5x gross upper bound
+contract.set_fot_router(&router_address, &100, &15_000);
 
 // Clear router (restores backward-compatible behavior)
 contract.clear_fot_router();
@@ -93,6 +93,9 @@ The `FotRouter` config is stored as an optional field on `ProgramData`:
 pub struct FotRouter {
     pub router_contract: Address,
     pub slippage_bps: u32,
+    /// Maximum gross-to-net multiplier in basis points over 10_000.
+    /// For example, 15_000 permits a gross quote up to 1.5x the net amount.
+    pub max_fot_multiplier_bps: u32,
 }
 
 pub struct ProgramData {
@@ -116,6 +119,7 @@ pre-routing implementation (backward compatible).
 | Code | Constant | Description |
 |------|----------|-------------|
 | 1300 | `FotRoutingFailed` | Router returned invalid result or call failed |
+| 1211 | `FotRouterQuoteExceeded` | Router gross quote exceeded configured `max_fot_multiplier_bps` |
 
 ## Security Considerations
 
@@ -124,8 +128,12 @@ The router contract is a **trusted component**. A malicious router could:
 - Return inflated gross amounts to drain the escrow contract
 - Return deflated amounts causing payouts to fall short
 
-**Mitigation**: Only the contract admin can set the router. Choose a router
-that is audited and verified.
+**Mitigation**: Only the contract admin can set the router. Additionally,
+`set_fot_router` enforces an admin-configurable `max_fot_multiplier_bps` cap on
+the gross quote returned by `router.quote()`. `apply_fot_router` rejects any
+quote above this bound with `ContractError::FotRouterQuoteExceeded`, preventing
+a malicious router from draining the program. Choose a router that is audited
+and verified, and keep the multiplier as low as the token's fee structure allows.
 
 ### Slippage
 Slippage adds a buffer above the quoted amount. Higher slippage provides more

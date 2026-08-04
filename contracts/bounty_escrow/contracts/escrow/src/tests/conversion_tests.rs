@@ -19,6 +19,12 @@ impl MockRouter {
         (q, s)
     }
 
+    /// Address the router pulls source tokens from via the allowance granted
+    /// before `swap_exact_tokens_for_tokens` is invoked (the escrow contract).
+    pub fn set_payer(env: Env, payer: Address) {
+        env.storage().instance().set(&soroban_sdk::symbol_short!("payer"), &payer);
+    }
+
     pub fn swap_exact_tokens_for_tokens(
         env: Env,
         amount_in: i128,
@@ -32,12 +38,23 @@ impl MockRouter {
         let (_, s_rate) = Self::get_rates(env.clone());
         
         let actual_out = amount_in * s_rate;
-        
-        // Transfer source tokens to mock router
+
+        // Pull source tokens from the payer (the escrow contract) using the
+        // allowance it granted to this router before invoking the swap.
+        let payer: Address = env
+            .storage()
+            .instance()
+            .get(&soroban_sdk::symbol_short!("payer"))
+            .unwrap();
         let src_client = token::Client::new(&env, &src);
-        src_client.transfer(&env.current_contract_address(), &dest, &amount_in);
-        
-        // Transfer destination tokens to contributor
+        src_client.transfer_from(
+            &env.current_contract_address(),
+            &payer,
+            &env.current_contract_address(),
+            &amount_in,
+        );
+
+        // Transfer destination tokens to the recipient
         let dest_client = token::Client::new(&env, &dest);
         dest_client.transfer(&env.current_contract_address(), &to, &actual_out);
         
@@ -104,6 +121,7 @@ impl<'a> TestSetup<'a> {
 
         let router_id = env.register_contract(None, MockRouter);
         let router = MockRouterClient::new(&env, &router_id);
+        router.set_payer(&escrow.address);
 
         token_a_admin.mint(&depositor, &1_000_000);
         // Fund the router with token_b for conversions
@@ -133,7 +151,7 @@ fn test_release_with_conversion_happy_path() {
     let deadline = s.env.ledger().timestamp() + 3600;
 
     // Lock funds first
-    s.escrow.lock_funds(&s.depositor, &bounty_id, &amount, &deadline, &None, &None);
+    s.escrow.lock_funds(&s.depositor, &bounty_id, &amount, &deadline);
 
     // Set the router
     s.escrow.set_router(&s.router_address);
@@ -171,7 +189,7 @@ fn test_release_with_conversion_router_not_configured() {
     let amount = 1000i128;
     let deadline = s.env.ledger().timestamp() + 3600;
 
-    s.escrow.lock_funds(&s.depositor, &bounty_id, &amount, &deadline, &None, &None);
+    s.escrow.lock_funds(&s.depositor, &bounty_id, &amount, &deadline);
 
     let mut path = Vec::new(&s.env);
     path.push_back(s.token_a.address.clone());
@@ -195,7 +213,7 @@ fn test_release_with_conversion_slippage_exceeded() {
     let amount = 1000i128;
     let deadline = s.env.ledger().timestamp() + 3600;
 
-    s.escrow.lock_funds(&s.depositor, &bounty_id, &amount, &deadline, &None, &None);
+    s.escrow.lock_funds(&s.depositor, &bounty_id, &amount, &deadline);
     s.escrow.set_router(&s.router_address);
 
     // Set MockRouter quote rate to 2, but actual swap rate to 1 (50% drop, exceeding 5% slippage)
@@ -216,30 +234,22 @@ fn test_release_with_conversion_slippage_exceeded() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #7)")]
+#[should_panic(expected = "Error(Auth, InvalidAction)")]
 fn test_set_router_unauthorized() {
     let s = TestSetup::new();
     let non_admin = Address::generate(&s.env);
 
-    s.env.mock_all_auths();
-    // Try to set router as non-admin (by changing authorization context)
-    s.env.mock_auths(&[Env::default().mock_auths(&[]).get(0).cloned().unwrap_or(non_admin.clone())]); // or simple require_auth mock
-    
-    // We will clear all mock auths and only mock non_admin
-    s.env.mock_auths(&[]);
-    let auths = soroban_sdk::vec![
-        &s.env,
-        soroban_sdk::testutils::MockAuth {
-            address: non_admin.clone(),
-            invoke: soroban_sdk::testutils::MockAuthInvoke {
-                contract: s.escrow.address.clone(),
-                function: soroban_sdk::Symbol::new(&s.env, "set_router"),
-                args: soroban_sdk::vec![&s.env, s.router_address.clone().into_val(&s.env)],
-                sub_invokes: soroban_sdk::vec![&s.env],
-            },
-        }
-    ];
-    s.env.mock_auths(&auths);
-    
+    // Only mock the non-admin's authorization. `set_router` requires the
+    // admin's auth, so the call must fail the authorization check.
+    s.env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &non_admin,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &s.escrow.address,
+            fn_name: "set_router",
+            args: soroban_sdk::vec![&s.env, s.router_address.into_val(&s.env)],
+            sub_invokes: &[],
+        },
+    }]);
+
     s.escrow.set_router(&s.router_address);
 }

@@ -27,3 +27,4 @@ lto = true
 
 [profile.test]
 overflow-checks = true
+debug = 0

@@ -11,6 +11,7 @@
 //! - Anti-manipulation measures
 
 use soroban_sdk::{testutils::Ledger, Address, Bytes, BytesN, Env, String};
+extern crate std;
 use crate::test::{create_contract, set_admin};
 use crate::DynamicPricingConfig;
 

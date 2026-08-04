@@ -1,8 +1,10 @@
 //! Tests for `archive_program` and the archived payout-history storage-tier
-//! migration introduced in:
-//!   <https://github.com/Jagadeeshftw/grainlify/issues/XXX>
+//! Tests for `archive_program` and the archived payout-history storage-tier
+//! migration introduced for Grainlify program escrow.
 //!
 //! ## What is tested
+//!
+//! ### Pre-existing archival behaviour (Tests 1–10)
 //!
 //! 1. Basic archival success — `archived` flag, `archived_at` timestamp, and
 //!    presence in `get_archived_programs`.
@@ -20,12 +22,25 @@
 //! 9. Archiving a non-existent program panics.
 //! 10. Instance-storage footprint shrinks with N archived programs
 //!     (benchmark / size comparison).
+//!
+//! ### Pending release schedule interaction (Tests 11–17) — Issue #1493
+//!
+//! The defined behavior: **block archival** when any release schedule has not
+//! yet been executed (`ProgramReleaseSchedule.released == false`).
+//!
+//! 11. Archiving with a future-dated pending schedule panics.
+//! 12. Archiving with a past-due but un-triggered schedule also panics.
+//! 13. Archival succeeds once all schedules are released.
+//! 14. Mixed released/pending schedules still block archival.
+//! 15. Zero schedules — archival succeeds (no regression).
+//! 16. Partial trigger leaves remaining pending schedules, blocking archival.
+//! 17. All multi-schedules released — archival succeeds and history is preserved.
 
 #![cfg(test)]
 
 extern crate std;
 
-use soroban_sdk::{testutils::Address as _, Address, Env, String};
+use soroban_sdk::{testutils::{Address as _, Ledger as _}, Address, Env, String};
 
 use crate::{
     test_batch_operations::{init_program, setup, Ctx},
@@ -476,4 +491,231 @@ fn test_no_data_loss_after_archival() {
         let expected_amount = 100_i128 * (i as i128 + 1);
         assert_eq!(rec_history.get(0).unwrap().amount, expected_amount);
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Tests for issue #1493 — archive_program interaction with pending release
+// schedules.
+//
+// Chosen behavior: **Block archival** when any release schedule has not yet
+// been executed (`released == false`).  Rationale: archiving a program with
+// unreleased schedules would strand the reserved funds — `trigger_program_releases`
+// returns an empty Vec for archived programs, so those amounts could never be
+// disbursed.  Callers must trigger (or otherwise settle) all pending schedules
+// before archiving.
+//
+// Tests added:
+//   11. Archiving with a future-dated pending schedule must panic.
+//   12. Archiving with a pending schedule that is past-due (but not yet
+//       triggered) must also panic — the guard is timestamp-independent.
+//   13. After all schedules are released, archival succeeds.
+//   14. Mixed schedules: some released, some not → archival must still panic.
+//   15. Zero schedules → archival succeeds (no regression).
+//   16. Multiple pending schedules: partial trigger still blocks archival.
+//   17. Fully released multi-schedule program archives cleanly.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── Test 11: archiving with a future-dated pending schedule must panic ────────
+
+#[test]
+#[should_panic(expected = "Cannot archive program with pending release schedules")]
+fn test_archive_blocked_by_future_pending_schedule() {
+    let ctx = setup();
+    let program_id = "PENDING_FUTURE";
+    // Give enough funds to cover both a payout and the scheduled release.
+    init_program(&ctx, program_id, 5_000);
+
+    let prog_str = String::from_str(&ctx.env, program_id);
+    let recipient = Address::generate(&ctx.env);
+
+    // Schedule a release 1 hour in the future.
+    let future_ts = ctx.env.ledger().timestamp() + 3_600;
+    ctx.client
+        .create_program_release_schedule(&recipient, &1_000, &future_ts);
+
+    // Attempting to archive MUST panic because the schedule is still pending.
+    ctx.client.archive_program(&prog_str);
+}
+
+// ─── Test 12: past-due but un-triggered pending schedule also blocks archival ──
+
+#[test]
+#[should_panic(expected = "Cannot archive program with pending release schedules")]
+fn test_archive_blocked_by_past_due_untriggered_schedule() {
+    let ctx = setup();
+    let program_id = "PAST_DUE";
+    init_program(&ctx, program_id, 5_000);
+
+    let prog_str = String::from_str(&ctx.env, program_id);
+    let recipient = Address::generate(&ctx.env);
+
+    // Create a schedule whose release_timestamp is *in the past* (now-1s).
+    let past_ts = ctx.env.ledger().timestamp().saturating_sub(1);
+    ctx.client
+        .create_program_release_schedule(&recipient, &1_000, &past_ts);
+
+    // The schedule is due but NOT yet triggered — still pending.
+    // Archival must be blocked regardless of whether the timestamp is past.
+    ctx.client.archive_program(&prog_str);
+}
+
+// ─── Test 13: archival succeeds after all schedules are released ──────────────
+
+#[test]
+fn test_archive_succeeds_after_all_schedules_released() {
+    let ctx = setup();
+    let program_id = "ALL_RELEASED";
+    init_program(&ctx, program_id, 5_000);
+
+    let prog_str = String::from_str(&ctx.env, program_id);
+    let recipient = Address::generate(&ctx.env);
+
+    // Create a schedule due at current timestamp so it can be triggered immediately.
+    let now = ctx.env.ledger().timestamp();
+    ctx.client
+        .create_program_release_schedule(&recipient, &1_000, &now);
+
+    // Advance time past the timestamp and trigger releases.
+    ctx.env.ledger().set_timestamp(now + 1);
+    let released = ctx.client.trigger_program_releases(&None);
+    assert_eq!(released, 1, "one schedule should have been released");
+
+    // Verify no pending schedules remain.
+    let schedules = ctx.client.get_release_schedules();
+    assert!(
+        schedules.iter().all(|s| s.released),
+        "all schedules must be released before archival"
+    );
+
+    // Archival should now succeed without panic.
+    ctx.client.archive_program(&prog_str);
+
+    let info = ctx.client.get_program_info_v2(&prog_str);
+    assert!(info.archived, "program must be marked archived");
+    assert!(info.archived_at.is_some(), "archived_at must be set");
+}
+
+// ─── Test 14: mixed schedules (some released, one pending) blocks archival ────
+
+#[test]
+#[should_panic(expected = "Cannot archive program with pending release schedules")]
+fn test_archive_blocked_when_mixed_released_and_pending() {
+    let ctx = setup();
+    let program_id = "MIXED_SCHED";
+    init_program(&ctx, program_id, 10_000);
+
+    let prog_str = String::from_str(&ctx.env, program_id);
+    let r1 = Address::generate(&ctx.env);
+    let r2 = Address::generate(&ctx.env);
+
+    let now = ctx.env.ledger().timestamp();
+
+    // Schedule 1: due now, will be triggered.
+    ctx.client
+        .create_program_release_schedule(&r1, &1_000, &now);
+
+    // Schedule 2: due 1 day in the future, will NOT be triggered.
+    ctx.client
+        .create_program_release_schedule(&r2, &2_000, &(now + 86_400));
+
+    // Trigger only schedule 1.
+    ctx.env.ledger().set_timestamp(now + 1);
+    let released = ctx.client.trigger_program_releases(&None);
+    assert_eq!(released, 1, "only schedule 1 should have been released");
+
+    // One schedule is still pending — archival must be blocked.
+    ctx.client.archive_program(&prog_str);
+}
+
+// ─── Test 15: zero schedules — archival succeeds (no regression) ─────────────
+
+#[test]
+fn test_archive_succeeds_with_zero_schedules() {
+    let ctx = setup();
+    let program_id = "ZERO_SCHED";
+    init_program(&ctx, program_id, 3_000);
+
+    let prog_str = String::from_str(&ctx.env, program_id);
+
+    // No schedules created at all.
+    let schedules = ctx.client.get_release_schedules();
+    assert_eq!(schedules.len(), 0, "no schedules should exist");
+
+    // Archival must succeed.
+    ctx.client.archive_program(&prog_str);
+
+    let info = ctx.client.get_program_info_v2(&prog_str);
+    assert!(info.archived);
+    assert!(info.archived_at.is_some());
+}
+
+// ─── Test 16: partial trigger — remaining pending schedule blocks archival ────
+
+#[test]
+#[should_panic(expected = "Cannot archive program with pending release schedules")]
+fn test_archive_blocked_after_partial_trigger() {
+    let ctx = setup();
+    let program_id = "PARTIAL_TRIG";
+    init_program(&ctx, program_id, 10_000);
+
+    let prog_str = String::from_str(&ctx.env, program_id);
+    let now = ctx.env.ledger().timestamp();
+
+    // Three schedules: two due soon, one far in the future.
+    let r1 = Address::generate(&ctx.env);
+    let r2 = Address::generate(&ctx.env);
+    let r3 = Address::generate(&ctx.env);
+
+    ctx.client.create_program_release_schedule(&r1, &1_000, &(now + 10));
+    ctx.client.create_program_release_schedule(&r2, &1_000, &(now + 20));
+    ctx.client.create_program_release_schedule(&r3, &1_000, &(now + 100_000));
+
+    // Advance just past the first two timestamps and trigger.
+    ctx.env.ledger().set_timestamp(now + 30);
+    let released = ctx.client.trigger_program_releases(&None);
+    assert_eq!(released, 2, "exactly two schedules should be released");
+
+    // Schedule 3 is still pending — archival must be blocked.
+    ctx.client.archive_program(&prog_str);
+}
+
+// ─── Test 17: all schedules released — archive succeeds, history preserved ───
+
+#[test]
+fn test_archive_succeeds_after_all_multi_schedules_released() {
+    let ctx = setup();
+    let program_id = "FULL_RELEASE";
+    init_program(&ctx, program_id, 15_000);
+
+    let prog_str = String::from_str(&ctx.env, program_id);
+    let now = ctx.env.ledger().timestamp();
+
+    let r1 = Address::generate(&ctx.env);
+    let r2 = Address::generate(&ctx.env);
+    let r3 = Address::generate(&ctx.env);
+
+    // Create three schedules all due within the next 50 seconds.
+    ctx.client.create_program_release_schedule(&r1, &1_000, &(now + 10));
+    ctx.client.create_program_release_schedule(&r2, &2_000, &(now + 20));
+    ctx.client.create_program_release_schedule(&r3, &3_000, &(now + 30));
+
+    // Advance time past all three and trigger.
+    ctx.env.ledger().set_timestamp(now + 50);
+    let released = ctx.client.trigger_program_releases(&None);
+    assert_eq!(released, 3, "all three schedules should be released");
+
+    // All schedules are now released — archival must succeed.
+    ctx.client.archive_program(&prog_str);
+
+    let info = ctx.client.get_program_info_v2(&prog_str);
+    assert!(info.archived, "program must be marked archived");
+    assert!(info.archived_at.is_some(), "archived_at must be set");
+
+    // Payout history is preserved in persistent storage.
+    // (The 3 schedule releases are recorded in release history, not payout_history,
+    // but the archive operation should not lose any payout_history records.)
+    let archived_history = ctx.client.get_archived_program_payout_history(&prog_str);
+    // No direct payout calls were made, so archived payout history is empty —
+    // but the call itself must not panic.
+    let _ = archived_history.len();
 }

@@ -68,4 +68,11 @@ pub trait BountyEscrowContract {
         offset: u32,
         limit: u32,
     ) -> Vec<EscrowWithId>;
+
+    fn query_escrows_by_beneficiary(
+        env: Env,
+        beneficiary: Address,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<EscrowWithId>;
 }

@@ -43,6 +43,24 @@ impl MockFotRouter {
 }
 
 // ===========================================================================
+// Mock Malicious FoT Router Contract
+// ===========================================================================
+
+/// A mock router that simulates a compromised quote source by inflating the
+/// gross amount far above any plausible fee-on-transfer compensation.
+#[contract]
+pub struct InflatedFotRouter;
+
+#[contractimpl]
+impl InflatedFotRouter {
+    pub fn quote(env: Env, _token: Address, amount: i128) -> i128 {
+        // Return 100x the intended net amount; this should be rejected by the
+        // upper-bound check before any tokens are transferred.
+        amount.checked_mul(100).expect("Mock inflated amount overflow")
+    }
+}
+
+// ===========================================================================
 // Mock FoT Token Contract
 // ===========================================================================
 
@@ -122,7 +140,8 @@ fn setup_with_router(
     let program_id = String::from_str(env, "fot-routing-prog");
 
     client.init_program(&program_id, &admin, &token_id, &admin, &None, &None);
-    client.set_fot_router(&router_id, &slippage_bps);
+    // Use a 5x upper-bound multiplier so high-FoT router tests (up to 50% fee) pass.
+    client.set_fot_router(&router_id, &slippage_bps, &50_000);
     client.publish_program(&program_id, &admin);
 
     FotRoutingSetup { client, token, router, admin }
@@ -442,7 +461,7 @@ fn test_set_fot_router_emits_event() {
     use soroban_sdk::testutils::Events;
     let events_before = env.events().all().len();
 
-    client.set_fot_router(&router_id, &100);
+    client.set_fot_router(&router_id, &100, &15_000);
 
     let events_after = env.events().all().len();
     assert!(events_after > events_before, "set_fot_router must emit an event");
@@ -463,7 +482,7 @@ fn test_clear_fot_router_emits_event() {
     let program_id = String::from_str(&env, "event-prog-2");
 
     client.init_program(&program_id, &admin, &token_id, &admin, &None, &None);
-    client.set_fot_router(&router_id, &100);
+    client.set_fot_router(&router_id, &100, &15_000);
 
     use soroban_sdk::testutils::Events;
     let events_before = env.events().all().len();
@@ -495,7 +514,7 @@ fn test_set_fot_router_rejects_excessive_slippage() {
 
     client.init_program(&program_id, &admin, &token_id, &admin, &None, &None);
     // 600 bps = 6% > 5% max
-    client.set_fot_router(&router_id, &600);
+    client.set_fot_router(&router_id, &600, &15_000);
 }
 
 // ===========================================================================
@@ -558,6 +577,8 @@ fn test_fot_router_in_program_data() {
     let fot_router = info.fot_router.unwrap();
     assert_eq!(fot_router.router_contract, setup.router.address);
     assert_eq!(fot_router.slippage_bps, 100);
+    assert_eq!(fot_router.max_fot_multiplier_bps, 50_000,
+        "max_fot_multiplier_bps default used by the helper must be persisted");
 }
 
 // ===========================================================================
@@ -645,7 +666,7 @@ fn test_single_payout_with_protocol_fee_and_routing() {
 
     // Enable a 5% protocol fee
     client.update_fee_config(&100, &0, &500, &0, &admin, &true, &0);
-    client.set_fot_router(&router_id, &0);
+    client.set_fot_router(&router_id, &0, &15_000);
     client.publish_program(&program_id, &admin);
 
     // Fund
@@ -690,7 +711,7 @@ fn test_batch_payout_with_protocol_fee_and_routing() {
 
     client.init_program(&program_id, &admin, &token_id, &admin, &None, &None);
     client.update_fee_config(&100, &0, &500, &0, &admin, &true, &0);
-    client.set_fot_router(&router_id, &0);
+    client.set_fot_router(&router_id, &0, &15_000);
     client.publish_program(&program_id, &admin);
 
     token.mint(&client.address, &30_000);
@@ -712,4 +733,41 @@ fn test_batch_payout_with_protocol_fee_and_routing() {
     assert_eq!(token.balance(&r1), 9_500, "r1 gets intended net");
     assert_eq!(token.balance(&r2), 9_500, "r2 gets intended net");
     assert_eq!(client.get_program_info().remaining_balance, 9_000);
+}
+
+// ===========================================================================
+// 23. Malicious router with an inflated quote is rejected
+// ===========================================================================
+
+#[test]
+#[should_panic(expected = "FotRouterQuoteExceeded")]
+fn test_malicious_router_inflated_quote_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+
+    let token_id = env.register_contract(None, DeflatToken);
+    let token = DeflatTokenClient::new(&env, &token_id);
+    token.set_fee_bps(&0);
+
+    let router_id = env.register_contract(None, InflatedFotRouter);
+
+    let admin = Address::generate(&env);
+    let program_id = String::from_str(&env, "malicious-router-prog");
+
+    client.init_program(&program_id, &admin, &token_id, &admin, &None, &None);
+    // Cap the gross quote at 1.5x net. The malicious router returns 100x.
+    client.set_fot_router(&router_id, &0, &15_000);
+    client.publish_program(&program_id, &admin);
+
+    // Fund the program
+    token.mint(&client.address, &10_000);
+    client.lock_program_funds(&10_000);
+
+    let recipient = Address::generate(&env);
+    // This must abort because the router's 100x gross quote exceeds the 1.5x cap.
+    // No tokens should be transferred to the recipient or debited beyond the lock.
+    client.single_payout(&recipient, &100, &None);
 }

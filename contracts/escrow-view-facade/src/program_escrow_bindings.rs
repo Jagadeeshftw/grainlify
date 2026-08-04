@@ -10,7 +10,20 @@ pub struct ProgramDelegateInfo {
     pub permissions: u32,
 }
 
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PayoutRecord {
+    pub recipient: Address,
+    pub amount: i128,
+    pub timestamp: u64,
+}
+
 #[contractclient(name = "Client")]
 pub trait ProgramEscrowContract {
     fn query_all_delegates(env: Env, program_id: String) -> Vec<ProgramDelegateInfo>;
+    fn query_recipient_history(
+        env: Env,
+        program_id: String,
+        recipient: Address,
+    ) -> Vec<PayoutRecord>;
 }

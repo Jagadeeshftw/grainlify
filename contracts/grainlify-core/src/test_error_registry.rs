@@ -61,11 +61,11 @@ mod tests {
 
     #[test]
     fn test_registry_entry_count() {
-        assert_eq!(
-            registered_count(),
-            11,
-            "Expected exactly 11 entries in GRAINLIFY_CORE_REGISTRY (3 common + 8 governance)"
-        );
+    assert_eq!(
+        registered_count(),
+        11,
+        "Expected exactly 11 entries in GRAINLIFY_CORE_REGISTRY (3 common + 8 governance)"
+    );
     }
 
     // ── lookup_name ───────────────────────────────────────────────────────────
