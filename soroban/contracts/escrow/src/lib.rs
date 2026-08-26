@@ -28,7 +28,6 @@ pub use identity::*;
 
 mod reentrancy_guard;
 
-use grainlify_core::errors;
 #[contracterror]
 #[derive(Clone, Debug, PartialEq)]
 #[repr(u32)]
