@@ -17,6 +17,7 @@ test('manifest workflow is stored in the repository root workflow directory', ()
   const workflowContents = fs.readFileSync(rootWorkflowPath, 'utf8');
   assert.match(workflowContents, /pull_request\s*:/, 'workflow should trigger on PRs');
   assert.match(workflowContents, /contracts\/.*-manifest\.json/, 'workflow should match manifest files');
+  assert.match(workflowContents, /authorized_payout_key/, 'workflow should allow the payout-key authorization value required by manifests');
   assert.match(workflowContents, /contract-manifest-schema\.json/, 'workflow should keep schema validation');
 });
 

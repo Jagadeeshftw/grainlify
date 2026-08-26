@@ -129,7 +129,24 @@ jobs:
           echo "Validating authorization values..."
 
           MANIFESTS=$(find contracts -name "*-manifest.json" -not -path "*/node_modules/*")
-          VALID_AUTH_VALUES=("admin" "signer" "any" "capability" "multisig")
+          VALID_AUTH_VALUES=(
+            "admin"
+            "signer"
+            "any"
+            "none"
+            "capability"
+            "multisig"
+            "admin-or-governor"
+            "creator"
+            "authorized_payout_key"
+            "circuit admin"
+            "current admin"
+            "current controller or admin"
+            "existing circuit admin or contract admin"
+            "none (first call only)"
+            "proposed admin"
+            "proposed controller"
+          )
 
           for manifest in $MANIFESTS; do
             echo "Checking authorization values in $manifest..."
