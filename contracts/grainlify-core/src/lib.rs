@@ -30,6 +30,8 @@ pub mod correlation;
 pub mod error_registry;
 pub mod errors;
 pub mod governance;
+mod event_compatibility;
+mod migration;
 mod multisig;
 pub mod nonce;
 pub mod pseudo_randomness;
@@ -2391,12 +2393,12 @@ impl GrainlifyContract {
         }
 
         if current_version == 1 && target_version == 2 {
-            migrate_v1_to_v2(&env);
+            migration::migrate_v1_to_v2(&env);
         } else if current_version == 2 && target_version == 3 {
-            migrate_v2_to_v3(&env);
+            migration::migrate_v2_to_v3(&env);
         } else if current_version == 1 && target_version == 3 {
-            migrate_v1_to_v2(&env);
-            migrate_v2_to_v3(&env);
+            migration::migrate_v1_to_v2(&env);
+            migration::migrate_v2_to_v3(&env);
         } else {
             panic!("No migration path available");
         }
@@ -2447,10 +2449,6 @@ impl GrainlifyContract {
     }
 }
 
-fn migrate_v1_to_v2(_env: &Env) {}
-
-fn migrate_v2_to_v3(_env: &Env) {}
-
 // ============================================================================
 // Event Version Compatibility
 // ============================================================================
@@ -2461,7 +2459,7 @@ fn migrate_v2_to_v3(_env: &Env) {}
 /// events so they can surface unknown-version events instead of silently
 /// misinterpreting them.
 pub fn is_compatible_event_version(version: u32) -> bool {
-    version == EVENT_SCHEMA_VERSION
+    event_compatibility::is_compatible(version, EVENT_SCHEMA_VERSION)
 }
 
 #[cfg(test)]
