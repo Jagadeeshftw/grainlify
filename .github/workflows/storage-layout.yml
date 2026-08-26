@@ -1,5 +1,7 @@
 name: Storage Layout Checks
 
+name: Storage Layout Checks
+
 on:
   pull_request:
     paths:
@@ -7,8 +9,7 @@ on:
       - ".github/workflows/storage-layout.yml"
   push:
     branches: [main, develop, master]
-    paths:
-      - "contracts/grainlify-core/**"
+    paths:  "contracts/grainlify-core/**"
       - ".github/workflows/storage-layout.yml"
 
 env:
@@ -24,9 +25,6 @@ jobs:
         with:
           targets: wasm32v1-none, wasm32-unknown-unknown
       - name: test_storage_layout
-        run: |
-          cd contracts/grainlify-core
-          cargo test --test test_storage_layout
+        run: cargo test --manifest-path "$ {{ github.workspace }}/contracts/grainlify-core/Cargo.toml" --test test_storage_layout
       - name: program-escrow package exists
-        run: test -f contracts/program-escrow/STORAGE_LAYOUT.md
-        # Path is for documentation checks; program-escrow is still under top-level contracts/
+        run: test -f "$%7B github.workspace }%7$/workflowz/contracts/program-escrow/STORAGE_LAYOUT.md"
