@@ -32,15 +32,15 @@ extern crate std;
 
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
-    Address, BytesN, Env, vec,
+    vec, Address, BytesN, Env,
 };
 
-use crate::{GrainlifyContract, GrainlifyContractClient, DataKey};
+use crate::{DataKey, GrainlifyContract, GrainlifyContractClient};
 
 // ── constants (mirror lib.rs) ─────────────────────────────────────────────
-const MIN_TIMELOCK: u64 = 3_600;       // 1 hour
-const MAX_TIMELOCK: u64 = 2_592_000;   // 30 days
-const DEFAULT_TIMELOCK: u64 = 86_400;  // 24 hours
+const MIN_TIMELOCK: u64 = 3_600; // 1 hour
+const MAX_TIMELOCK: u64 = 2_592_000; // 30 days
+const DEFAULT_TIMELOCK: u64 = 86_400; // 24 hours
 
 // ── helpers ───────────────────────────────────────────────────────────────
 
@@ -53,14 +53,14 @@ fn setup(env: &Env) -> (GrainlifyContractClient<'_>, Address) {
     (client, admin)
 }
 
-fn setup_multisig_with_timelock(env: &Env) -> (GrainlifyContractClient<'_>, Address) {
+fn setup_multisig_with_timelock(env: &Env) -> (GrainlifyContractClient<'_>, Address, Address) {
     let id = env.register_contract(None, GrainlifyContract);
     let client = GrainlifyContractClient::new(env, &id);
     let admin = Address::generate(env);
     env.mock_all_auths();
     // Initialize multisig with admin as the only signer and threshold 1
     client.init(&vec![&env, admin.clone()], &1u32);
-    (client, admin)
+    (client, admin, id)
 }
 
 fn fake_wasm(env: &Env) -> BytesN<32> {
@@ -69,11 +69,7 @@ fn fake_wasm(env: &Env) -> BytesN<32> {
 
 /// Helper: propose + approve an upgrade and return the proposal_id.
 /// Uses a 1-of-1 multisig (single signer = admin).
-fn propose_and_approve(
-    client: &GrainlifyContractClient,
-    env: &Env,
-    signer: &Address,
-) -> u64 {
+fn propose_and_approve(client: &GrainlifyContractClient, env: &Env, signer: &Address) -> u64 {
     let wasm = fake_wasm(env);
     let proposal_id = client.propose_upgrade(signer, &wasm, &0u64);
     client.approve_upgrade(&proposal_id, signer);
@@ -88,8 +84,11 @@ fn propose_and_approve(
 fn test_default_timelock_is_24h() {
     let env = Env::default();
     let (client, _) = setup(&env);
-    assert_eq!(client.get_timelock_delay(), DEFAULT_TIMELOCK,
-        "default timelock must be 86 400 s (24 h)");
+    assert_eq!(
+        client.get_timelock_delay(),
+        DEFAULT_TIMELOCK,
+        "default timelock must be 86 400 s (24 h)"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -101,8 +100,11 @@ fn test_set_timelock_exactly_1h_succeeds() {
     let env = Env::default();
     let (client, _) = setup(&env);
     client.set_timelock_delay(&MIN_TIMELOCK);
-    assert_eq!(client.get_timelock_delay(), MIN_TIMELOCK,
-        "exactly 1 h must be accepted");
+    assert_eq!(
+        client.get_timelock_delay(),
+        MIN_TIMELOCK,
+        "exactly 1 h must be accepted"
+    );
 }
 
 #[test]
@@ -146,8 +148,11 @@ fn test_set_timelock_exactly_30d_succeeds() {
     let env = Env::default();
     let (client, _) = setup(&env);
     client.set_timelock_delay(&MAX_TIMELOCK);
-    assert_eq!(client.get_timelock_delay(), MAX_TIMELOCK,
-        "exactly 30 d must be accepted");
+    assert_eq!(
+        client.get_timelock_delay(),
+        MAX_TIMELOCK,
+        "exactly 30 d must be accepted"
+    );
 }
 
 #[test]
@@ -212,14 +217,15 @@ fn test_execute_upgrade_1s_before_default_timelock_panics() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, admin) = setup_multisig_with_timelock(&env);
+    let (client, admin, _id) = setup_multisig_with_timelock(&env);
     let signer = admin;
     // Propose + approve at t=0
     env.ledger().with_mut(|li| li.timestamp = 0);
     let proposal_id = propose_and_approve(&client, &env, &signer);
 
     // Try 1 second before default timelock expiry (24 hours - 1 second)
-    env.ledger().with_mut(|li| li.timestamp = DEFAULT_TIMELOCK - 1);
+    env.ledger()
+        .with_mut(|li| li.timestamp = DEFAULT_TIMELOCK - 1);
     client.execute_upgrade(&proposal_id);
 }
 
@@ -228,14 +234,15 @@ fn test_execute_upgrade_after_default_timelock_expiry_succeeds() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, admin) = setup_multisig_with_timelock(&env);
+    let (client, admin, _id) = setup_multisig_with_timelock(&env);
     let signer = admin;
     // Propose + approve at t=0
     env.ledger().with_mut(|li| li.timestamp = 0);
     let proposal_id = propose_and_approve(&client, &env, &signer);
 
     // Execute well after expiry (t = 0 + DEFAULT_TIMELOCK + 1 second)
-    env.ledger().with_mut(|li| li.timestamp = DEFAULT_TIMELOCK + 1);
+    env.ledger()
+        .with_mut(|li| li.timestamp = DEFAULT_TIMELOCK + 1);
     let result = client.try_execute_upgrade(&proposal_id);
     // Should not panic with "Timelock delay not met"
     match result {
@@ -245,7 +252,7 @@ fn test_execute_upgrade_after_default_timelock_expiry_succeeds() {
             // "Timelock delay not met".
             let _ = e;
         }
-        Ok(_) => {} // success
+        Ok(_) => {}       // success
         Err(Err(_)) => {} // host error (e.g. WASM not installed) — acceptable
     }
 }
@@ -256,14 +263,15 @@ fn test_execute_upgrade_before_default_timelock_expiry_panics() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, admin) = setup_multisig_with_timelock(&env);
+    let (client, admin, _id) = setup_multisig_with_timelock(&env);
     let signer = admin;
     // Propose + approve at t=0
     env.ledger().with_mut(|li| li.timestamp = 0);
     let proposal_id = propose_and_approve(&client, &env, &signer);
 
     // Try to execute at t = DEFAULT_TIMELOCK / 2 (halfway through) — must fail
-    env.ledger().with_mut(|li| li.timestamp = DEFAULT_TIMELOCK / 2);
+    env.ledger()
+        .with_mut(|li| li.timestamp = DEFAULT_TIMELOCK / 2);
     client.execute_upgrade(&proposal_id);
 }
 
@@ -272,7 +280,7 @@ fn test_execute_upgrade_exactly_at_default_timelock_expiry_succeeds() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, admin) = setup_multisig_with_timelock(&env);
+    let (client, admin, _id) = setup_multisig_with_timelock(&env);
     let signer = admin;
     // Propose + approve at t=0
     env.ledger().with_mut(|li| li.timestamp = 0);
@@ -290,7 +298,7 @@ fn test_execute_upgrade_exactly_at_default_timelock_expiry_succeeds() {
             // "Timelock delay not met".
             let _ = e;
         }
-        Ok(_) => {} // success
+        Ok(_) => {}       // success
         Err(Err(_)) => {} // host error (e.g. WASM not installed) — acceptable
     }
 }
@@ -300,7 +308,7 @@ fn test_timelock_status_shows_remaining_seconds() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, admin) = setup_multisig_with_timelock(&env);
+    let (client, admin, _id) = setup_multisig_with_timelock(&env);
     let signer = admin;
 
     env.ledger().with_mut(|li| li.timestamp = 0);
@@ -308,11 +316,14 @@ fn test_timelock_status_shows_remaining_seconds() {
 
     // At t=0, remaining = DEFAULT_TIMELOCK
     let remaining = client.get_timelock_status(&proposal_id).unwrap();
-    assert_eq!(remaining, DEFAULT_TIMELOCK,
-        "remaining must equal full delay at t=0");
+    assert_eq!(
+        remaining, DEFAULT_TIMELOCK,
+        "remaining must equal full delay at t=0"
+    );
 
     // At t=DEFAULT_TIMELOCK / 2 (half elapsed), remaining = DEFAULT_TIMELOCK / 2
-    env.ledger().with_mut(|li| li.timestamp = DEFAULT_TIMELOCK / 2);
+    env.ledger()
+        .with_mut(|li| li.timestamp = DEFAULT_TIMELOCK / 2);
     let remaining2 = client.get_timelock_status(&proposal_id).unwrap();
     assert_eq!(remaining2, DEFAULT_TIMELOCK / 2);
 
@@ -323,24 +334,45 @@ fn test_timelock_status_shows_remaining_seconds() {
 }
 
 #[test]
-#[ignore]
 fn test_updated_delay_applies_to_new_proposals() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, admin) = setup_multisig_with_timelock(&env);
-    // Manually set the admin storage key so that admin-only functions work
-    env.storage().instance().set(&DataKey::Admin, &admin);
+    let (client, admin, contract_id) = setup_multisig_with_timelock(&env);
+    // Set the admin storage key via as_contract so admin-only functions work.
+    // The multisig init path does not write DataKey::Admin.
+    let admin_clone = admin.clone();
+    env.as_contract(&contract_id, || {
+        env.storage().instance().set(&DataKey::Admin, &admin_clone);
+    });
     let signer = admin;
 
+    // Proposal p1 created at default timelock delay (86 400 s).
     env.ledger().with_mut(|li| li.timestamp = 0);
     let p1 = propose_and_approve(&client, &env, &signer);
-    // Default timelock delay is 86400
     assert_eq!(client.get_timelock_status(&p1).unwrap(), DEFAULT_TIMELOCK);
 
-    // Change to 1 hour
+    // Admin changes the timelock delay to 1 hour (3 600 s).
     client.set_timelock_delay(&MIN_TIMELOCK);
     assert_eq!(client.get_timelock_delay(), MIN_TIMELOCK);
+
+    // Proposal p2 created after the delay change — must reflect the new delay.
+    env.ledger().with_mut(|li| li.timestamp = 100);
+    let p2 = propose_and_approve(&client, &env, &signer);
+    assert_eq!(
+        client.get_timelock_status(&p2).unwrap(),
+        MIN_TIMELOCK,
+        "newly created proposal must use the updated timelock delay"
+    );
+
+    // Original proposal p1 still reflects remaining time under the new delay.
+    env.ledger().with_mut(|li| li.timestamp = 100);
+    let remaining_p1 = client.get_timelock_status(&p1).unwrap();
+    assert_eq!(
+        remaining_p1,
+        MIN_TIMELOCK - 100,
+        "pre-existing proposal remaining must reflect the updated global delay"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
