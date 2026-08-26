@@ -2929,6 +2929,22 @@ impl BountyEscrowContract {
             .ok_or(Error::BountyNotFound)
     }
 
+    /// Compatibility view retained for the independently runnable lifecycle
+    /// test suite. New callers should prefer `get_escrow_info` so missing
+    /// records are represented as typed errors.
+    pub fn get_escrow(env: Env, bounty_id: u64) -> Escrow {
+        Self::get_escrow_info(env, bounty_id)
+            .unwrap_or_else(|_| panic!("Bounty not found"))
+    }
+
+    /// Return the refund records attached to an escrow for lifecycle tests and
+    /// legacy clients. Missing bounties remain an explicit contract failure.
+    pub fn get_refund_history(env: Env, bounty_id: u64) -> Vec<RefundRecord> {
+        Self::get_escrow_info(env, bounty_id)
+            .unwrap_or_else(|_| panic!("Bounty not found"))
+            .refund_history
+    }
+
     pub fn get_balance(env: Env) -> i128 {
         let token_addr: Address = env
             .storage()
@@ -8159,7 +8175,8 @@ mod test;
 // #[cfg(test)] mod test_front_running_ordering;
 // #[cfg(test)] mod test_granular_pause;
 // #[cfg(test)] mod test_invariants;
-// mod test_lifecycle;
+#[cfg(test)]
+mod test_lifecycle;
 // #[cfg(test)] mod test_metadata_tagging;
 // #[cfg(test)] mod test_partial_payout_rounding;
 // #[cfg(test)] mod test_participant_filter_mode;
