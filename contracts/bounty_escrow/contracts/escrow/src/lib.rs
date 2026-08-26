@@ -27,6 +27,7 @@ pub mod gas_budget;
 mod invariants;
 mod multitoken_invariants;
 mod reentrancy_guard;
+mod validation;
 // Pre-existing broken test modules excluded from compilation until their referenced types/methods are implemented:
 // #[cfg(test)] mod test_boundary_edge_cases; // Issue #1294: PartiallyRefunded accounting tests
 // #[cfg(test)] mod test_cross_contract_interface; // pre-existing breakage: references unimplemented methods
@@ -78,52 +79,6 @@ use soroban_sdk::{
     contract, contractclient, contracterror, contractimpl, contracttype, symbol_short, token, vec,
     Address, Bytes, BytesN, Env, String, Symbol, Vec,
 };
-
-// ============================================================================
-// INPUT VALIDATION MODULE
-// ============================================================================
-
-/// Validation rules for human-readable identifiers to prevent malicious or confusing inputs.
-///
-/// This module provides consistent validation across all contracts for:
-/// - Bounty types and metadata
-/// - Any user-provided string identifiers
-///
-/// Rules enforced:
-/// - Maximum length limits to prevent UI/log issues
-/// - Allowed character sets (alphanumeric, spaces, safe punctuation)
-/// - No control characters that could cause display issues
-/// - No leading/trailing whitespace
-mod validation {
-    use soroban_sdk::Env;
-
-    /// Maximum length for bounty types and short identifiers
-    const MAX_TAG_LEN: u32 = 50;
-
-    /// Validates a tag, type, or short identifier.
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `tag` - The tag string to validate
-    /// * `field_name` - Name of the field for error messages
-    ///
-    /// # Panics
-    /// Panics if validation fails with a descriptive error message.
-    pub fn validate_tag(_env: &Env, tag: &soroban_sdk::String, field_name: &str) {
-        if tag.len() > MAX_TAG_LEN {
-            panic!(
-                "{} exceeds maximum length of {} characters",
-                field_name, MAX_TAG_LEN
-            );
-        }
-
-        // Tags should not be empty if provided
-        if tag.len() == 0 {
-            panic!("{} cannot be empty", field_name);
-        }
-        // Additional character validation can be added when SDK supports it
-    }
-}
 
 mod monitoring {
     use soroban_sdk::{contracttype, symbol_short, Address, Env, String, Symbol};
