@@ -54,6 +54,8 @@ mod test_frozen_balance;
 mod test_reentrancy_guard;
 // #[cfg(test)] mod test_admin_rotation; // pre-existing SDK/API drift blocks filtered test builds
 #[cfg(test)]
+mod test_archival_ttl;
+#[cfg(test)]
 mod test_batch_soa_benchmark;
 
 
@@ -676,6 +678,36 @@ pub enum Error {
     FeeRoutingLocked = 60,
 }
 
+/// Minimum persistent-storage TTLs, measured in ledgers.
+///
+/// A write or economically meaningful read renews an entry when its remaining
+/// TTL falls below the applicable minimum. Terminal records use the archival
+/// minimum so they remain restorable without charging active-state rent
+/// indefinitely.
+pub const ESCROW_LIVE_TTL: u32 = 518_400;
+pub const ESCROW_ARCHIVAL_TTL: u32 = 1_555_200;
+pub const CLAIM_LIVE_TTL: u32 = 120_960;
+pub const CLAIM_ARCHIVAL_TTL: u32 = 518_400;
+pub const COMMITMENT_LIVE_TTL: u32 = 120_960;
+pub const COMMITMENT_ARCHIVAL_TTL: u32 = 518_400;
+pub const INDEX_LIVE_TTL: u32 = 1_555_200;
+pub const INDEX_ARCHIVAL_TTL: u32 = 3_110_400;
+const ARCHIVAL_MARKER_TTL: u32 = 6_220_800;
+const TTL_RENEWAL_DIVISOR: u32 = 2;
+
+/// Typed preflight result for persistent records tracked by the archival probe.
+///
+/// `Archived` means the record was written previously but its last guaranteed
+/// live-until ledger has passed. A client must restore the persistent entry
+/// before adding it to a contract invocation footprint.
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PersistentRecordStatus {
+    Missing,
+    Live,
+    Archived,
+}
+
 /// Bit flag: escrow or payout should be treated as elevated risk (indexers, UIs).
 pub const RISK_FLAG_HIGH_RISK: u32 = 1 << 0;
 /// Bit flag: manual or automated review is in progress; may restrict certain operations off-chain.
@@ -961,6 +993,19 @@ pub enum DataKey {
     /// Increment when `HighValueConfig` or `QueuedRelease` layout changes.
     HighValueConfigSchemaVersion,
     Router,
+    /// Last guaranteed live-until ledger for a bounty escrow.
+    ///
+    /// These markers are appended so existing DataKey discriminants remain
+    /// stable for deployed contracts.
+    EscrowTtl(u64),
+    /// Last guaranteed live-until ledger for a pending claim.
+    ClaimTtl(u64),
+    /// Last guaranteed live-until ledger for a capability commitment.
+    CapabilityTtl(BytesN<32>),
+    /// Last guaranteed live-until ledger for the global escrow index.
+    EscrowIndexTtl,
+    /// Last guaranteed live-until ledger for a depositor index.
+    DepositorIndexTtl(Address),
 }
 
 #[contracttype]
@@ -1375,6 +1420,194 @@ pub struct BountyEscrowContract;
 
 #[contractimpl]
 impl BountyEscrowContract {
+    fn renew_tracked_record(
+        env: &Env,
+        key: &DataKey,
+        marker: &DataKey,
+        live_ttl: u32,
+        archival_ttl: u32,
+        archival: bool,
+    ) {
+        if !env.storage().persistent().has(key) {
+            return;
+        }
+
+        let extension_ttl = if archival { archival_ttl } else { live_ttl };
+        let renewal_threshold = extension_ttl / TTL_RENEWAL_DIVISOR;
+        let current_ledger = env.ledger().sequence();
+        let previous: Option<u32> = env.storage().persistent().get(marker);
+
+        if previous
+            .map(|live_until| {
+                live_until.saturating_sub(current_ledger) <= renewal_threshold
+            })
+            .unwrap_or(true)
+        {
+            env.storage()
+                .persistent()
+                .extend_ttl(key, renewal_threshold, extension_ttl);
+            env.storage()
+                .persistent()
+                .set(marker, &current_ledger.saturating_add(extension_ttl));
+        }
+
+        env.storage()
+            .persistent()
+            .extend_ttl(
+                marker,
+                ARCHIVAL_MARKER_TTL / TTL_RENEWAL_DIVISOR,
+                ARCHIVAL_MARKER_TTL,
+            );
+    }
+
+    fn renew_escrow_record(env: &Env, bounty_id: u64, archival: bool) {
+        let regular = DataKey::Escrow(bounty_id);
+        let anonymous = DataKey::EscrowAnon(bounty_id);
+        let marker = DataKey::EscrowTtl(bounty_id);
+        if env.storage().persistent().has(&regular) {
+            let escrow: Option<Escrow> = env.storage().persistent().get(&regular);
+            Self::renew_tracked_record(
+                env,
+                &regular,
+                &marker,
+                ESCROW_LIVE_TTL,
+                ESCROW_ARCHIVAL_TTL,
+                archival,
+            );
+            if archival {
+                Self::renew_escrow_index(env, true);
+                if let Some(escrow) = escrow {
+                    Self::renew_depositor_index(env, &escrow.depositor, true);
+                }
+            }
+        } else if env.storage().persistent().has(&anonymous) {
+            Self::renew_tracked_record(
+                env,
+                &anonymous,
+                &marker,
+                ESCROW_LIVE_TTL,
+                ESCROW_ARCHIVAL_TTL,
+                archival,
+            );
+            if archival {
+                Self::renew_escrow_index(env, true);
+            }
+        }
+    }
+
+    fn renew_claim_record(env: &Env, bounty_id: u64, archival: bool) {
+        Self::renew_tracked_record(
+            env,
+            &DataKey::PendingClaim(bounty_id),
+            &DataKey::ClaimTtl(bounty_id),
+            CLAIM_LIVE_TTL,
+            CLAIM_ARCHIVAL_TTL,
+            archival,
+        );
+    }
+
+    fn renew_capability_record(env: &Env, capability_id: &BytesN<32>, archival: bool) {
+        Self::renew_tracked_record(
+            env,
+            &DataKey::Capability(capability_id.clone()),
+            &DataKey::CapabilityTtl(capability_id.clone()),
+            COMMITMENT_LIVE_TTL,
+            COMMITMENT_ARCHIVAL_TTL,
+            archival,
+        );
+    }
+
+    fn renew_escrow_index(env: &Env, archival: bool) {
+        Self::renew_tracked_record(
+            env,
+            &DataKey::EscrowIndex,
+            &DataKey::EscrowIndexTtl,
+            INDEX_LIVE_TTL,
+            INDEX_ARCHIVAL_TTL,
+            archival,
+        );
+    }
+
+    fn renew_depositor_index(env: &Env, depositor: &Address, archival: bool) {
+        Self::renew_tracked_record(
+            env,
+            &DataKey::DepositorIndex(depositor.clone()),
+            &DataKey::DepositorIndexTtl(depositor.clone()),
+            INDEX_LIVE_TTL,
+            INDEX_ARCHIVAL_TTL,
+            archival,
+        );
+    }
+
+    fn persistent_record_status(
+        env: &Env,
+        marker: &DataKey,
+        record: &DataKey,
+    ) -> PersistentRecordStatus {
+        match env.storage().persistent().get::<DataKey, u32>(marker) {
+            None if env.storage().persistent().has(record) => PersistentRecordStatus::Live,
+            None => PersistentRecordStatus::Missing,
+            Some(live_until) if env.ledger().sequence() <= live_until => {
+                PersistentRecordStatus::Live
+            }
+            Some(_) => PersistentRecordStatus::Archived,
+        }
+    }
+
+    /// Return whether an escrow record is live, archived/restorable, or unknown.
+    pub fn probe_escrow_archival(env: Env, bounty_id: u64) -> PersistentRecordStatus {
+        let marker = DataKey::EscrowTtl(bounty_id);
+        let regular =
+            Self::persistent_record_status(&env, &marker, &DataKey::Escrow(bounty_id));
+        if regular == PersistentRecordStatus::Missing {
+            Self::persistent_record_status(&env, &marker, &DataKey::EscrowAnon(bounty_id))
+        } else {
+            regular
+        }
+    }
+
+    /// Return whether a pending claim is live, archived/restorable, or unknown.
+    pub fn probe_claim_archival(env: Env, bounty_id: u64) -> PersistentRecordStatus {
+        Self::persistent_record_status(
+            &env,
+            &DataKey::ClaimTtl(bounty_id),
+            &DataKey::PendingClaim(bounty_id),
+        )
+    }
+
+    /// Return whether a capability commitment is live, archived/restorable, or unknown.
+    pub fn probe_commitment_archival(
+        env: Env,
+        capability_id: BytesN<32>,
+    ) -> PersistentRecordStatus {
+        Self::persistent_record_status(
+            &env,
+            &DataKey::CapabilityTtl(capability_id.clone()),
+            &DataKey::Capability(capability_id),
+        )
+    }
+
+    /// Return whether the global escrow index is live, archived/restorable, or unknown.
+    pub fn probe_index_archival(env: Env) -> PersistentRecordStatus {
+        Self::persistent_record_status(
+            &env,
+            &DataKey::EscrowIndexTtl,
+            &DataKey::EscrowIndex,
+        )
+    }
+
+    /// Return whether a depositor index is live, archived/restorable, or unknown.
+    pub fn probe_depositor_index_archival(
+        env: Env,
+        depositor: Address,
+    ) -> PersistentRecordStatus {
+        Self::persistent_record_status(
+            &env,
+            &DataKey::DepositorIndexTtl(depositor.clone()),
+            &DataKey::DepositorIndex(depositor),
+        )
+    }
+
     pub fn health_check(env: Env) -> monitoring::HealthStatus {
         monitoring::health_check(&env)
     }
@@ -2923,10 +3156,15 @@ impl BountyEscrowContract {
     /// so a bounty locked via `lock_funds_anonymous` returns `BountyNotFound` here rather
     /// than any depositor-bearing record. See `docs/anonymous-lock-privacy.md`.
     pub fn get_escrow_info(env: Env, bounty_id: u64) -> Result<Escrow, Error> {
-        env.storage()
+        let escrow: Escrow = env
+            .storage()
             .persistent()
             .get(&DataKey::Escrow(bounty_id))
-            .ok_or(Error::BountyNotFound)
+            .ok_or(Error::BountyNotFound)?;
+        let archival = escrow.archived
+            || matches!(escrow.status, EscrowStatus::Released | EscrowStatus::Refunded);
+        Self::renew_escrow_record(&env, bounty_id, archival);
+        Ok(escrow)
     }
 
     pub fn get_balance(env: Env) -> i128 {
@@ -3476,10 +3714,17 @@ impl BountyEscrowContract {
     }
 
     fn load_capability(env: &Env, capability_id: BytesN<32>) -> Result<Capability, Error> {
-        env.storage()
+        let capability: Capability = env
+            .storage()
             .persistent()
             .get(&DataKey::Capability(capability_id.clone()))
-            .ok_or(Error::CapabilityNotFound)
+            .ok_or(Error::CapabilityNotFound)?;
+        let archival = capability.revoked
+            || capability.remaining_uses == 0
+            || capability.remaining_amount == 0
+            || env.ledger().timestamp() >= capability.expiry;
+        Self::renew_capability_record(env, &capability_id, archival);
+        Ok(capability)
     }
 
     fn validate_capability_scope_at_issue(
@@ -3696,6 +3941,8 @@ impl BountyEscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::Capability(capability_id.clone()), &capability);
+        let archival = capability.remaining_uses == 0 || capability.remaining_amount == 0;
+        Self::renew_capability_record(env, &capability_id, archival);
 
         events::emit_capability_used(
             env,
@@ -3773,6 +4020,7 @@ impl BountyEscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::Capability(capability_id.clone()), &capability);
+        Self::renew_capability_record(&env, &capability_id, false);
 
         events::emit_capability_issued(
             &env,
@@ -3811,6 +4059,7 @@ impl BountyEscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::Capability(capability_id.clone()), &capability);
+        Self::renew_capability_record(&env, &capability_id, true);
 
         events::emit_capability_revoked(
             &env,
@@ -4233,6 +4482,7 @@ impl BountyEscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::Escrow(bounty_id), &escrow);
+        Self::renew_escrow_record(&env, bounty_id, false);
 
         // Update indexes
         let mut index: Vec<u64> = env
@@ -4244,6 +4494,7 @@ impl BountyEscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::EscrowIndex, &index);
+        Self::renew_escrow_index(&env, false);
 
         let mut depositor_index: Vec<u64> = env
             .storage()
@@ -4255,6 +4506,7 @@ impl BountyEscrowContract {
             &DataKey::DepositorIndex(depositor.clone()),
             &depositor_index,
         );
+        Self::renew_depositor_index(&env, &depositor, false);
 
         // INTERACTION: all external token transfers happen after state is finalized (CEI)
         // Transfer full gross amount from depositor to contract.
@@ -4287,6 +4539,7 @@ impl BountyEscrowContract {
             &DataKey::DepositorIndex(depositor.clone()),
             &depositor_index,
         );
+        Self::renew_depositor_index(&env, &depositor, false);
 
         // Emit value allows for off-chain indexing
         emit_funds_locked(
@@ -4365,6 +4618,7 @@ impl BountyEscrowContract {
                 .persistent()
                 .set(&DataKey::EscrowAnon(bounty_id), &anon);
         }
+        Self::renew_escrow_record(&env, bounty_id, true);
 
         events::emit_archived(&env, bounty_id, env.ledger().timestamp());
         Ok(())
@@ -4377,6 +4631,9 @@ impl BountyEscrowContract {
             .persistent()
             .get(&DataKey::EscrowIndex)
             .unwrap_or(Vec::new(&env));
+        if !index.is_empty() {
+            Self::renew_escrow_index(&env, false);
+        }
         let mut archived = Vec::new(&env);
         for id in index.iter() {
             if let Some(escrow) = env
@@ -4384,6 +4641,9 @@ impl BountyEscrowContract {
                 .persistent()
                 .get::<DataKey, Escrow>(&DataKey::Escrow(id))
             {
+                let terminal = escrow.archived
+                    || matches!(escrow.status, EscrowStatus::Released | EscrowStatus::Refunded);
+                Self::renew_escrow_record(&env, id, terminal);
                 if escrow.archived {
                     archived.push_back(id);
                 }
@@ -4392,6 +4652,9 @@ impl BountyEscrowContract {
                 .persistent()
                 .get::<DataKey, AnonymousEscrow>(&DataKey::EscrowAnon(id))
             {
+                let terminal = anon.archived
+                    || matches!(anon.status, EscrowStatus::Released | EscrowStatus::Refunded);
+                Self::renew_escrow_record(&env, id, terminal);
                 if anon.archived {
                     archived.push_back(id);
                 }
@@ -4589,6 +4852,7 @@ impl BountyEscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::EscrowAnon(bounty_id), &escrow_anon);
+        Self::renew_escrow_record(&env, bounty_id, false);
 
         let mut index: Vec<u64> = env
             .storage()
@@ -4599,6 +4863,7 @@ impl BountyEscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::EscrowIndex, &index);
+        Self::renew_escrow_index(&env, false);
 
         // INTERACTION: external token transfer after state finalized
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
@@ -4670,6 +4935,7 @@ impl BountyEscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::Escrow(bounty_id), &escrow);
+        Self::renew_escrow_record(&env, bounty_id, false);
 
         // Emit EscrowPublished event
         events::emit_escrow_published(
@@ -4911,6 +5177,7 @@ impl BountyEscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::Escrow(bounty_id), &escrow);
+        Self::renew_escrow_record(&env, bounty_id, true);
 
         // INTERACTION: external token transfers are last
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
@@ -5078,6 +5345,7 @@ impl BountyEscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::Escrow(bounty_id), &escrow);
+        Self::renew_escrow_record(&env, bounty_id, true);
 
         // INTERACTION: external token transfers are last
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
@@ -5311,6 +5579,11 @@ impl BountyEscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::Escrow(bounty_id), &escrow);
+        Self::renew_escrow_record(
+            &env,
+            bounty_id,
+            escrow.status == EscrowStatus::Released,
+        );
 
         // INTERACTION: external token transfer is last
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
@@ -5478,6 +5751,7 @@ impl BountyEscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::PendingClaim(bounty_id), &claim);
+        Self::renew_claim_record(&env, bounty_id, false);
 
         env.events().publish(
             (symbol_short!("claim"), symbol_short!("created")),
@@ -5545,11 +5819,13 @@ impl BountyEscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::Escrow(bounty_id), &escrow);
+        Self::renew_escrow_record(&env, bounty_id, true);
 
         claim.claimed = true;
         env.storage()
             .persistent()
             .set(&DataKey::PendingClaim(bounty_id), &claim);
+        Self::renew_claim_record(&env, bounty_id, true);
 
         // INTERACTION: external token transfer is last
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
@@ -5637,11 +5913,13 @@ impl BountyEscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::Escrow(bounty_id), &escrow);
+        Self::renew_escrow_record(&env, bounty_id, true);
 
         claim.claimed = true;
         env.storage()
             .persistent()
             .set(&DataKey::PendingClaim(bounty_id), &claim);
+        Self::renew_claim_record(&env, bounty_id, true);
 
         // INTERACTION: external token transfer is last
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
@@ -5699,6 +5977,9 @@ impl BountyEscrowContract {
         env.storage()
             .persistent()
             .remove(&DataKey::PendingClaim(bounty_id));
+        env.storage()
+            .persistent()
+            .remove(&DataKey::ClaimTtl(bounty_id));
 
         env.events().publish(
             (symbol_short!("claim"), symbol_short!("cancel")),
@@ -5715,10 +5996,14 @@ impl BountyEscrowContract {
 
     /// View: get pending claim for a bounty.
     pub fn get_pending_claim(env: Env, bounty_id: u64) -> Result<ClaimRecord, Error> {
-        env.storage()
+        let claim: ClaimRecord = env
+            .storage()
             .persistent()
             .get(&DataKey::PendingClaim(bounty_id))
-            .ok_or(Error::BountyNotFound)
+            .ok_or(Error::BountyNotFound)?;
+        let archival = claim.claimed || env.ledger().timestamp() >= claim.expires_at;
+        Self::renew_claim_record(&env, bounty_id, archival);
+        Ok(claim)
     }
 
     fn compute_refund_eligibility(env: &Env, bounty_id: u64) -> RefundEligibilityView {
@@ -6281,6 +6566,11 @@ impl BountyEscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::Escrow(bounty_id), &escrow);
+        Self::renew_escrow_record(
+            &env,
+            bounty_id,
+            escrow.status == EscrowStatus::Released,
+        );
 
         // INTERACTION: external token transfer is last
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
@@ -6460,6 +6750,11 @@ impl BountyEscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::Escrow(bounty_id), &escrow);
+        Self::renew_escrow_record(
+            &env,
+            bounty_id,
+            escrow.status == EscrowStatus::Refunded,
+        );
 
         // Remove approval after successful execution
         if approval.is_some() {
@@ -6674,6 +6969,7 @@ impl BountyEscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::Escrow(bounty_id), &escrow);
+        Self::renew_escrow_record(&env, bounty_id, false);
 
         let mut history: Vec<RenewalRecord> = env
             .storage()
@@ -6740,6 +7036,7 @@ impl BountyEscrowContract {
         if previous.status != EscrowStatus::Released && previous.status != EscrowStatus::Refunded {
             return Err(Error::FundsNotLocked);
         }
+        Self::renew_escrow_record(&env, previous_bounty_id, true);
 
         let mut prev_link: CycleLink = env
             .storage()
@@ -6772,6 +7069,7 @@ impl BountyEscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::Escrow(new_bounty_id), &new_escrow);
+        Self::renew_escrow_record(&env, new_bounty_id, false);
 
         let mut index: Vec<u64> = env
             .storage()
@@ -6782,6 +7080,7 @@ impl BountyEscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::EscrowIndex, &index);
+        Self::renew_escrow_index(&env, false);
 
         let mut depositor_index: Vec<u64> = env
             .storage()
@@ -6793,6 +7092,7 @@ impl BountyEscrowContract {
             &DataKey::DepositorIndex(previous.depositor.clone()),
             &depositor_index,
         );
+        Self::renew_depositor_index(&env, &previous.depositor, false);
 
         prev_link.next_id = new_bounty_id;
         env.storage()
@@ -6974,6 +7274,11 @@ impl BountyEscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::EscrowAnon(bounty_id), &anon);
+        Self::renew_escrow_record(
+            &env,
+            bounty_id,
+            anon.status == EscrowStatus::Refunded,
+        );
 
         // Remove approval after successful execution
         if approval.is_some() {
@@ -7098,6 +7403,11 @@ impl BountyEscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::Escrow(bounty_id), &escrow);
+        Self::renew_escrow_record(
+            &env,
+            bounty_id,
+            escrow.status == EscrowStatus::Refunded,
+        );
 
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
         let client = token::Client::new(&env, &token_addr);
@@ -7333,6 +7643,7 @@ impl BountyEscrowContract {
                 env.storage()
                     .persistent()
                     .set(&DataKey::Escrow(item.bounty_id), &escrow);
+                Self::renew_escrow_record(&env, item.bounty_id, false);
 
                 let mut index: Vec<u64> = env
                     .storage()
@@ -7343,6 +7654,7 @@ impl BountyEscrowContract {
                 env.storage()
                     .persistent()
                     .set(&DataKey::EscrowIndex, &index);
+                Self::renew_escrow_index(&env, false);
 
                 let mut depositor_index: Vec<u64> = env
                     .storage()
@@ -7354,6 +7666,7 @@ impl BountyEscrowContract {
                     &DataKey::DepositorIndex(item.depositor.clone()),
                     &depositor_index,
                 );
+                Self::renew_depositor_index(&env, &item.depositor, false);
             }
 
             // INTERACTION: all external token transfers happen after state is finalized
@@ -7590,6 +7903,7 @@ impl BountyEscrowContract {
                 env.storage()
                     .persistent()
                     .set(&DataKey::Escrow(item.bounty_id), &escrow);
+                Self::renew_escrow_record(&env, item.bounty_id, true);
 
                 release_pairs.push_back((item.contributor.clone(), amount));
                 released_count += 1;
@@ -7900,6 +8214,7 @@ impl BountyEscrowContract {
             env.storage()
                 .persistent()
                 .set(&DataKey::Escrow(bounty_id), &escrow);
+            Self::renew_escrow_record(&env, bounty_id, true);
 
             // INTERACTION: token transfer after state update
             let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
@@ -8038,10 +8353,9 @@ impl traits::EscrowInterface for BountyEscrowContract {
 
     /// Get escrow information through the trait interface
     fn get_escrow_info(env: &Env, bounty_id: u64) -> Result<crate::Escrow, crate::Error> {
-        env.storage()
-            .persistent()
-            .get(&DataKey::Escrow(bounty_id))
-            .ok_or(Error::BountyNotFound)
+        let entrypoint: fn(Env, u64) -> Result<crate::Escrow, crate::Error> =
+            BountyEscrowContract::get_escrow_info;
+        entrypoint(env.clone(), bounty_id)
     }
 
     /// Get contract balance through the trait interface
@@ -8918,6 +9232,7 @@ mod escrow_status_transition_tests {
         env.storage()
             .persistent()
             .set(&DataKey::Escrow(sub_bounty_id), &escrow);
+        Self::renew_escrow_record(&env, sub_bounty_id, false);
 
         // Update escrow indexes
         let mut index: Vec<u64> = env
@@ -8929,6 +9244,7 @@ mod escrow_status_transition_tests {
         env.storage()
             .persistent()
             .set(&DataKey::EscrowIndex, &index);
+        Self::renew_escrow_index(&env, false);
 
         let mut dep_index: Vec<u64> = env
             .storage()
@@ -8940,6 +9256,7 @@ mod escrow_status_transition_tests {
             &DataKey::DepositorIndex(config.depositor.clone()),
             &dep_index,
         );
+        Self::renew_depositor_index(&env, &config.depositor, false);
 
         // Update recurring lock state
         state.last_lock_time = now;
