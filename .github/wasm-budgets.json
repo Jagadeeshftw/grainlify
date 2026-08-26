@@ -1,0 +1,41 @@
+{
+  "_comment": "Per-contract wasm size budgets in bytes. Update via scripts/update-wasm-budgets.sh after intentional size changes.",
+  "_update_process": "To update budgets: 1) Run 'cargo build --target wasm32-unknown-unknown --release' for each contract, 2) Record new sizes, 3) Run 'scripts/update-wasm-budgets.sh' or manually update this file, 4) Commit the change for review.",
+  "budgets": {
+    "bounty_escrow": {
+      "manifest": "contracts/bounty_escrow/Cargo.toml",
+      "package": "bounty-escrow",
+      "target_dir": "contracts/bounty_escrow",
+      "budget_bytes": 300000,
+      "description": "Bounty escrow contract"
+    },
+    "grainlify_core": {
+      "manifest": "contracts/grainlify-core/Cargo.toml",
+      "package": "grainlify-core",
+      "target_dir": "contracts/grainlify-core",
+      "budget_bytes": 300000,
+      "description": "Grainlify core library contract"
+    },
+    "program_escrow": {
+      "manifest": "contracts/program-escrow/Cargo.toml",
+      "package": "program-escrow",
+      "target_dir": "contracts/program-escrow",
+      "budget_bytes": 300000,
+      "description": "Program escrow contract"
+    },
+    "escrow_view_facade": {
+      "manifest": "contracts/escrow-view-facade/Cargo.toml",
+      "package": "escrow-view-facade",
+      "target_dir": "contracts/escrow-view-facade",
+      "budget_bytes": 300000,
+      "description": "Escrow view facade contract"
+    },
+    "view_facade": {
+      "manifest": "contracts/view-facade/Cargo.toml",
+      "package": "view-facade",
+      "target_dir": "contracts/view-facade",
+      "budget_bytes": 300000,
+      "description": "View facade contract"
+    }
+  }
+}

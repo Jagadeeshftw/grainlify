@@ -1,0 +1,157 @@
+name: "Wasm Size Budget Gate"
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - "contracts/**"
+      - ".github/wasm-budgets.json"
+      - ".github/workflows/wasm-size-budget.yml"
+      - "scripts/check-wasm-budgets.sh"
+  pull_request:
+    branches: [master, main]
+    paths:
+      - "contracts/**"
+      - ".github/wasm-budgets.json"
+      - ".github/workflows/wasm-size-budget.yml"
+      - "scripts/check-wasm-budgets.sh"
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_TOOLCHAIN: stable
+
+jobs:
+  wasm-size-budget:
+    name: "wasm size budget check"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry & build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            contracts/**/target
+          key: wasm-budget-${{ runner.os }}-${{ hashFiles('**/Cargo.lock', '.github/wasm-budgets.json') }}
+          restore-keys: |
+            wasm-budget-${{ runner.os }}-
+
+      - name: Build contracts (wasm32-unknown-unknown, release)
+        run: |
+          echo "━━━ Building bounty_escrow workspace ━━━"
+          cargo build \
+            --manifest-path contracts/bounty_escrow/Cargo.toml \
+            --workspace \
+            --target wasm32-unknown-unknown \
+            --release
+
+          echo ""
+          echo "━━━ Building grainlify-core ━━━"
+          cargo build \
+            --manifest-path contracts/grainlify-core/Cargo.toml \
+            --target wasm32-unknown-unknown \
+            --release
+
+          echo ""
+          echo "━━━ Building program-escrow ━━━"
+          cargo build \
+            --manifest-path contracts/program-escrow/Cargo.toml \
+            --target wasm32-unknown-unknown \
+            --release
+
+          echo ""
+          echo "━━━ Building escrow-view-facade ━━━"
+          cargo build \
+            --manifest-path contracts/escrow-view-facade/Cargo.toml \
+            --target wasm32-unknown-unknown \
+            --release
+
+          echo ""
+          echo "━━━ Building view-facade ━━━"
+          cargo build \
+            --manifest-path contracts/view-facade/Cargo.toml \
+            --target wasm32-unknown-unknown \
+            --release
+
+      - name: List generated wasm files
+        run: |
+          echo "━━━ Generated .wasm artifacts ━━━"
+          find contracts -path "*/target/wasm32-unknown-unknown/release/*.wasm" -type f -exec ls -lh {} \;
+
+      - name: Check wasm sizes against budgets
+        run: bash scripts/check-wasm-budgets.sh
+
+      - name: Comment on PR with budget report
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const { execSync } = require('child_process');
+
+            // Read the budget file
+            const budgetRaw = fs.readFileSync('.github/wasm-budgets.json', 'utf8');
+            const budget = JSON.parse(budgetRaw);
+
+            let report = '## 🔍 Wasm Size Budget Report\n\n';
+            report += '| Contract | Actual | Budget | Delta | Status |\n';
+            report += '|----------|--------|--------|-------|--------|\n';
+
+            const contracts = Object.keys(budget.budgets);
+            let allPass = true;
+
+            for (const name of contracts) {
+              const cfg = budget.budgets[name];
+              const wasmName = cfg.package.replace(/-/g, '_');
+              const wasmPath = `${cfg.target_dir}/target/wasm32-unknown-unknown/release/${wasmName}.wasm`;
+
+              try {
+                const stats = fs.statSync(wasmPath);
+                const actual = stats.size;
+                const budgetBytes = cfg.budget_bytes;
+                const delta = actual - budgetBytes;
+                const status = actual <= budgetBytes ? '✅ PASS' : '❌ FAIL';
+
+                if (actual > budgetBytes) allPass = false;
+
+                const fmt = (n) => n.toLocaleString('en-US');
+                report += `| ${name} | ${fmt(actual)} B | ${fmt(budgetBytes)} B | ${delta >= 0 ? '+' : ''}${fmt(delta)} B | ${status} |\n`;
+              } catch {
+                report += `| ${name} | ⚠️ not built | ${cfg.budget_bytes.toLocaleString('en-US')} B | — | SKIP |\n`;
+              }
+            }
+
+            report += `\n${allPass ? '✅ All contracts within budget.' : '❌ One or more contracts exceeded their budget.'}\n`;
+            report += '\n> To update budgets intentionally, run `scripts/update-wasm-budgets.sh` and commit the result.';
+
+            // Find existing comment to update
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const marker = '## 🔍 Wasm Size Budget Report';
+            const existing = comments.find(c => c.body.startsWith(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: report,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: report,
+              });
+            }
