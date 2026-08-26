@@ -1,0 +1,11 @@
+{
+  "format": 1,
+  "policy": "Snapshots are reviewed artifacts. A persistent key or value-type change requires a format bump and a migration note.",
+  "contracts": [
+    { "package": "grainlify-core", "manifest": "contracts/grainlify-core/Cargo.toml", "snapshot": "contracts/storage-layout/grainlify-core.json", "persistent": true },
+    { "package": "program-escrow", "manifest": "contracts/program-escrow/Cargo.toml", "snapshot": "contracts/storage-layout/program-escrow.json", "persistent": true },
+    { "package": "view-facade", "manifest": "contracts/view-facade/Cargo.toml", "snapshot": "contracts/storage-layout/view-facade.json", "persistent": false },
+    { "package": "escrow-view-facade", "manifest": "contracts/escrow-view-facade/Cargo.toml", "snapshot": "contracts/storage-layout/escrow-view-facade.json", "persistent": false },
+    { "package": "bounty-escrow", "manifest": "contracts/bounty_escrow/contracts/escrow/Cargo.toml", "snapshot": "contracts/storage-layout/bounty-escrow.json", "persistent": true }
+  ]
+}

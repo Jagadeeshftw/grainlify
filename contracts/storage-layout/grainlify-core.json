@@ -1,0 +1,6 @@
+{
+  "format": 1,
+  "package": "grainlify-core",
+  "schema_version": 1,
+  "persistent_keys": [{"name": "Admin", "type": "Address"}, {"name": "SchemaVersion", "type": "u32"}]
+}
