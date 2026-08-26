@@ -1,6 +1,24 @@
 # Upgrade and Rollback Patterns for Grainlify Core
 
-This document describes the upgrade and rollback patterns implemented in the Grainlify Core contract, including test coverage and best practices.
+This document describes the upgrade and rollback patterns implemented in the Grainlify Core contract, including the authorization matrix and executable regression tests.
+
+## Authorization Decision
+
+Upgrades and rollbacks use the same authority: the configured multisig signer
+threshold followed by the configured timelock. The legacy single-admin
+`upgrade` entrypoint authenticates the stored admin but then rejects; it cannot
+change WASM. A rollback is a normal multisig proposal whose hash points to a
+previous deployment. No emergency role can bypass the timelock.
+
+| State | Signer action | Non-signer action | WASM change |
+|-------|---------------|-------------------|-------------|
+| Pending | Approve or cancel | Rejected | No |
+| Executable | Threshold is met | Cannot alter proposal | Only after timelock |
+| Expired | Rejected | Rejected | No |
+| Cancelled | Rejected | Rejected | No |
+
+The matrix is tested in `src/test/upgrade_authorization_matrix.rs`. Rejection
+tests assert unchanged proposal data, version, previous version, and timelock.
 
 ## Overview
 
@@ -46,34 +64,23 @@ All instance storage persists across WASM upgrades:
 
 ## Upgrade Patterns
 
-### Pattern 1: Single Admin Upgrade
+### Pattern 1: Multisig Upgrade
 
 ```rust
-// Initialize contract
-let admin = Address::generate(&env);
-client.init_admin(&admin);
+// Initialize a 2-of-3 multisig
+let signers = vec![signer1, signer2, signer3];
+client.init(&signers, &2);
 
-// Upload new WASM
+// Upload new WASM or reuse a previously deployed hash
 let new_wasm_hash = upload_new_version_wasm(&env);
 
-// Perform upgrade (requires admin auth)
-client.upgrade(&new_wasm_hash);
+// Propose, approve, wait for the timelock, then execute
+let proposal_id = client.propose_upgrade(&signer1, &new_wasm_hash, &expiry);
+client.approve_upgrade(&proposal_id, &signer1);
+client.approve_upgrade(&proposal_id, &signer2);
+client.execute_upgrade(&proposal_id);
 
-// Optionally update version number
-client.set_version(&2);
-```
-
-### Pattern 2: Multisig Upgrade
-
-```rust
-// Initialize with multisig
-let signers = vec![signer1, signer2, signer3];
-client.init(&signers, &2);  // 2 of 3 threshold
-
-// Propose upgrade
-let proposal_id = client.propose_upgrade(&signer1, &new_wasm_hash);
-
-// Review the persisted proposal metadata before approvals.
+// Review the persisted proposal metadata before execution.
 let proposal = client.get_upgrade_proposal(&proposal_id).unwrap();
 assert_eq!(proposal.proposal_id, proposal_id);
 assert_eq!(proposal.proposer, Some(signer1.clone()));
@@ -83,15 +90,12 @@ assert_eq!(proposal.wasm_hash, new_wasm_hash);
 client.approve_upgrade(&proposal_id, &signer1);
 client.approve_upgrade(&proposal_id, &signer2);
 
-// Execute when threshold met
-client.execute_upgrade(&proposal_id);
 ```
 
-### Pattern 3: Upgrade with Migration
+### Pattern 2: Upgrade with Migration
 
 ```rust
-// Upgrade WASM
-client.upgrade(&new_wasm_hash);
+// Run migration after the multisig upgrade executes
 
 // Run migration
 let migration_hash = BytesN::from_array(&env, &[...]);
@@ -103,7 +107,7 @@ client.migrate(&3, &migration_hash);  // No-op if already migrated
 
 ## Rollback Patterns
 
-### Pattern 1: Emergency Rollback
+### Pattern 1: Rollback through the same multisig timelock
 
 Keep the previous WASM hash for emergency rollback:
 
@@ -111,29 +115,29 @@ Keep the previous WASM hash for emergency rollback:
 // Before upgrade, save current hash
 let current_wasm_hash = get_current_wasm_hash();  // Store this safely
 
-// Perform upgrade
-client.upgrade(&new_wasm_hash);
-
-// If issues detected, rollback
-client.upgrade(&current_wasm_hash);
+// If issues are detected, propose the previous hash and wait for the same timelock
+let rollback = client.propose_upgrade(&signer1, &current_wasm_hash, &expiry);
+client.approve_upgrade(&rollback, &signer1);
+client.approve_upgrade(&rollback, &signer2);
+client.execute_upgrade(&rollback);
 
 // Optionally restore version number
 let prev_version = client.get_previous_version().unwrap();
 client.set_version(&prev_version);
 ```
 
-### Pattern 2: Multisig Rollback
+### Pattern 2: Rollback proposal details
 
 ```rust
 // Propose rollback to previous WASM
-let rollback_proposal = client.propose_upgrade(&signer1, &previous_wasm_hash);
+let rollback_proposal = client.propose_upgrade(&signer1, &previous_wasm_hash, &expiry);
 
 // Proposal ids are monotonic and remain stable across the full lifecycle.
 let rollback_state = client.get_upgrade_proposal(&rollback_proposal).unwrap();
 assert_eq!(rollback_state.proposer, Some(signer1.clone()));
 assert_eq!(rollback_state.wasm_hash, previous_wasm_hash);
 
-// Fast-track approvals for emergency
+// Use the normal threshold approvals; rollback has no emergency bypass
 client.approve_upgrade(&rollback_proposal, &signer1);
 client.approve_upgrade(&rollback_proposal, &signer2);
 
@@ -145,11 +149,13 @@ client.execute_upgrade(&rollback_proposal);
 
 ```rust
 // Migration state persists across rollbacks
-client.upgrade(&new_wasm_hash);
 client.migrate(&3, &migration_hash);
 
-// Rollback WASM but keep migrated state
-client.upgrade(&old_wasm_hash);
+// Rollback through a multisig proposal; migrated state remains in storage
+let rollback = client.propose_upgrade(&signer1, &old_wasm_hash, &expiry);
+client.approve_upgrade(&rollback, &signer1);
+client.approve_upgrade(&rollback, &signer2);
+client.execute_upgrade(&rollback);
 
 // Migration state is still accessible
 let state = client.get_migration_state();

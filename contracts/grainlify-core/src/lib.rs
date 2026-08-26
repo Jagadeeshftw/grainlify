@@ -982,42 +982,14 @@ impl GrainlifyContract {
 
     /// Single-admin upgrade path
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
-        let start = env.ledger().timestamp();
-
-        #[cfg(feature = "strict-mode")]
-        {
-            let report = monitoring::check_invariants(&env);
-            strict_mode::strict_assert(report.healthy, "Strict mode: contract invariants unhealthy before upgrade");
-            strict_mode::strict_emit(&env, symbol_short!("upgrade"), symbol_short!("pre_chk"));
-        }
-
         let admin: Address = env
             .storage()
             .instance()
             .get(&DataKey::Admin)
             .unwrap_or_else(|| panic!("{}", ContractError::NotInitialized as u32));
         admin.require_auth();
-        Self::require_not_read_only(&env);
-
-        let current_version: u32 = env.storage().instance().get(&DataKey::Version).unwrap_or(1);
-        env.storage().instance().set(&DataKey::PreviousVersion, &current_version);
-        env.deployer().update_current_contract_wasm(new_wasm_hash.clone());
-
-        // [FIX-L02] Consistent event shape with execute_upgrade
-        env.events().publish(
-            (symbol_short!("upgrade"), symbol_short!("wasm")),
-            UpgradeEvent {
-                new_wasm_hash,
-                previous_version: current_version,
-                timestamp: env.ledger().timestamp(),
-                event_version: EVENT_SCHEMA_VERSION,
-                correlation_id: None,
-            },
-        );
-
-        monitoring::track_operation(&env, symbol_short!("upgrade"), admin, true);
-        let duration = env.ledger().timestamp().saturating_sub(start);
-        monitoring::emit_performance(&env, symbol_short!("upgrade"), duration);
+        let _ = new_wasm_hash;
+        panic!("Direct upgrades disabled: use propose_upgrade and execute_upgrade");
     }
 
     // ========================================================================
@@ -2466,6 +2438,10 @@ pub fn is_compatible_event_version(version: u32) -> bool {
 
 #[cfg(test)]
 mod test_event_versioning;
+
+#[cfg(test)]
+#[path = "test/upgrade_authorization_matrix.rs"]
+mod upgrade_authorization_matrix;
 
 // ============================================================================
 // Trait Conformance
