@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! Token decimal scaling and fee rounding helpers.
 //!
 //! ## Rounding Policy
@@ -15,9 +14,11 @@
 //! rounding when scaling down (higher → lower precision).
 
 /// Basis-point denominator (1 bp = 0.01%).
+#[allow(dead_code)] // Intended as an optional math library for test utilities and external crates
 pub const BASIS_POINTS: i128 = 10_000;
 
 /// Maximum allowed fee rate in basis points (50%).
+#[allow(dead_code)] // Intended as an optional math library for test utilities and external crates
 pub const MAX_FEE_RATE: i128 = 5_000;
 
 /// Calculate fee using floor rounding.
@@ -25,6 +26,7 @@ pub const MAX_FEE_RATE: i128 = 5_000;
 /// `fee = floor(amount * fee_rate / BASIS_POINTS)`
 ///
 /// Panics on overflow.
+#[allow(dead_code)] // Intended as an optional math library for test utilities and external crates
 pub fn calculate_fee(amount: i128, fee_rate: i128) -> i128 {
     if fee_rate == 0 {
         return 0;
@@ -39,6 +41,7 @@ pub fn calculate_fee(amount: i128, fee_rate: i128) -> i128 {
 /// Split `amount` into `(fee, net)` where `fee + net == amount`.
 ///
 /// Fee is floored; any remainder from division stays in `net`.
+#[allow(dead_code)] // Intended as an optional math library for test utilities and external crates
 pub fn split_amount(amount: i128, fee_rate: i128) -> (i128, i128) {
     let fee = calculate_fee(amount, fee_rate);
     (fee, amount - fee)
@@ -47,6 +50,7 @@ pub fn split_amount(amount: i128, fee_rate: i128) -> (i128, i128) {
 /// Scale `amount` from `from_decimals` to `to_decimals`.
 ///
 /// Uses floor rounding when scaling down. Returns `None` on overflow.
+#[allow(dead_code)] // Intended as an optional math library for test utilities and external crates
 pub fn scale_amount(amount: i128, from_decimals: u32, to_decimals: u32) -> Option<i128> {
     if from_decimals == to_decimals {
         return Some(amount);
@@ -64,6 +68,7 @@ pub fn scale_amount(amount: i128, from_decimals: u32, to_decimals: u32) -> Optio
 ///
 /// E.g. `to_base_units(100, 7)` → `1_000_000_000` (100 XLM in stroops).
 /// Returns `None` on overflow.
+#[allow(dead_code)] // Intended as an optional math library for test utilities and external crates
 pub fn to_base_units(amount: i128, decimals: u32) -> Option<i128> {
     let factor = 10_i128.checked_pow(decimals)?;
     amount.checked_mul(factor)
@@ -73,6 +78,7 @@ pub fn to_base_units(amount: i128, decimals: u32) -> Option<i128> {
 ///
 /// Panics with an explicit error message on overflow to prevent silent
 /// arithmetic failures and assist developers during testing.
+#[allow(dead_code)] // Intended as an optional math library for test utilities and external crates
 pub fn safe_add(a: i128, b: i128) -> i128 {
     a.checked_add(b).expect("Token math overflow: addition")
 }
@@ -80,6 +86,7 @@ pub fn safe_add(a: i128, b: i128) -> i128 {
 /// Safely subtracts `b` from `a` (a - b).
 ///
 /// Panics with an explicit error message on underflow.
+#[allow(dead_code)] // Intended as an optional math library for test utilities and external crates
 pub fn safe_sub(a: i128, b: i128) -> i128 {
     a.checked_sub(b).expect("Token math underflow: subtraction")
 }
@@ -87,6 +94,7 @@ pub fn safe_sub(a: i128, b: i128) -> i128 {
 /// Safely multiplies two i128 token amounts.
 ///
 /// Panics with an explicit error message on overflow.
+#[allow(dead_code)] // Intended as an optional math library for test utilities and external crates
 pub fn safe_mul(a: i128, b: i128) -> i128 {
     a.checked_mul(b)
         .expect("Token math overflow: multiplication")
