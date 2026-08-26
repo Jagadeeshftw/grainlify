@@ -1,16 +1,56 @@
 name: Smart Contracts CI
 
 on:
-  push:
-    branches: [master, main]
   pull_request:
-    branches: [master, main]
+    paths:
+      - "soroban/**"
+      - "contracts/**"
+      - ".github/workflows/contracts-ci.yml"
+  push:
+    branches: [main, develop, master]
+    paths:
+      - "soroban/**"
+      - "contracts/**"
+      - ".github/workflows/contracts-ci.yml"
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
   build-test:
-    name: build-test
+    name: contracts (workspace tests + wasm release build)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: CI green
-        run: echo "CI temporarily scoped to smoke check while build/test failures are triaged."
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none, wasm32-unknown-unknown
+
+      # Cache only the Cargo registry/git caches and the workspace target dir
+      # (keyed on the lockfile). Toolchain binaries in ~/.cargo/bin are NOT
+      # cached so the pinned Rust/Soroban toolchain always comes from rustup.
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            contracts/bounty_escrow/target/
+          key: ${{ runner.os }}-contracts-cargo-${{ hashFiles('contracts/bounty_escrow/Cargo.lock', 'contracts/bounty_escrow/Cargo.toml', 'contracts/grainlify-core/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-contracts-cargo-
+
+      # Same commands as running ./contracts/scripts/ci-contracts.sh locally.
+      # No continue-on-error: a compile or test regression must fail the job.
+      - name: Run contract CI gates
+        run: bash contracts/scripts/ci-contracts.sh
+
+      - name: Upload deployable wasm
+        uses: actions/upload-artifact@v4
+        with:
+          name: bounty-escrow-wasm
+          path: contracts/bounty_escrow/target/wasm32-unknown-unknown/release/*.wasm
+          if-no-files-found: error
