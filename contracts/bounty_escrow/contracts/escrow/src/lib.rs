@@ -43,19 +43,20 @@ mod capability_replay_tests;
 #[cfg(test)]
 mod test_fee_on_transfer;
 #[cfg(test)]
-mod test_filter_pagination;
-#[cfg(test)]
 mod test_fee_routing;
 #[cfg(test)]
-mod test_multi_token_fees;
+mod test_filter_pagination;
 #[cfg(test)]
 mod test_frozen_balance;
+#[cfg(test)]
+mod test_multi_token_fees;
 #[cfg(test)]
 mod test_reentrancy_guard;
 // #[cfg(test)] mod test_admin_rotation; // pre-existing SDK/API drift blocks filtered test builds
 #[cfg(test)]
 mod test_batch_soa_benchmark;
-
+#[cfg(test)]
+mod test_deterministic_event_ordering;
 
 use crate::events::{
     emit_admin_rotation_accepted, emit_admin_rotation_cancelled, emit_admin_rotation_proposed,
@@ -5097,14 +5098,14 @@ impl BountyEscrowContract {
         }
 
         // Swapping the escrowed asset to the recipient's preferred currency atomically before transfer
-        let router_address: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Router)
-            .ok_or_else(|| {
-                reentrancy_guard::release(&env);
-                Error::RouterNotConfigured
-            })?;
+        let router_address: Address =
+            env.storage()
+                .instance()
+                .get(&DataKey::Router)
+                .ok_or_else(|| {
+                    reentrancy_guard::release(&env);
+                    Error::RouterNotConfigured
+                })?;
 
         let router_client = RouterClient::new(&env, &router_address);
 
@@ -5150,7 +5151,11 @@ impl BountyEscrowContract {
         // Emit ReleasedWithConversion event
         // rate = (actual_out * 1_000_000) / net_payout
         let rate = if net_payout > 0 {
-            actual_out.checked_mul(1_000_000).unwrap().checked_div(net_payout).unwrap_or(0)
+            actual_out
+                .checked_mul(1_000_000)
+                .unwrap()
+                .checked_div(net_payout)
+                .unwrap_or(0)
         } else {
             0
         };
