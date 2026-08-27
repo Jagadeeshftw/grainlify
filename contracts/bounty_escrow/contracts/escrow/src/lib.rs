@@ -6500,6 +6500,7 @@ mod escrow_status_transition_tests {
 }
 
 #[cfg(test)]
+mod test_admin_invalid_identifiers;
 mod test_batch_failure_mode;
 #[cfg(test)]
 mod test_batch_failure_modes;
