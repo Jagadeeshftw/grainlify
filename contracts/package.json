@@ -5,9 +5,10 @@
   "main": "index.js",
   "scripts": {
     "validate-manifests": "node scripts/validate-manifests.js",
+    "check-drift": "node scripts/check-drift.js",
     "generate-docs": "node scripts/generate-docs.js",
-    "build": "npm run validate-manifests && npm run generate-docs",
-    "test": "npm run validate-manifests"
+    "build": "npm run validate-manifests && npm run check-drift && npm run generate-docs",
+    "test": "npm run validate-manifests && npm run check-drift"
   },
   "devDependencies": {
     "ajv-cli": "^5.0.0",

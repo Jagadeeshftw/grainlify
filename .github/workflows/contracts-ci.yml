@@ -12,5 +12,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'contracts/package-lock.json'
+      - name: Install dependencies
+        run: |
+          cd contracts
+          npm ci
+      - name: Run documentation drift checks
+        run: |
+          cd contracts
+          npm run check-drift
       - name: CI green
         run: echo "CI temporarily scoped to smoke check while build/test failures are triaged."
