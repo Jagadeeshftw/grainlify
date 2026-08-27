@@ -20,6 +20,8 @@
 //! - `GovernanceConfig` fields are evolving; do not assume field stability across minor versions.
 //! - Any change to an INTERNAL function that is also tested by external test crates must be
 //!   coordinated with those test crates in the same PR.
+#[cfg(test)]
+extern crate std;
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, Address, Bytes, BytesN, Env,
     String, Symbol, Vec,
@@ -300,6 +302,56 @@ pub struct MigrationCommitment {
     pub committed_at: u64,
     /// Commitment expires after this timestamp (0 = no expiry)
     pub expires_at: u64,
+}
+
+#[cfg(test)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub(crate) enum MigrationTrapPoint {
+    BeforeV1ToV2,
+    DuringV1ToV2,
+    AfterV1ToV2,
+    BeforeV2ToV3,
+    DuringV2ToV3,
+    AfterV2ToV3,
+    BeforeFinalize,
+    AfterMigrationStateWrite,
+    AfterVersionWrite,
+    AfterCommitmentRemoval,
+    AfterDoneEvent,
+    AfterMonitoring,
+}
+
+#[cfg(test)]
+pub(crate) mod migration_failure_injection {
+    use super::MigrationTrapPoint;
+    use std::cell::Cell;
+
+    std::thread_local! {
+        static TRAP_POINT: Cell<Option<MigrationTrapPoint>> = Cell::new(None);
+    }
+
+    pub(crate) fn set_trap_once(point: MigrationTrapPoint) {
+        TRAP_POINT.with(|trap| trap.set(Some(point)));
+    }
+
+    pub(crate) fn clear_trap() {
+        TRAP_POINT.with(|trap| trap.set(None));
+    }
+
+    pub(crate) fn maybe_trap(point: MigrationTrapPoint) {
+        let should_trap = TRAP_POINT.with(|trap| {
+            if trap.get() == Some(point) {
+                trap.set(None);
+                true
+            } else {
+                false
+            }
+        });
+
+        if should_trap {
+            panic!("injected migration failure");
+        }
+    }
 }
 
 /// [FIX-C02] Pending admin restore — two-step guard for snapshot-based admin changes.
@@ -2365,13 +2417,19 @@ impl GrainlifyContract {
         admin.require_auth();
         Self::require_not_read_only(&env);
 
-        if let Some(state) = env.storage().instance().get::<_, MigrationState>(&DataKey::MigrationState) {
+        if let Some(state) = env
+            .storage()
+            .instance()
+            .get::<_, MigrationState>(&DataKey::MigrationState)
+        {
             if state.to_version == target_version {
                 return;
             }
         }
 
-        let commitment: MigrationCommitment = env.storage().instance()
+        let commitment: MigrationCommitment = env
+            .storage()
+            .instance()
             .get(&DataKey::MigrationCommitment(target_version))
             .unwrap_or_else(|| panic!("{}", ContractError::MigrationCommitmentNotFound as u32));
 
@@ -2391,15 +2449,18 @@ impl GrainlifyContract {
         }
 
         if current_version == 1 && target_version == 2 {
-            migrate_v1_to_v2(&env);
+            run_migrate_v1_to_v2(&env);
         } else if current_version == 2 && target_version == 3 {
-            migrate_v2_to_v3(&env);
+            run_migrate_v2_to_v3(&env);
         } else if current_version == 1 && target_version == 3 {
-            migrate_v1_to_v2(&env);
-            migrate_v2_to_v3(&env);
+            run_migrate_v1_to_v2(&env);
+            run_migrate_v2_to_v3(&env);
         } else {
             panic!("No migration path available");
         }
+
+        #[cfg(test)]
+        migration_failure_injection::maybe_trap(MigrationTrapPoint::BeforeFinalize);
 
         let state = MigrationState {
             from_version: current_version,
@@ -2408,16 +2469,26 @@ impl GrainlifyContract {
             migration_hash: migration_hash.clone(),
         };
         env.storage().instance().set(&DataKey::MigrationState, &state);
+        #[cfg(test)]
+        migration_failure_injection::maybe_trap(MigrationTrapPoint::AfterMigrationStateWrite);
         env.storage().instance().set(&DataKey::Version, &target_version);
+        #[cfg(test)]
+        migration_failure_injection::maybe_trap(MigrationTrapPoint::AfterVersionWrite);
 
         env.storage().instance().remove(&DataKey::MigrationCommitment(target_version));
+        #[cfg(test)]
+        migration_failure_injection::maybe_trap(MigrationTrapPoint::AfterCommitmentRemoval);
 
         env.events().publish(
             (symbol_short!("migrate"), symbol_short!("done")),
             (current_version, target_version, env.ledger().timestamp()),
         );
+        #[cfg(test)]
+        migration_failure_injection::maybe_trap(MigrationTrapPoint::AfterDoneEvent);
 
         monitoring::track_operation(&env, symbol_short!("migrate"), admin, true);
+        #[cfg(test)]
+        migration_failure_injection::maybe_trap(MigrationTrapPoint::AfterMonitoring);
     }
 
     // ========================================================================
@@ -2447,9 +2518,31 @@ impl GrainlifyContract {
     }
 }
 
-fn migrate_v1_to_v2(_env: &Env) {}
+fn run_migrate_v1_to_v2(env: &Env) {
+    #[cfg(test)]
+    migration_failure_injection::maybe_trap(MigrationTrapPoint::BeforeV1ToV2);
+    migrate_v1_to_v2(env);
+    #[cfg(test)]
+    migration_failure_injection::maybe_trap(MigrationTrapPoint::AfterV1ToV2);
+}
 
-fn migrate_v2_to_v3(_env: &Env) {}
+fn run_migrate_v2_to_v3(env: &Env) {
+    #[cfg(test)]
+    migration_failure_injection::maybe_trap(MigrationTrapPoint::BeforeV2ToV3);
+    migrate_v2_to_v3(env);
+    #[cfg(test)]
+    migration_failure_injection::maybe_trap(MigrationTrapPoint::AfterV2ToV3);
+}
+
+fn migrate_v1_to_v2(_env: &Env) {
+    #[cfg(test)]
+    migration_failure_injection::maybe_trap(MigrationTrapPoint::DuringV1ToV2);
+}
+
+fn migrate_v2_to_v3(_env: &Env) {
+    #[cfg(test)]
+    migration_failure_injection::maybe_trap(MigrationTrapPoint::DuringV2ToV3);
+}
 
 // ============================================================================
 // Event Version Compatibility
