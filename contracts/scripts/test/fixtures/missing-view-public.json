@@ -1,0 +1,18 @@
+{
+  "contract_name": "FixtureContract",
+  "contract_purpose": "Missing the required view entrypoint section",
+  "version": {
+    "current": "1.0.0",
+    "schema": "1.0.0"
+  },
+  "entrypoints": {
+    "public": []
+  },
+  "configuration": {
+    "parameters": []
+  },
+  "behaviors": {
+    "security_features": [],
+    "access_control": []
+  }
+}

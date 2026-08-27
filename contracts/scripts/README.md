@@ -122,10 +122,11 @@ stellar keys fund grainlify-deployer --network testnet
 
 ## Manifest Validation
 
-Schema validation:
+Schema validation uses `contract-manifest-schema.json` as its single source of
+truth. All entrypoints delegate to the same Node validator:
 
-- `validate-manifests.sh` (AJV CLI)
-- `validate-manifests.js` (Node, cross-platform)
+- `validate-manifests.js` (canonical validator)
+- `validate-manifests-simple.js` and `validate-manifests.sh` (compatibility wrappers)
 
 Lightweight manifest + deployment seed validator (no extra deps):
 

@@ -1,0 +1,26 @@
+{
+  "contract_name": "FixtureContract",
+  "contract_purpose": "An invalid authorization fixture",
+  "version": {
+    "current": "1.0.0",
+    "schema": "1.0.0"
+  },
+  "entrypoints": {
+    "public": [
+      {
+        "name": "mutate",
+        "description": "Mutates state",
+        "parameters": [],
+        "authorization": "unsupported-role"
+      }
+    ],
+    "view": []
+  },
+  "configuration": {
+    "parameters": []
+  },
+  "behaviors": {
+    "security_features": [],
+    "access_control": []
+  }
+}
