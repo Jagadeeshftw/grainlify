@@ -243,3 +243,23 @@ jobs:
           } catch (error) {
             console.log('Could not read report file:', error.message);
           }
+
+  rustfmt-check:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install pinned Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt
+
+    - name: Run rustfmt check on contract crates
+      run: |
+        echo "Checking formatting of contract crates..."
+        # Scope: all Rust source files under contracts/bounty_escrow (workspace root).
+        # Generated files and test fixtures (JSON snapshots, goldens, target dirs) are excluded
+        # because they are not Rust source and are not subject to rustfmt.
+        cargo fmt --manifest-path contracts/bounty_escrow/Cargo.toml --all -- --check
+        echo "✅ All contract files are properly formatted."

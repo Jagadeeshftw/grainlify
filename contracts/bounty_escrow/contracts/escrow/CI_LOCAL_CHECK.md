@@ -1,13 +1,15 @@
 # Run CI steps locally (Format, Build, Test, Stellar Build)
 
-From repo root, run the same steps as `.github/workflows/contracts-ci.yml`:
+From repo root, run the same steps as the contract CI workflows:
 
 ```bash
 # 1. Format check (CI fails here if code is not formatted)
-cd contracts/bounty_escrow/contracts/escrow
-cargo fmt --check --all
+# Scope: all Rust source files under contracts/bounty_escrow (workspace root).
+# Generated files and test fixtures (JSON snapshots, goldens, target dirs) are excluded
+# because they are not Rust source and are not subject to rustfmt.
+cargo fmt --manifest-path contracts/bounty_escrow/Cargo.toml --all -- --check
 # If it fails, fix with:
-cargo fmt --all
+cargo fmt --manifest-path contracts/bounty_escrow/Cargo.toml --all
 
 # 2. Build for WASM (same target as CI)
 cargo build --release --target wasm32v1-none
