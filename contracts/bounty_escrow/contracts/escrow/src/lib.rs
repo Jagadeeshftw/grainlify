@@ -52,7 +52,8 @@ mod test_multi_token_fees;
 mod test_frozen_balance;
 #[cfg(test)]
 mod test_reentrancy_guard;
-// #[cfg(test)] mod test_admin_rotation; // pre-existing SDK/API drift blocks filtered test builds
+#[cfg(test)]
+mod test_admin_rotation;
 #[cfg(test)]
 mod test_batch_soa_benchmark;
 
