@@ -1,16 +1,59 @@
-name: "Benchmark Gate — batch_payout gas regression"
+name: "Benchmark Gate — bounty-escrow CI gas / resource thresholds"
 
 on:
   push:
     branches: [master, main]
   pull_request:
     branches: [master, main]
+  workflow_dispatch:
+    inputs:
+      gas_mode:
+        description: 'ESCROW_GAS_MODE (strict / warn / collect)'
+        required: false
+        default: 'strict'
+        type: choice
+        options:
+        - strict
+        - warn
+        - collect
 
 jobs:
   gate:
-    name: batch_payout gas regression gate
+    name: bounty-escrow gas CI thresholds (strict / warn / collect)
     runs-on: ubuntu-latest
+    env:
+      RUST_BACKTRACE: "1"
     steps:
       - uses: actions/checkout@v4
-      - name: CI green
-        run: echo "Benchmark gate temporarily scoped to smoke check while base build is being triaged."
+
+      - name: Provision stable rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none, wasm32-unknown-unknown
+
+      - name: Cargo cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            contracts/bounty_escrow/contracts/escrow/target
+          key: ${{ runner.os }}-cargo-bounty-escrow-gate-${{ hashFiles('contracts/bounty_escrow/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-bounty-escrow-gate-
+
+      - name: Set GAS_MODE env var
+        run: |
+          MODE="${{ github.event.inputs.gas_mode || 'strict' }}"
+          echo "ESCROW_GAS_MODE=$MODE" >> $GITHUB_ENV
+          echo "Using ESCROW_GAS_MODE=$MODE"
+
+      - name: cargo test gas_ci (strict gate on PR/push)
+        working-directory: contracts/bounty_escrow/contracts/escrow
+        run: >
+          cargo test
+          --features testutils
+          gas_ci
+          --
+          --nocapture
+          --test-threads=1
