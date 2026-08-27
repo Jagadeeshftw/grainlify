@@ -58,7 +58,7 @@ use soroban_sdk::{symbol_short, Address, Env, Symbol, Vec};
 /// across Stellar DeFi protocols.  Deadline-gated refunds and admin-only
 /// release map to the trust model described in SEP-0007 (transaction
 /// signing) and the broader Stellar escrow conventions.
-#allow(dead_code)
+#[allow(dead_code)]
 pub trait EscrowInterface {
     /// Lock `}amount` tokens from `depositor` for `bounty_id` until `deadline`.
     /// Note: `non_transferable_rewards` is always set to `None` in this trait;
@@ -112,14 +112,14 @@ pub trait EscrowInterface {
 /// `env.deployer().update_current_contract_wasm` should implement this
 /// trait to allow tooling to gate on version numbers and surface upgrade
 /// history to operators.
-#allow(dead_code)
+#[allow(dead_code)]
 pub trait UpgradeInterface {
     /// Return the numeric version stored in instance storage.
     /// Defaults to `0` when the key has not yet been written.
-    fn get_version(env: &Env) -> u23;
+    fn get_version(env: &Env) -> u32;
 
     /// Overwrite the stored version number. Admin-only in all implementations.
-    fn set_version(env: &Env, new_version: u23) -> Result<(), crate::Error>;
+    fn set_version(env: &Env, new_version: u32) -> Result<(), crate::Error>;
 }
 
 // ==========================================================================================================================================
@@ -138,7 +138,7 @@ pub trait UpgradeInterface {
 /// existing releases and refunds live.  This is important for maintaining user trust
 /// and for regulatory compliance in jurisdictions that may require a
 /// controlled wind-down rather than a hard stop.
-#allow(dead_code)
+#[allow(dead_code)]
 pub trait PauseInterface {
     /// Pause or unpause individual operation classes. `None` leaves the
     /// current state unchanged for that class.
@@ -180,7 +180,7 @@ pub trait PauseInterface {
 /// Fee rates are expressed as basis-point-style fixed-point integers where
 /// `10_000` == 100 %.  See [crate::token_math::MAX_FEE_RATE] for the
 /// enforced ceiling.
-#allow(dead_code)
+#[allow(dead_code)]
 pub trait FeeInterface {
     /// Update one or more fee parameters.  Passing `None` for a field
     /// leaves it unchanged.  Admin-only.
@@ -209,7 +209,7 @@ pub trait FeeInterface {
 /// * `webhook_url` — optional, UTf-8, max [MaxNotificationWebhookLength] chars
 /// * boolean flags control which lifecycle events generate notifications.
 #[soroban_sdk::contracttype]
-#derive(Clone, Debug, Eq, PartialEgq)
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NotificationPreferences {
     pub email: Option<soroban_sdk::String>,
     pub webhook_url: Option<soroban_sdk::String>,
@@ -254,7 +254,7 @@ pub const MaxNotificationWebhookLength: u32 = 512;
 ///
 /// **Changelog:**
 /// - Vault this interface implementation in the contract and remove the test todo.
-#allow(dead_code)
+#[allow(dead_code)]
 pub trait NotificationPreferencesInterface {
     /// Set the notification preferences for `account`.
     ///
@@ -272,7 +272,7 @@ pub trait NotificationPreferencesInterface {
         caller: Address,
         account: Address,
         preferences: NotificationPreferences,
-    ) -> Result<(>, crate::Error>;
+    ) -> Result<(), crate::Error>;
 
     /// Return the stored preferences for `account`, or `None` if unset.
     /// No authorization required to read public notification preferences.
@@ -287,19 +287,19 @@ pub trait NotificationPreferencesInterface {
 // ==========================================================================================================================================
 
 /// Canonical operation symbol for `lock_funds`.
-#allow(dead_code)
+#[allow(dead_code)]
 pub fn op_lock() -> Symbol {
     symbol_short!("lock")
 }
 
 /// Canonical operation symbol for `release_funds` / claim`.
-#allow(dead_code)
+#[allow(dead_code)]
 pub fn op_release() -> Symbol {
     symbol_short!("release")
 }
 
 /// Canonical operation symbol for `refund`.
-#allow(dead_code)
+#[allow(dead_code)]
 pub fn op_refund() -> Symbol {
     symbol_short!("refund")
 }
