@@ -1,4 +1,9 @@
 #![no_std]
+// Soroban's #[contractimpl] and #[contractclient] macros generate client/adapter
+// functions that mirror every entrypoint's parameter list. Many of our handlers
+// legitimately need 8 parameters; raising the threshold crate-wide avoids dozens
+// of per-function #[allow] annotations.
+#![allow(clippy::too_many_arguments)]
 //! # Bounty Escrow Contract
 //!
 //! Manages individual bounty escrows on Stellar: per-bounty fund locking, contributor
@@ -60,23 +65,20 @@ mod test_batch_soa_benchmark;
 use crate::events::{
     emit_admin_rotation_accepted, emit_admin_rotation_cancelled, emit_admin_rotation_proposed,
     emit_admin_rotation_timelock_updated, emit_batch_funds_locked, emit_batch_funds_released,
-    emit_bounty_initialized, emit_deprecation_state_changed, emit_deterministic_selection,
+    emit_deprecation_state_changed,
     emit_funds_locked, emit_funds_locked_anon, emit_funds_refunded, emit_funds_released,
-    emit_maintenance_mode_changed, emit_notification_preferences_updated,
     emit_participant_filter_mode_changed, emit_participant_filter_queried,
     emit_refund_approval_consumed, emit_refund_approval_set, emit_risk_flags_updated,
-    emit_ticket_claimed, emit_ticket_issued, BatchFundsLocked, BatchFundsReleased,
-    BountyEscrowInitialized, ClaimCancelled, ClaimCreated, ClaimExecuted, CriticalOperationOutcome,
-    DeprecationStateChanged, DeterministicSelectionDerived, EscrowPublished, FundsLocked,
-    FundsLockedAnon, FundsRefunded, FundsReleased, MaintenanceModeChanged,
-    MaintenanceModeChangedV2, NotificationPreferencesUpdated, ParticipantFilterModeChanged,
+    BatchFundsLocked, BatchFundsReleased,
+    ClaimCancelled, ClaimCreated, ClaimExecuted, CriticalOperationOutcome,
+    DeprecationStateChanged, EscrowPublished, FundsLocked,
+    FundsLockedAnon, FundsRefunded, FundsReleased, ParticipantFilterModeChanged,
     ParticipantFilterQueried, RefundApprovalConsumed, RefundApprovalSet, RefundTriggerType,
-    RiskFlagsUpdated, TicketClaimed, TicketIssued, EVENT_VERSION_V2,
+    RiskFlagsUpdated, EVENT_VERSION_V2,
 };
-use soroban_sdk::xdr::ToXdr;
 use soroban_sdk::{
     contract, contractclient, contracterror, contractimpl, contracttype, symbol_short, token, vec,
-    Address, Bytes, BytesN, Env, String, Symbol, Vec,
+    Address, BytesN, Env, String, Symbol, Vec,
 };
 
 // ============================================================================
@@ -94,6 +96,8 @@ use soroban_sdk::{
 /// - Allowed character sets (alphanumeric, spaces, safe punctuation)
 /// - No control characters that could cause display issues
 /// - No leading/trailing whitespace
+// Validation helpers reserved for upcoming input-sanitisation enforcement on lock/release.
+#[allow(dead_code)]
 mod validation {
     use soroban_sdk::Env;
 
@@ -118,7 +122,7 @@ mod validation {
         }
 
         // Tags should not be empty if provided
-        if tag.len() == 0 {
+        if tag.is_empty() {
             panic!("{} cannot be empty", field_name);
         }
         // Additional character validation can be added when SDK supports it
@@ -308,7 +312,7 @@ mod monitoring {
         let total: u64 = env.storage().persistent().get(&time_key).unwrap_or(0);
         let last: u64 = env.storage().persistent().get(&last_key).unwrap_or(0);
 
-        let avg = if count > 0 { total / count } else { 0 };
+        let avg = total.checked_div(count).unwrap_or(0);
 
         PerformanceStats {
             function_name,
@@ -405,6 +409,8 @@ mod anti_abuse {
         env.storage().instance().get(&AntiAbuseKey::Admin)
     }
 
+    // Retained for operator admin rotation; not yet wired to a contract entrypoint.
+    #[allow(dead_code)]
     pub fn set_admin(env: &Env, admin: Address) {
         env.storage().instance().set(&AntiAbuseKey::Admin, &admin);
     }
@@ -536,7 +542,6 @@ pub mod rbac {
     }
 }
 
-#[allow(dead_code)]
 const BASIS_POINTS: i128 = 10_000;
 const MAX_FEE_RATE: i128 = 5_000; // 50% max fee
 const MAX_BATCH_SIZE: u32 = 20;
@@ -545,8 +550,6 @@ const MIN_ADMIN_ROTATION_TIMELOCK: u64 = 3_600;
 const MAX_ADMIN_ROTATION_TIMELOCK: u64 = 2_592_000;
 
 extern crate grainlify_core;
-use grainlify_core::asset;
-use grainlify_core::pseudo_randomness;
 
 #[contracttype]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -577,7 +580,6 @@ pub enum ReleaseType {
     Automatic = 2,
 }
 
-use grainlify_core::errors;
 // `export = false`: the XDR contract spec caps UDT enums at 50 cases and this
 // enum has grown past that, so spec generation panics (LengthExceedsMax).
 // Conversion impls are still generated; only the spec entry is omitted.
@@ -692,6 +694,8 @@ pub const RISK_FLAG_MASK_ALL: u32 =
     RISK_FLAG_HIGH_RISK | RISK_FLAG_UNDER_REVIEW | RISK_FLAG_RESTRICTED | RISK_FLAG_DEPRECATED;
 
 /// Maximum number of addresses that may appear in the risk-flag governor list.
+// Reserved for upcoming multi-governor risk oversight feature.
+#[allow(dead_code)]
 const MAX_RISK_GOVERNORS: u32 = 16;
 
 /// Notification preference flags (bitfield).
@@ -1190,6 +1194,8 @@ const FEE_ROUTING_SCHEMA_VERSION_V1: u32 = 1;
 /// Increment whenever the `EscrowMetadata::risk_flags` layout changes in a
 /// breaking way. Written to instance storage during `init` so upgrade safety
 /// checks can detect schema mismatches on legacy deployments.
+// Retained for upgrade-safety schema migration; not yet consumed in the current code path.
+#[allow(dead_code)]
 const RISK_FLAGS_SCHEMA_VERSION_V1: u32 = 1;
 
 /// Current high-value timelock config storage schema version.
@@ -1373,6 +1379,9 @@ pub struct QueuedRelease {
 #[contract]
 pub struct BountyEscrowContract;
 
+// Soroban contract entrypoints often require 8+ parameters; suppressing the
+// default 7-argument threshold avoids per-function annotations on every handler.
+#[allow(clippy::too_many_arguments)]
 #[contractimpl]
 impl BountyEscrowContract {
     pub fn health_check(env: Env) -> monitoring::HealthStatus {
@@ -1684,17 +1693,7 @@ impl BountyEscrowContract {
         sum.min(amount).max(0)
     }
 
-    /// Test-only shim exposing `calculate_fee` for unit-level assertions.
-    #[cfg(test)]
-    pub fn calculate_fee_pub(amount: i128, fee_rate: i128) -> i128 {
-        Self::calculate_fee(amount, fee_rate)
-    }
 
-    /// Test-only: combined percentage + fixed fee (capped).
-    #[cfg(test)]
-    pub fn combined_fee_pub(amount: i128, rate_bps: i128, fixed: i128, fee_enabled: bool) -> i128 {
-        Self::combined_fee_amount(amount, rate_bps, fixed, fee_enabled)
-    }
 
     /// Get fee configuration (internal helper)
     fn get_fee_config_internal(env: &Env) -> FeeConfig {
@@ -1740,6 +1739,8 @@ impl BountyEscrowContract {
         Ok(())
     }
 
+    // Retained for future batch-operation paths that enforce per-call caps.
+    #[allow(dead_code)]
     fn validate_batch_len(batch_size: u32, cap: u32) -> Result<(), Error> {
         if batch_size == 0 || batch_size > cap {
             return Err(Error::InvalidBatchSize);
@@ -2183,7 +2184,7 @@ impl BountyEscrowContract {
     ) -> Result<(), Error> {
         // The audit trail is the entire point of this path: an empty reason
         // would defeat it, so reject it outright.
-        if reason.len() == 0 {
+        if reason.is_empty() {
             return Err(Error::InvalidAmount);
         }
         Self::set_fee_routing_internal(
@@ -2257,10 +2258,10 @@ impl BountyEscrowContract {
         }
 
         // Validate share invariants.
-        if treasury_bps < 0 || treasury_bps > BASIS_POINTS {
+        if !(0..=BASIS_POINTS).contains(&treasury_bps) {
             return Err(Error::InvalidAmount);
         }
-        if partner_bps < 0 || partner_bps > BASIS_POINTS {
+        if !(0..=BASIS_POINTS).contains(&partner_bps) {
             return Err(Error::InvalidAmount);
         }
         match &partner_recipient {
@@ -5472,7 +5473,7 @@ impl BountyEscrowContract {
             amount: escrow.amount,
             expires_at: now.saturating_add(claim_window),
             claimed: false,
-            reason: reason.clone(),
+            reason,
         };
 
         env.storage()
@@ -5671,7 +5672,7 @@ impl BountyEscrowContract {
     pub fn cancel_pending_claim(
         env: Env,
         bounty_id: u64,
-        outcome: DisputeOutcome,
+        _outcome: DisputeOutcome,
     ) -> Result<(), Error> {
         if !env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::NotInitialized);
@@ -6236,7 +6237,7 @@ impl BountyEscrowContract {
         admin.require_auth();
         // Snapshot resource meters for gas cap enforcement (test / testutils only).
         #[cfg(any(test, feature = "testutils"))]
-        let gas_snapshot = gas_budget::capture(&env);
+        let _gas_snapshot = gas_budget::capture(&env);
 
         if !env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
             reentrancy_guard::release(&env);
@@ -7247,7 +7248,7 @@ impl BountyEscrowContract {
                 return Err(Error::InvalidBatchSize);
             }
             let max_batch_size = Self::get_max_batch_size(env.clone());
-            if batch_size as u32 > max_batch_size {
+            if batch_size > max_batch_size {
                 reentrancy_guard::release(&env);
                 return Err(Error::InvalidBatchSize);
             }
@@ -7508,7 +7509,7 @@ impl BountyEscrowContract {
                 return Err(Error::InvalidBatchSize);
             }
             let max_batch_size = Self::get_max_release_batch_size(env.clone());
-            if batch_size as u32 > max_batch_size {
+            if batch_size > max_batch_size {
                 reentrancy_guard::release(&env);
                 return Err(Error::InvalidBatchSize);
             }
@@ -7982,6 +7983,18 @@ impl BountyEscrowContract {
     }
 }
 
+// Test-only shims moved out of #[contractimpl] to avoid macro expansion issues.
+#[cfg(test)]
+impl BountyEscrowContract {
+    pub fn calculate_fee_pub(amount: i128, fee_rate: i128) -> i128 {
+        Self::calculate_fee(amount, fee_rate)
+    }
+
+    pub fn combined_fee_pub(amount: i128, rate_bps: i128, fixed: i128, fee_enabled: bool) -> i128 {
+        Self::combined_fee_amount(amount, rate_bps, fixed, fee_enabled)
+    }
+}
+
 impl traits::EscrowInterface for BountyEscrowContract {
     /// Lock funds for a bounty through the trait interface
     fn lock_funds(
@@ -8079,6 +8092,7 @@ impl traits::PauseInterface for BountyEscrowContract {
         refund: Option<bool>,
         reason: Option<soroban_sdk::String>,
     ) -> Result<(), crate::Error> {
+        #[allow(clippy::type_complexity)]
         let entrypoint: fn(
             Env,
             Option<bool>,
@@ -8117,6 +8131,7 @@ impl traits::FeeInterface for BountyEscrowContract {
         fee_recipient: Option<Address>,
         fee_enabled: Option<bool>,
     ) -> Result<(), crate::Error> {
+        #[allow(clippy::type_complexity)]
         let entrypoint: fn(
             Env,
             Option<i128>,
@@ -8207,6 +8222,7 @@ mod escrow_status_transition_tests {
     }
 
     /// Test setup holding environment, clients, and addresses
+    #[allow(dead_code)]
     struct TestEnv {
         env: Env,
         contract_id: Address,
@@ -8226,7 +8242,7 @@ mod escrow_status_transition_tests {
             let depositor = Address::generate(&env);
             let contributor = Address::generate(&env);
 
-            let token_id = env.register_stellar_asset_contract(admin.clone());
+            let token_id = env.register_stellar_asset_contract_v2(admin.clone()).address();
             let token_admin = token::StellarAssetClient::new(&env, &token_id);
 
             let contract_id = env.register_contract(None, BountyEscrowContract);
@@ -8381,48 +8397,54 @@ mod escrow_status_transition_tests {
                     let result = setup
                         .client
                         .try_release_funds(&bounty_id, &setup.contributor);
-                    if case.expected_result.is_ok() {
-                        assert!(
-                            result.is_ok(),
-                            "Transition '{}' failed: expected Ok but got {:?}",
-                            case.label,
-                            result
-                        );
-                    } else {
-                        assert!(
-                            result.is_err(),
-                            "Transition '{}' failed: expected Err but got Ok",
-                            case.label
-                        );
-                        assert_eq!(
-                            result.unwrap_err().unwrap(),
-                            case.expected_result.unwrap_err(),
-                            "Transition '{}' failed: mismatched error variant",
-                            case.label
-                        );
+                    match case.expected_result {
+                        Ok(_) => {
+                            assert!(
+                                result.is_ok(),
+                                "Transition '{}' failed: expected Ok but got {:?}",
+                                case.label,
+                                result
+                            );
+                        }
+                        Err(expected_err) => {
+                            assert!(
+                                result.is_err(),
+                                "Transition '{}' failed: expected Err but got Ok",
+                                case.label
+                            );
+                            assert_eq!(
+                                result.unwrap_err().unwrap(),
+                                expected_err,
+                                "Transition '{}' failed: mismatched error variant",
+                                case.label
+                            );
+                        }
                     }
                 }
                 TransitionAction::Refund => {
                     let result = setup.client.try_refund(&bounty_id);
-                    if case.expected_result.is_ok() {
-                        assert!(
-                            result.is_ok(),
-                            "Transition '{}' failed: expected Ok but got {:?}",
-                            case.label,
-                            result
-                        );
-                    } else {
-                        assert!(
-                            result.is_err(),
-                            "Transition '{}' failed: expected Err but got Ok",
-                            case.label
-                        );
-                        assert_eq!(
-                            result.unwrap_err().unwrap(),
-                            case.expected_result.unwrap_err(),
-                            "Transition '{}' failed: mismatched error variant",
-                            case.label
-                        );
+                    match case.expected_result {
+                        Ok(_) => {
+                            assert!(
+                                result.is_ok(),
+                                "Transition '{}' failed: expected Ok but got {:?}",
+                                case.label,
+                                result
+                            );
+                        }
+                        Err(expected_err) => {
+                            assert!(
+                                result.is_err(),
+                                "Transition '{}' failed: expected Err but got Ok",
+                                case.label
+                            );
+                            assert_eq!(
+                                result.unwrap_err().unwrap(),
+                                expected_err,
+                                "Transition '{}' failed: mismatched error variant",
+                                case.label
+                            );
+                        }
                     }
                 }
             }

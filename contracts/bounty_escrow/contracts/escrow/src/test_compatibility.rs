@@ -1,5 +1,11 @@
 #![cfg(test)]
-#![allow(unused)]
+// This is an ABI pinning suite: it intentionally imports every public symbol
+// and instantiates types to detect breaking changes at compile time.  Some
+// imports and constructed values are therefore "unused" in the traditional
+// sense — their presence IS the test.  Narrow per-lint allows would need
+// constant updating as the pin set grows.
+#![allow(unused_imports)]
+#![allow(dead_code)]
 
 //! # ABI Compatibility Suite
 //!

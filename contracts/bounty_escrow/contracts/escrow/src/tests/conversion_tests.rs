@@ -90,6 +90,7 @@ fn create_escrow_contract<'a>(e: &Env) -> BountyEscrowContractClient<'a> {
     BountyEscrowContractClient::new(e, &contract_id)
 }
 
+#[allow(dead_code)]
 struct TestSetup<'a> {
     env: Env,
     admin: Address,

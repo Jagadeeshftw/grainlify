@@ -56,6 +56,8 @@ fn create_escrow_contract<'a>(e: &Env) -> BountyEscrowContractClient<'a> {
     BountyEscrowContractClient::new(e, &id)
 }
 
+// Test fixture: fields retained for upcoming reentrancy test scenarios.
+#[allow(dead_code)]
 struct ReentrancyTestSetup<'a> {
     env: Env,
     _admin: Address,

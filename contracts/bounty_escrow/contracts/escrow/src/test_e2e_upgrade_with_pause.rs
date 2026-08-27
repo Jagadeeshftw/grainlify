@@ -87,6 +87,7 @@ fn simulate_upgrade_safe(env: &Env) -> upgrade_safety::UpgradeSafetyReport {
 }
 
 /// Full test harness: env + admin + depositor + contributor + token + escrow.
+#[allow(dead_code)]
 struct TestSetup<'a> {
     env: Env,
     admin: Address,
@@ -720,7 +721,7 @@ fn test_multiple_pause_resume_cycles_balance() {
 
     let expected_balance = 10_000;
 
-    for i in 0..5 {
+    for _i in 0..5 {
         s.advance_time();
         s.pause_all("Cycle");
         assert_eq!(s.token_client.balance(&s.escrow_id), expected_balance);

@@ -1,3 +1,6 @@
+// Module-level allow: the threshold monitor is a circuit-breaker subsystem whose
+// public helpers will be consumed by upcoming guard-rail integration. Per-item
+// annotations would duplicate the same rationale across many items.
 #![allow(dead_code)]
 // contracts/program-escrow/src/threshold_monitor.rs
 //
