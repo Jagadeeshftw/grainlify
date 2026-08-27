@@ -9974,6 +9974,8 @@ mod escrow_status_transition_tests {
 // #[cfg(test)] mod test_batch_failure_mode;
 // #[cfg(test)] mod test_batch_failure_modes;
 #[cfg(test)]
+mod test_admin_invalid_identifiers;
+#[cfg(test)]
 mod test_deadline_variants;
 // #[cfg(test)] mod test_dry_run_simulation;
 #[cfg(test)]
