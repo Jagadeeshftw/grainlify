@@ -2466,6 +2466,8 @@ pub fn is_compatible_event_version(version: u32) -> bool {
 
 #[cfg(test)]
 mod test_event_versioning;
+#[cfg(test)]
+mod test_migration_fixtures;
 
 // ============================================================================
 // Trait Conformance
