@@ -2262,6 +2262,29 @@ mod test_lifecycle_dwell_time;
 // #[cfg(test)] mod test_serialization_compatibility; // pre-existing breakage
 // #[cfg(test)] mod test_payout_splits; // pre-existing breakage
 
+#[cfg(test)]
+mod test_support;
+#[cfg(test)]
+mod test_program_core;
+#[cfg(test)]
+mod test_program_admin;
+#[cfg(test)]
+mod test_program_batch_registration;
+#[cfg(test)]
+mod test_program_allowlist;
+#[cfg(test)]
+mod test_program_analytics;
+#[cfg(test)]
+mod test_program_payouts;
+#[cfg(test)]
+mod test_program_queries;
+#[cfg(test)]
+mod test_program_fees_idempotency;
+#[cfg(test)]
+mod test_program_limits_pause;
+#[cfg(test)]
+mod test_program_atomicity_security;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Read-only mode types (referenced by test_read_only_mode.rs)
 // ─────────────────────────────────────────────────────────────────────────────
