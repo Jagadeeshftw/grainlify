@@ -220,7 +220,7 @@ const AUTH_KEY_INDEX: Symbol = symbol_short!("AuthIdx");
 const FEE_CONFIG: Symbol = symbol_short!("FeeCfg");
 const FEE_COLLECTED: Symbol = symbol_short!("FeeCol");
 /// Event symbol for insurance-reserve withdrawal audit events.
-const INSURANCE_RESERVE_WITHDRAWN: Symbol = symbol_short!("InsRsvWd");
+pub const INSURANCE_RESERVE_WITHDRAWN: Symbol = insurance_reserve::INSURANCE_RESERVE_WITHDRAWN;
 /// Storage key for the set of consumed idempotency keys (batch payout).
 const PAYOUT_IDEM_KEYS: Symbol = symbol_short!("PayIdem");
 /// Event symbol emitted when a batch_payout replay is detected.
@@ -1509,6 +1509,13 @@ pub enum DataKey {
     /// counter; a malicious delegate for one program cannot exhaust the
     /// budget of another.
     DelegateMetaRateLimit(String),
+    /// On-chain insurance reserve balance in native token units (i128).
+    /// Stores the segregated insurance reserve balance accumulated from fee carve-outs.
+    /// Read by `get_insurance_reserve_balance`.
+    /// Decremented only by `withdraw_insurance_reserve` (admin-gated).
+    /// Stored in `instance` storage so it shares the contract TTL and is
+    /// always co-located with `FeeConfig`.
+    InsuranceReserve,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2114,6 +2121,7 @@ mod claim_period;
 pub use claim_period::{ClaimRecord, ClaimStatus};
 mod payout_splits;
 pub use payout_splits::{BeneficiarySplit, SplitConfig, SplitPayoutResult};
+pub mod insurance_reserve;
 // #[cfg(test)] mod test_claim_period_expiry_cancellation; // pre-existing breakage
 
 mod error_recovery;
@@ -3486,44 +3494,17 @@ impl ProgramEscrowContract {
     ///
     /// Invariant: `reserve_share + recipient_share == total_fee`.
     fn split_fee_for_reserve(total_fee: i128, insurance_reserve_bps: u32) -> (i128, i128) {
-        if insurance_reserve_bps == 0 || total_fee <= 0 {
-            return (0, total_fee);
-        }
-        // Ceiling division: reserve_share = ceil(total_fee * bps / BASIS_POINTS)
-        let bps = insurance_reserve_bps as i128;
-        let numerator = total_fee
-            .checked_mul(bps)
-            .and_then(|n| n.checked_add(BASIS_POINTS - 1))
-            .expect("Insurance reserve split overflow");
-        let reserve_share = numerator / BASIS_POINTS;
-        let recipient_share = total_fee - reserve_share;
-        (reserve_share, recipient_share)
+        insurance_reserve::split_fee_for_reserve(total_fee, insurance_reserve_bps)
     }
 
     /// Accrue `amount` into the on-chain insurance reserve.
     fn accrue_insurance_reserve(env: &Env, amount: i128) {
-        if amount <= 0 {
-            return;
-        }
-        let current: i128 = env
-            .storage()
-            .instance()
-            .get(&DataKey::InsuranceReserve)
-            .unwrap_or(0);
-        let next = current
-            .checked_add(amount)
-            .expect("Insurance reserve overflow");
-        env.storage()
-            .instance()
-            .set(&DataKey::InsuranceReserve, &next);
+        insurance_reserve::accrue_insurance_reserve(env, amount);
     }
 
     /// Read the current insurance reserve balance (token units).
     pub fn get_insurance_reserve_balance(env: Env) -> i128 {
-        env.storage()
-            .instance()
-            .get(&DataKey::InsuranceReserve)
-            .unwrap_or(0)
+        insurance_reserve::get_insurance_reserve_balance(&env)
     }
 
     /// Withdraw the full (or partial) insurance reserve to `target` (admin-only).
@@ -3541,24 +3522,11 @@ impl ProgramEscrowContract {
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         admin.require_auth();
 
-        if amount <= 0 {
-            panic_with_error!(&env, &ContractError::InvalidAmount);
-        }
-
-        let balance_before: i128 = env
-            .storage()
-            .instance()
-            .get(&DataKey::InsuranceReserve)
-            .unwrap_or(0);
-
-        if amount > balance_before {
-            panic_with_error!(&env, &ContractError::InsufficientInsuranceReserve);
-        }
-
-        let balance_after = balance_before - amount;
-        env.storage()
-            .instance()
-            .set(&DataKey::InsuranceReserve, &balance_after);
+        let (balance_before, balance_after) =
+            match insurance_reserve::debit_insurance_reserve(&env, amount) {
+                Ok(res) => res,
+                Err(e) => panic_with_error!(&env, &e),
+            };
 
         // Determine the token to use from the legacy PROGRAM_DATA or any registered program.
         let program_data: ProgramData = env
@@ -9389,7 +9357,6 @@ mod test_batch_operations;
 // #[cfg(test)] mod test_pause;
 
 #[cfg(test)]
-#[cfg(any())]
 mod test_insurance_reserve;
 
 #[cfg(test)]
