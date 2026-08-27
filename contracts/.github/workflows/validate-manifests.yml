@@ -6,12 +6,14 @@ on:
     paths:
       - 'contracts/*-manifest.json'
       - 'contracts/contract-manifest-schema.json'
+      - 'contracts/bounty_escrow/**'
       - '.github/workflows/validate-manifests.yml'
   pull_request:
     branches: [ main, master ]
     paths:
       - 'contracts/*-manifest.json'
       - 'contracts/contract-manifest-schema.json'
+      - 'contracts/bounty_escrow/**'
       - '.github/workflows/validate-manifests.yml'
 
 jobs:
