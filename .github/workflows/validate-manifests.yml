@@ -195,13 +195,17 @@ jobs:
               STATUS="❌ Invalid"
             fi
 
+            CONTRACT_NAME=$(jq -r '.contract_name' "$manifest")
+            CURRENT_VER=$(jq -r '.version.current' "$manifest")
+            SCHEMA_VER=$(jq -r '.version.schema' "$manifest")
+
             cat >> "$REPORT_FILE" << EOF
           ### $MANIFEST_NAME
           - **File:** \`$manifest\`
           - **Status:** $STATUS
-          - **Contract Name:** $(jq -r '.contract_name' "$manifest")
-          - **Version:** $(jq -r '.version.current' "$manifest")
-          - **Schema Version:** $(jq -r '.version.schema' "$manifest")
+          - **Contract Name:** $CONTRACT_NAME
+          - **Version:** $CURRENT_VER
+          - **Schema Version:** $SCHEMA_VER
 
           EOF
           done
