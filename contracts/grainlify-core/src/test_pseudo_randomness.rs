@@ -2,7 +2,7 @@
 
 extern crate std;
 
-use crate::pseudo_randomness::{derive_selection, DeterministicSelection};
+use crate::pseudo_randomness::{derive_selection, security_level, DeterministicSelection};
 use soroban_sdk::{
     testutils::Address as _,
     xdr::{Hash, ScAddress, ToXdr},
@@ -15,6 +15,11 @@ use soroban_sdk::{
 
 /// Test domain symbol
 const TEST_DOMAIN: &str = "test";
+
+#[test]
+fn exposes_non_security_randomness_classification() {
+    assert_eq!(security_level(), "deterministic-non-security-randomness");
+}
 
 /// Generate a deterministic test seed
 fn test_seed(env: &Env, seed_value: u32) -> BytesN<32> {

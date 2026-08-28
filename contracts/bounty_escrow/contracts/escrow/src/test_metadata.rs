@@ -15,7 +15,7 @@ fn setup() -> (Env, Address, BountyEscrowContractClient<'static>) {
     (env, admin, client)
 }
 
-#[test]
+[ test]
 fn test_metadata_storage_and_query() {
     let (env, admin, client) = setup();
 
@@ -35,8 +35,7 @@ fn test_metadata_storage_and_query() {
     assert_eq!(fetched.notification_prefs, 0);
 }
 
-#[test]
-#[ignore = "set_notification_preferences not yet implemented on the contract"]
+[ test]
 fn test_notification_preferences_set_and_event() {
     let env = Env::default();
     env.mock_all_auths();
@@ -55,19 +54,39 @@ fn test_notification_preferences_set_and_event() {
 
     let bounty_id = 77u64;
     let amount = 1_000i128;
-    env.ledger().with_mut(|li| {
-        li.timestamp = 500;
-    });
+    env.ledger().with_mut(|li { li.timestamp = 500; });
     let deadline = env.ledger().timestamp() + 600;
     client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
 
-    // set_notification_preferences not yet implemented; test body skipped.
-    let _ = (depositor, bounty_id, amount, deadline);
-    todo!("set_notification_preferences not yet implemented on the contract")
+    let prefs = 0b1010u32;
+    let events_before = env.events().all().len();
+    client.set_notification_preferences(&depositor, &bounty_id, &prefs);
+    let events_after = env.events().all().len();
+    assert!(events_after > events_before);
+
+    let meta = client.get_metadata(&bounty_id);
+    assert_eq!(meta.notification_prefs, prefs);
 }
 
-#[test]
-#[should_panic(expected = "bounty_type exceeds maximum length of 50 characters")]
+[ test]
+#should_panic(expected = "bounty")]
+fn test_set_notification_preferences_unknown_bounty() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, BountyEscrowContract);
+    let client = BountyEscrowContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    client.init(&admin, &token);
+
+    let caller = Address::generate(&env);
+    client.set_notification_preferences(&caller, &999u64, &1u32);
+}
+
+[ test]
+#should_panic(expected = "bounty_type exceeds maximum length of 50 characters")]
 fn test_metadata_rejects_oversized_bounty_type() {
     let env = Env::default();
     env.mock_all_auths();
@@ -88,8 +107,8 @@ fn test_metadata_rejects_oversized_bounty_type() {
     client.update_metadata(&admin, &bounty_id, &repo_id, &issue_id, &bounty_type, &None);
 }
 
-#[test]
-#[should_panic(expected = "bounty_type cannot be empty")]
+[ test]
+#should_panic(expected = "bounty_type cannot be empty")]
 fn test_metadata_rejects_empty_bounty_type() {
     let env = Env::default();
     env.mock_all_auths();
@@ -109,7 +128,7 @@ fn test_metadata_rejects_empty_bounty_type() {
     client.update_metadata(&admin, &bounty_id, &repo_id, &issue_id, &bounty_type, &None);
 }
 
-#[test]
+[ test]
 fn test_metadata_accepts_len_one_boundary() {
     let (env, admin, client) = setup();
     let bounty_type = String::from_str(&env, "a");
@@ -119,7 +138,7 @@ fn test_metadata_accepts_len_one_boundary() {
     assert_eq!(client.get_metadata(&2u64).bounty_type, bounty_type);
 }
 
-#[test]
+[ test]
 fn test_metadata_accepts_len_max_boundary() {
     let (env, admin, client) = setup();
     let bounty_type = String::from_str(&env, &"a".repeat(MAX_TAG_LEN));
@@ -132,17 +151,8 @@ fn test_metadata_accepts_len_max_boundary() {
     assert_eq!(fetched.reference_hash, reference_hash);
 }
 
-#[test]
-#[should_panic(expected = "bounty_type cannot be empty")]
-fn test_metadata_rejects_empty_bounty_type() {
-    let (env, admin, client) = setup();
-    let empty = String::from_str(&env, "");
-
-    client.update_metadata(&admin, &4u64, &12u64, &22u64, &empty, &None);
-}
-
-#[test]
-#[should_panic(expected = "bounty_type exceeds maximum length of 50 characters")]
+[ test]
+#should_panic(expected = "bounty_type exceeds maximum length of 50 characters")]
 fn test_metadata_rejects_bounty_type_above_max_len() {
     let (env, admin, client) = setup();
     let too_long = String::from_str(&env, &"a".repeat(MAX_TAG_LEN + 1));
@@ -150,15 +160,15 @@ fn test_metadata_rejects_bounty_type_above_max_len() {
     client.update_metadata(&admin, &5u64, &13u64, &23u64, &too_long, &None);
 }
 
-#[test]
+[ test]
 fn test_metadata_accepts_sdk_permitted_unicode_edge_cases() {
     let (env, admin, client) = setup();
     let cases = [
         "naive",
-        "na\u{00ef}ve",
-        "cafe\u{301}",
-        "\u{4f60}\u{597d}",
-        "\u{1f980}",
+        "na\u00efve",
+        "cafe\u0301",
+        "\u4f60\u597d",
+        "\u1f980",
         "bug-fix/v2",
     ];
 

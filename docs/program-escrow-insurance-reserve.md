@@ -30,6 +30,37 @@ recipient_share = total_fee - reserve_share
 
 **Invariant**: `reserve_share + recipient_share == total_fee` (no value leakage or double-counting)
 
+### Solvency Invariant Specification
+
+The insurance reserve maintains strict balance solvency connecting reserve debits, credits, and failed payouts:
+
+$$R_t = R_0 + \sum_{i=1}^t \text{Credits}_i - \sum_{j=1}^t \text{Debits}_j \ge 0 \quad \forall t \ge 0$$
+
+Where:
+- **$\text{Credits}_i$**: Segregated carve-out shares collected from protocol fees during `lock_program_funds`, `single_payout`, and `batch_payout`.
+- **$\text{Debits}_j$**: Authorized administrative withdrawals (`withdraw_insurance_reserve`) or potential claims coverage.
+- **Failed Payouts & Aborted Transactions**: Soroban transactions execute atomically. Any failed operation (fee shortfall, underfunded debit, invalid parameter, or transfer failure) results in immediate transaction rollback:
+  $$\Delta R = 0$$
+  No partial state writes or phantom debits/credits are ever persisted.
+
+### Design Decision: Prohibition of Transient Negative Balances
+
+- **Decision**: The reserve balance is **strictly non-negative** ($R_t \ge 0$) at all times. It may **NEVER** be temporarily negative during any intermediate execution step of a transaction.
+- **Rationale**: Transient negative balances introduce critical solvency risks, reentrancy vulnerabilities, off-chain ledger reconciliation errors, and unrecoverable states if downstream contract invocations fail.
+- **Enforcement**: Every debit operation enforces a strict pre-condition:
+  $$\text{amount} \le \text{balance\_before}$$
+  If an operation attempts to debit more than the available reserve, it fails safely and panics immediately with `ContractError::InsufficientInsuranceReserve` (error code 705) prior to any state modification or token transfer.
+
+### State Transitions Across Execution Paths
+
+| Path | Trigger Operation | Reserve Impact ($\Delta R$) | Preconditions | Postconditions & Event Assertions |
+|------|-------------------|-----------------------------|---------------|-----------------------------------|
+| **Normal Payout** | `single_payout` / `batch_payout` | $+ \text{reserve\_share}$ | `fee_enabled == true`, `bps > 0` | Storage updated: $R_{t+1} = R_t + \text{reserve\_share}$. `FeeCollectedEvent` emitted. Conservation holds (`net + fee_recipient + reserve == gross`). |
+| **Fee Shortfall / Underfunded** | Over-withdrawal or 0 fee payout | $0$ | Debit $> R_t$ or fee is 0 | Underfunded debits fail safely with `InsufficientInsuranceReserve` (705). Storage is strictly unchanged ($R_{after} = R_{before}$). Zero withdrawal events emitted. |
+| **Refund Path** | `cancel_claim` (refund path) | $0$ | Pending claim exists | Escrow remaining balance restored; reserve storage strictly intact ($R_{t+1} = R_t$). Emits `ClmCncl`; zero reserve withdrawal events. |
+| **Cancellation Path** | Claim / program cancellation | $0$ | Valid cancellation state | Unreleased funds returned; reserve storage strictly untouched ($R_{t+1} = R_t$). Zero reserve events. |
+| **Repeated Failure** | Multiple sequential failing calls | $0$ | Failing preconditions | Solvency preserved across all failures ($R_0 = R_1 = R_2$). No spurious events emitted; subsequent valid operations execute cleanly. |
+
 ### Storage
 
 The insurance reserve balance is stored separately from the program's `remaining_balance` using:
@@ -191,3 +222,10 @@ Comprehensive test coverage is provided in `contracts/program-escrow/src/test_in
 - Withdrawal authorization and validation
 - Zero-basis-point passthrough behavior
 - Edge cases and error conditions
+- **Solvency Invariant Regression Suite (Issue #1723)**:
+  - Normal payout path ($R_{t+1} = R_t + \text{reserve\_share}$, storage and event assertions)
+  - Fee shortfall & underfunded safe failure (`InsufficientInsuranceReserve` 705, zero storage modification)
+  - Refund path (`cancel_claim` refund preserves reserve storage and events)
+  - Cancellation path (claim cancellation cycles maintain invariant $R_t \ge 0$)
+  - Repeated failure (sequential failures leave storage untouched; subsequent valid withdrawal succeeds)
+  - Prohibition of transient negative balances ($R_t \ge 0$ strictly enforced at every step)

@@ -47,6 +47,24 @@ The Grainlify governance system enables decentralized decision-making for contra
 - **Minimum Stake Requirement:** Prevents spam proposals by requiring a significant commitment from the proposer.
 - **Immutable Logic:** Proposals cannot be modified once created.
 
+## Upgrade Authorization Matrix
+
+For `grainlify-core`, the configured multisig signer threshold is the sole
+authority for both forward upgrades and rollbacks. All WASM changes use the
+proposal -> approval -> timelock -> execution flow. The legacy admin-only
+`upgrade` entrypoint is rejected and cannot change the implementation.
+
+| State | Signer | Non-signer | Implementation change |
+|-------|--------|------------|------------------------|
+| Pending | Approve or cancel | Rejected | No |
+| Executable | Threshold met | Cannot alter proposal | Only after timelock; any caller may execute |
+| Expired | Rejected | Rejected | No |
+| Cancelled | Rejected | Rejected | No |
+
+Rollback is not an emergency exception: it is a proposal containing a previous
+WASM hash. Regression coverage for all four states is in
+`src/test/upgrade_authorization_matrix.rs` (issue #1735).
+
 ## TODO / Future Enhancements
 
 - [ ] Integrate with a native Soroban token for precise `TokenWeighted` voting power.

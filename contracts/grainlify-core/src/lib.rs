@@ -20,6 +20,8 @@
 //! - `GovernanceConfig` fields are evolving; do not assume field stability across minor versions.
 //! - Any change to an INTERNAL function that is also tested by external test crates must be
 //!   coordinated with those test crates in the same PR.
+#[cfg(test)]
+extern crate std;
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, Address, Bytes, BytesN, Env,
     String, Symbol, Vec,
@@ -30,6 +32,8 @@ pub mod correlation;
 pub mod error_registry;
 pub mod errors;
 pub mod governance;
+mod event_compatibility;
+mod migration;
 mod multisig;
 pub mod nonce;
 pub mod pseudo_randomness;
@@ -300,6 +304,56 @@ pub struct MigrationCommitment {
     pub committed_at: u64,
     /// Commitment expires after this timestamp (0 = no expiry)
     pub expires_at: u64,
+}
+
+#[cfg(test)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub(crate) enum MigrationTrapPoint {
+    BeforeV1ToV2,
+    DuringV1ToV2,
+    AfterV1ToV2,
+    BeforeV2ToV3,
+    DuringV2ToV3,
+    AfterV2ToV3,
+    BeforeFinalize,
+    AfterMigrationStateWrite,
+    AfterVersionWrite,
+    AfterCommitmentRemoval,
+    AfterDoneEvent,
+    AfterMonitoring,
+}
+
+#[cfg(test)]
+pub(crate) mod migration_failure_injection {
+    use super::MigrationTrapPoint;
+    use std::cell::Cell;
+
+    std::thread_local! {
+        static TRAP_POINT: Cell<Option<MigrationTrapPoint>> = Cell::new(None);
+    }
+
+    pub(crate) fn set_trap_once(point: MigrationTrapPoint) {
+        TRAP_POINT.with(|trap| trap.set(Some(point)));
+    }
+
+    pub(crate) fn clear_trap() {
+        TRAP_POINT.with(|trap| trap.set(None));
+    }
+
+    pub(crate) fn maybe_trap(point: MigrationTrapPoint) {
+        let should_trap = TRAP_POINT.with(|trap| {
+            if trap.get() == Some(point) {
+                trap.set(None);
+                true
+            } else {
+                false
+            }
+        });
+
+        if should_trap {
+            panic!("injected migration failure");
+        }
+    }
 }
 
 /// [FIX-C02] Pending admin restore — two-step guard for snapshot-based admin changes.
@@ -982,42 +1036,14 @@ impl GrainlifyContract {
 
     /// Single-admin upgrade path
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
-        let start = env.ledger().timestamp();
-
-        #[cfg(feature = "strict-mode")]
-        {
-            let report = monitoring::check_invariants(&env);
-            strict_mode::strict_assert(report.healthy, "Strict mode: contract invariants unhealthy before upgrade");
-            strict_mode::strict_emit(&env, symbol_short!("upgrade"), symbol_short!("pre_chk"));
-        }
-
         let admin: Address = env
             .storage()
             .instance()
             .get(&DataKey::Admin)
             .unwrap_or_else(|| panic!("{}", ContractError::NotInitialized as u32));
         admin.require_auth();
-        Self::require_not_read_only(&env);
-
-        let current_version: u32 = env.storage().instance().get(&DataKey::Version).unwrap_or(1);
-        env.storage().instance().set(&DataKey::PreviousVersion, &current_version);
-        env.deployer().update_current_contract_wasm(new_wasm_hash.clone());
-
-        // [FIX-L02] Consistent event shape with execute_upgrade
-        env.events().publish(
-            (symbol_short!("upgrade"), symbol_short!("wasm")),
-            UpgradeEvent {
-                new_wasm_hash,
-                previous_version: current_version,
-                timestamp: env.ledger().timestamp(),
-                event_version: EVENT_SCHEMA_VERSION,
-                correlation_id: None,
-            },
-        );
-
-        monitoring::track_operation(&env, symbol_short!("upgrade"), admin, true);
-        let duration = env.ledger().timestamp().saturating_sub(start);
-        monitoring::emit_performance(&env, symbol_short!("upgrade"), duration);
+        let _ = new_wasm_hash;
+        panic!("Direct upgrades disabled: use propose_upgrade and execute_upgrade");
     }
 
     // ========================================================================
@@ -2365,13 +2391,19 @@ impl GrainlifyContract {
         admin.require_auth();
         Self::require_not_read_only(&env);
 
-        if let Some(state) = env.storage().instance().get::<_, MigrationState>(&DataKey::MigrationState) {
+        if let Some(state) = env
+            .storage()
+            .instance()
+            .get::<_, MigrationState>(&DataKey::MigrationState)
+        {
             if state.to_version == target_version {
                 return;
             }
         }
 
-        let commitment: MigrationCommitment = env.storage().instance()
+        let commitment: MigrationCommitment = env
+            .storage()
+            .instance()
             .get(&DataKey::MigrationCommitment(target_version))
             .unwrap_or_else(|| panic!("{}", ContractError::MigrationCommitmentNotFound as u32));
 
@@ -2391,15 +2423,18 @@ impl GrainlifyContract {
         }
 
         if current_version == 1 && target_version == 2 {
-            migrate_v1_to_v2(&env);
+            migration::migrate_v1_to_v2(&env);
         } else if current_version == 2 && target_version == 3 {
-            migrate_v2_to_v3(&env);
+            migration::migrate_v2_to_v3(&env);
         } else if current_version == 1 && target_version == 3 {
-            migrate_v1_to_v2(&env);
-            migrate_v2_to_v3(&env);
+            migration::migrate_v1_to_v2(&env);
+            migration::migrate_v2_to_v3(&env);
         } else {
             panic!("No migration path available");
         }
+
+        #[cfg(test)]
+        migration_failure_injection::maybe_trap(MigrationTrapPoint::BeforeFinalize);
 
         let state = MigrationState {
             from_version: current_version,
@@ -2408,16 +2443,26 @@ impl GrainlifyContract {
             migration_hash: migration_hash.clone(),
         };
         env.storage().instance().set(&DataKey::MigrationState, &state);
+        #[cfg(test)]
+        migration_failure_injection::maybe_trap(MigrationTrapPoint::AfterMigrationStateWrite);
         env.storage().instance().set(&DataKey::Version, &target_version);
+        #[cfg(test)]
+        migration_failure_injection::maybe_trap(MigrationTrapPoint::AfterVersionWrite);
 
         env.storage().instance().remove(&DataKey::MigrationCommitment(target_version));
+        #[cfg(test)]
+        migration_failure_injection::maybe_trap(MigrationTrapPoint::AfterCommitmentRemoval);
 
         env.events().publish(
             (symbol_short!("migrate"), symbol_short!("done")),
             (current_version, target_version, env.ledger().timestamp()),
         );
+        #[cfg(test)]
+        migration_failure_injection::maybe_trap(MigrationTrapPoint::AfterDoneEvent);
 
         monitoring::track_operation(&env, symbol_short!("migrate"), admin, true);
+        #[cfg(test)]
+        migration_failure_injection::maybe_trap(MigrationTrapPoint::AfterMonitoring);
     }
 
     // ========================================================================
@@ -2447,10 +2492,6 @@ impl GrainlifyContract {
     }
 }
 
-fn migrate_v1_to_v2(_env: &Env) {}
-
-fn migrate_v2_to_v3(_env: &Env) {}
-
 // ============================================================================
 // Event Version Compatibility
 // ============================================================================
@@ -2461,11 +2502,17 @@ fn migrate_v2_to_v3(_env: &Env) {}
 /// events so they can surface unknown-version events instead of silently
 /// misinterpreting them.
 pub fn is_compatible_event_version(version: u32) -> bool {
-    version == EVENT_SCHEMA_VERSION
+    event_compatibility::is_compatible(version, EVENT_SCHEMA_VERSION)
 }
 
 #[cfg(test)]
 mod test_event_versioning;
+#[cfg(test)]
+mod test_migration_fixtures;
+
+#[cfg(test)]
+#[path = "test/upgrade_authorization_matrix.rs"]
+mod upgrade_authorization_matrix;
 
 // ============================================================================
 // Trait Conformance

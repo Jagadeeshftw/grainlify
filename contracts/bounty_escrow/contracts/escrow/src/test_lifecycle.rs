@@ -246,11 +246,11 @@ fn test_full_bounty_lifecycle_with_refund() {
     escrow_client.approve_refund(&bounty_id, &refund_amount, &depositor, &RefundMode::Partial);
 
     // Verify eligibility
-    let (can_refund, deadline_passed, remaining, approval) =
+    let (can_refund, deadline_passed, eligible_amount, approval) =
         escrow_client.get_refund_eligibility(&bounty_id);
     assert!(can_refund);
     assert!(!deadline_passed);
-    assert_eq!(remaining, initial_amount);
+    assert_eq!(eligible_amount, refund_amount);
     assert!(approval.is_some());
 
     // 8. Execute partial refund payout
@@ -673,7 +673,7 @@ fn test_release_funds_bounty_not_found() {
     let ctx = setup_init();
     let r = ctx.client.try_release_funds(&99u64, &ctx.contributor);
     assert!(r.is_err());
-    assert_eq!(r.unwrap_err().unwrap(), Error::BountyNotFound);
+    assert_eq!(r.unwrap_err().unwrap(), Error::BountyNotFound.into());
 }
 
 #[test]
@@ -935,9 +935,9 @@ fn test_all_lifecycle_events_carry_v2_version() {
 #[test]
 fn test_get_escrow_not_found() {
     let ctx = setup_init();
-    let r = ctx.client.try_get_escrow(&9999u64);
+    let r = ctx.client.try_get_escrow_info(&9999u64);
     assert!(r.is_err());
-    assert_eq!(r.unwrap_err().unwrap(), Error::BountyNotFound);
+    assert_eq!(r.unwrap_err().unwrap(), Error::BountyNotFound.into());
 }
 
 #[test]

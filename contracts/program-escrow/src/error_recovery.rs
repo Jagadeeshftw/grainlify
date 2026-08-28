@@ -1155,6 +1155,9 @@ pub const ERR_ROLLBACK_DISABLED: u32 = 3007;
 pub const ERR_NO_FAILED_ITEMS: u32 = 3008;
 pub const ERR_NO_SUCCESSFUL_ITEMS: u32 = 3009;
 pub const ERR_INVALID_BATCH_CONFIG: u32 = 3010;
+/// The stored batch state failed an invariant check. This is a caller-visible
+/// error, not a host trap, so clients can retry or escalate safely.
+pub const ERR_BATCH_INTEGRITY: u32 = 3011;
 
 // ─────────────────────────────────────────────────────────
 // Batch Recovery Configuration
@@ -1709,7 +1712,7 @@ pub fn finalize_batch(env: &Env, batch_id: u64) -> Result<(), u32> {
 
     // Verify integrity before finalizing
     if !verify_batch_integrity(env, batch_id) {
-        panic!("Batch integrity check failed during finalization");
+        return Err(ERR_BATCH_INTEGRITY);
     }
 
     state.completed_at = Some(env.ledger().timestamp());
