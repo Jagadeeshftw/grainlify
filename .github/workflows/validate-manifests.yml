@@ -221,5 +221,8 @@ jobs:
           echo "Validation report generated: $REPORT_FILE"
           cat "$REPORT_FILE"
 
-      - name: Upload validation report
-        uses: actions/upload-artifact@v4
+          - name: Upload validation report
+            uses: actions/upload-artifact@v4
+            with:
+              name: manifest-validation-report
+              path: manifest-validation-report.md
