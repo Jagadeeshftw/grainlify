@@ -53,6 +53,8 @@ mod test_multi_token_fees;
 #[cfg(test)]
 mod test_reentrancy_guard;
 #[cfg(test)]
+mod test_compatibility;
+#[cfg(test)]
 mod test_admin_rotation;
 #[cfg(test)]
 mod test_archival_ttl;

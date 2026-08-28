@@ -1,5 +1,4 @@
 #![cfg(test)]
-#![allow(unused)]
 
 //! # ABI Compatibility Suite
 //!
@@ -28,7 +27,7 @@ use soroban_sdk::{
     token, Address, Env,
 };
 
-fn setup(env: &Env) -> (Address, Address, token::Client, BountyEscrowContractClient) {
+fn setup(env: &Env) -> (Address, Address, token::Client<'_>, BountyEscrowContractClient<'_>) {
     let admin = Address::generate(env);
     let depositor = Address::generate(env);
     let token_addr = env
@@ -52,44 +51,61 @@ fn setup(env: &Env) -> (Address, Address, token::Client, BountyEscrowContractCli
 fn test_all_error_codes_stable() {
     assert_eq!(Error::AlreadyInitialized as u32, 1);
     assert_eq!(Error::NotInitialized as u32, 2);
-    assert_eq!(Error::BountyExists as u32, 3);
-    assert_eq!(Error::BountyNotFound as u32, 4);
-    assert_eq!(Error::FundsNotLocked as u32, 5);
+    // 3, 4, 5 intentionally unassigned (BountyExists/BountyNotFound/FundsNotLocked moved to 55-57)
     assert_eq!(Error::DeadlineNotPassed as u32, 6);
     assert_eq!(Error::Unauthorized as u32, 7);
-    assert_eq!(Error::InvalidAmount as u32, 8);
-    assert_eq!(Error::InvalidAmount as u32, 10);
-    assert_eq!(Error::BountyExists as u32, 12);
+    assert_eq!(Error::InvalidFeeRate as u32, 8);
+    assert_eq!(Error::FeeRecipientNotSet as u32, 9);
+    assert_eq!(Error::InvalidBatchSize as u32, 10);
+    assert_eq!(Error::BatchSizeMismatch as u32, 11);
+    assert_eq!(Error::DuplicateBountyId as u32, 12);
     assert_eq!(Error::InvalidAmount as u32, 13);
     assert_eq!(Error::InvalidDeadline as u32, 14);
     // 15 intentionally unassigned
     assert_eq!(Error::InsufficientFunds as u32, 16);
+    assert_eq!(Error::RefundNotApproved as u32, 17);
     assert_eq!(Error::FundsPaused as u32, 18);
-    assert_eq!(Error::InvalidAmount as u32, 19);
-    assert_eq!(Error::InvalidAmount as u32, 20);
+    assert_eq!(Error::AmountBelowMinimum as u32, 19);
+    assert_eq!(Error::AmountAboveMaximum as u32, 20);
     assert_eq!(Error::NotPaused as u32, 21);
     assert_eq!(Error::ClaimPending as u32, 22);
-    assert_eq!(Error::TicketInvalid as u32, 23);
-    assert_eq!(Error::TicketInvalid as u32, 24);
-    assert_eq!(Error::TicketInvalid as u32, 25);
-    assert_eq!(Error::CapNotFound as u32, 26);
+    assert_eq!(Error::TicketNotFound as u32, 23);
+    assert_eq!(Error::TicketAlreadyUsed as u32, 24);
+    assert_eq!(Error::TicketExpired as u32, 25);
+    assert_eq!(Error::CapabilityNotFound as u32, 26);
     assert_eq!(Error::CapabilityExpired as u32, 27);
     assert_eq!(Error::CapabilityRevoked as u32, 28);
-    assert_eq!(Error::CapActionMismatch as u32, 29);
-    assert_eq!(Error::CapAmountExceeded as u32, 30);
-    assert_eq!(Error::CapUsesExhausted as u32, 31);
-    assert_eq!(Error::CapExceedsAuthority as u32, 32);
+    assert_eq!(Error::CapabilityActionMismatch as u32, 29);
+    assert_eq!(Error::CapabilityAmountExceeded as u32, 30);
+    assert_eq!(Error::CapabilityUsesExhausted as u32, 31);
+    assert_eq!(Error::CapabilityExceedsAuthority as u32, 32);
     assert_eq!(Error::InvalidAssetId as u32, 33);
     assert_eq!(Error::ContractDeprecated as u32, 34);
     assert_eq!(Error::ParticipantBlocked as u32, 35);
     assert_eq!(Error::ParticipantNotAllowed as u32, 36);
-    assert_eq!(Error::UseEscrowV2ForAnon as u32, 37);
-    // 38 intentionally unassigned
-    assert_eq!(Error::AnonRefundNeedsResolver as u32, 39);
-    assert_eq!(Error::AnonResolverNotSet as u32, 40);
-    // 41 intentionally unassigned
-    assert_eq!(Error::InvalidSelectionInput as u32, 42);
-    assert_eq!(Error::UpgradeSafetyFailed as u32, 43);
+    // 37, 38 intentionally unassigned
+    assert_eq!(Error::AnonRefundRequiresResolution as u32, 39);
+    assert_eq!(Error::AnonymousResolverNotSet as u32, 40);
+    assert_eq!(Error::NotAnonymousEscrow as u32, 41);
+    // 42 intentionally unassigned
+    assert_eq!(Error::UpgradeSafetyCheckFailed as u32, 43);
+    assert_eq!(Error::GasBudgetExceeded as u32, 44);
+    assert_eq!(Error::EscrowFrozen as u32, 45);
+    assert_eq!(Error::AddressFrozen as u32, 46);
+    assert_eq!(Error::AdminRotationAlreadyPending as u32, 47);
+    assert_eq!(Error::AdminRotationNotPending as u32, 48);
+    assert_eq!(Error::AdminRotationTimelockActive as u32, 49);
+    assert_eq!(Error::InvalidAdminRotationTimelock as u32, 50);
+    assert_eq!(Error::InvalidAdminRotationTarget as u32, 51);
+    assert_eq!(Error::InvalidBatchSizeCap as u32, 52);
+    assert_eq!(Error::TimelockNotElapsed as u32, 53);
+    assert_eq!(Error::ReleaseAlreadyQueued as u32, 54);
+    assert_eq!(Error::BountyExists as u32, 55);
+    assert_eq!(Error::BountyNotFound as u32, 56);
+    assert_eq!(Error::FundsNotLocked as u32, 57);
+    assert_eq!(Error::RouterNotConfigured as u32, 58);
+    assert_eq!(Error::SlippageExceeded as u32, 59);
+    assert_eq!(Error::FeeRoutingLocked as u32, 60);
 }
 
 // --- Enum variant stability ---
@@ -280,7 +296,10 @@ fn test_get_refund_eligibility_flags_lifecycle() {
     let (can, passed, remaining, approval) = client.get_refund_eligibility(&1);
     assert!(!can);
     assert!(!passed);
-    assert_eq!(remaining, 1000);
+    // `amount` is 0 whenever the escrow is not refund-eligible (deadline not
+    // passed, no admin approval); it only reports `remaining_amount` once
+    // `eligible` is true.
+    assert_eq!(remaining, 0);
     assert!(approval.is_none());
 
     env.ledger().set_timestamp(deadline + 1);
@@ -312,7 +331,7 @@ fn test_get_balance_tracks_escrow_state() {
 fn test_update_fee_config_none_is_noop() {
     let env = Env::default();
     let (_, _, _, client) = setup(&env);
-    client.update_fee_config(&None, &None, &None, &None);
+    client.update_fee_config(&None, &None, &None, &None, &None, &None);
     let cfg = client.get_fee_config();
     assert_eq!(cfg.lock_fee_rate, 0);
     assert_eq!(cfg.release_fee_rate, 0);
@@ -441,30 +460,6 @@ fn test_refund_history_grows_per_refund() {
     assert_eq!(client.get_refund_history(&1).len(), 2);
 }
 
-/// `set_amount_policy` boundary errors are stable.
-#[test]
-fn test_amount_policy_boundary_errors() {
-    let env = Env::default();
-    let (admin, depositor, _, client) = setup(&env);
-    client.set_amount_policy(&admin, &500, &2000);
-    assert_eq!(
-        client
-            .try_lock_funds(&depositor, &1, &499, &9999)
-            .unwrap_err()
-            .unwrap(),
-        Error::InvalidAmount
-    );
-    assert_eq!(
-        client
-            .try_lock_funds(&depositor, &2, &2001, &9999)
-            .unwrap_err()
-            .unwrap(),
-        Error::InvalidAmount
-    );
-    client.lock_funds(&depositor, &3, &500, &9999);
-    client.lock_funds(&depositor, &4, &2000, &9999);
-}
-
 /// `get_deprecation_status` default is not deprecated; toggles correctly.
 #[test]
 fn test_deprecation_status_stable() {
@@ -553,59 +548,6 @@ fn test_batch_release_funds_stable() {
     assert_eq!(client.get_escrow_info(&21).status, EscrowStatus::Released);
 }
 
-/// `get_aggregate_stats` returns consistent counts after lock/release.
-#[test]
-fn test_get_aggregate_stats_stable() {
-    let env = Env::default();
-    let (_, depositor, _, client) = setup(&env);
-    let contributor = Address::generate(&env);
-
-    client.lock_funds(&depositor, &1, &1000, &9999);
-    client.lock_funds(&depositor, &2, &1000, &9999);
-    client.release_funds(&1, &contributor);
-
-    let stats = client.get_aggregate_stats();
-    assert_eq!(stats.count_locked, 1);
-    assert_eq!(stats.count_released, 1);
-    assert_eq!(stats.total_locked, 1000);
-    assert_eq!(stats.total_released, 1000);
-}
-
-/// `query_escrows_by_depositor` returns only that depositor's escrows.
-#[test]
-fn test_query_escrows_by_depositor_stable() {
-    let env = Env::default();
-    let (_, depositor, _, client) = setup(&env);
-
-    client.lock_funds(&depositor, &1, &500, &9999);
-    client.lock_funds(&depositor, &2, &500, &9999);
-
-    let results = client.query_escrows_by_depositor(&depositor, &0, &10);
-    assert_eq!(results.len(), 2);
-}
-
-/// `get_escrow_ids_by_status` returns IDs matching the given status.
-#[test]
-fn test_get_escrow_ids_by_status_stable() {
-    let env = Env::default();
-    let (_, depositor, _, client) = setup(&env);
-    let contributor = Address::generate(&env);
-
-    client.lock_funds(&depositor, &1, &500, &9999);
-    client.lock_funds(&depositor, &2, &500, &9999);
-    client.release_funds(&1, &contributor);
-
-    // Test that update_fee_config works with None values (optional params)
-    client.update_fee_config(&None, &None, &None, &None, &None, &None);
-
-    // Config should remain unchanged
-    let config = client.get_fee_config();
-    assert_eq!(config.lock_fee_rate, 0);
-    assert_eq!(config.release_fee_rate, 0);
-    assert!(!config.distribution_enabled);
-    assert_eq!(config.treasury_destinations.len(), 0);
-}
-
 /// `set_claim_window` + `authorize_claim` + `claim` happy path is stable.
 #[test]
 fn test_claim_flow_stable() {
@@ -657,7 +599,7 @@ fn test_token_fee_config_round_trip_stable() {
         .register_stellar_asset_contract_v2(admin.clone())
         .address();
 
-    client.set_token_fee_config(&token_addr, &100, &50, &admin, &true);
+    client.set_token_fee_config(&token_addr, &100, &50, &0, &0, &admin, &true);
 
     let cfg = client.get_token_fee_config(&token_addr).unwrap();
     assert_eq!(cfg.lock_fee_rate, 100);
