@@ -67,7 +67,8 @@ use soroban_sdk::{
 };
 
 use crate::{
-    GrainlifyContract, GrainlifyContractClient,
+    migration_failure_injection, DataKey, GrainlifyContract, GrainlifyContractClient,
+    MigrationTrapPoint,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -97,6 +98,27 @@ fn commit_and_migrate(
     let h = hash(env, seed);
     client.commit_migration(&target, &h, &0u64);
     client.migrate(&target, &h);
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct MigrationSnapshot {
+    version: u32,
+    migration_state: Option<crate::MigrationState>,
+    commitment_exists: bool,
+    event_count: u32,
+}
+
+fn migration_snapshot(
+    client: &GrainlifyContractClient,
+    env: &Env,
+    target: u32,
+) -> MigrationSnapshot {
+    MigrationSnapshot {
+        version: client.get_version(),
+        migration_state: client.get_migration_state(),
+        commitment_exists: client.get_migration_commitment(&target).is_some(),
+        event_count: env.events().all().len(),
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1178,4 +1200,93 @@ fn successful_migration_prevents_replay_after_timestamp_reset() {
     // Idempotent no-op: no commitment, but MigrationState already records v3.
     client.migrate(&3u32, &h);
     assert_eq!(client.get_version(), 3);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 15. Restart acceptance contract: migration is transaction-atomic
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Acceptance contract for interrupted migration retries:
+///
+/// - `commit_migration` is the operator checkpoint.
+/// - Every migration step and final marker write is transaction-atomic.
+/// - There are no per-step checkpoints inside `migrate`.
+/// - After any trap during `migrate`, operators resume by calling `migrate`
+///   again with the same target version and committed hash.
+///
+/// The retry must converge to the same state as a clean run and must not leave
+/// duplicate migration/monitoring events or incompatible version markers.
+#[test]
+fn restarted_migration_converges_after_trap_at_each_phase_without_duplicate_events() {
+    use MigrationTrapPoint::*;
+
+    let clean_env = Env::default();
+    clean_env.ledger().with_mut(|li| li.timestamp = 7_000);
+    let (clean_client, _) = setup(&clean_env);
+    clean_client.set_version(&1u32);
+    let clean_hash = hash(&clean_env, 0xA5);
+    clean_client.commit_migration(&3u32, &clean_hash, &0u64);
+    clean_client.migrate(&3u32, &clean_hash);
+    let expected = migration_snapshot(&clean_client, &clean_env, 3);
+
+    let trap_points = [
+        BeforeV1ToV2,
+        DuringV1ToV2,
+        AfterV1ToV2,
+        BeforeV2ToV3,
+        DuringV2ToV3,
+        AfterV2ToV3,
+        BeforeFinalize,
+        AfterMigrationStateWrite,
+        AfterVersionWrite,
+        AfterCommitmentRemoval,
+        AfterDoneEvent,
+        AfterMonitoring,
+    ];
+
+    for trap_point in trap_points {
+        let env = Env::default();
+        env.ledger().with_mut(|li| li.timestamp = 7_000);
+        let (client, _) = setup(&env);
+        client.set_version(&1u32);
+        let h = hash(&env, 0xA5);
+        client.commit_migration(&3u32, &h, &0u64);
+
+        let before_failed_migrate = migration_snapshot(&client, &env, 3);
+        assert_eq!(before_failed_migrate.version, 1);
+        assert!(before_failed_migrate.migration_state.is_none());
+        assert!(before_failed_migrate.commitment_exists);
+
+        migration_failure_injection::set_trap_once(trap_point);
+        let failed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            client.migrate(&3u32, &h);
+        }));
+        migration_failure_injection::clear_trap();
+        assert!(failed.is_err(), "trap point {:?} must interrupt migrate", trap_point);
+
+        let after_failed_migrate = migration_snapshot(&client, &env, 3);
+        assert_eq!(
+            before_failed_migrate, after_failed_migrate,
+            "trap point {:?} must roll back all migrate writes and events",
+            trap_point
+        );
+        assert_eq!(env.storage().instance().get::<_, u32>(&DataKey::Version), Some(1));
+        assert!(!env.storage().instance().has(&DataKey::MigrationState));
+        assert!(env.storage().instance().has(&DataKey::MigrationCommitment(3)));
+
+        client.migrate(&3u32, &h);
+        let actual = migration_snapshot(&client, &env, 3);
+
+        assert_eq!(
+            expected, actual,
+            "retry after {:?} must match an uninterrupted migration",
+            trap_point
+        );
+        assert_eq!(actual.version, 3);
+        assert!(!actual.commitment_exists);
+        let state = actual.migration_state.unwrap();
+        assert_eq!(state.from_version, 1);
+        assert_eq!(state.to_version, 3);
+        assert_eq!(state.migration_hash, h);
+    }
 }

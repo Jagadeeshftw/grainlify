@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use soroban_sdk::{panic_with_error, vec, Address, Env, IntoVal, Symbol, Val};
 
 /// Default maximum gross-to-net multiplier for router quotes.
@@ -8,12 +6,14 @@ use soroban_sdk::{panic_with_error, vec, Address, Env, IntoVal, Symbol, Val};
 /// This bounds the acceptable return from `router.quote(token, net_amount)` so
 /// a malicious or misconfigured router cannot drain the program by returning
 /// an implausibly large gross amount.
+#[allow(dead_code)] // Intended for external integration and future configuration commands
 pub const DEFAULT_MAX_FOT_MULTIPLIER_BPS: u32 = 15_000;
 
 /// Maximum configurable multiplier, in basis points, allowed via `set_fot_router`.
 ///
 /// This caps the bound at 10x the intended net amount. Any higher would let
 /// a compromised admin set a multiplier large enough to defeat the sanity check.
+#[allow(dead_code)] // Intended for external integration and future configuration commands
 pub const MAX_FOT_MULTIPLIER_BPS: u32 = 100_000;
 
 /// Apply FoT routing to compute the gross transfer amount.

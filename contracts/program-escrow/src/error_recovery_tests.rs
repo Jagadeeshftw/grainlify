@@ -2527,6 +2527,13 @@ fn test_finalize_batch_not_found() {
     });
 }
 
+#[test]
+fn test_batch_integrity_error_has_stable_discriminant() {
+    // Keep the new caller-visible error append-only so existing recovery
+    // clients do not observe a renumbered ABI.
+    assert_eq!(crate::error_recovery::ERR_BATCH_INTEGRITY, 3011);
+}
+
 // ─────────────────────────────────────────────────────────
 // 39. Batch Recovery Invariants Tests
 // ─────────────────────────────────────────────────────────

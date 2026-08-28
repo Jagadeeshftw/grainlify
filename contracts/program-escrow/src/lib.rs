@@ -220,13 +220,12 @@ const AUTH_KEY_INDEX: Symbol = symbol_short!("AuthIdx");
 const FEE_CONFIG: Symbol = symbol_short!("FeeCfg");
 const FEE_COLLECTED: Symbol = symbol_short!("FeeCol");
 /// Event symbol for insurance-reserve withdrawal audit events.
-const INSURANCE_RESERVE_WITHDRAWN: Symbol = symbol_short!("InsRsvWd");
+pub const INSURANCE_RESERVE_WITHDRAWN: Symbol = insurance_reserve::INSURANCE_RESERVE_WITHDRAWN;
 /// Storage key for the set of consumed idempotency keys (batch payout).
 const PAYOUT_IDEM_KEYS: Symbol = symbol_short!("PayIdem");
 /// Event symbol emitted when a batch_payout replay is detected.
 const BATCH_PAYOUT_REPLAYED: Symbol = symbol_short!("BatPayRp");
 const TOKEN_ALLOWLIST_V2: Symbol = symbol_short!("TknAlw2");
-const TOKEN_DECIMALS_MAP: Symbol = symbol_short!("TkDcMap");
 const FOT_ROUTER_SET: Symbol = symbol_short!("FotRtSet");
 const FOT_ROUTER_CLEARED: Symbol = symbol_short!("FotRtClr");
 const EPOCH_SNAPSHOTS: Symbol = symbol_short!("EpSnap");
@@ -1406,6 +1405,58 @@ pub struct TokenAllowlistSchemaVersionSet {
     pub timestamp: u64,
 }
 
+/// Emitted whenever a token's immutable decimal scale is first configured via
+/// `add_allowed_token_with_decimals`.
+///
+/// ### Topics
+/// `(TOKEN_DECIMALS_CONFIGURED,)`
+///
+/// ### Security notes
+/// - The configured scale is immutable; this event marks the one write.
+/// - `reported_decimals` is the token contract's live `decimals()` view when it
+///   exposes one, recorded for cross-checking against `configured_decimals`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TokenDecimalsConfiguredEvent {
+    pub version: u32,
+    /// Token contract address that was configured.
+    pub token: Address,
+    /// Immutable application-level decimal scale recorded for this token.
+    pub configured_decimals: u32,
+    /// Live `decimals()` reported by the token contract, if it implements one.
+    pub reported_decimals: Option<u32>,
+    /// Admin that performed the configuration.
+    pub configured_by: Address,
+    /// Ledger timestamp.
+    pub timestamp: u64,
+}
+
+/// Emitted when the token contract's live `decimals()` view disagrees with the
+/// admin-configured scale at allowlist-add time.
+///
+/// ### Topics
+/// `(TOKEN_DECIMALS_MISMATCH,)`
+///
+/// ### Security notes
+/// - Non-blocking: some supported tokens use an application-defined accounting
+///   scale that legitimately differs from their on-chain `decimals()`.
+/// - Surfaced so indexers and operational monitoring can flag misconfiguration.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TokenDecimalsMismatchEvent {
+    pub version: u32,
+    /// Token contract address with the mismatch.
+    pub token: Address,
+    /// Scale the admin configured for this token.
+    pub configured_decimals: u32,
+    /// Scale the token contract reports from its `decimals()` view.
+    pub reported_decimals: u32,
+    /// Admin that performed the configuration.
+    pub configured_by: Address,
+    /// Ledger timestamp.
+    pub timestamp: u64,
+}
+
 // Event symbols for token allowlist lifecycle
 const TOKEN_ALLOWLIST_UPDATED: Symbol = symbol_short!("TkAllow");
 const TOKEN_REJECTED: Symbol = symbol_short!("TkReject");
@@ -2106,6 +2157,7 @@ mod claim_period;
 pub use claim_period::{ClaimRecord, ClaimStatus};
 mod payout_splits;
 pub use payout_splits::{BeneficiarySplit, SplitConfig, SplitPayoutResult};
+pub mod insurance_reserve;
 // #[cfg(test)] mod test_claim_period_expiry_cancellation; // pre-existing breakage
 
 mod error_recovery;
@@ -2253,6 +2305,29 @@ mod test_struct_layout;
 mod test_lifecycle_dwell_time;
 // #[cfg(test)] mod test_serialization_compatibility; // pre-existing breakage
 // #[cfg(test)] mod test_payout_splits; // pre-existing breakage
+
+#[cfg(test)]
+mod test_support;
+#[cfg(test)]
+mod test_program_core;
+#[cfg(test)]
+mod test_program_admin;
+#[cfg(test)]
+mod test_program_batch_registration;
+#[cfg(test)]
+mod test_program_allowlist;
+#[cfg(test)]
+mod test_program_analytics;
+#[cfg(test)]
+mod test_program_payouts;
+#[cfg(test)]
+mod test_program_queries;
+#[cfg(test)]
+mod test_program_fees_idempotency;
+#[cfg(test)]
+mod test_program_limits_pause;
+#[cfg(test)]
+mod test_program_atomicity_security;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Read-only mode types (referenced by test_read_only_mode.rs)
@@ -3478,44 +3553,17 @@ impl ProgramEscrowContract {
     ///
     /// Invariant: `reserve_share + recipient_share == total_fee`.
     fn split_fee_for_reserve(total_fee: i128, insurance_reserve_bps: u32) -> (i128, i128) {
-        if insurance_reserve_bps == 0 || total_fee <= 0 {
-            return (0, total_fee);
-        }
-        // Ceiling division: reserve_share = ceil(total_fee * bps / BASIS_POINTS)
-        let bps = insurance_reserve_bps as i128;
-        let numerator = total_fee
-            .checked_mul(bps)
-            .and_then(|n| n.checked_add(BASIS_POINTS - 1))
-            .expect("Insurance reserve split overflow");
-        let reserve_share = numerator / BASIS_POINTS;
-        let recipient_share = total_fee - reserve_share;
-        (reserve_share, recipient_share)
+        insurance_reserve::split_fee_for_reserve(total_fee, insurance_reserve_bps)
     }
 
     /// Accrue `amount` into the on-chain insurance reserve.
     fn accrue_insurance_reserve(env: &Env, amount: i128) {
-        if amount <= 0 {
-            return;
-        }
-        let current: i128 = env
-            .storage()
-            .instance()
-            .get(&DataKey::InsuranceReserve)
-            .unwrap_or(0);
-        let next = current
-            .checked_add(amount)
-            .expect("Insurance reserve overflow");
-        env.storage()
-            .instance()
-            .set(&DataKey::InsuranceReserve, &next);
+        insurance_reserve::accrue_insurance_reserve(env, amount);
     }
 
     /// Read the current insurance reserve balance (token units).
     pub fn get_insurance_reserve_balance(env: Env) -> i128 {
-        env.storage()
-            .instance()
-            .get(&DataKey::InsuranceReserve)
-            .unwrap_or(0)
+        insurance_reserve::get_insurance_reserve_balance(&env)
     }
 
     /// Withdraw the full (or partial) insurance reserve to `target` (admin-only).
@@ -3533,24 +3581,11 @@ impl ProgramEscrowContract {
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         admin.require_auth();
 
-        if amount <= 0 {
-            panic_with_error!(&env, &ContractError::InvalidAmount);
-        }
-
-        let balance_before: i128 = env
-            .storage()
-            .instance()
-            .get(&DataKey::InsuranceReserve)
-            .unwrap_or(0);
-
-        if amount > balance_before {
-            panic_with_error!(&env, &ContractError::InsufficientInsuranceReserve);
-        }
-
-        let balance_after = balance_before - amount;
-        env.storage()
-            .instance()
-            .set(&DataKey::InsuranceReserve, &balance_after);
+        let (balance_before, balance_after) =
+            match insurance_reserve::debit_insurance_reserve(&env, amount) {
+                Ok(res) => res,
+                Err(e) => panic_with_error!(&env, &e),
+            };
 
         // Determine the token to use from the legacy PROGRAM_DATA or any registered program.
         let program_data: ProgramData = env
@@ -6423,36 +6458,41 @@ impl ProgramEscrowContract {
         panic!("Token not on allowlist");
     }
 
-    /// Internal: look up stored decimals for a token (0 if not found).
+    /// Add a token to the allowlist **and permanently bind its decimal scale**
+    /// (admin only).
     ///
-    /// Returns the value stored by `add_allowed_token_with_decimals`.
-    /// Returns `0` for tokens added via the legacy `add_allowed_token` path.
-    fn get_token_decimals_internal(env: &Env, token: &Address) -> u32 {
-        let map: Map<Address, u32> = env
-            .storage()
-            .instance()
-            .get(&TOKEN_DECIMALS_MAP)
-            .unwrap_or_else(|| Map::new(env));
-        map.get(token.clone()).unwrap_or(0u32)
-    }
-
-    /// Add a token to the allowlist **with its decimal precision** (admin only).
+    /// This is the preferred entrypoint for new deployments. Raw token amounts
+    /// are always transferred and stored as `i128`; the `decimals` value is
+    /// metadata used by indexers and UIs to render those raw amounts. It is
+    /// stored once instead of read live at display time, because a token
+    /// contract can be upgraded, replaced, or expose no standard `decimals()`
+    /// view, while historical payouts must retain their original
+    /// interpretation.
     ///
-    /// This is the preferred entrypoint for new deployments.  Storing decimals
-    /// at add-time means payout callers can supply amounts in the token's own
-    /// base units and the contract records the precision for off-chain tooling.
+    /// # Canonical update semantics
+    /// - The configured scale is **immutable**. Re-adding the same token with a
+    ///   *different* scale panics `"Token decimals are immutable"`; re-adding it
+    ///   with the *same* scale panics `"Token already on allowlist"`. There is
+    ///   deliberately no in-place migration — a scale change would reinterpret
+    ///   every historical raw payout. Migrations must use a new token address.
+    /// - The allowlist is enforced only at `init_program` time. Programs that
+    ///   are already initialized keep operating (and paying out) with their
+    ///   original token even if it is later removed from the list, so locked
+    ///   funds can never be stranded by a policy change.
     ///
     /// # Parameters
     /// - `token`    — token contract address
     /// - `decimals` — number of decimal places (0–18)
     ///
     /// # Errors
-    /// - Panics `"Token already on allowlist"` if already present.
     /// - Panics `"Decimals exceed maximum (18)"` if `decimals > 18`.
+    /// - Panics `"Token decimals are immutable"` on re-add with a different scale.
+    /// - Panics `"Token already on allowlist"` on re-add with the same scale.
     ///
     /// # Events
-    /// Emits [`TokenAllowlistUpdatedEvent`] with `added = true` and the stored
-    /// `decimals` value.
+    /// Emits [`TokenAllowlistUpdatedEvent`] (`added = true`),
+    /// [`TokenDecimalsConfiguredEvent`], and — when the token's live `decimals()`
+    /// view disagrees with `decimals` — [`TokenDecimalsMismatchEvent`].
     pub fn add_allowed_token_with_decimals(env: Env, token: Address, decimals: u32) {
         let admin = Self::require_admin(&env);
 
@@ -6460,38 +6500,43 @@ impl ProgramEscrowContract {
             panic!("Decimals exceed maximum (18)");
         }
 
-        let mut v2 = Self::get_token_allowlist_v2_internal(&env);
+        // Immutability guard. A configured scale is written exactly once; any
+        // later write is rejected so historical payouts keep their meaning.
+        let dec_key = DataKey::TokenDecimals(token.clone());
+        if let Some(existing) = env.storage().instance().get::<DataKey, u32>(&dec_key) {
+            if existing != decimals {
+                panic!("Token decimals are immutable");
+            }
+            panic!("Token already on allowlist");
+        }
 
+        // Defense in depth: the V2 list is the canonical membership record.
+        let mut v2 = Self::get_token_allowlist_v2_internal(&env);
         for entry in v2.iter() {
             if entry.token == token {
                 panic!("Token already on allowlist");
             }
         }
 
+        // Best-effort live cross-check before any state mutation. `try_decimals`
+        // yields a nested result (invoke outcome, then conversion); a token that
+        // does not implement the standard view simply leaves this `None`.
+        let reported_decimals = token::Client::new(&env, &token)
+            .try_decimals()
+            .ok()
+            .and_then(|r| r.ok());
+
+        // Write the canonical V2 list.
         v2.push_back(AllowedTokenEntry { token: token.clone(), decimals });
+        env.storage().instance().set(&TOKEN_ALLOWLIST_V2, &v2);
 
-        // Write V2 list.
-        env.storage()
-            .instance()
-            .set(&TOKEN_ALLOWLIST_V2, &v2);
+        // Write the immutable per-token decimal scale (O(1) lookup path).
+        env.storage().instance().set(&dec_key, &decimals);
 
-        // Also write the per-token decimal cache for O(1) lookup.
-        let mut map: Map<Address, u32> = env
-            .storage()
-            .instance()
-            .get(&TOKEN_DECIMALS_MAP)
-            .unwrap_or_else(|| Map::new(&env));
-        map.set(token.clone(), decimals);
-        env.storage()
-            .instance()
-            .set(&TOKEN_DECIMALS_MAP, &map);
-
-        // Keep V1 list in sync for backward-compatible readers.
+        // Keep the V1 list in sync for backward-compatible readers.
         let mut v1 = Self::get_token_allowlist_internal(&env);
         v1.push_back(token.clone());
-        env.storage()
-            .instance()
-            .set(&DataKey::TokenAllowlist, &v1);
+        env.storage().instance().set(&DataKey::TokenAllowlist, &v1);
 
         env.events().publish(
             (TOKEN_ALLOWLIST_UPDATED,),
@@ -6508,8 +6553,9 @@ impl ProgramEscrowContract {
 
     /// Add a token to the allowlist without specifying decimals (admin only).
     ///
-    /// Decimals default to `0`.  Prefer `add_allowed_token_with_decimals` for
-    /// new programs that need accurate decimal metadata.
+    /// Decimals default to `0` ("unknown"). Prefer
+    /// [`add_allowed_token_with_decimals`] for new programs that need accurate
+    /// decimal metadata.
     ///
     /// # Errors
     /// Panics `"Token already on allowlist"` if already present.
@@ -6520,7 +6566,14 @@ impl ProgramEscrowContract {
 
     /// Remove a token from the allowlist (admin only).
     ///
-    /// Removes from both V2 and V1 lists and clears the decimal cache.
+    /// Removes the token from both the canonical V2 list and the V1 list and
+    /// clears its stored decimal scale. Programs already initialized with this
+    /// token are unaffected — enforcement only runs at `init_program` time — so
+    /// their locked funds can still be paid out.
+    ///
+    /// # Errors
+    /// Panics `"Token not in allowlist"` if the token is not currently listed
+    /// (removing a never-added token, or removing the same token twice).
     pub fn remove_allowed_token(env: Env, token: Address) {
         let admin = Self::require_admin(&env);
 
@@ -6554,16 +6607,10 @@ impl ProgramEscrowContract {
             .instance()
             .set(&DataKey::TokenAllowlist, &new_v1);
 
-        // Clear decimal cache.
-        let mut map: Map<Address, u32> = env
-            .storage()
-            .instance()
-            .get(&TOKEN_DECIMALS_MAP)
-            .unwrap_or_else(|| Map::new(&env));
-        map.remove(token.clone());
+        // Clear the stored decimal scale so a future re-add can reconfigure it.
         env.storage()
             .instance()
-            .set(&TOKEN_DECIMALS_MAP, &map);
+            .remove(&DataKey::TokenDecimals(token.clone()));
 
         env.events().publish(
             (TOKEN_ALLOWLIST_UPDATED,),
@@ -6600,11 +6647,6 @@ impl ProgramEscrowContract {
     /// Returns the full token allowlist with decimal metadata (V2).
     pub fn get_allowed_tokens_with_decimals(env: Env) -> soroban_sdk::Vec<AllowedTokenEntry> {
         Self::get_token_allowlist_v2_internal(&env)
-    }
-
-    /// Returns the stored decimal precision for `token`, or `0` if not found.
-    pub fn get_token_decimals(env: Env, token: Address) -> u32 {
-        Self::get_token_decimals_internal(&env, &token)
     }
 
     /// Returns the token-allowlist storage schema version written during init.
@@ -9324,7 +9366,6 @@ mod test_batch_operations;
 // #[cfg(test)] mod test_pause;
 
 #[cfg(test)]
-#[cfg(any())]
 mod test_insurance_reserve;
 
 #[cfg(test)]
