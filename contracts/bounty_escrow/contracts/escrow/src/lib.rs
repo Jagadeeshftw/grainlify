@@ -1803,7 +1803,8 @@ impl BountyEscrowContract {
                 bounty_id,
                 previous_prefs,
                 new_prefs: notification_prefs,
-                admin: admin.clone(),
+                actor: admin.clone(),
+                created: false,
                 timestamp: env.ledger().timestamp(),
             },
         );
