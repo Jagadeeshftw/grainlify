@@ -101,6 +101,12 @@ Emitted once when `init` succeeds.
 
 ## Testing
 
+This facade includes regression coverage for the cross-contract safety checks introduced in issue #1731:
+
+- `src/test_cross_contract_safety.rs` verifies no-auth read access, immutable admin semantics, and admin-only mutations.
+- `src/tests/query_adapters_tests.rs` checks missing-record handling and adapters that must fail closed rather than silently masking contract errors.
+- These tests are designed to catch ABI drift and authorization drift before a facade release is merged.
+
 Run the full test suite from the `contracts/` workspace:
 
 ```bash
