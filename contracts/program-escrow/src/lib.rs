@@ -157,7 +157,7 @@
 use soroban_sdk::xdr::ToXdr;
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short, token, vec,
-    Address, Bytes, BytesN, Env, String, Symbol, Vec,
+    Address, Bytes, BytesN, Env, Map, String, Symbol, Vec,
 };
 use grainlify_core::CorrelationId;
 
@@ -906,6 +906,8 @@ pub struct ProgramData {
     pub reference_hash: Option<soroban_sdk::Bytes>,
     pub archived: bool,
     pub archived_at: Option<u64>,
+    /// Lifecycle status of the program (`Draft` before `publish_program`, `Active` after).
+    pub status: ProgramStatus,
     /// Optional per-program circuit breaker failure threshold.
     /// If set, overrides the global default (3) for this program.
     /// Must be between 1 and 100 inclusive when set.
@@ -1427,9 +1429,6 @@ pub const MAX_TOKEN_DECIMALS: u32 = 18;
 pub enum DataKey {
     Program(String),                 // program_id -> ProgramData
     Admin,                           // Contract Admin
-    ReleaseSchedule(String, u64),    // program_id, schedule_id -> ProgramReleaseSchedule
-    ReleaseHistory(String),          // program_id -> soroban_sdk::Vec<ProgramReleaseHistory>
-    NextScheduleId(String),          // program_id -> next schedule_id
     MultisigConfig(String),          // program_id -> MultisigConfig
     SplitConfig(String),             // program_id -> SplitConfig (payout splits)
     PendingClaim(String, u64),       // (program_id, schedule_id) -> ClaimRecord
@@ -1446,10 +1445,6 @@ pub enum DataKey {
     SpendLimitSchemaVersion,
     PauseSchemaVersion,
     TokenAllowlist,
-    /// V2 token allowlist storing `AllowedTokenEntry` (includes decimals).
-    TokenAllowlistV2,
-    /// Per-token decimal precision cache; key is the token contract address.
-    TokenDecimals(Address),
     /// Dynamic pricing configuration
     DynamicPricingConfig,
     /// Dynamic pricing state
@@ -1477,25 +1472,16 @@ pub enum DataKey {
     IdempotencySchemaVersion,
     BatchPayoutSchemaVersion,
     CircuitBreakerSchemaVersion,
-    DelegateMetadataRateLimit(String),
     BatchReceipt(u64),
     PendingAdmin,
     /// Pending admin transition metadata used to invalidate replaced or expired proposals.
     PendingAdminTransition,
     /// Pending controller address for two-step controller rotation (step 1).
     PendingController(String),
-    /// Immutable, admin-configured display scale for an allowlisted token.
-    /// Appended to preserve the XDR discriminants of all existing keys.
-    TokenDecimals(Address),
-    /// Full transition state for pending controller rotation (proposed_at, deadline, nonce).
-    /// Stored alongside PendingController to enable timelock enforcement in accept_controller.
-    PendingControllerState(String),
     /// Upgrade-safe schema version marker for role management storage.
     /// Written on init; increment when role management layout changes.
     RoleManagementSchemaVersion,
     RoleManagementConfig,
-    /// Anonymous resolver for a program — maps program_id to AnonymousResolver.
-    AnonymousResolver(String),
     /// Lazy inverted index: (program_id, recipient) → Vec<PayoutRecord>.
     ///
     /// Written on first payout to a given recipient; never touched until then,
@@ -1509,6 +1495,12 @@ pub enum DataKey {
     /// counter; a malicious delegate for one program cannot exhaust the
     /// budget of another.
     DelegateMetaRateLimit(String),
+    /// On-chain insurance reserve balance for the contract (admin-gated withdrawals).
+    InsuranceReserve,
+    /// Per-program lifecycle status timeline (companion to `ProgramData::status`).
+    LifecycleTimeline(String),
+    /// Per-program access-signal marker used by RBAC/monitoring subsystems.
+    ProgramAccessSignal(String),
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4440,6 +4432,53 @@ impl ProgramEscrowContract {
         }
     }
 
+    /// Returns `true` when `caller` is the program's configured delegate (and is
+    /// neither the authorized payout key nor the contract admin).
+    fn is_delegate_caller(env: &Env, program_data: &ProgramData, caller: &Address) -> bool {
+        if *caller == program_data.authorized_payout_key {
+            return false;
+        }
+        let is_admin = env
+            .storage()
+            .instance()
+            .get::<_, Address>(&DataKey::Admin)
+            .map(|admin| admin == *caller)
+            .unwrap_or(false);
+        if is_admin {
+            return false;
+        }
+        program_data
+            .delegate
+            .as_ref()
+            .map(|delegate| delegate == caller)
+            .unwrap_or(false)
+    }
+
+    /// Enforces the per-program rolling-window rate limit on delegate-invoked
+    /// metadata writes. Panics if the delegate has exceeded
+    /// `DELEGATE_META_MAX_OPS_PER_WINDOW` within `DELEGATE_META_RATE_LIMIT_WINDOW`.
+    fn check_and_update_delegate_meta_rate_limit(env: &Env, program_id: &String) {
+        let key = DataKey::DelegateMetaRateLimit(program_id.clone());
+        let now = env.ledger().timestamp();
+        let mut state: DelegateMetaRateLimitState = env
+            .storage()
+            .instance()
+            .get(&key)
+            .unwrap_or(DelegateMetaRateLimitState {
+                window_start: now,
+                count: 0,
+            });
+        if now > state.window_start + DELEGATE_META_RATE_LIMIT_WINDOW {
+            state.window_start = now;
+            state.count = 0;
+        }
+        state.count += 1;
+        if state.count > DELEGATE_META_MAX_OPS_PER_WINDOW {
+            panic!("Delegate metadata update rate limit exceeded");
+        }
+        env.storage().instance().set(&key, &state);
+    }
+
     fn authorize_release_actor(
         env: &Env,
         program_data: &ProgramData,
@@ -5151,7 +5190,7 @@ impl ProgramEscrowContract {
             }
         }
 
-        let mut flags = Self::get_program_pause_flags(&env, &program_id);
+        let mut flags = Self::get_program_pause_flags(&env, program_id.clone());
         let timestamp = env.ledger().timestamp();
 
         if reason.is_some() {
@@ -5283,7 +5322,7 @@ impl ProgramEscrowContract {
             })
     }
 
-    pub fn get_program_pause_flags(env: &Env, program_id: &String) -> PauseFlags {
+    pub fn get_program_pause_flags(env: &Env, program_id: String) -> PauseFlags {
         env.storage()
             .instance()
             .get(&DataKey::ProgramPauseFlags(program_id.clone()))
@@ -5430,7 +5469,7 @@ impl ProgramEscrowContract {
         }
 
         if let Some(pid) = program_id {
-            let mut program_flags = Self::get_program_pause_flags(env, pid);
+            let mut program_flags = Self::get_program_pause_flags(env, pid.clone());
             let mut p_flags_changed = false;
 
             if program_flags.lock_paused {
@@ -6467,110 +6506,6 @@ impl ProgramEscrowContract {
         );
     }
 
-    /// Add an allowed token and permanently bind its human-readable decimal
-    /// scale (admin only).
-    ///
-    /// Raw token amounts are always transferred and stored as `i128`; decimals
-    /// are metadata used by indexers and UIs to render those raw amounts.  The
-    /// value is therefore stored instead of read live at display time: a token
-    /// contract can be upgraded, replaced, or expose no standard `decimals()`
-    /// view, while historical payouts must retain their original interpretation.
-    ///
-    /// A configured value is immutable. Re-registering the same token with the
-    /// same value is idempotent, but a different value panics with
-    /// `"Token decimals are immutable"`. This deliberately has no migration
-    /// shortcut: changing a scale would reinterpret every historical raw
-    /// payout. A migration must use a new token address and a new configuration.
-    ///
-    /// If the token implements the standard `decimals()` view, the result is
-    /// compared with `decimals`. A disagreement emits
-    /// [`TokenDecimalsMismatchEvent`] for monitoring but is not blocking, since
-    /// some supported tokens use an application-defined accounting scale.
-    ///
-    /// # Events
-    /// Emits [`TokenDecimalsConfiguredEvent`] for a new configuration and
-    /// [`TokenDecimalsMismatchEvent`] when the optional live check disagrees.
-    pub fn add_allowed_token_with_decimals(env: Env, token: Address, decimals: u32) {
-        let admin = Self::require_admin(&env);
-        let key = DataKey::TokenDecimals(token.clone());
-
-        if let Some(existing) = env.storage().instance().get::<DataKey, u32>(&key) {
-            if existing != decimals {
-                panic!("Token decimals are immutable");
-            }
-            return;
-        }
-
-        let mut allowlist = Self::get_token_allowlist_internal(&env);
-        let mut already_allowed = false;
-        for existing in allowlist.iter() {
-            if existing == token {
-                already_allowed = true;
-                break;
-            }
-        }
-        if !already_allowed {
-            allowlist.push_back(token.clone());
-            env.storage()
-                .instance()
-                .set(&DataKey::TokenAllowlist, &allowlist);
-            env.events().publish(
-                (TOKEN_ALLOWLIST_UPDATED,),
-                TokenAllowlistUpdatedEvent {
-                    version: EVENT_VERSION_V2,
-                    token: token.clone(),
-                    added: true,
-                    updated_by: admin.clone(),
-                    timestamp: env.ledger().timestamp(),
-                },
-            );
-        }
-
-        // `try_decimals` makes this check best-effort: non-standard token
-        // contracts remain usable, but standard-token disagreements are visible
-        // to indexers and operational monitoring.
-        let reported_decimals = token::Client::new(&env, &token).try_decimals().ok();
-        env.storage().instance().set(&key, &decimals);
-        env.events().publish(
-            (TOKEN_DECIMALS_CONFIGURED,),
-            TokenDecimalsConfiguredEvent {
-                version: EVENT_VERSION_V2,
-                token: token.clone(),
-                configured_decimals: decimals,
-                reported_decimals,
-                configured_by: admin.clone(),
-                timestamp: env.ledger().timestamp(),
-            },
-        );
-
-        if let Some(reported_decimals) = reported_decimals {
-            if reported_decimals != decimals {
-                env.events().publish(
-                    (TOKEN_DECIMALS_MISMATCH,),
-                    TokenDecimalsMismatchEvent {
-                        version: EVENT_VERSION_V2,
-                        token,
-                        configured_decimals: decimals,
-                        reported_decimals,
-                        configured_by: admin,
-                        timestamp: env.ledger().timestamp(),
-                    },
-                );
-            }
-        }
-    }
-
-    /// Return the immutable configured decimal scale for `token`.
-    ///
-    /// Returns `None` for legacy allowlist entries added with
-    /// [`add_allowed_token`] or for tokens that have not been configured.
-    pub fn get_token_decimals(env: Env, token: Address) -> Option<u32> {
-        env.storage()
-            .instance()
-            .get(&DataKey::TokenDecimals(token))
-    }
-
-    /// Remove a token contract address from the allowlist (admin only).
     /// Add a token to the allowlist without specifying decimals (admin only).
     ///
     /// Decimals default to `0`.  Prefer `add_allowed_token_with_decimals` for

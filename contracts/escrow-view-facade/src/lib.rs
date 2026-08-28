@@ -30,10 +30,6 @@ mod bounty_escrow {
     include!("bounty_escrow_bindings.rs");
 }
 
-mod program_escrow {
-    include!("program_escrow_bindings.rs");
-}
-
 /// Cross-contract client for ProgramEscrow data queries used by the cache.
 #[soroban_sdk::contractclient(name = "EscrowDataClient")]
 pub trait ProgramEscrowDataQueryTrait {
@@ -380,7 +376,7 @@ impl EscrowViewFacade {
         program_contract: Address,
         program_id: String,
     ) -> Vec<program_escrow::ProgramDelegateInfo> {
-        let client = program_escrow::Client::new(&env, &program_contract);
+        let client = program_escrow::ProgramEscrowContractClient::new(&env, &program_contract);
         let delegates_res = client.try_query_all_delegates(&program_id);
 
         if let Ok(Ok(delegates)) = delegates_res {
@@ -406,7 +402,7 @@ impl EscrowViewFacade {
         program_id: String,
         recipient: Address,
     ) -> Vec<program_escrow::PayoutRecord> {
-        let client = program_escrow::Client::new(&env, &program_contract);
+        let client = program_escrow::ProgramEscrowContractClient::new(&env, &program_contract);
         let result = client.try_query_recipient_history(&program_id, &recipient);
 
         if let Ok(Ok(records)) = result {
