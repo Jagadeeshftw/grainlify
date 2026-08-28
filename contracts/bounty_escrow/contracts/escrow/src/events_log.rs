@@ -44,7 +44,6 @@
 //! | `emit_approval_added`    | Warn  |
 //! | `emit_fee_collected`     | Debug |
 
-#![allow(dead_code)]
 use soroban_sdk::{contracttype, symbol_short, Address, Env};
 
 // ============================================================================
@@ -56,6 +55,7 @@ use soroban_sdk::{contracttype, symbol_short, Address, Env};
 /// Using `u32` (via `#[repr(u32)]`) keeps the XDR encoding compact and
 /// stable across SDK upgrades.  The numeric values are intentionally
 /// non-sequential gaps so new levels can be inserted without renumbering.
+#[allow(dead_code)] // LogLevel-based filtering API; reserved for future indexer integration
 #[contracttype]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
@@ -74,8 +74,12 @@ pub enum LogLevel {
 // Event data structs  (fields unchanged from pre-#615 — only topics changed)
 // ============================================================================
 
+/// Schema version constant shared with indexers; not yet wired to active module.
+#[allow(dead_code)] // Declared in events_log (staging module); not yet added to module tree
 pub const EVENT_VERSION_V2: u32 = 2;
 
+/// Payload for the bounty-initialised event.
+#[allow(dead_code)] // Declared in events_log (staging module); not yet added to module tree
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BountyEscrowInitialized {
@@ -84,6 +88,8 @@ pub struct BountyEscrowInitialized {
     pub timestamp: u64,
 }
 
+/// Payload for the funds-locked event.
+#[allow(dead_code)] // Declared in events_log (staging module); not yet added to module tree
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FundsLocked {
@@ -93,6 +99,8 @@ pub struct FundsLocked {
     pub deadline: u64,
 }
 
+/// Payload for the funds-released event.
+#[allow(dead_code)] // Declared in events_log (staging module); not yet added to module tree
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FundsReleased {
@@ -102,6 +110,8 @@ pub struct FundsReleased {
     pub timestamp: u64,
 }
 
+/// Payload for the funds-refunded event.
+#[allow(dead_code)] // Declared in events_log (staging module); not yet added to module tree
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FundsRefunded {
@@ -113,6 +123,8 @@ pub struct FundsRefunded {
     pub remaining_amount: i128,
 }
 
+/// Payload for the multisig-approval-added event.
+#[allow(dead_code)] // Declared in events_log (staging module); not yet added to module tree
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ApprovalAdded {
@@ -122,6 +134,8 @@ pub struct ApprovalAdded {
     pub timestamp: u64,
 }
 
+/// Discriminant for fee operation events.
+#[allow(dead_code)] // Declared in events_log (staging module); not yet added to module tree
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FeeOperationType {
@@ -129,6 +143,8 @@ pub enum FeeOperationType {
     Release,
 }
 
+/// Payload for the fee-collected event.
+#[allow(dead_code)] // Declared in events_log (staging module); not yet added to module tree
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FeeCollected {
@@ -154,6 +170,7 @@ pub struct FeeCollected {
 //   - "this bounty"  → topic[3] == bounty_id  (where present)
 
 /// Contract initialised — INFO, happens once per deployment.
+#[allow(dead_code)] // Declared in events_log (staging module); not yet added to module tree
 pub fn emit_bounty_initialized(env: &Env, data: BountyEscrowInitialized) {
     env.events().publish(
         (LogLevel::Info, symbol_short!("escrow"), symbol_short!("init")),
@@ -162,6 +179,7 @@ pub fn emit_bounty_initialized(env: &Env, data: BountyEscrowInitialized) {
 }
 
 /// Funds successfully locked into escrow — INFO.
+#[allow(dead_code)] // Declared in events_log (staging module); not yet added to module tree
 pub fn emit_funds_locked(env: &Env, data: FundsLocked) {
     env.events().publish(
         (
@@ -175,6 +193,7 @@ pub fn emit_funds_locked(env: &Env, data: FundsLocked) {
 }
 
 /// Funds released to contributor — INFO.
+#[allow(dead_code)] // Declared in events_log (staging module); not yet added to module tree
 pub fn emit_funds_released(env: &Env, data: FundsReleased) {
     env.events().publish(
         (
@@ -188,6 +207,7 @@ pub fn emit_funds_released(env: &Env, data: FundsReleased) {
 }
 
 /// Funds refunded to depositor — INFO.
+#[allow(dead_code)] // Declared in events_log (staging module); not yet added to module tree
 pub fn emit_funds_refunded(env: &Env, data: FundsRefunded) {
     env.events().publish(
         (
@@ -202,6 +222,7 @@ pub fn emit_funds_refunded(env: &Env, data: FundsRefunded) {
 
 /// Multisig approval recorded — WARN (requires human attention to track
 /// whether quorum is being reached).
+#[allow(dead_code)] // Declared in events_log (staging module); not yet added to module tree
 pub fn emit_approval_added(env: &Env, data: ApprovalAdded) {
     env.events().publish(
         (
@@ -216,6 +237,7 @@ pub fn emit_approval_added(env: &Env, data: ApprovalAdded) {
 
 /// Fee deducted during lock or release — DEBUG (high-frequency, low
 /// importance for most consumers).
+#[allow(dead_code)] // Declared in events_log (staging module); not yet added to module tree
 pub fn emit_fee_collected(env: &Env, data: FeeCollected) {
     env.events().publish(
         (LogLevel::Debug, symbol_short!("fee"), symbol_short!("collect")),
