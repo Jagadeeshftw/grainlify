@@ -55,6 +55,8 @@ mod test_reentrancy_guard;
 #[cfg(test)]
 mod test_admin_rotation;
 #[cfg(test)]
+mod test_timelock;
+#[cfg(test)]
 mod test_archival_ttl;
 #[cfg(test)]
 mod test_batch_soa_benchmark;
