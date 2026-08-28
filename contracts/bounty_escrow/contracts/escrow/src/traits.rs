@@ -272,7 +272,7 @@ pub trait NotificationPreferencesInterface {
         caller: Address,
         account: Address,
         preferences: NotificationPreferences,
-    ) -> Result<Option<NotificationPreferences>, crate::Error>;
+    ) -> Result<(), crate::Error>;
 
     /// Return the stored preferences for `account`, or `None` if unset.
     /// No authorization required to read public notification preferences.
