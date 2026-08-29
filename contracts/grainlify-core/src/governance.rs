@@ -1,4 +1,5 @@
 use crate::asset;
+use soroban_sdk::xdr::ToXdr;
 use soroban_sdk::{contracttype, symbol_short, Address, BytesN, Env, Map, Symbol};
 
 /// Represents the lifecycle stages of a governance proposal.
@@ -157,8 +158,8 @@ fn storage_key_for_role(role: &Role) -> Symbol {
 }
 
 fn require_not_zero_or_self(env: &Env, candidate: &Address) -> Result<(), Error> {
-    let bytes = candidate.to_val().to_bytes();
-    let all_zero = bytes.iter().all(|b| *b == 0);
+    let bytes = candidate.to_xdr(env);
+    let all_zero = bytes.iter().all(|b| b == 0);
     if all_zero {
         return Err(Error::InvalidRoleHolder);
     }

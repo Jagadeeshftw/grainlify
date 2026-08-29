@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, Vec as SorobanVec};
+use soroban_sdk::{testutils::{Address as _, Ledger}, Address, BytesN, Env, Vec as SorobanVec};
 
 use crate::{GrainlifyContract, GrainlifyContractClient, UpgradeProposalRecord};
 
