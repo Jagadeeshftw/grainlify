@@ -1,0 +1,5 @@
+c:\Users\USA\Documents\Osuocha\grainlify\target-t2\debug\build\stellar-xdr-ec69f3c9f127f9f1\build_script_build-ec69f3c9f127f9f1.d: C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\stellar-xdr-21.2.0\build.rs
+
+c:\Users\USA\Documents\Osuocha\grainlify\target-t2\debug\build\stellar-xdr-ec69f3c9f127f9f1\build_script_build-ec69f3c9f127f9f1.exe: C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\stellar-xdr-21.2.0\build.rs
+
+C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\stellar-xdr-21.2.0\build.rs:
