@@ -1,0 +1,80 @@
+﻿    Blocking waiting for file lock on build directory
+   Compiling grainlify-core v0.1.0 (C:\Users\USA\Documents\Osuocha\grainlify\contracts\grainlify-core)
+warning: unused import: `Bytes`
+  --> src\lib.rs:26:81
+   |
+26 |     contract, contracterror, contractimpl, contracttype, symbol_short, Address, Bytes, BytesN, Env,
+   |                                                                                 ^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+System.Management.Automation.RemoteException
+warning: unused import: `budget as _`
+  --> src\test\state_snapshot_tests.rs:41:31
+   |
+41 |     testutils::{Address as _, budget as _},
+   |                               ^^^^^^^^^^^
+System.Management.Automation.RemoteException
+error[E0599]: no method named `to_bytes` found for struct `soroban_sdk::Val` in the current scope
+   --> src\governance.rs:160:36
+    |
+160 |     let bytes = candidate.to_val().to_bytes();
+    |                                    ^^^^^^^^ method not found in `soroban_sdk::Val`
+System.Management.Automation.RemoteException
+warning: unused variable: `other_registry`
+   --> src\error_registry.rs:155:29
+    |
+155 | pub const fn find_conflicts(other_registry: &[RegistryEntry]) -> &[u32] {
+    |                             ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_other_registry`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+System.Management.Automation.RemoteException
+error[E0599]: no method named `set_timestamp` found for struct `soroban_sdk::ledger::Ledger` in the current scope
+   --> src\test\upgrade_authorization_matrix.rs:89:18
+    |
+ 89 |     env.ledger().set_timestamp(env.ledger().timestamp() + 86400);
+    |                  ^^^^^^^^^^^^^
+    |
+   ::: C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\soroban-sdk-21.7.7\src\testutils.rs:231:8
+    |
+231 |     fn set_timestamp(&self, timestamp: u64);
+    |        ------------- the method is available for `soroban_sdk::ledger::Ledger` here
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: there is a method `timestamp` with a similar name, but with different arguments
+   --> C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\soroban-sdk-21.7.7\src\ledger.rs:87:5
+    |
+ 87 |     pub fn timestamp(&self) -> u64 {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: trait `Ledger` which provides `set_timestamp` is implemented but not in scope; perhaps you want to import it
+    |
+  3 + use soroban_sdk::testutils::Ledger;
+    |
+System.Management.Automation.RemoteException
+error[E0599]: no method named `set_timestamp` found for struct `soroban_sdk::ledger::Ledger` in the current scope
+   --> src\test\upgrade_authorization_matrix.rs:112:18
+    |
+112 |     env.ledger().set_timestamp(expiry);
+    |                  ^^^^^^^^^^^^^
+    |
+   ::: C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\soroban-sdk-21.7.7\src\testutils.rs:231:8
+    |
+231 |     fn set_timestamp(&self, timestamp: u64);
+    |        ------------- the method is available for `soroban_sdk::ledger::Ledger` here
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: there is a method `timestamp` with a similar name, but with different arguments
+   --> C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\soroban-sdk-21.7.7\src\ledger.rs:87:5
+    |
+ 87 |     pub fn timestamp(&self) -> u64 {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: trait `Ledger` which provides `set_timestamp` is implemented but not in scope; perhaps you want to import it
+    |
+  3 + use soroban_sdk::testutils::Ledger;
+    |
+System.Management.Automation.RemoteException
+For more information about this error, try `rustc --explain E0599`.
+warning: `grainlify-core` (lib) generated 2 warnings
+error: could not compile `grainlify-core` (lib) due to 1 previous error; 2 warnings emitted
+warning: build failed, waiting for other jobs to finish...
+warning: `grainlify-core` (lib test) generated 3 warnings (2 duplicates)
+error: could not compile `grainlify-core` (lib test) due to 3 previous errors; 3 warnings emitted

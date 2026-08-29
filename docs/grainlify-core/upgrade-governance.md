@@ -2,10 +2,10 @@
 
 ## Overview
 
-The `grainlify-core` contract implements a timelocked multisig upgrade governance
-system. All WASM upgrades must pass through a proposal → approval → timelock →
-execution pipeline. The timelock delay prevents immediate execution after
-threshold approval, giving stakeholders time to review and react.
+The `grainlify-core` contract uses one authority for forward upgrades and
+rollbacks: the configured multisig signer set and threshold. Every WASM change
+must pass through proposal -> approval -> timelock -> execution. There is no
+single-admin or emergency-role bypass.
 
 ## Timelock Constants
 
@@ -18,20 +18,21 @@ threshold approval, giving stakeholders time to review and react.
 ## Upgrade Flow
 
 ```
-1. propose_upgrade(proposer, wasm_hash)  → proposal_id
-2. approve_upgrade(signer, proposal_id)  → starts timelock when threshold met
-3. [wait timelock_delay seconds]
-4. execute_upgrade(proposal_id)          → installs new WASM
+1. `propose_upgrade(proposer, wasm_hash, expiry)` -> `proposal_id`
+2. `approve_upgrade(signer, proposal_id)` -> starts timelock at threshold
+3. Wait until the timelock expires and before the proposal expiry, if set
+4. `execute_upgrade(proposal_id)` -> installs new WASM
 ```
 
 ## Entrypoints
 
 | Function | Auth | Description |
 |----------|------|-------------|
-| `propose_upgrade(proposer, wasm_hash)` | signer | Create upgrade proposal |
+| `upgrade(new_wasm_hash)` | stored admin, rejected | Legacy entrypoint; direct WASM changes are disabled |
+| `propose_upgrade(proposer, wasm_hash, expiry)` | signer | Create upgrade proposal |
 | `approve_upgrade(signer, proposal_id)` | signer | Approve; starts timelock at threshold |
-| `execute_upgrade(proposal_id)` | any | Execute after delay elapsed |
-| `cancel_upgrade(caller, proposal_id)` | admin/proposer | Cancel proposal |
+| `execute_upgrade(proposal_id)` | any caller, after threshold | Execute after delay elapsed |
+| `cancel_upgrade(proposal_id, caller)` | signer | Cancel proposal |
 | `set_timelock_delay(delay_seconds)` | admin | Update delay (1 h – 30 d) |
 | `get_timelock_delay()` | view | Current delay in seconds |
 | `get_timelock_status(proposal_id)` | view | Remaining seconds (0 = ready) |
@@ -57,6 +58,20 @@ long that the upgrade path becomes permanently bricked.
 `execute_upgrade` panics with `"Timelock delay not met: X seconds remaining"` if
 called before `timelock_start + timelock_delay` seconds have elapsed.
 
+## Authorization Matrix
+
+| Proposal state | Proposer/signer | Non-signer | Executor |
+|----------------|-----------------|------------|----------|
+| Pending | May approve or cancel; cannot execute | Cannot approve or cancel | Cannot execute |
+| Executable | No further approval needed | Cannot alter proposal | Any caller may execute |
+| Expired | Cannot approve or execute | Cannot approve or execute | Cannot execute |
+| Cancelled | Cannot approve or execute | Cannot approve or execute | Cannot execute |
+
+A rollback is a proposal containing a previously deployed WASM hash and uses
+exactly the same quorum and timelock. The matrix is executable in
+`src/test/upgrade_authorization_matrix.rs`; rejection cases assert unchanged
+proposal, version, previous-version, and timelock state.
+
 ## Security Assumptions
 
 1. **Admin key security** — only the admin can change the timelock delay. A
@@ -64,12 +79,13 @@ called before `timelock_start + timelock_delay` seconds have elapsed.
    bypass it entirely.
 2. **Timelock start is immutable** — once the approval threshold is met, the
    timelock start timestamp is written to storage and cannot be changed.
-3. **No bypass** — there is no emergency override that skips the timelock.
+3. **No bypass** — the legacy `upgrade` entrypoint is rejected after admin
+   authentication, and rollback uses `execute_upgrade` with the same timelock.
    Use `cancel_upgrade` + re-propose if an urgent fix is needed.
 4. **Monotonic clock** — the contract uses `env.ledger().timestamp()` which is
    set by validators and cannot be manipulated by the contract caller.
 
-## Boundary Test Coverage (issue #1293)
+## Boundary Test Coverage (issues #1293 and #1735)
 
 | Scenario | Expected |
 |----------|----------|

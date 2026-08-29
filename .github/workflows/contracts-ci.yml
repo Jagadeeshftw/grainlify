@@ -1,13 +1,14 @@
 name: Smart Contracts CI
 
 on:
-  pull_request:
+  push:
+    branches: [master, main]
     paths:
       - "soroban/**"
       - "contracts/**"
       - ".github/workflows/contracts-ci.yml"
-  push:
-    branches: [main, develop, master]
+  pull_request:
+    branches: [master, main]
     paths:
       - "soroban/**"
       - "contracts/**"
@@ -17,6 +18,30 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # ──────────────────────────────────────────────────────────────
+  # Manifest validation gate (schema + structure, npm-based).
+  # Fast; no Rust toolchain required.
+  # ──────────────────────────────────────────────────────────────
+  validate-manifests:
+    name: validate-manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: contracts/package-lock.json
+      - name: Validate contract manifests
+        run: npm test --prefix contracts
+
+  # ──────────────────────────────────────────────────────────────
+  # Reproducible workspace build & test gates (issue #1700).
+  # Runs the exact same commands as ./contracts/scripts/ci-contracts.sh
+  # so the gates behave identically locally and in CI.
+  # No continue-on-error: a compile or test regression must fail the job.
+  # ──────────────────────────────────────────────────────────────
   build-test:
     name: contracts (workspace tests + wasm release build)
     runs-on: ubuntu-latest
@@ -43,8 +68,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-contracts-cargo-
 
-      # Same commands as running ./contracts/scripts/ci-contracts.sh locally.
-      # No continue-on-error: a compile or test regression must fail the job.
       - name: Run contract CI gates
         run: bash contracts/scripts/ci-contracts.sh
 

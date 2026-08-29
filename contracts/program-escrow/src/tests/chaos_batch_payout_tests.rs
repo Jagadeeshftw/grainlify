@@ -36,9 +36,8 @@ use soroban_sdk::{
 };
 
 use crate::{
-    chaos, error_recovery,
-    error_recovery::CircuitState, DELEGATE_PERMISSION_RELEASE, ProgramData,
-    ProgramEscrowContract, ProgramEscrowContractClient, MAX_BATCH_SIZE,
+    chaos, error_recovery, error_recovery::CircuitState, ProgramData, ProgramEscrowContract,
+    ProgramEscrowContractClient, DELEGATE_PERMISSION_RELEASE, MAX_BATCH_SIZE,
 };
 
 // =============================================================================
@@ -54,17 +53,12 @@ struct ChaosRng {
 impl ChaosRng {
     fn new(seed: u64) -> Self {
         // Avoid the degenerate zero state.
-        Self {
-            state: seed | 1,
-        }
+        Self { state: seed | 1 }
     }
 
     fn next_u64(&mut self) -> u64 {
         // Numerical Recipes LCG
-        self.state = self
-            .state
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1);
+        self.state = self.state.wrapping_mul(6364136223846793005).wrapping_add(1);
         self.state
     }
 
@@ -203,7 +197,8 @@ fn setup_harness(initial_balance: i128) -> Harness<'static> {
     client.publish_program(&program_id, &admin);
 
     if initial_balance > 0 {
-        token::StellarAssetClient::new(&env, &token_address).mint(&client.address, &initial_balance);
+        token::StellarAssetClient::new(&env, &token_address)
+            .mint(&client.address, &initial_balance);
         client.lock_program_funds(&initial_balance);
     }
 
@@ -232,13 +227,18 @@ fn setup_harness(initial_balance: i128) -> Harness<'static> {
     }
 }
 
-fn snapshot_balances(h: &Harness, recipients: &[Address]) -> (i128, std::vec::Vec<i128>, CircuitState) {
+fn snapshot_balances(
+    h: &Harness,
+    recipients: &[Address],
+) -> (i128, std::vec::Vec<i128>, CircuitState) {
     let data = h.client.get_program_info();
     let mut bals = std::vec::Vec::with_capacity(recipients.len());
     for r in recipients {
         bals.push(h.token.balance(r));
     }
-    let cb = h.env.as_contract(&h.contract_id, || error_recovery::get_state(&h.env));
+    let cb = h
+        .env
+        .as_contract(&h.contract_id, || error_recovery::get_state(&h.env));
     (data.remaining_balance, bals, cb)
 }
 
@@ -348,10 +348,7 @@ fn assert_invariants(
                 _ => {}
             }
             if before_balance >= scenario.total()
-                && !matches!(
-                    scenario.failure,
-                    InjectedFailure::UnauthorizedDelegate
-                )
+                && !matches!(scenario.failure, InjectedFailure::UnauthorizedDelegate)
             {
                 let retry = h.client.try_batch_payout_idempotent(
                     key,
@@ -510,6 +507,105 @@ fn execute_scenario(scenario: &ChaosScenario) {
         succeeded,
         idem_key.as_ref(),
     );
+}
+
+// Regression coverage for issue #1720: a failed payout must leave the program,
+// recipient balances, and idempotency state consistent with a full revert.
+#[test]
+fn batch_payout_atomicity_rolls_back_on_first_middle_and_last_transfer_failure() {
+    for fail_index in [0u32, 1, 2] {
+        let h = setup_harness(1_000);
+        let r1 = Address::generate(&h.env);
+        let r2 = Address::generate(&h.env);
+        let r3 = Address::generate(&h.env);
+        let recipients = vec![&h.env, r1.clone(), r2.clone(), r3.clone()];
+        let amounts = vec![&h.env, 10_i128, 20_i128, 30_i128];
+
+        let before_balance = h.client.get_program_info().remaining_balance;
+        let before_balances = [
+            h.token.balance(&r1),
+            h.token.balance(&r2),
+            h.token.balance(&r3),
+        ];
+
+        h.env.as_contract(&h.contract_id, || {
+            chaos::configure_transfer_fail(&h.env, fail_index);
+        });
+
+        let result = h.client.try_batch_payout(&recipients, &amounts);
+        assert!(
+            result.is_err(),
+            "transfer-fail at index {fail_index} should rollback atomically"
+        );
+
+        let after = h.client.get_program_info();
+        assert_eq!(
+            after.remaining_balance, before_balance,
+            "batch state drifted after failure at index {fail_index}"
+        );
+        assert_eq!(h.token.balance(&r1), before_balances[0]);
+        assert_eq!(h.token.balance(&r2), before_balances[1]);
+        assert_eq!(h.token.balance(&r3), before_balances[2]);
+    }
+}
+
+#[test]
+fn batch_payout_idempotent_key_remains_reusable_after_atomic_failure() {
+    let h = setup_harness(1_000);
+    let r1 = Address::generate(&h.env);
+    let r2 = Address::generate(&h.env);
+    let recipients = vec![&h.env, r1.clone(), r2.clone()];
+    let amounts = vec![&h.env, 10_i128, 20_i128];
+    let idem_key = String::from_str(&h.env, "atomic-failure-retry");
+
+    h.env.as_contract(&h.contract_id, || {
+        chaos::configure_transfer_fail(&h.env, 1);
+    });
+
+    let failed = h
+        .client
+        .try_batch_payout_idempotent(&idem_key, &recipients, &amounts);
+    assert!(
+        failed.is_err(),
+        "injected mid-batch failure should fail atomically"
+    );
+
+    h.env.as_contract(&h.contract_id, || chaos::reset(&h.env));
+    let before = h.client.get_program_info().remaining_balance;
+    let result = h
+        .client
+        .batch_payout_idempotent(&idem_key, &recipients, &amounts);
+    assert_eq!(
+        result.remaining_balance,
+        before - 30,
+        "retry should not double pay"
+    );
+    assert_eq!(h.token.balance(&r1), 10);
+    assert_eq!(h.token.balance(&r2), 20);
+}
+
+#[test]
+fn batch_payout_rejects_duplicate_recipient_before_any_transfer() {
+    let h = setup_harness(1_000);
+    let dup = Address::generate(&h.env);
+    let other = Address::generate(&h.env);
+    let recipients = vec![&h.env, dup.clone(), dup.clone(), other.clone()];
+    let amounts = vec![&h.env, 15_i128, 25_i128, 35_i128];
+
+    let before_balance = h.client.get_program_info().remaining_balance;
+    let before_dup = h.token.balance(&dup);
+    let before_other = h.token.balance(&other);
+
+    let result = h.client.try_batch_payout(&recipients, &amounts);
+    assert!(
+        result.is_err(),
+        "duplicate recipient should be rejected before transfer"
+    );
+
+    let after = h.client.get_program_info();
+    assert_eq!(after.remaining_balance, before_balance);
+    assert_eq!(h.token.balance(&dup), before_dup);
+    assert_eq!(h.token.balance(&other), before_other);
 }
 
 // =============================================================================

@@ -135,6 +135,14 @@ use core::cmp::Ordering;
 use soroban_sdk::xdr::ToXdr;
 use soroban_sdk::{Address, Bytes, BytesN, Env, Symbol, Vec};
 
+/// Security classification of this module. Consumers must not use its output
+/// to authorize actions or choose value-bearing outcomes.
+pub const SECURITY_LEVEL: &str = "deterministic-non-security-randomness";
+
+pub fn security_level() -> &'static str {
+    SECURITY_LEVEL
+}
+
 /// Result of a deterministic selection process.
 ///
 /// Contains the winning candidate index and the cryptographic values

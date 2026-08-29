@@ -246,6 +246,7 @@ pub(crate) fn count_orphaned_index_entries(env: &Env) -> u32 {
 /// This is intended to be called from:
 /// - An on-chain `verify_all_invariants()` view function
 /// - Tests that want to assert full system health
+///
 /// Run ALL invariant checks and return a comprehensive report.
 ///
 /// Checks:

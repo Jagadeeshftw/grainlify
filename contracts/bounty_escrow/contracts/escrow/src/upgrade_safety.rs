@@ -406,16 +406,14 @@ fn check_escrow_states(env: &Env) -> (bool, Vec<UpgradeWarning>) {
                         });
                     }
                 }
-                EscrowStatus::Locked => {
-                    if escrow.remaining_amount == 0 {
-                        warnings.push_back(UpgradeWarning {
-                            code: safety_codes::ESCROW_STATE,
-                            message: soroban_sdk::String::from_str(
-                                env,
-                                "Locked escrow has zero remaining amount",
-                            ),
-                        });
-                    }
+                EscrowStatus::Locked if escrow.remaining_amount == 0 => {
+                    warnings.push_back(UpgradeWarning {
+                        code: safety_codes::ESCROW_STATE,
+                        message: soroban_sdk::String::from_str(
+                            env,
+                            "Locked escrow has zero remaining amount",
+                        ),
+                    });
                 }
                 _ => {}
             }

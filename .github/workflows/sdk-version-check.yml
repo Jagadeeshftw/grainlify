@@ -1,0 +1,66 @@
+name: SDK Version Check
+
+on:
+  pull_request:
+    paths:
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+      - "scripts/check_sdk_versions.sh"
+      - "contracts/SDK_COMPATIBILITY.md"
+      - "contracts/grainlify-core/tests/test_sdk_pin_consistency.rs"
+      - ".github/workflows/sdk-version-check.yml"
+  push:
+    branches: [main, develop, master]
+    paths:
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+      - "scripts/check_sdk_versions.sh"
+      - "contracts/SDK_COMPATIBILITY.md"
+      - "contracts/grainlify-core/tests/test_sdk_pin_consistency.rs"
+      - ".github/workflows/sdk-version-check.yml"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check-sdk-versions:
+    name: One soroban-sdk per dependency graph
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none, wasm32-unknown-unknown
+      - name: SDK pin gate
+        run: ./scripts/check_sdk_versions.sh
+      - name: Pin guardrail test
+        run: |
+          cd contracts/grainlify-core
+          cargo test --locked --test test_sdk_pin_consistency
+      - name: Record toolchain and resolved versions
+        run: |
+          {
+            echo "== rustc =="
+            rustc -Vv
+            echo
+            echo "== cargo =="
+            cargo -V
+            echo
+            echo "== installed targets =="
+            rustup target list --installed
+            echo
+            for m in contracts contracts/bounty_escrow contracts/grainlify-core contracts/program-escrow contracts/view-facade contracts/escrow-view-facade soroban; do
+              echo "== $m: resolved stellar deps =="
+              cargo tree --manifest-path "$m/Cargo.toml" --locked --prefix none \
+                | grep -E '^(soroban-sdk|soroban-env-host|soroban-env-common|stellar-xdr) v' \
+                | sort -u
+              echo
+            done
+          } > toolchain-versions.txt
+          cat toolchain-versions.txt
+      - name: Upload toolchain versions artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: toolchain-versions
+          path: toolchain-versions.txt
+          if-no-files-found: error

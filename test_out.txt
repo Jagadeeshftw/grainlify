@@ -1,0 +1,219 @@
+﻿cargo :    Compiling proc-macro2 v1.0.106
+At line:1 char:180
++ ... ts\grainlify-core ; cargo test governance -- --nocapture *>&1 | Out-F ...
++                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (   Compiling proc-macro2 v1.0.106 
+   :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+   Compiling unicode-ident v1.0.22
+   Compiling quote v1.0.43
+   Compiling version_check v0.9.5
+   Compiling serde_core v1.0.228
+   Compiling typenum v1.19.0
+   Compiling serde v1.0.228
+   Compiling zmij v1.0.16
+   Compiling serde_json v1.0.149
+   Compiling memchr v2.7.6
+   Compiling itoa v1.0.17
+   Compiling cfg-if v1.0.4
+   Compiling generic-array v0.14.9
+   Compiling zeroize v1.8.2
+   Compiling subtle v2.6.1
+   Compiling strsim v0.11.1
+   Compiling ident_case v1.0.1
+   Compiling fnv v1.0.7
+   Compiling const-oid v0.9.6
+   Compiling autocfg v1.5.0
+   Compiling getrandom v0.2.17
+   Compiling semver v1.0.27
+   Compiling syn v2.0.114
+   Compiling rand_core v0.6.4
+   Compiling thiserror v1.0.69
+   Compiling rustc_version v0.4.1
+   Compiling base32 v0.4.0
+   Compiling cpufeatures v0.2.17
+   Compiling escape-bytes v0.1.1
+   Compiling num-traits v0.2.19
+   Compiling ff v0.13.1
+   Compiling der v0.7.10
+   Compiling crypto-common v0.1.6
+   Compiling block-buffer v0.10.4
+   Compiling equivalent v1.0.2
+   Compiling hashbrown v0.16.1
+   Compiling digest v0.10.7
+   Compiling base16ct v0.2.0
+   Compiling either v1.15.0
+   Compiling signature v2.2.0
+   Compiling sec1 v0.7.3
+   Compiling itertools v0.11.0
+   Compiling indexmap v2.13.0
+   Compiling group v0.13.0
+   Compiling crypto-bigint v0.5.5
+   Compiling libm v0.2.15
+   Compiling zerocopy v0.8.33
+   Compiling base64 v0.13.1
+   Compiling paste v1.0.15
+   Compiling wasmparser v0.116.1
+   Compiling darling_core v0.21.3
+   Compiling hmac v0.12.1
+   Compiling elliptic-curve v0.13.8
+   Compiling rfc6979 v0.4.0
+   Compiling sha2 v0.10.9
+   Compiling curve25519-dalek v4.1.3
+   Compiling ethnum v1.5.3
+   Compiling indexmap-nostd v0.4.0
+   Compiling downcast-rs v1.2.1
+   Compiling static_assertions v1.1.0
+   Compiling wasmparser-nostd v0.100.2
+   Compiling serde_derive v1.0.228
+   Compiling thiserror-impl v1.0.69
+   Compiling num-derive v0.4.2
+   Compiling derive_arbitrary v1.3.2
+   Compiling ppv-lite86 v0.2.21
+   Compiling wasmi_core v0.13.0
+   Compiling darling_macro v0.21.3
+   Compiling arbitrary v1.3.2
+   Compiling curve25519-dalek-derive v0.1.1
+   Compiling ecdsa v0.16.9
+   Compiling darling v0.21.3
+   Compiling wasmi_arena v0.4.1
+   Compiling serde_with_macros v3.16.1
+   Compiling smallvec v1.15.1
+   Compiling spin v0.9.8
+   Compiling prettyplease v0.2.37
+   Compiling rand_chacha v0.3.1
+   Compiling primeorder v0.13.6
+   Compiling soroban-wasmi v0.31.1-soroban.20.0.1
+   Compiling darling_core v0.20.11
+   Compiling ed25519 v2.2.3
+   Compiling soroban-env-host v21.2.1
+   Compiling windows-link v0.2.1
+   Compiling keccak v0.1.5
+   Compiling serde_with v3.16.1
+   Compiling rustc-demangle v0.1.27
+   Compiling sha3 v0.10.8
+   Compiling backtrace v0.3.76
+   Compiling ed25519-dalek v2.2.0
+   Compiling crate-git-revision v0.0.6
+   Compiling hex v0.4.3
+   Compiling p256 v0.13.2
+   Compiling rand v0.8.5
+   Compiling stellar-strkey v0.0.8
+   Compiling stellar-xdr v21.2.0
+   Compiling soroban-env-common v21.2.1
+   Compiling soroban-sdk-macros v21.7.7
+   Compiling k256 v0.13.4
+   Compiling darling_macro v0.20.11
+   Compiling soroban-builtin-sdk-macros v21.2.1
+   Compiling num-integer v0.1.46
+   Compiling hex-literal v0.4.1
+   Compiling num-bigint v0.4.6
+   Compiling darling v0.20.11
+   Compiling soroban-sdk v21.7.7
+   Compiling ctor v0.2.9
+   Compiling bytes-lit v0.0.5
+   Compiling soroban-spec v21.7.7
+   Compiling soroban-spec-rust v21.7.7
+   Compiling soroban-env-macros v21.2.1
+   Compiling soroban-ledger-snapshot v21.7.7
+   Compiling grainlify-core v0.1.0 
+(C:\Users\USA\Documents\Osuocha\grainlify\contracts\grainlify-core)
+warning: unused import: `Bytes`
+  --> src\lib.rs:26:81
+   |
+26 |     contract, contracterror, contractimpl, contracttype, symbol_short, 
+Address, Bytes, BytesN, Env,
+   |                                                                           
+      ^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `budget as _`
+  --> src\test\state_snapshot_tests.rs:41:31
+   |
+41 |     testutils::{Address as _, budget as _},
+   |                               ^^^^^^^^^^^
+
+error[E0599]: no method named `to_bytes` found for struct `soroban_sdk::Val` 
+in the current scope
+   --> src\governance.rs:160:36
+    |
+160 |     let bytes = candidate.to_val().to_bytes();
+    |                                    ^^^^^^^^ method not found in 
+`soroban_sdk::Val`
+
+warning: unused variable: `other_registry`
+   --> src\error_registry.rs:155:29
+    |
+155 | pub const fn find_conflicts(other_registry: &[RegistryEntry]) -> &[u32] {
+    |                             ^^^^^^^^^^^^^^ help: if this is intentional, 
+prefix it with an underscore: `_other_registry`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by 
+default
+
+error[E0599]: no method named `set_timestamp` found for struct 
+`soroban_sdk::ledger::Ledger` in the current scope
+   --> src\test\upgrade_authorization_matrix.rs:89:18
+    |
+ 89 |     env.ledger().set_timestamp(env.ledger().timestamp() + 86400);
+    |                  ^^^^^^^^^^^^^
+    |
+   ::: C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\soroba
+n-sdk-21.7.7\src\testutils.rs:231:8
+    |
+231 |     fn set_timestamp(&self, timestamp: u64);
+    |        ------------- the method is available for 
+`soroban_sdk::ledger::Ledger` here
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: there is a method `timestamp` with a similar name, but with different 
+arguments
+   --> C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\soroba
+n-sdk-21.7.7\src\ledger.rs:87:5
+    |
+ 87 |     pub fn timestamp(&self) -> u64 {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: trait `Ledger` which provides `set_timestamp` is implemented but not in 
+scope; perhaps you want to import it
+    |
+  3 + use soroban_sdk::testutils::Ledger;
+    |
+
+error[E0599]: no method named `set_timestamp` found for struct 
+`soroban_sdk::ledger::Ledger` in the current scope
+   --> src\test\upgrade_authorization_matrix.rs:112:18
+    |
+112 |     env.ledger().set_timestamp(expiry);
+    |                  ^^^^^^^^^^^^^
+    |
+   ::: C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\soroba
+n-sdk-21.7.7\src\testutils.rs:231:8
+    |
+231 |     fn set_timestamp(&self, timestamp: u64);
+    |        ------------- the method is available for 
+`soroban_sdk::ledger::Ledger` here
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: there is a method `timestamp` with a similar name, but with different 
+arguments
+   --> C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\soroba
+n-sdk-21.7.7\src\ledger.rs:87:5
+    |
+ 87 |     pub fn timestamp(&self) -> u64 {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: trait `Ledger` which provides `set_timestamp` is implemented but not in 
+scope; perhaps you want to import it
+    |
+  3 + use soroban_sdk::testutils::Ledger;
+    |
+
+For more information about this error, try `rustc --explain E0599`.
+warning: `grainlify-core` (lib) generated 2 warnings
+error: could not compile `grainlify-core` (lib) due to 1 previous error; 2 
+warnings emitted
+warning: build failed, waiting for other jobs to finish...
+warning: `grainlify-core` (lib test) generated 3 warnings (2 duplicates)
+error: could not compile `grainlify-core` (lib test) due to 3 previous errors; 
+3 warnings emitted

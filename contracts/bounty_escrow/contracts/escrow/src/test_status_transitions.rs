@@ -62,6 +62,8 @@ impl<'a> TestSetup<'a> {
     }
 }
 
+// Reserved for upcoming admin-rotation test scenarios.
+#[allow(dead_code)]
 struct RotationSetup<'a> {
     env: Env,
     admin: Address,
@@ -70,6 +72,7 @@ struct RotationSetup<'a> {
     escrow: BountyEscrowContractClient<'a>,
 }
 
+#[allow(dead_code)]
 impl<'a> RotationSetup<'a> {
     fn new() -> Self {
         let env = Env::default();
@@ -106,6 +109,8 @@ impl<'a> RotationSetup<'a> {
     }
 }
 
+// Reserved for upcoming admin-rotation test scenarios.
+#[allow(dead_code)]
 fn authorize_contract_call(
     env: &Env,
     escrow: &BountyEscrowContractClient<'_>,
@@ -127,7 +132,7 @@ fn authorize_contract_call(
 fn has_event_topic(env: &Env, topic: &str) -> bool {
     let expected = Symbol::new(env, topic);
     env.events().all().iter().any(|(_, topics, _)| {
-        topics.len() >= 1
+        !topics.is_empty()
             && topics
                 .get(0)
                 .and_then(|t| {
@@ -822,13 +827,13 @@ fn test_maintenance_mode_toggles_correctly() {
     let setup = TestSetup::new();
     let reason = soroban_sdk::String::from_str(&setup.env, "Routine sync");
     
-    assert_eq!(setup.escrow.is_maintenance_mode(), false);
+    assert!(!setup.escrow.is_maintenance_mode());
     
     setup.escrow.set_maintenance_mode(&true, &Some(reason));
-    assert_eq!(setup.escrow.is_maintenance_mode(), true);
+    assert!(setup.escrow.is_maintenance_mode());
     
     setup.escrow.set_maintenance_mode(&false, &None);
-    assert_eq!(setup.escrow.is_maintenance_mode(), false);
+    assert!(!setup.escrow.is_maintenance_mode());
 }
 
 // ============================================================================
@@ -1077,7 +1082,7 @@ fn test_set_claim_window_emits_event() {
     let events = setup.env.events().all();
     let expected = soroban_sdk::Symbol::new(&setup.env, "clm_set");
     let found = events.iter().any(|(_, topics, _)| {
-        topics.len() >= 1
+        !topics.is_empty()
             && topics
                 .get(0)
                 .and_then(|t| <Symbol as soroban_sdk::TryFromVal<Env, soroban_sdk::Val>>::try_from_val(&setup.env, &t).ok())
@@ -1097,7 +1102,7 @@ fn test_claim_window_validated_event_emitted_on_success() {
     let events = setup.env.events().all();
     let expected = soroban_sdk::Symbol::new(&setup.env, "clm_ok");
     let found = events.iter().any(|(_, topics, _)| {
-        topics.len() >= 1
+        !topics.is_empty()
             && topics
                 .get(0)
                 .and_then(|t| <Symbol as soroban_sdk::TryFromVal<Env, soroban_sdk::Val>>::try_from_val(&setup.env, &t).ok())
@@ -1124,7 +1129,7 @@ fn test_claim_window_expired_event_emitted_on_failure() {
     let events = setup.env.events().all();
     let expected = soroban_sdk::Symbol::new(&setup.env, "clm_exp");
     let found = events.iter().any(|(_, topics, _)| {
-        topics.len() >= 1
+        !topics.is_empty()
             && topics
                 .get(0)
                 .and_then(|t| <Symbol as soroban_sdk::TryFromVal<Env, soroban_sdk::Val>>::try_from_val(&setup.env, &t).ok())

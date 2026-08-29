@@ -1,0 +1,12 @@
+c:\Users\USA\Documents\Osuocha\grainlify\target-final\debug\deps\base16ct-4786e9865c7e0df8.d: C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\base16ct-0.2.0\src\lib.rs C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\base16ct-0.2.0\src\lower.rs C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\base16ct-0.2.0\src\mixed.rs C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\base16ct-0.2.0\src\upper.rs C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\base16ct-0.2.0\src\display.rs C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\base16ct-0.2.0\src\error.rs
+
+c:\Users\USA\Documents\Osuocha\grainlify\target-final\debug\deps\libbase16ct-4786e9865c7e0df8.rlib: C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\base16ct-0.2.0\src\lib.rs C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\base16ct-0.2.0\src\lower.rs C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\base16ct-0.2.0\src\mixed.rs C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\base16ct-0.2.0\src\upper.rs C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\base16ct-0.2.0\src\display.rs C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\base16ct-0.2.0\src\error.rs
+
+c:\Users\USA\Documents\Osuocha\grainlify\target-final\debug\deps\libbase16ct-4786e9865c7e0df8.rmeta: C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\base16ct-0.2.0\src\lib.rs C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\base16ct-0.2.0\src\lower.rs C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\base16ct-0.2.0\src\mixed.rs C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\base16ct-0.2.0\src\upper.rs C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\base16ct-0.2.0\src\display.rs C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\base16ct-0.2.0\src\error.rs
+
+C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\base16ct-0.2.0\src\lib.rs:
+C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\base16ct-0.2.0\src\lower.rs:
+C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\base16ct-0.2.0\src\mixed.rs:
+C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\base16ct-0.2.0\src\upper.rs:
+C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\base16ct-0.2.0\src\display.rs:
+C:\Users\USA\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\base16ct-0.2.0\src\error.rs:

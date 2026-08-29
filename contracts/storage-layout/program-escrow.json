@@ -1,0 +1,6 @@
+{
+  "format": 1,
+  "package": "program-escrow",
+  "schema_version": 2,
+  "persistent_keys": [{"name": "Admin", "type": "Address"}, {"name": "PauseFlags", "type": "PauseFlags"}, {"name": "MaintenanceMode", "type": "bool"}, {"name": "ReadOnlyMode", "type": "bool"}]
+}

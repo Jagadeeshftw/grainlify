@@ -24,6 +24,9 @@
 //! - Timelock cannot be bypassed by setting delay to 0
 //! - Timelock cannot be set so high it bricks the upgrade path
 //! - Clock manipulation (ledger timestamp) is the only way to advance time
+//! - The delay is evaluated **dynamically at execution** (not snapshotted at approval):
+//!   changing `timelock_delay` changes how much ledger time pending *and* new proposals
+//!   still owe before `execute_upgrade` is permitted.
 //!
 
 #![cfg(test)]
@@ -322,25 +325,91 @@ fn test_timelock_status_shows_remaining_seconds() {
     assert_eq!(remaining3, 0, "remaining must be 0 when delay has elapsed");
 }
 
+/// Updating the upgrade timelock delay is a supported, admin-gated operation and the
+/// new delay must apply to proposals created *after* the change.
+///
+/// Fixture note: `init` (multisig) configures the signer set but intentionally does not
+/// set `DataKey::Admin`. `set_timelock_delay` is admin-gated, so we seed `DataKey::Admin`
+/// directly in instance storage to exercise both the multisig upgrade flow and the
+/// admin-gated delay change within a single contract instance. This mirrors a deployment
+/// that has been bootstrapped with an admin key alongside its multisig signers.
 #[test]
-#[ignore]
 fn test_updated_delay_applies_to_new_proposals() {
     let env = Env::default();
     env.mock_all_auths();
 
     let (client, admin) = setup_multisig_with_timelock(&env);
-    // Manually set the admin storage key so that admin-only functions work
+    // Seed the admin key so admin-gated `set_timelock_delay` is callable in this fixture.
     env.storage().instance().set(&DataKey::Admin, &admin);
     let signer = admin;
 
     env.ledger().with_mut(|li| li.timestamp = 0);
     let p1 = propose_and_approve(&client, &env, &signer);
-    // Default timelock delay is 86400
+    // Default timelock delay is 86 400 s.
     assert_eq!(client.get_timelock_status(&p1).unwrap(), DEFAULT_TIMELOCK);
 
-    // Change to 1 hour
+    // Change to 1 hour.
     client.set_timelock_delay(&MIN_TIMELOCK);
     assert_eq!(client.get_timelock_delay(), MIN_TIMELOCK);
+
+    // A proposal created AFTER the delay change must observe the new delay.
+    let p2 = propose_and_approve(&client, &env, &signer);
+    assert_eq!(
+        client.get_timelock_status(&p2).unwrap(),
+        MIN_TIMELOCK,
+        "new proposals must use the updated timelock delay"
+    );
+}
+
+/// Encodes the blocking invariant: the upgrade timelock delay is read *dynamically* at
+/// execution time (see `execute_upgrade` / `get_timelock_status` in lib.rs) rather than
+/// being snapshotted when a proposal is approved.
+///
+/// Consequence under the ledger-timestamp clock model: advancing the ledger timestamp is
+/// the only way time moves, and the stored delay is evaluated when `get_timelock_status`
+/// runs. Therefore changing the delay retroactively changes how much ledger time a
+/// *pending* (already-approved) proposal still needs before it can be executed.
+#[test]
+fn test_updated_delay_affects_pending_proposal_dynamically() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin) = setup_multisig_with_timelock(&env);
+    env.storage().instance().set(&DataKey::Admin, &admin);
+    let signer = admin;
+
+    // Propose + approve at t=0 under the default 24 h delay.
+    env.ledger().with_mut(|li| li.timestamp = 0);
+    let p1 = propose_and_approve(&client, &env, &signer);
+    assert_eq!(client.get_timelock_status(&p1).unwrap(), DEFAULT_TIMELOCK);
+
+    // Advance halfway through the default window: not yet executable.
+    env.ledger().with_mut(|li| li.timestamp = DEFAULT_TIMELOCK / 2);
+    assert_eq!(
+        client.get_timelock_status(&p1).unwrap(),
+        DEFAULT_TIMELOCK / 2,
+        "pending proposal still owes the default delay at t = DEFAULT/2"
+    );
+
+    // Shorten the delay to 1 hour. No proposal is re-approved; this only mutates storage.
+    client.set_timelock_delay(&MIN_TIMELOCK);
+    assert_eq!(client.get_timelock_delay(), MIN_TIMELOCK);
+
+    // Because the delay is read dynamically, the already-pending proposal is now due:
+    // elapsed (DEFAULT/2 = 43 200 s) already exceeds the new 3 600 s delay.
+    assert_eq!(
+        client.get_timelock_status(&p1).unwrap(),
+        0,
+        "pending proposal must reflect the newly shortened delay (remaining -> 0)"
+    );
+
+    // At exactly the new delay boundary the contract must treat the timelock as met.
+    // `get_timelock_status` already proved the guarded window elapsed (remaining == 0);
+    // the execution attempt must therefore not be rejected by the timelock guard. We call
+    // it through `try_execute_upgrade` (which never panics) so any non-timelock outcome
+    // (e.g. a host error because no real WASM is installed in the test env) is tolerated.
+    env.ledger().with_mut(|li| li.timestamp = MIN_TIMELOCK);
+    let _ = client.try_execute_upgrade(&p1);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

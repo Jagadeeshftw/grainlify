@@ -1,22 +1,7 @@
 // Minimal explicit bindings for ProgramEscrow
 
-use soroban_sdk::{contractclient, contracttype, Address, Env, Error, String, Vec};
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ProgramDelegateInfo {
-    pub program_id: String,
-    pub delegate: Option<Address>,
-    pub permissions: u32,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PayoutRecord {
-    pub recipient: Address,
-    pub amount: i128,
-    pub timestamp: u64,
-}
+pub use ::program_escrow::{PayoutRecord, ProgramDelegateInfo};
+use soroban_sdk::{contractclient, Address, Env, String, Vec};
 
 #[contractclient(name = "Client")]
 pub trait ProgramEscrowContract {

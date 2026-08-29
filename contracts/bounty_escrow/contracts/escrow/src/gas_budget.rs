@@ -92,6 +92,8 @@ use soroban_sdk::{contracttype, Env};
 /// resource usage reaches this fraction of the configured cap.
 /// Default: `8_000` = 80 %.
 pub const WARNING_THRESHOLD_BPS: u64 = 8_000;
+// Only consumed by the test/testutils `check` function; dead in release builds.
+#[allow(dead_code)]
 const BASIS: u64 = 10_000;
 
 /// CPU and memory resource limits for one operation class.

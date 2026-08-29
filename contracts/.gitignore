@@ -1,7 +1,5 @@
 # Rust build artifacts
 target/
-Cargo.lock
-!program-escrow/Cargo.lock
 
 # Soroban
 .soroban/

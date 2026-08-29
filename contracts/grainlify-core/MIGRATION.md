@@ -33,6 +33,12 @@ Executes state migration from the current version to `target_version`.
 **Chaining:** If `target_version > current_version + 1`, intermediate migrations are executed in sequence:
 - v1 → v3 calls `migrate_v1_to_v2` then `migrate_v2_to_v3`
 
+**Interruption/retry contract:** `migrate()` is transaction-atomic. Individual
+version steps are not checkpointed; they either all commit together with
+`DataKey::MigrationState`, `DataKey::Version`, commitment removal, and success
+events, or all writes/events from that `migrate()` invocation are rolled back.
+The durable operator checkpoint is the prior `commit_migration()` record.
+
 **Panics:**
 - `"Target version must be greater than current version"` — if `target_version <= current_version`
 - `"No migration path available"` — if no migration function exists for a version step (e.g. v3 → v4)
@@ -43,6 +49,37 @@ Executes state migration from the current version to `target_version`.
 ### `get_migration_state() -> Option<MigrationState>`
 
 Returns the persisted migration state, or `None` if no migration has been executed.
+
+---
+
+## Acceptance Contract for Interrupted Migrations
+
+Each migration phase is classified as follows:
+
+| Phase | Contract |
+|---|---|
+| `commit_migration(target_version, hash, expires_at)` | **Checkpointed.** This is the durable operator checkpoint and may be overwritten by a later commit for the same `target_version`. |
+| Commitment lookup, hash check, version monotonicity check, expiry check | **Transaction-atomic preflight.** A trap or panic leaves committed state unchanged. Expiry failures do not consume commitments because Soroban rolls back writes on panic. |
+| `migrate_v1_to_v2`, `migrate_v2_to_v3`, and chained step execution | **Transaction-atomic, idempotency-required step logic.** Current placeholders are no-ops. Future step implementations must be safe to run again after a failed transaction and must not emit irreversible side effects outside Soroban storage/events. |
+| `MigrationState` write, `Version` write, commitment removal, success event, monitoring metric | **Transaction-atomic finalization.** These markers appear together only after a successful migration. If a trap occurs between any of them, retry observes the pre-migration version, no migration state, the original commitment, and no duplicate success events. |
+| Completed target version replay | **Idempotent no-op.** Once `MigrationState.to_version == target_version`, a repeated `migrate()` call returns without requiring a commitment and without emitting another migration event. |
+
+Operator resume procedure after a trap:
+
+1. Read `get_version()`, `get_migration_state()`, and `get_migration_commitment(target_version)`.
+2. If `MigrationState.to_version == target_version`, treat the migration as complete; do not recommit or rerun.
+3. If the version is still the pre-migration version and the commitment is present, retry `migrate(target_version, migration_hash)` with the same hash.
+4. If the commitment is absent, call `commit_migration()` again with the reviewed hash, then retry `migrate()`.
+5. If the previous failure was expiry-related, prefer a fresh commitment/hash before retrying on test networks where timestamps can move backward.
+
+Regression coverage:
+
+- `restarted_migration_converges_after_trap_at_each_phase_without_duplicate_events`
+  injects traps before, during, and after each supported migration step and
+  during finalization. It asserts rollback of `DataKey::Version`,
+  `DataKey::MigrationState`, `DataKey::MigrationCommitment(target_version)`,
+  emitted events, and convergence to the same final state as an uninterrupted
+  migration.
 
 ---
 

@@ -1,14 +1,16 @@
 name: Storage Layout Checks
 
+name: Storage Layout Checks
+
 on:
   pull_request:
     paths:
-      - "contracts/grainlify-core/**"
+      - "contracts/**"
       - ".github/workflows/storage-layout.yml"
   push:
     branches: [main, develop, master]
     paths:
-      - "contracts/grainlify-core/**"
+      - "contracts/**"
       - ".github/workflows/storage-layout.yml"
 
 env:
@@ -27,6 +29,7 @@ jobs:
         run: |
           cd contracts/grainlify-core
           cargo test --test test_storage_layout
+      - name: validate all deployable contract snapshots
+        run: python3 scripts/verify-storage-layout-manifest.py
       - name: program-escrow package exists
-        run: test -f contracts/program-escrow/STORAGE_LAYOUT.md
-        # Path is for documentation checks; program-escrow is still under top-level contracts/
+        run: test -f "$%7B github.workspace }%7$/workflowz/contracts/program-escrow/STORAGE_LAYOUT.md"

@@ -112,7 +112,7 @@ fn test_anonymous_lock_writes_only_commitment_no_address_indexes() {
             .get(&DataKey::DepositorIndex(depositor.clone()))
             .unwrap_or(Vec::new(&env));
         assert!(
-            !depositor_index.contains(&bounty_id),
+            !depositor_index.contains(bounty_id),
             "anonymous lock must not link the depositor to the bounty via DepositorIndex"
         );
     });

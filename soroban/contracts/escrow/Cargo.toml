@@ -10,7 +10,6 @@ doctest = false
 
 [dependencies]
 soroban-sdk = { workspace = true }
-grainlify-core = { path = "../../../contracts/grainlify-core", default-features = false }
 ethnum = { workspace = true }
 
 [dev-dependencies]
