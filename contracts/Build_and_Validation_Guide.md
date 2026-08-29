@@ -130,7 +130,7 @@ npm install
 **Run Validation:**
 ```bash
 cd contracts/scripts
-node validate-manifests-simple.js
+node validate-manifests.js
 ```
 
 **Expected Output:**
@@ -283,7 +283,7 @@ jobs:
       - name: Validate Manifests
         run: |
           cd contracts/scripts
-          node validate-manifests-simple.js
+          node validate-manifests.js
 ```
 
 ### Troubleshooting
@@ -307,7 +307,7 @@ npx ajv validate -s ../contract-manifest-schema.json -d ../program-escrow-manife
 #### jq Not Found (Windows)
 Use the Node.js validation script instead:
 ```bash
-node contracts/scripts/validate-manifests-simple.js
+node contracts/scripts/validate-manifests.js
 ```
 
 ---
@@ -326,7 +326,7 @@ node contracts/scripts/validate-manifests-simple.js
 - ✅ Schema compliance verified
 
 ### Files Created/Updated
-1. `contracts/scripts/validate-manifests-simple.js` - Cross-platform validator
+1. `contracts/scripts/validate-manifests.js` - Canonical cross-platform validator
 2. `contracts/scripts/package.json` - Node.js dependencies
 3. `contracts/program-escrow-manifest.json` - Updated to v2.1.0
 4. `contracts/Idempotency_Implementation_Summary.md` - Implementation docs

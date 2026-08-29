@@ -1,12 +1,16 @@
 #!/usr/bin/env node
 
-// Contract Manifest Validation Script (Node.js version for cross-platform compatibility)
-// This script validates all contract manifests against the schema.
+// Contract manifest validation. The JSON Schema is the source of truth for
+// required fields, entrypoint sections, versions, and authorization values.
 
-const { execSync } = require('child_process');
+const Ajv = require('ajv/dist/2020');
+const addFormats = require('ajv-formats');
 const fs = require('fs');
 const path = require('path');
-const Ajv2020 = require('ajv/dist/2020').default;
+
+const scriptDir = __dirname;
+const contractsDir = path.dirname(scriptDir);
+const schemaPath = path.join(contractsDir, 'contract-manifest-schema.json');
 
 const colors = {
   red: '\x1b[0;31m',
@@ -20,245 +24,110 @@ function log(color, message) {
   console.log(`${colors[color]}${message}${colors.nc}`);
 }
 
-function resolveAjvCommand() {
-  const contractsDir = path.dirname(__dirname);
+function formatError(error) {
+  const location = error.instancePath || '/';
+  const rule = error.keyword === 'required'
+    ? `required property '${error.params.missingProperty}'`
+    : error.keyword;
+  const expected = error.keyword === 'enum'
+    ? ` Allowed values: ${error.params.allowedValues.join(', ')}.`
+    : '';
+  return `${location}: ${rule} - ${error.message}.${expected}`;
+}
 
-  try {
-    execSync('ajv help', { stdio: 'pipe' });
-    return 'ajv';
-  } catch (e) {
-    try {
-      execSync(`npx --prefix "${contractsDir}" ajv help`, { stdio: 'pipe' });
-      return `npx --prefix "${contractsDir}" ajv`;
-    } catch (err) {
-      try {
-        execSync('npx ajv help', { stdio: 'pipe' });
-        return 'npx ajv';
-      } catch (nestedErr) {
-        return null;
-      }
-    }
-  }
+function loadValidator() {
+  const schema = JSON.parse(fs.readFileSync(schemaPath, 'utf8'));
+  const ajv = new Ajv({ allErrors: true, strict: false });
+  addFormats(ajv);
+  return ajv.compile(schema);
 }
 
 function findManifests(dir) {
-  let results = [];
-  const list = fs.readdirSync(dir);
-
-  list.forEach((file) => {
-    const fullPath = path.join(dir, file);
-    const stat = fs.statSync(fullPath);
-    if (stat && stat.isDirectory() && !fullPath.includes('node_modules')) {
-      results = results.concat(findManifests(fullPath));
-    } else if (file.endsWith('-manifest.json')) {
-      results.push(fullPath);
+  const results = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const entryPath = path.join(dir, entry.name);
+    if (entry.isDirectory() && entry.name !== 'node_modules') {
+      results.push(...findManifests(entryPath));
+    } else if (entry.isFile() && entry.name.endsWith('-manifest.json')) {
+      results.push(entryPath);
     }
-  });
-
+  }
   return results;
 }
 
-function validateManifestFile(manifestPath, schemaPath, ajvCmd = resolveAjvCommand()) {
-  if (!ajvCmd) {
-    return {
-      ok: false,
-      errors: ['ajv-cli is not installed. Please install it with: npm install -g ajv-cli'],
-    };
+function validateManifest(manifestPath, validate) {
+  let data;
+  try {
+    data = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  } catch (error) {
+    return { valid: false, errors: [`/: parse error - ${error.message}`] };
   }
 
-  try {
-    execSync(`${ajvCmd} validate --spec=draft2020 -c ajv-formats -s "${schemaPath}" -d "${manifestPath}" --verbose`, {
-      stdio: 'pipe',
-    });
-    return { ok: true, errors: [] };
-  } catch (error) {
-    const stderr = error && error.stderr ? error.stderr.toString() : '';
-    const stdout = error && error.stdout ? error.stdout.toString() : '';
-    const combined = `${stdout}${stderr}`.trim();
-    return {
-      ok: false,
-      errors: combined ? [combined] : ['Schema validation failed'],
-    };
+  if (validate(data)) {
+    return { valid: true, errors: [] };
   }
+
+  return {
+    valid: false,
+    errors: (validate.errors || []).map(formatError),
+  };
 }
 
-function runValidation() {
-  const scriptDir = __dirname;
-  const contractsDir = path.dirname(scriptDir);
-  const schemaPath = path.join(contractsDir, 'contract-manifest-schema.json');
-  const ajvCmd = resolveAjvCommand();
-
-  log('blue', '🔍 Contract Manifest Validation');
-  log('blue', '==================================');
-
-  if (!ajvCmd) {
-    log('red', '❌ ajv-cli is not installed');
-    log('nc', 'Please install it with: npm install -g ajv-cli');
-    process.exit(1);
-  }
-
-  const manifests = findManifests(contractsDir);
-
-  if (manifests.length === 0) {
-    log('yellow', '⚠️  No manifest files found');
-    process.exit(0);
-  }
-
+function run(manifestPaths = findManifests(contractsDir)) {
   let validCount = 0;
-  let totalCount = 0;
-  const validAuthValues = [
-    'admin',
-    'signer',
-    'any',
-    'none',
-    'capability',
-    'multisig',
-    'admin-or-governor',
-    'creator',
-    'authorized_payout_key',
-    'circuit admin',
-    'current admin',
-    'current controller or admin',
-    'existing circuit admin or contract admin',
-    'none (first call only)',
-    'proposed admin',
-    'proposed controller',
-  ];
 
-  manifests.forEach((manifest) => {
-    totalCount++;
-    const manifestName = path.basename(manifest, '.json');
-
-    console.log('');
-    log('blue', `📄 Validating ${manifestName}...`);
-
-    const schemaResult = validateManifestFile(manifest, schemaPath, ajvCmd);
-    if (!schemaResult.ok) {
-      log('red', '❌ Schema validation failed');
-      if (schemaResult.errors[0]) {
-        console.log(schemaResult.errors[0]);
-      }
-      return;
-    }
-
-    log('green', '✅ Schema validation passed');
-    validCount++;
-
-    const manifestData = JSON.parse(fs.readFileSync(manifest, 'utf8'));
-
-    log('blue', '🔍 Checking required fields...');
-    const requiredFields = ['contract_name', 'contract_purpose', 'version', 'entrypoints', 'configuration', 'behaviors'];
-    let allFieldsPresent = true;
-
-    requiredFields.forEach((field) => {
-      if (Object.prototype.hasOwnProperty.call(manifestData, field)) {
-        log('green', `  ✅ ${field}`);
-      } else {
-        log('red', `  ❌ Missing ${field}`);
-        allFieldsPresent = false;
-      }
-    });
-
-    if (!allFieldsPresent) return;
-
-    log('blue', '🔍 Checking entrypoints structure...');
-    if (manifestData.entrypoints && manifestData.entrypoints.public) {
-      log('green', '  ✅ entrypoints.public');
-    } else {
-      log('red', '  ❌ Missing entrypoints.public');
-    }
-
-    if (manifestData.entrypoints && manifestData.entrypoints.view) {
-      log('green', '  ✅ entrypoints.view');
-    } else {
-      log('red', '  ❌ Missing entrypoints.view');
-    }
-
-    log('blue', '🔍 Checking behaviors structure...');
-    if (manifestData.behaviors && manifestData.behaviors.security_features) {
-      log('green', '  ✅ behaviors.security_features');
-    } else {
-      log('red', '  ❌ Missing behaviors.security_features');
-    }
-
-    if (manifestData.behaviors && manifestData.behaviors.access_control) {
-      log('green', '  ✅ behaviors.access_control');
-    } else {
-      log('red', '  ❌ Missing behaviors.access_control');
-    }
-
-    log('blue', '🔍 Checking version format...');
-    const currentVersion = manifestData.version.current;
-    const schemaVersion = manifestData.version.schema;
-    const versionRegex = /^[0-9]+\.[0-9]+\.[0-9]+$/;
-
-    if (versionRegex.test(currentVersion)) {
-      log('green', `  ✅ Current version format: ${currentVersion}`);
-    } else {
-      log('red', `  ❌ Invalid current version format: ${currentVersion}`);
-    }
-
-    if (versionRegex.test(schemaVersion)) {
-      log('green', `  ✅ Schema version format: ${schemaVersion}`);
-    } else {
-      log('red', `  ❌ Invalid schema version format: ${schemaVersion}`);
-    }
-
-    log('blue', '🔍 Checking authorization values...');
-    const authValues = new Set();
-    function findAuthValues(obj) {
-      if (obj && typeof obj === 'object') {
-        if (obj.authorization) {
-          authValues.add(obj.authorization);
-        }
-        Object.values(obj).forEach((value) => findAuthValues(value));
-      }
-    }
-
-    findAuthValues(manifestData);
-    let invalidAuthFound = false;
-    authValues.forEach((auth) => {
-      if (!validAuthValues.includes(auth)) {
-        log('red', `  ❌ Invalid authorization value: ${auth}`);
-        invalidAuthFound = true;
-      }
-    });
-
-    if (!invalidAuthFound) {
-      log('green', '  ✅ All authorization values are valid');
-    }
-
-    log('blue', '📋 Contract Information:');
-    log('green', `  Name: ${manifestData.contract_name}`);
-    log('green', `  Purpose: ${manifestData.contract_purpose}`);
-    log('green', `  Version: ${currentVersion}`);
-    log('green', `  Schema: ${schemaVersion}`);
-  });
-
-  console.log('');
-  log('blue', '📊 Validation Summary');
-  log('blue', '==================================');
-  log('blue', `Total manifests: ${totalCount}`);
-  log('green', `Valid manifests: ${validCount}`);
-  log('red', `Invalid manifests: ${totalCount - validCount}`);
-
-  if (validCount === totalCount) {
-    console.log('');
-    log('green', '🎉 All manifests are valid!');
+  if (manifestPaths.length === 0) {
+    log('yellow', 'No manifest files found');
     return 0;
   }
 
+  let validate;
+  try {
+    validate = loadValidator();
+  } catch (error) {
+    log('red', `Failed to load manifest schema: ${error.message}`);
+    return 1;
+  }
+
+  log('blue', 'Contract Manifest Validation');
+  log('blue', '=============================');
+
+  for (const manifestPath of manifestPaths) {
+    const result = validateManifest(manifestPath, validate);
+    const displayPath = path.relative(process.cwd(), manifestPath);
+    console.log('');
+    log('blue', `Validating ${displayPath}...`);
+    if (result.valid) {
+      log('green', 'Schema validation passed');
+      validCount += 1;
+    } else {
+      log('red', 'Schema validation failed');
+      for (const error of result.errors) {
+        log('red', `  ${error}`);
+      }
+    }
+  }
+
+  const invalidCount = manifestPaths.length - validCount;
   console.log('');
-  log('red', '❌ Some manifests have validation errors');
-  return 1;
+  log('blue', `Total manifests: ${manifestPaths.length}`);
+  log('green', `Valid manifests: ${validCount}`);
+  if (invalidCount > 0) {
+    log('red', `Invalid manifests: ${invalidCount}`);
+    return 1;
+  }
+  log('green', 'All manifests are valid');
+  return 0;
+}
+
+if (require.main === module) {
+  process.exitCode = run();
 }
 
 module.exports = {
   findManifests,
-  validateManifestFile,
-  runValidation,
+  formatError,
+  loadValidator,
+  run,
+  validateManifest,
 };
-
-if (require.main === module) {
-  process.exit(runValidation());
-}

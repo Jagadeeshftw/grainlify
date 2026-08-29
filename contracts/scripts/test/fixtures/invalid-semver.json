@@ -1,0 +1,19 @@
+{
+  "contract_name": "FixtureContract",
+  "contract_purpose": "An invalid version fixture",
+  "version": {
+    "current": "1.0",
+    "schema": "v1"
+  },
+  "entrypoints": {
+    "public": [],
+    "view": []
+  },
+  "configuration": {
+    "parameters": []
+  },
+  "behaviors": {
+    "security_features": [],
+    "access_control": []
+  }
+}
