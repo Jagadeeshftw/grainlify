@@ -1,0 +1,7 @@
+{
+  "format": 1,
+  "package": "view-facade",
+  "schema_version": 0,
+  "persistent_keys": [],
+  "note": "The facade uses temporary query-cache entries only; it owns no persistent storage."
+}
