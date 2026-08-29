@@ -1,0 +1,19 @@
+{
+  "contract_name": "FixtureContract",
+  "contract_purpose": "A minimal valid contract manifest fixture",
+  "version": {
+    "current": "1.0.0",
+    "schema": "1.0.0"
+  },
+  "entrypoints": {
+    "public": [],
+    "view": []
+  },
+  "configuration": {
+    "parameters": []
+  },
+  "behaviors": {
+    "security_features": [],
+    "access_control": []
+  }
+}

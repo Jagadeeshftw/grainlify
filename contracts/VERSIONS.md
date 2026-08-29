@@ -15,6 +15,20 @@ Contracts covered:
 
 All contracts expose both a numeric version for on-chain checks and a semantic string for off-chain tooling. Numeric encoding policy: major*10_000 + minor*100 + patch. Example: 1.2.3 => 10203.
 
+## Manifest Schema Versioning
+
+`contracts/contract-manifest-schema.json` is the single source of truth for
+manifest required fields, entrypoint sections, semantic-version format, and
+authorization values. `scripts/validate-manifests.js` loads that schema
+directly; local tests and CI invoke the same validator.
+
+`version.current` identifies the contract release. `version.schema` identifies
+the manifest schema version. When manifest structure or validation rules change,
+update the schema, increment `version.schema` in affected manifests, and add a
+fixture/test for the new rule. Contract-only changes increment
+`version.current` without changing the schema version. This keeps schema
+changes explicit and lets consumers reject unsupported manifest schema versions.
+
 ---
 
 ## grainlify-core
