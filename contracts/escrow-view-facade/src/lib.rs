@@ -36,80 +36,15 @@
 
 use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, String, Vec};
 
-use program_escrow::{FeeConfig, ProgramData};
-
 mod bounty_escrow {
     include!("bounty_escrow_bindings.rs");
 }
 
-/// Cross-contract client for ProgramEscrow data queries used by the cache.
-#[soroban_sdk::contractclient(name = "EscrowDataClient")]
-pub trait ProgramEscrowDataQueryTrait {
-    fn get_program_info_v2(env: Env, program_id: String) -> ProgramData;
-    fn get_fee_config(env: Env) -> FeeConfig;
-}
-
-/// Storage keys for the [`QueryCache`] in Soroban temporary storage.
-///
-/// # Note: Keep in sync with `view-facade/src/lib.rs` `QueryCacheKey`.
-#[contracttype]
-pub enum QueryCacheKey {
-    ProgramData(Address, String),
-    FeeConfig(Address),
-}
-
-/// Per-invocation read-through cache for ProgramEscrow queries.
-///
-/// When the facade aggregates data from multiple escrow contracts or makes
-/// repeated reads of the same contract within a single transaction, this
-/// cache eliminates redundant cross-contract calls.
-///
-/// # Safety
-/// - Read-only: never mutates persistent storage.
-/// - Temporary storage is automatically discarded at transaction end.
-pub struct QueryCache;
-
-impl QueryCache {
-    /// Get [`ProgramData`] for `program_id` on `escrow`, caching the result.
-    pub fn get_or_load_program_data(
-        env: &Env,
-        escrow: &Address,
-        program_id: &String,
-    ) -> ProgramData {
-        let key = QueryCacheKey::ProgramData(escrow.clone(), program_id.clone());
-        if let Some(cached) = env
-            .storage()
-            .temporary()
-            .get::<QueryCacheKey, ProgramData>(&key)
-        {
-            return cached;
-        }
-        let client = EscrowDataClient::new(env, escrow);
-        let data = client.get_program_info_v2(program_id);
-        env.storage().temporary().set(&key, &data);
-        data
-    }
-
-    /// Get [`FeeConfig`] for `escrow`, caching the result.
-    pub fn get_or_load_fee_config(env: &Env, escrow: &Address) -> FeeConfig {
-        let key = QueryCacheKey::FeeConfig(escrow.clone());
-        if let Some(cached) = env
-            .storage()
-            .temporary()
-            .get::<QueryCacheKey, FeeConfig>(&key)
-        {
-            return cached;
-        }
-        let client = EscrowDataClient::new(env, escrow);
-        let config = client.get_fee_config();
-        env.storage().temporary().set(&key, &config);
-        config
-    }
+mod query;
+mod types;
 
 pub use query::{EscrowDataClient, QueryCache, QueryCacheKey};
 pub use types::{EscrowStatus, EscrowSummary, UserPortfolio};
-
-use soroban_sdk::{contract, contractimpl, Address, Env, String, Vec};
 
 /// The Escrow View Facade — a read-only aggregation layer for escrow data.
 #[contract]
@@ -152,7 +87,7 @@ impl EscrowViewFacade {
         program_contract: Address,
         program_id: String,
     ) -> Vec<program_escrow::ProgramDelegateInfo> {
-        let client = program_escrow::ProgramEscrowContractClient::new(&env, &program_contract);
+        let client = query::program_escrow::Client::new(&env, &program_contract);
         let delegates_res = client.try_query_all_delegates(&program_id);
 
         if let Ok(Ok(delegates)) = delegates_res {
@@ -171,7 +106,7 @@ impl EscrowViewFacade {
         program_id: String,
         recipient: Address,
     ) -> Vec<program_escrow::PayoutRecord> {
-        let client = program_escrow::ProgramEscrowContractClient::new(&env, &program_contract);
+        let client = query::program_escrow::Client::new(&env, &program_contract);
         let result = client.try_query_recipient_history(&program_id, &recipient);
 
         if let Ok(Ok(records)) = result {

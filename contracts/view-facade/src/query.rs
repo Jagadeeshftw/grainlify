@@ -6,7 +6,7 @@
 //! [`crate::ViewFacade`] delegates to the functions in this module so that the
 //! read-only query behavior is contained in one auditable place.
 
-use program_escrow::{FeeConfig, ProgramData};
+pub use program_escrow::{FeeConfig, ProgramData};
 use soroban_sdk::{contracttype, Address, Env, String, Vec};
 
 /// Minimal payout record mirrored from `program-escrow` for cross-contract use.

@@ -1496,6 +1496,9 @@ pub enum DataKey {
     SpendLimitSchemaVersion,
     PauseSchemaVersion,
     TokenAllowlist,
+    /// Per-token configured decimal scale, written once on allowlist add and
+    /// cleared on removal. Keyed by token `Address`.
+    TokenDecimals(Address),
     /// Dynamic pricing configuration
     DynamicPricingConfig,
     /// Dynamic pricing state
@@ -2360,6 +2363,12 @@ const TTL_MIN_LEDGERS: u32 = 518_400; // ~30 days
 const TTL_MAX_LEDGERS: u32 = 3_110_400; // ~180 days
 const TTL_MAX_ACCESS_COUNT: u32 = 100;
 
+// The on-chain server implementation. Gated behind the `contract` feature so
+// that downstream contracts (facades) which depend on this crate with
+// `default-features = false` link only the shared types/client and do NOT pull
+// in this contract's force-exported entrypoints (which would collide with their
+// own ABI at link time).
+#[cfg(feature = "contract")]
 #[contractimpl]
 impl ProgramEscrowContract {
     fn get_history_pagination_config(env: &Env) -> HistoryPaginationConfig {

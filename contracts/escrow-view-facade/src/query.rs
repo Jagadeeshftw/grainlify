@@ -10,7 +10,7 @@
 
 use soroban_sdk::{contracttype, Address, Env, String, Vec};
 
-use program_escrow::{FeeConfig, ProgramData};
+pub use ::program_escrow::{FeeConfig, ProgramData};
 
 use crate::types::{EscrowStatus, EscrowSummary, UserPortfolio};
 
