@@ -25,7 +25,7 @@ jobs:
     name: "wasm size budget check"
     runs-on: ubuntu-latest
     permissions:
-      issues: write
+      contents: read
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
