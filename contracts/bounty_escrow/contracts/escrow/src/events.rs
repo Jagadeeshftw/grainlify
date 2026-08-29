@@ -3,6 +3,13 @@
 //! All events emitted by [`BountyEscrowContract`] conform to **EVENT_VERSION_V2**,
 //! the canonical Grainlify event envelope.
 //!
+// Justification: Many emit functions are defined for planned features (recurring locks,
+// timelocks, admin transfers, oracle config, etc.) that are not yet wired into the
+// contract's main execution paths. Narrow per-function #[allow(dead_code)] would scatter
+// annotations across dozens of items that share the same reason; a single module-level
+// annotation keeps the rationale in one place and is trivially auditable.
+#![allow(dead_code)]
+//!
 //! ## EVENT_VERSION_V2 Contract
 //!
 //! Every event payload carries a `version: u32` field set to the

@@ -7,7 +7,7 @@
 use super::*;
 use soroban_sdk::{
     testutils::{Address as _, Events, Ledger},
-    token, Address, Env, IntoVal, Symbol, TryIntoVal,
+    Address, Env, IntoVal, Symbol, TryIntoVal,
 };
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -56,7 +56,7 @@ fn last_pf_query_event(env: &Env) -> events::ParticipantFilterQueried {
     let all = env.events().all();
     for event in all.iter().rev() {
         let topics = event.1;
-        if topics.len() < 1 {
+        if topics.is_empty() {
             continue;
         }
         let tag: Symbol = topics.get(0).unwrap().into_val(env);

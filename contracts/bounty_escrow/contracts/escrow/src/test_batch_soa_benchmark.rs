@@ -3,7 +3,7 @@
 extern crate std;
 
 use soroban_sdk::{
-    testutils::{Address as _, Ledger as _},
+    testutils::Address as _,
     token, Address, Env, Vec,
 };
 
@@ -57,7 +57,7 @@ fn mint(ctx: &Ctx, recipient: &Address, amount: i128) {
 
 fn run_benchmark_lock(ctx: &Ctx, use_soa: bool, batch_size: u32) -> (u64, u64) {
     let depositor = Address::generate(&ctx.env);
-    mint(&ctx, &depositor, AMOUNT * batch_size as i128);
+    mint(ctx, &depositor, AMOUNT * batch_size as i128);
 
     if use_soa {
         let mut bounty_ids = Vec::new(&ctx.env);

@@ -83,6 +83,8 @@ pub(crate) fn strict_assert_escrow(env: &Env, escrow: &Escrow) {
 /// - INV-ESC-2: remaining_amount >= 0
 /// - INV-ESC-3: remaining_amount <= amount
 /// - INV-ESC-4: Released => remaining_amount == 0
+// Retained for future explicit invariant-call assertion sites.
+#[allow(dead_code)]
 pub(crate) fn verify_escrow_invariants(escrow: &Escrow) -> bool {
     if escrow.amount < 0 {
         return false;
@@ -99,18 +101,22 @@ pub(crate) fn verify_escrow_invariants(escrow: &Escrow) -> bool {
     true
 }
 
+// Test-only helpers reserved for future invariant-counting assertions.
 #[cfg(test)]
+#[allow(dead_code)]
 pub(crate) fn reset_test_state(env: &Env) {
     env.storage().instance().set(&INV_CALLS, &0_u32);
     env.storage().instance().set(&INV_DISABLED, &false);
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 pub(crate) fn set_disabled_for_test(env: &Env, disabled: bool) {
     env.storage().instance().set(&INV_DISABLED, &disabled);
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 pub(crate) fn call_count_for_test(env: &Env) -> u32 {
     env.storage().instance().get(&INV_CALLS).unwrap_or(0)
 }

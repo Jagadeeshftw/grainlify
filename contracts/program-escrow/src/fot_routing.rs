@@ -1,3 +1,10 @@
+
+// Module-level allow: FoT routing helpers are part of the fee-on-transfer feature
+// surface. Not all entrypoints are wired yet; a single module-level annotation
+// keeps the rationale auditable instead of scattering per-function allows.
+#![allow(dead_code)]
+
+
 use soroban_sdk::{panic_with_error, vec, Address, Env, IntoVal, Symbol, Val};
 
 /// Default maximum gross-to-net multiplier for router quotes.

@@ -44,6 +44,13 @@
 //! | `emit_approval_added`    | Warn  |
 //! | `emit_fee_collected`     | Debug |
 
+
+// Module-level allow: this file defines the event schema for future logging-level
+// support (issue #615). Not all variants/functions are consumed yet; a narrow
+// per-item annotation would be noisier than a single module-level note.
+#![allow(dead_code)]
+
+
 use soroban_sdk::{contracttype, symbol_short, Address, Env};
 
 // ============================================================================
