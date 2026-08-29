@@ -6,21 +6,21 @@
       "manifest": "contracts/bounty_escrow/Cargo.toml",
       "package": "bounty-escrow",
       "target_dir": "contracts/bounty_escrow",
-      "budget_bytes": 320000,
+      "budget_bytes": 319488,
       "description": "Bounty escrow contract"
     },
     "grainlify_core": {
       "manifest": "contracts/grainlify-core/Cargo.toml",
       "package": "grainlify-core",
       "target_dir": "contracts/grainlify-core",
-      "budget_bytes": 200000,
+      "budget_bytes": 188416,
       "description": "Grainlify core library contract"
     },
     "program_escrow": {
       "manifest": "contracts/program-escrow/Cargo.toml",
       "package": "program-escrow",
       "target_dir": "contracts/program-escrow",
-      "budget_bytes": 400000,
+      "budget_bytes": 381952,
       "description": "Program escrow contract"
     },
     "escrow_view_facade": {

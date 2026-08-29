@@ -71,3 +71,76 @@ Soroban contracts are deployed as wasm blobs. Unchecked growth increases:
 Budgets are intentionally generous (300 KB default) to avoid blocking日常
 development while still catching accidental regressions or runaway code
 generation. Adjust as the codebase matures.
+
+## Measurement Evidence
+
+Measured locally on **Sat Aug 29 2026** with **Rust 1.98.0**
+(`cargo 1.98.0`, `wasm32-unknown-unknown` target) and **Soroban SDK 21.7.7**
+(`soroban-sdk = "=21.7.7"`), using:
+
+```bash
+cargo build --target wasm32-unknown-unknown --release
+bash scripts/check-wasm-budgets.sh
+```
+
+### Branch `feat/issue-1703-wasm-size-budgets`
+
+| Contract | Actual (bytes) | Budget (bytes) | Delta | Status |
+|----------|----------------|----------------|-------|--------|
+| `bounty_escrow` | 302,875 | 319,488 | −16,613 | ✅ PASS |
+| `grainlify_core` | 178,032 | 188,416 | −10,384 | ✅ PASS |
+| `program_escrow` | 362,254 | 381,952 | −19,698 | ✅ PASS |
+| `escrow_view_facade` | — | 400,000 | — | ❌ NOT BUILT |
+| `view_facade` | — | 400,000 | — | ❌ NOT BUILT |
+
+### Baseline (branch vs. `master`)
+
+| Contract | `master` (bytes) | Branch (bytes) | Delta | % Change |
+|----------|------------------|----------------|-------|----------|
+| `bounty_escrow` | 293,218 | 302,875 | +9,657 | +3.29% |
+| `grainlify_core` | 178,295 | 178,032 | −263 | −0.15% |
+| `program_escrow` | n/a (does not compile on `master`) | 362,254 | — | — |
+| `escrow_view_facade` | n/a (does not compile) | n/a (does not compile) | — | — |
+| `view_facade` | n/a (does not compile) | n/a (does not compile) | — | — |
+
+### ⚠️ Build status (critical finding)
+
+Only **3 of 5** contracts compile on this branch. The remaining two fail to
+build with genuine code errors (independent of the size-budget feature), so no
+wasm can be produced for them and they cannot be measured:
+
+- **`program_escrow`** (branch): failed to compile until a minimal fix was
+  applied locally — its `DataKey` enum was missing the `TokenDecimals(Address)`
+  variant that `add_allowed_token_with_decimals` references. The fix is a
+  one-line enum variant addition. (Note: `master`'s `program_escrow` also does
+  not compile — "custom attribute panicked" / "duplicate definitions with name
+  `add_allowed_token_with_decimals`" — so this branch is itself an in-progress
+  compilation fix.)
+- **`view_facade`**: fails at the **linker** step with
+  `duplicate symbol: get_admin` — the crate exports program-escrow's entire
+  contract ABI (`get_admin`, `set_admin`, `add_allowed_token`, …) alongside its
+  own entrypoints, producing conflicting wasm exports. This is an architectural
+  issue in the `#[contractimpl]` wiring, not a budget issue.
+- **`escrow_view_facade`**: fails to compile with an unclosed delimiter /
+  missing `mod query;` + `mod types;` declarations and duplicate `use` imports —
+  the `impl QueryCache` block was never closed and several module declarations
+  are missing.
+
+**Conclusion:** the size-budget gate and both scripts
+(`check-wasm-budgets.sh`, `update-wasm-budgets.sh`) work correctly for the
+contracts that build. However, the PR is **not merge-ready** until the
+`program_escrow` / `view_facade` / `escrow_view_facade` compilation errors are
+resolved — otherwise CI cannot produce wasm for 2 of the 5 budgets, and
+`master`'s `program_escrow` does not build either.
+
+### Verification method
+
+- Build command: `cargo build --target wasm32-unknown-unknown --release`
+- Check script: `bash scripts/check-wasm-budgets.sh` — prints per-contract table,
+  exits `0` when all built contracts are within budget.
+- Update script: `bash scripts/update-wasm-budgets.sh` — sets each budget to
+  `actual + 5% + 1 KB`, rounded up to 1 KB (only for contracts with a built
+  wasm; unbuilt contracts keep their placeholder budget).
+- The budgets in `.github/wasm-budgets.json` were regenerated from these
+  measurements for the three contracts that build; the two unbuilt facades keep
+  their 400,000-byte placeholder until they compile.
