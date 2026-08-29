@@ -1,0 +1,90 @@
+name: "Wasm Size Budget Report Comment"
+
+# Posts the "Wasm Size Budget Report" comment on pull requests.
+#
+# Why a separate workflow? On `pull_request` events from forks, GitHub forces
+# GITHUB_TOKEN to read-only regardless of the `permissions:` block, so the
+# budget workflow cannot create/update PR comments (it fails with
+# "Resource not accessible by integration" / 403). This workflow is triggered
+# by `workflow_run` instead, which runs in the base repository's default-branch
+# context with a write-enabled token and can safely comment. The reporting work
+# (building + generating the report) lives in `wasm-size-budget.yml`, which
+# only uploads the report as an artifact.
+#
+# NOTE: a `workflow_run` listener only triggers when this file exists on the
+# repository's default branch (master/main). It therefore becomes active for
+# pull requests after this workflow has been merged to the default branch.
+
+on:
+  workflow_run:
+    workflows: ["Wasm Size Budget Gate"]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  post-comment:
+    name: "post budget report comment"
+    runs-on: ubuntu-latest
+    # Only comment for runs that originated from a pull_request event.
+    if: github.event.workflow_run.event == 'pull_request'
+    steps:
+      - name: Download budget report artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-budget-report
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: .
+
+      - name: Post budget report comment
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const reportPath = 'wasm-budget-report.md';
+
+            if (!fs.existsSync(reportPath)) {
+              console.log('No budget report artifact found; skipping comment.');
+              return;
+            }
+            const report = fs.readFileSync(reportPath, 'utf8');
+
+            const prs = github.event.workflow_run.pull_requests;
+            if (!prs || prs.length === 0) {
+              console.log('Workflow run is not associated with a pull request; skipping.');
+              return;
+            }
+            const prNumber = prs[0].number;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+
+            const marker = '## 🔍 Wasm Size Budget Report';
+            const existing = comments.find(c => (c.body || '').startsWith(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: report,
+              });
+              console.log(`Updated existing budget report comment on PR #${prNumber}`);
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: report,
+              });
+              console.log(`Created budget report comment on PR #${prNumber}`);
+            }
