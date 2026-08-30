@@ -28,8 +28,9 @@
 //! |---|---|---|
 //! | Max fields (soft)  | `MAX_PROGRAM_METADATA_CUSTOM_FIELDS` | 10 |
 //! | Max fields (hard)  | `MAX_CUSTOM_FIELDS` | 20 |
-//! | Max key length     | `MAX_CUSTOM_FIELD_KEY_LEN` | 64 bytes |
-//! | Max value length   | `MAX_CUSTOM_FIELD_VALUE_LEN` | 256 bytes |
+//! | Max key length     | `MAX_CUSTOM_FIELD_KEY_LEN` | 64 bytes (byte-based) |
+//! | Max value length   | `MAX_CUSTOM_FIELD_VALUE_LEN` | 256 bytes (byte-based) |
+//! | Aggregate payload  | `MAX_METADATA_AGGREGATE_BYTES` | 10 240 bytes |
 //!
 //! These limits prevent unbounded storage growth and ensure consistent
 //! rejection behaviour regardless of which entry point is used. Both paths

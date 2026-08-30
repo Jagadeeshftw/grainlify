@@ -780,18 +780,29 @@ impl ProgramMetadata {
 /// | Constraint | Constant | Value |
 /// |---|---|---|
 /// | Max entries | `MAX_CUSTOM_FIELDS` | 20 |
-/// | Max key length | `MAX_CUSTOM_FIELD_KEY_LEN` | 64 bytes |
-/// | Max value length | `MAX_CUSTOM_FIELD_VALUE_LEN` | 256 bytes |
+/// | Max key length | `MAX_CUSTOM_FIELD_KEY_LEN` | 64 bytes (byte-based) |
+/// | Max value length | `MAX_CUSTOM_FIELD_VALUE_LEN` | 256 bytes (byte-based) |
+/// | Aggregate payload | `MAX_METADATA_AGGREGATE_BYTES` | 10 240 bytes |
+///
+/// Limits are **byte-based** (using `String::len()` which returns UTF-8 byte
+/// length).  Soroban `String::from_str` rejects invalid UTF-8 at construction
+/// time, so byte-based and character-based limits coincide for valid strings.
+///
+/// Updates **replace** the entire metadata; they do not merge with existing
+/// values.
 ///
 /// # Panics
 /// - `"CustomFieldsLimitExceeded"` if `custom_fields.len() > MAX_CUSTOM_FIELDS`.
 /// - `"CustomFieldKeyTooLong"` if any key exceeds `MAX_CUSTOM_FIELD_KEY_LEN` bytes.
 /// - `"CustomFieldValueTooLong"` if any value exceeds `MAX_CUSTOM_FIELD_VALUE_LEN` bytes.
+/// - `"MetadataAggregateSizeExceeded"` if the sum of all key+value byte lengths
+///   exceeds `MAX_METADATA_AGGREGATE_BYTES`.
 pub fn validate_metadata_custom_fields(metadata: &ProgramMetadata) {
     let num_fields = metadata.custom_fields.len();
     if num_fields > MAX_CUSTOM_FIELDS {
         panic!("CustomFieldsLimitExceeded");
     }
+    let mut aggregate: u32 = 0;
     for field in metadata.custom_fields.iter() {
         if field.key.len() > MAX_CUSTOM_FIELD_KEY_LEN {
             panic!("CustomFieldKeyTooLong");
@@ -799,6 +810,13 @@ pub fn validate_metadata_custom_fields(metadata: &ProgramMetadata) {
         if field.value.len() > MAX_CUSTOM_FIELD_VALUE_LEN {
             panic!("CustomFieldValueTooLong");
         }
+        aggregate = aggregate
+            .checked_add(field.key.len())
+            .and_then(|s| s.checked_add(field.value.len()))
+            .unwrap_or(u32::MAX);
+    }
+    if aggregate > MAX_METADATA_AGGREGATE_BYTES {
+        panic!("MetadataAggregateSizeExceeded");
     }
 }
 
@@ -1763,6 +1781,12 @@ pub const MAX_CUSTOM_FIELD_KEY_LEN: u32 = 64;
 
 /// Maximum byte length of a `ProgramMetadataField` value.
 pub const MAX_CUSTOM_FIELD_VALUE_LEN: u32 = 256;
+
+/// Maximum aggregate byte size of all custom field keys and values combined.
+/// Prevents unbounded storage growth from metadata payloads even when
+/// individual field limits are respected.  Each custom field contributes
+/// `key.len() + value.len()` bytes toward this ceiling.
+pub const MAX_METADATA_AGGREGATE_BYTES: u32 = 10_240;
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
