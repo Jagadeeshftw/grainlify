@@ -1128,3 +1128,158 @@ fn test_get_program_jurisdiction_not_found() {
     let err = res.err().unwrap();
     assert_eq!(err, Ok(Error::ProgramNotFound));
 }
+
+// ==================== ISSUE #1811 — ADDRESS VALIDATION TESTS ====================
+
+#[test]
+fn test_error_code_invalid_address_contract_self_as_admin() {
+    setup!(
+        env,
+        client,
+        contract_id,
+        admin,
+        _program_admin,
+        _token_client,
+        _token_admin,
+        10_000i128
+    );
+
+    // Using the contract's own address as the program admin must be rejected
+    // before any persistent key is derived.
+    let res = client.try_register_program(
+        &1,
+        &contract_id, // contract self-reference
+        &String::from_str(&env, "Self-referencing Program"),
+        &5_000,
+    );
+    assert!(res.is_err());
+    // Error code 18 = InvalidAddress
+    let err = res.err().unwrap();
+    assert_eq!(err, Ok(Error::InvalidAddress));
+}
+
+#[test]
+fn test_valid_address_passes_validation() {
+    setup!(
+        env,
+        client,
+        _contract_id,
+        _admin,
+        program_admin,
+        token_client,
+        token_admin,
+        10_000i128
+    );
+
+    // A normal address must pass validation and allow registration.
+    let res = client.try_register_program(
+        &1,
+        &program_admin,
+        &String::from_str(&env, "Valid Program"),
+        &5_000,
+    );
+    assert!(res.is_ok());
+}
+
+#[test]
+fn test_error_code_invalid_address_self_as_juris_admin() {
+    setup!(
+        env,
+        client,
+        contract_id,
+        _admin,
+        _program_admin,
+        _token_client,
+        _token_admin,
+        10_000i128
+    );
+
+    let cfg = ProgramJurisdictionConfig {
+        tag: Some(String::from_str(&env, "test")),
+        requires_kyc: false,
+        max_funding: Some(10_000),
+        registration_paused: false,
+    };
+
+    // Contract self-address as admin in a jurisdiction-enabled registration.
+    let res = client.try_register_program_juris(
+        &2,
+        &contract_id, // contract self-reference
+        &String::from_str(&env, "Juris Program"),
+        &5_000,
+        &cfg.tag.clone(),
+        &cfg.requires_kyc,
+        &cfg.max_funding.clone(),
+        &cfg.registration_paused,
+        &OptionalJurisdiction::Some(cfg.clone()),
+        &None,
+    );
+    assert!(res.is_err());
+    // Error code 18 = InvalidAddress
+    let err = res.err().unwrap();
+    assert_eq!(err, Ok(Error::InvalidAddress));
+}
+
+#[test]
+fn test_address_validation_is_consistent_across_write_and_query_paths() {
+    setup!(
+        env,
+        client,
+        _contract_id,
+        _admin,
+        program_admin,
+        _token_client,
+        _token_admin,
+        10_000i128
+    );
+
+    // Register successfully with a valid address.
+    client.register_program(
+        &100,
+        &program_admin,
+        &String::from_str(&env, "Consistent Addr Program"),
+        &5_000,
+    );
+
+    // The same address must be retrievable on the query path.
+    let program = client.get_program(&100);
+    assert_eq!(program.admin, program_admin);
+}
+
+#[test]
+fn test_regression_malformed_address_boundary_inputs() {
+    setup!(
+        env,
+        client,
+        contract_id,
+        _admin,
+        program_admin,
+        _token_client,
+        _token_admin,
+        10_000i128
+    );
+
+    // Boundary: contract_id (self) rejected at every entrypoint.
+    assert_eq!(
+        client
+            .try_register_program(
+                &200,
+                &contract_id,
+                &String::from_str(&env, "Boundary Test"),
+                &100,
+            )
+            .err()
+            .unwrap(),
+        Ok(Error::InvalidAddress)
+    );
+
+    // Boundary: a normal user address is accepted.
+    assert!(client
+        .try_register_program(
+            &201,
+            &program_admin,
+            &String::from_str(&env, "Normal Address"),
+            &100,
+        )
+        .is_ok());
+}

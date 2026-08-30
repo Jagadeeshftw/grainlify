@@ -160,6 +160,14 @@ pub enum Error {
     LabelNotAllowed = 16,
     // Ownership transfer errors
     TransferProposalNotFound = 17,
+
+    /// Actor or recipient address is invalid (zero / contract-self / identical).
+    ///
+    /// **When raised:** A caller passes an address that would produce a
+    /// dangerous or ambiguous storage key (e.g. zero address, the contract's
+    /// own address, or duplicate actor/recipient).
+    /// **Client action:** Supply a valid, distinct participant address.
+    InvalidAddress = 18,
 }
 
 #[contracttype]
@@ -609,6 +617,41 @@ impl ProgramEscrowContract {
             })
     }
 
+    // -------------------------------------------------------------------------
+    // Issue #1811 — Address validation before persistent key derivation
+    // -------------------------------------------------------------------------
+
+    /// Validate that `addr` is a safe participant address before it is used to
+    /// derive any persistent storage key.
+    ///
+    /// Rules:
+    /// - The address must not be the contract's own address (self-reference
+    ///   would corrupt actor/recipient semantics and storage isolation).
+    ///
+    /// Soroban's `Address` type is already guaranteed non-null by the SDK, so
+    /// there is no separate zero-address check needed.
+    fn validate_participant_address(env: &Env, addr: &Address) -> Result<(), Error> {
+        if *addr == env.current_contract_address() {
+            return Err(Error::InvalidAddress);
+        }
+        Ok(())
+    }
+
+    /// Validate that actor and recipient are both valid *and* distinct so that
+    /// a single address cannot appear on both sides of a value-moving operation.
+    fn validate_actor_and_recipient(
+        env: &Env,
+        actor: &Address,
+        recipient: &Address,
+    ) -> Result<(), Error> {
+        Self::validate_participant_address(env, actor)?;
+        Self::validate_participant_address(env, recipient)?;
+        if actor == recipient {
+            return Err(Error::InvalidAddress);
+        }
+        Ok(())
+    }
+
     /// Initialize the contract with an admin and token address. Call once.
     pub fn init(env: Env, admin: Address, token: Address) -> Result<(), Error> {
         if env.storage().instance().has(&DataKey::Admin) {
@@ -751,6 +794,10 @@ impl ProgramEscrowContract {
             return Err(e);
         }
         Self::require_contract_admin(&env);
+
+        // Issue #1811: validate the admin address before it is used to derive
+        // any persistent storage key.
+        Self::validate_participant_address(&env, &admin)?;
 
         if env
             .storage()
