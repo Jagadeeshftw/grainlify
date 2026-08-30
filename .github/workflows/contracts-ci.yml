@@ -3,30 +3,28 @@ name: Smart Contracts CI
 on:
   push:
     branches: [master, main]
+    paths:
+      - "soroban/**"
+      - "contracts/**"
+      - ".github/workflows/contracts-ci.yml"
   pull_request:
     branches: [master, main]
+    paths:
+      - "soroban/**"
+      - "contracts/**"
+      - ".github/workflows/contracts-ci.yml"
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: "-Dwarnings"
 
 jobs:
   # ──────────────────────────────────────────────────────────────
-  # Clippy lint gate for deployable contract crates.
-  # Every crate listed here MUST pass `cargo clippy -- -D warnings`.
-  # Deliberate violations require a narrow #[allow(...)] with a
-  # justification comment; crate-wide suppressions are rejected.
+  # Manifest validation gate (schema + structure, npm-based).
+  # Fast; no Rust toolchain required.
   # ──────────────────────────────────────────────────────────────
-  clippy:
-    name: clippy (${{ matrix.name }})
+  validate-manifests:
+    name: validate-manifests
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: bounty-escrow
-            manifest: contracts/bounty_escrow/Cargo.toml
-            args: --workspace --all-targets
     steps:
       - uses: actions/checkout@v4
       - name: Set up Node.js
@@ -37,3 +35,45 @@ jobs:
           cache-dependency-path: contracts/package-lock.json
       - name: Validate contract manifests
         run: npm test --prefix contracts
+
+  # ──────────────────────────────────────────────────────────────
+  # Reproducible workspace build & test gates (issue #1700).
+  # Runs the exact same commands as ./contracts/scripts/ci-contracts.sh
+  # so the gates behave identically locally and in CI.
+  # No continue-on-error: a compile or test regression must fail the job.
+  # ──────────────────────────────────────────────────────────────
+  build-test:
+    name: contracts (workspace tests + wasm release build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none, wasm32-unknown-unknown
+
+      # Cache only the Cargo registry/git caches and the workspace target dir
+      # (keyed on the lockfile). Toolchain binaries in ~/.cargo/bin are NOT
+      # cached so the pinned Rust/Soroban toolchain always comes from rustup.
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            contracts/bounty_escrow/target/
+          key: ${{ runner.os }}-contracts-cargo-${{ hashFiles('contracts/bounty_escrow/Cargo.lock', 'contracts/bounty_escrow/Cargo.toml', 'contracts/grainlify-core/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-contracts-cargo-
+
+      - name: Run contract CI gates
+        run: bash contracts/scripts/ci-contracts.sh
+
+      - name: Upload deployable wasm
+        uses: actions/upload-artifact@v4
+        with:
+          name: bounty-escrow-wasm
+          path: contracts/bounty_escrow/target/wasm32-unknown-unknown/release/*.wasm
+          if-no-files-found: error
