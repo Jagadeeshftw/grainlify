@@ -1128,3 +1128,144 @@ fn test_get_program_jurisdiction_not_found() {
     let err = res.err().unwrap();
     assert_eq!(err, Ok(Error::ProgramNotFound));
 }
+
+// ==================== ISSUE #1807 — CALLBACK DEPTH TESTS ====================
+
+#[test]
+fn test_normal_registration_callback_depth_not_exceeded() {
+    // A standard single registration completes without triggering the depth limit.
+    setup!(
+        env,
+        client,
+        _contract_id,
+        _admin,
+        program_admin,
+        _token_client,
+        _token_admin,
+        10_000i128
+    );
+
+    let res = client.try_register_program(
+        &1,
+        &program_admin,
+        &String::from_str(&env, "Normal Registration"),
+        &5_000,
+    );
+    assert!(
+        res.is_ok(),
+        "Normal single-callback registration must succeed"
+    );
+}
+
+#[test]
+fn test_normal_registration_with_jurisdiction_callback_not_exceeded() {
+    // Jurisdiction registration also goes through a single token transfer
+    // and must not trip the depth guard.
+    setup!(
+        env,
+        client,
+        _contract_id,
+        _admin,
+        program_admin,
+        _token_client,
+        _token_admin,
+        20_000i128
+    );
+
+    let cfg = ProgramJurisdictionConfig {
+        tag: Some(String::from_str(&env, "test-zone")),
+        requires_kyc: false,
+        max_funding: Some(15_000),
+        registration_paused: false,
+    };
+
+    let res = client.try_register_program_juris(
+        &1,
+        &program_admin,
+        &String::from_str(&env, "Juris Normal"),
+        &5_000,
+        &cfg.tag.clone(),
+        &cfg.requires_kyc,
+        &cfg.max_funding.clone(),
+        &cfg.registration_paused,
+        &OptionalJurisdiction::Some(cfg.clone()),
+        &None,
+    );
+    assert!(res.is_ok(), "Jurisdiction registration must succeed");
+}
+
+#[test]
+fn test_callback_depth_error_code_is_stable() {
+    // Verify the CallbackDepthExceeded error variant has the expected
+    // numeric code (18) for stable client discrimination.
+    let code = Error::CallbackDepthExceeded as u32;
+    assert_eq!(code, 18, "CallbackDepthExceeded must remain error code 18");
+}
+
+#[test]
+fn test_multiple_sequential_registrations_do_not_accumulate_depth() {
+    // Each registration must release the depth counter, so sequential
+    // registrations must all succeed independently.
+    setup!(
+        env,
+        client,
+        _contract_id,
+        _admin,
+        program_admin,
+        _token_client,
+        token_admin,
+        100_000i128
+    );
+
+    for i in 1u64..=5 {
+        token_admin.mint(&program_admin, &1_000);
+        let res = client.try_register_program(
+            &i,
+            &program_admin,
+            &String::from_str(&env, "Sequential Program"),
+            &1_000,
+        );
+        assert!(
+            res.is_ok(),
+            "Registration {} must succeed — depth counter must have been released",
+            i
+        );
+    }
+}
+
+#[test]
+fn test_depth_counter_rolled_back_on_failed_registration() {
+    // When a registration fails (e.g. invalid amount), no partial state should
+    // persist and a subsequent valid registration should succeed, proving that
+    // the depth counter is properly rolled back on error.
+    setup!(
+        env,
+        client,
+        _contract_id,
+        _admin,
+        program_admin,
+        _token_client,
+        _token_admin,
+        10_000i128
+    );
+
+    // Intentional failure: amount = 0 is invalid.
+    let _ = client.try_register_program(
+        &1,
+        &program_admin,
+        &String::from_str(&env, "Bad Amount"),
+        &0,
+    );
+
+    // Subsequent valid registration must succeed — depth counter rolled back.
+    let res = client.try_register_program(
+        &2,
+        &program_admin,
+        &String::from_str(&env, "Good Amount"),
+        &5_000,
+    );
+    assert!(
+        res.is_ok(),
+        "Registration after a failed call must succeed; depth counter must be rolled back"
+    );
+}

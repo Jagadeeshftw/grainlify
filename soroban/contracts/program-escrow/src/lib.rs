@@ -27,6 +27,9 @@ const MAX_BATCH_SIZE: u32 = 20;
 const MAX_PAGE_SIZE: u32 = 20;
 const MAX_LABELS: u32 = 10;
 const MAX_LABEL_LENGTH: u32 = 32;
+/// Maximum allowed token-callback nesting depth.
+/// A depth of 1 means direct callbacks are allowed but no further nesting.
+const MAX_CALLBACK_DEPTH: u32 = 1;
 const PROGRAM_REGISTERED: soroban_sdk::Symbol = symbol_short!("prg_reg");
 const PROGRAM_REGISTRY: soroban_sdk::Symbol = symbol_short!("prg_rgst");
 const PROGRAM_LABELS_UPDATED: soroban_sdk::Symbol = symbol_short!("prg_lbl");
@@ -160,6 +163,15 @@ pub enum Error {
     LabelNotAllowed = 16,
     // Ownership transfer errors
     TransferProposalNotFound = 17,
+
+    /// Token callback depth limit exceeded.
+    ///
+    /// **When raised:** A recursive or deeply-nested token callback would
+    /// exceed `MAX_CALLBACK_DEPTH`, protecting against unbounded resource
+    /// consumption and re-entrancy through the token path.
+    /// **Client action:** Do not invoke contract entrypoints from inside a
+    /// token hook; wait for the originating call to complete first.
+    CallbackDepthExceeded = 18,
 }
 
 #[contracttype]
@@ -296,6 +308,8 @@ pub enum DataKey {
     // Ownership transfer
     PendingAdmin,
     ProgramPendingAdmin(u64),
+    /// Tracks the current token-callback nesting depth to reject recursion.
+    CallbackDepth,
 }
 
 /// Filter inputs for cursor-based program search.
@@ -609,6 +623,44 @@ impl ProgramEscrowContract {
             })
     }
 
+    // -------------------------------------------------------------------------
+    // Issue #1807 — Callback depth tracking
+    // -------------------------------------------------------------------------
+
+    /// Increment the callback depth counter and return an error if the new
+    /// depth would exceed `MAX_CALLBACK_DEPTH`.
+    ///
+    /// Must be paired with `release_callback_depth` on every success and error
+    /// path.  Soroban rolls back instance storage on transaction failure, so
+    /// the counter is automatically cleared on panics / `Err` returns.
+    fn acquire_callback_depth(env: &Env) -> Result<(), Error> {
+        let depth: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::CallbackDepth)
+            .unwrap_or(0);
+        if depth >= MAX_CALLBACK_DEPTH {
+            return Err(Error::CallbackDepthExceeded);
+        }
+        env.storage()
+            .instance()
+            .set(&DataKey::CallbackDepth, &(depth + 1));
+        Ok(())
+    }
+
+    /// Decrement the callback depth counter after a token interaction completes.
+    fn release_callback_depth(env: &Env) {
+        let depth: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::CallbackDepth)
+            .unwrap_or(0);
+        let new_depth = depth.saturating_sub(1);
+        env.storage()
+            .instance()
+            .set(&DataKey::CallbackDepth, &new_depth);
+    }
+
     /// Initialize the contract with an admin and token address. Call once.
     pub fn init(env: Env, admin: Address, token: Address) -> Result<(), Error> {
         if env.storage().instance().has(&DataKey::Admin) {
@@ -807,9 +859,12 @@ impl ProgramEscrowContract {
         );
 
         // INTERACTION: external token transfer is last
+        // Issue #1807: track callback depth around the external token transfer.
+        Self::acquire_callback_depth(&env)?;
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
         let token_client = token::Client::new(&env, &token_addr);
         token_client.transfer(&admin, &env.current_contract_address(), &total_funding);
+        Self::release_callback_depth(&env);
 
         // GUARD: release reentrancy lock
         reentrancy_guard::release(&env);
