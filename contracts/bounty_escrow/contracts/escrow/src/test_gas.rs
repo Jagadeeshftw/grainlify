@@ -112,15 +112,15 @@ mod gas_profile {
 
     /// Capture Soroban budget meters before and after `f`, return the deltas.
     fn measure<F: FnOnce()>(env: &Env, f: F) -> BudgetDelta {
-        let cpu_before = env.budget().cpu_instruction_count();
-        let mem_before = env.budget().memory_bytes_count();
+        let cpu_before = env.budget().cpu_instruction_cost();
+        let mem_before = env.budget().memory_bytes_cost();
         f();
         BudgetDelta {
             cpu: env
                 .budget()
-                .cpu_instruction_count()
+                .cpu_instruction_cost()
                 .saturating_sub(cpu_before),
-            mem: env.budget().memory_bytes_count().saturating_sub(mem_before),
+            mem: env.budget().memory_bytes_cost().saturating_sub(mem_before),
         }
     }
 

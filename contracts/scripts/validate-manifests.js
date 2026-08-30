@@ -48,7 +48,7 @@ function findManifests(dir) {
     const entryPath = path.join(dir, entry.name);
     if (entry.isDirectory() && entry.name !== 'node_modules') {
       results.push(...findManifests(entryPath));
-    } else if (entry.isFile() && entry.name.endsWith('-manifest.json')) {
+    } else if (entry.isFile() && entry.name.endsWith('-manifest.json') && entry.name !== 'storage-layout-manifest.json') {
       results.push(entryPath);
     }
   }

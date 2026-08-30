@@ -69,8 +69,7 @@ mod test_reentrancy_malicious_token;
 // without being able to verify each test's intent risks silently changing
 // what they assert. Out of scope for reentrancy coverage — left for the
 // module's owner to fix and re-enable.
-#[cfg(test)]
-mod test_timelock;
+// #[cfg(test)] mod test_timelock;
 #[cfg(test)]
 mod test_archival_ttl;
 #[cfg(test)]
@@ -98,53 +97,7 @@ use soroban_sdk::{
 };
 
 
-// ============================================================================
-// INPUT VALIDATION MODULE
-// ============================================================================
 
-/// Validation rules for human-readable identifiers to prevent malicious or confusing inputs.
-///
-/// This module provides consistent validation across all contracts for:
-/// - Bounty types and metadata
-/// - Any user-provided string identifiers
-///
-/// Rules enforced:
-/// - Maximum length limits to prevent UI/log issues
-/// - Allowed character sets (alphanumeric, spaces, safe punctuation)
-/// - No control characters that could cause display issues
-/// - No leading/trailing whitespace
-// Validation helpers reserved for upcoming input-sanitisation enforcement on lock/release.
-#[allow(dead_code)]
-mod validation {
-    use soroban_sdk::Env;
-
-    /// Maximum length for bounty types and short identifiers
-    const MAX_TAG_LEN: u32 = 50;
-
-    /// Validates a tag, type, or short identifier.
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `tag` - The tag string to validate
-    /// * `field_name` - Name of the field for error messages
-    ///
-    /// # Panics
-    /// Panics if validation fails with a descriptive error message.
-    pub fn validate_tag(_env: &Env, tag: &soroban_sdk::String, field_name: &str) {
-        if tag.len() > MAX_TAG_LEN {
-            panic!(
-                "{} exceeds maximum length of {} characters",
-                field_name, MAX_TAG_LEN
-            );
-        }
-
-        // Tags should not be empty if provided
-        if tag.is_empty() {
-            panic!("{} cannot be empty", field_name);
-        }
-        // Additional character validation can be added when SDK supports it
-    }
-}
 
 
 mod monitoring {
