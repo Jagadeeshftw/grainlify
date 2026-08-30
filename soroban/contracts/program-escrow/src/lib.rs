@@ -180,6 +180,15 @@ pub enum Error {
     /// own address, or duplicate actor/recipient).
     /// **Client action:** Supply a valid, distinct participant address.
     InvalidAddress = 19,
+
+    /// Required configuration is absent or malformed; operation fails closed.
+    ///
+    /// **When raised:** A fee, reserve, or allowlist read returns no value and
+    /// the contract is configured to fail closed rather than fall back to a
+    /// permissive default.
+    /// **Client action:** Ensure the contract is fully initialised with all
+    /// required configuration before calling mutating entrypoints.
+    MissingConfiguration = 20,
 }
 
 #[contracttype]
@@ -632,6 +641,35 @@ impl ProgramEscrowContract {
     }
 
     // -------------------------------------------------------------------------
+    // Issue #1810 — Fail-closed configuration reads
+    // -------------------------------------------------------------------------
+
+    /// Return the token address, or `Err(MissingConfiguration)` when the
+    /// contract has not been initialised with one.
+    fn require_token(env: &Env) -> Result<Address, Error> {
+        env.storage()
+            .instance()
+            .get(&DataKey::Token)
+            .ok_or(Error::MissingConfiguration)
+    }
+
+    /// Return the admin address, or `Err(MissingConfiguration)` when absent.
+    fn require_admin(env: &Env) -> Result<Address, Error> {
+        env.storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::MissingConfiguration)
+    }
+
+    /// Return the label configuration, retaining its safe permissive default.
+    fn require_label_config(env: &Env) -> LabelConfig {
+        env.storage()
+            .persistent()
+            .get(&DataKey::LabelConfig)
+            .unwrap_or_else(|| Self::default_label_config(env))
+    }
+
+    // -------------------------------------------------------------------------
     // Issue #1811 — Address validation before persistent key derivation
     // -------------------------------------------------------------------------
 
@@ -853,6 +891,9 @@ impl ProgramEscrowContract {
 
         Self::validate_program_input(&name, total_funding)?;
 
+        // Issue #1810: fail closed before proceeding with a value-moving operation.
+        let token_addr = Self::require_token(&env)?;
+
         let jurisdiction = Self::build_jurisdiction(
             juris_tag,
             juris_requires_kyc,
@@ -900,7 +941,6 @@ impl ProgramEscrowContract {
         // INTERACTION: external token transfer is last
         // Issue #1807: track callback depth around the external token transfer.
         Self::acquire_callback_depth(&env)?;
-        let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
         let token_client = token::Client::new(&env, &token_addr);
         token_client.transfer(&admin, &env.current_contract_address(), &total_funding);
         Self::release_callback_depth(&env);
