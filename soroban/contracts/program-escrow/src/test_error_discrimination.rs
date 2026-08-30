@@ -1269,3 +1269,148 @@ fn test_depth_counter_rolled_back_on_failed_registration() {
         "Registration after a failed call must succeed; depth counter must be rolled back"
     );
 }
+
+// ==================== ISSUE #1811 — ADDRESS VALIDATION TESTS ====================
+
+#[test]
+fn test_error_code_invalid_address_contract_self_as_admin() {
+    setup!(
+        env,
+        client,
+        contract_id,
+        _admin,
+        _program_admin,
+        _token_client,
+        _token_admin,
+        10_000i128
+    );
+
+    let res = client.try_register_program(
+        &1,
+        &contract_id,
+        &String::from_str(&env, "Self-referencing Program"),
+        &5_000,
+    );
+    assert!(res.is_err());
+    let err = res.err().unwrap();
+    assert_eq!(err, Ok(Error::InvalidAddress));
+}
+
+#[test]
+fn test_valid_address_passes_validation() {
+    setup!(
+        env,
+        client,
+        _contract_id,
+        _admin,
+        program_admin,
+        _token_client,
+        _token_admin,
+        10_000i128
+    );
+
+    let res = client.try_register_program(
+        &1,
+        &program_admin,
+        &String::from_str(&env, "Valid Program"),
+        &5_000,
+    );
+    assert!(res.is_ok());
+}
+
+#[test]
+fn test_error_code_invalid_address_self_as_juris_admin() {
+    setup!(
+        env,
+        client,
+        contract_id,
+        _admin,
+        _program_admin,
+        _token_client,
+        _token_admin,
+        10_000i128
+    );
+
+    let cfg = ProgramJurisdictionConfig {
+        tag: Some(String::from_str(&env, "test")),
+        requires_kyc: false,
+        max_funding: Some(10_000),
+        registration_paused: false,
+    };
+
+    let res = client.try_register_program_juris(
+        &2,
+        &contract_id,
+        &String::from_str(&env, "Juris Program"),
+        &5_000,
+        &cfg.tag.clone(),
+        &cfg.requires_kyc,
+        &cfg.max_funding.clone(),
+        &cfg.registration_paused,
+        &OptionalJurisdiction::Some(cfg.clone()),
+        &None,
+    );
+    assert!(res.is_err());
+    let err = res.err().unwrap();
+    assert_eq!(err, Ok(Error::InvalidAddress));
+}
+
+#[test]
+fn test_address_validation_is_consistent_across_write_and_query_paths() {
+    setup!(
+        env,
+        client,
+        _contract_id,
+        _admin,
+        program_admin,
+        _token_client,
+        _token_admin,
+        10_000i128
+    );
+
+    client.register_program(
+        &100,
+        &program_admin,
+        &String::from_str(&env, "Consistent Addr Program"),
+        &5_000,
+    );
+
+    let program = client.get_program(&100);
+    assert_eq!(program.admin, program_admin);
+}
+
+#[test]
+fn test_regression_malformed_address_boundary_inputs() {
+    setup!(
+        env,
+        client,
+        contract_id,
+        _admin,
+        program_admin,
+        _token_client,
+        _token_admin,
+        10_000i128
+    );
+
+    assert_eq!(
+        client
+            .try_register_program(
+                &200,
+                &contract_id,
+                &String::from_str(&env, "Boundary Test"),
+                &100,
+            )
+            .err()
+            .unwrap(),
+        Ok(Error::InvalidAddress)
+    );
+
+    assert!(client
+        .try_register_program(
+            &201,
+            &program_admin,
+            &String::from_str(&env, "Normal Address"),
+            &100,
+        )
+        .is_ok());
+}

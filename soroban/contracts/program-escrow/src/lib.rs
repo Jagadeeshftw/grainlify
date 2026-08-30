@@ -172,6 +172,14 @@ pub enum Error {
     /// **Client action:** Do not invoke contract entrypoints from inside a
     /// token hook; wait for the originating call to complete first.
     CallbackDepthExceeded = 18,
+
+    /// Actor or recipient address is invalid (zero / contract-self / identical).
+    ///
+    /// **When raised:** A caller passes an address that would produce a
+    /// dangerous or ambiguous storage key (e.g. zero address, the contract's
+    /// own address, or duplicate actor/recipient).
+    /// **Client action:** Supply a valid, distinct participant address.
+    InvalidAddress = 19,
 }
 
 #[contracttype]
@@ -624,6 +632,33 @@ impl ProgramEscrowContract {
     }
 
     // -------------------------------------------------------------------------
+    // Issue #1811 — Address validation before persistent key derivation
+    // -------------------------------------------------------------------------
+
+    /// Validate that `addr` is a safe participant address before it is used to
+    /// derive any persistent storage key.
+    fn validate_participant_address(env: &Env, addr: &Address) -> Result<(), Error> {
+        if *addr == env.current_contract_address() {
+            return Err(Error::InvalidAddress);
+        }
+        Ok(())
+    }
+
+    /// Validate that actor and recipient are both valid and distinct.
+    fn validate_actor_and_recipient(
+        env: &Env,
+        actor: &Address,
+        recipient: &Address,
+    ) -> Result<(), Error> {
+        Self::validate_participant_address(env, actor)?;
+        Self::validate_participant_address(env, recipient)?;
+        if actor == recipient {
+            return Err(Error::InvalidAddress);
+        }
+        Ok(())
+    }
+
+    // -------------------------------------------------------------------------
     // Issue #1807 — Callback depth tracking
     // -------------------------------------------------------------------------
 
@@ -803,6 +838,10 @@ impl ProgramEscrowContract {
             return Err(e);
         }
         Self::require_contract_admin(&env);
+
+        // Issue #1811: validate the admin address before it is used to derive
+        // any persistent storage key.
+        Self::validate_participant_address(&env, &admin)?;
 
         if env
             .storage()
