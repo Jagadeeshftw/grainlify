@@ -27,6 +27,9 @@ const MAX_BATCH_SIZE: u32 = 20;
 const MAX_PAGE_SIZE: u32 = 20;
 const MAX_LABELS: u32 = 10;
 const MAX_LABEL_LENGTH: u32 = 32;
+/// Maximum allowed token-callback nesting depth.
+/// A depth of 1 means direct callbacks are allowed but no further nesting.
+const MAX_CALLBACK_DEPTH: u32 = 1;
 const PROGRAM_REGISTERED: soroban_sdk::Symbol = symbol_short!("prg_reg");
 const PROGRAM_REGISTRY: soroban_sdk::Symbol = symbol_short!("prg_rgst");
 const PROGRAM_LABELS_UPDATED: soroban_sdk::Symbol = symbol_short!("prg_lbl");
@@ -160,6 +163,32 @@ pub enum Error {
     LabelNotAllowed = 16,
     // Ownership transfer errors
     TransferProposalNotFound = 17,
+
+    /// Actor or recipient address is invalid (zero / contract-self / identical).
+    ///
+    /// **When raised:** A caller passes an address that would produce a
+    /// dangerous or ambiguous storage key (e.g. zero address, the contract's
+    /// own address, or duplicate actor/recipient).
+    /// **Client action:** Supply a valid, distinct participant address.
+    InvalidAddress = 18,
+
+    /// Required configuration is absent or malformed; operation fails closed.
+    ///
+    /// **When raised:** A fee, reserve, or allowlist read returns no value and
+    /// the contract is configured to fail closed rather than fall back to a
+    /// permissive default.
+    /// **Client action:** Ensure the contract is fully initialised with all
+    /// required configuration before calling mutating entrypoints.
+    MissingConfiguration = 19,
+
+    /// Token callback depth limit exceeded.
+    ///
+    /// **When raised:** A recursive or deeply-nested token callback would
+    /// exceed `MAX_CALLBACK_DEPTH`, protecting against unbounded resource
+    /// consumption and re-entrancy through the token path.
+    /// **Client action:** Do not invoke contract entrypoints from inside a
+    /// token hook; wait for the originating call to complete first.
+    CallbackDepthExceeded = 20,
 }
 
 #[contracttype]
@@ -296,6 +325,8 @@ pub enum DataKey {
     // Ownership transfer
     PendingAdmin,
     ProgramPendingAdmin(u64),
+    /// Tracks the current token-callback nesting depth to reject recursion.
+    CallbackDepth,
 }
 
 /// Filter inputs for cursor-based program search.
@@ -609,6 +640,112 @@ impl ProgramEscrowContract {
             })
     }
 
+    // -------------------------------------------------------------------------
+    // Issue #1811 — Address validation before persistent key derivation
+    // -------------------------------------------------------------------------
+
+    /// Validate that `addr` is a safe participant address before it is used to
+    /// derive any persistent storage key.
+    ///
+    /// Rules:
+    /// - The address must not be the contract's own address (self-reference
+    ///   would corrupt actor/recipient semantics and storage isolation).
+    ///
+    /// Soroban's `Address` type is already guaranteed non-null by the SDK, so
+    /// there is no separate zero-address check needed.
+    fn validate_participant_address(env: &Env, addr: &Address) -> Result<(), Error> {
+        if *addr == env.current_contract_address() {
+            return Err(Error::InvalidAddress);
+        }
+        Ok(())
+    }
+
+    /// Validate that actor and recipient are both valid *and* distinct so that
+    /// a single address cannot appear on both sides of a value-moving operation.
+    fn validate_actor_and_recipient(
+        env: &Env,
+        actor: &Address,
+        recipient: &Address,
+    ) -> Result<(), Error> {
+        Self::validate_participant_address(env, actor)?;
+        Self::validate_participant_address(env, recipient)?;
+        if actor == recipient {
+            return Err(Error::InvalidAddress);
+        }
+        Ok(())
+    }
+
+    // -------------------------------------------------------------------------
+    // Issue #1810 — Fail-closed configuration reads
+    // -------------------------------------------------------------------------
+
+    /// Return the token address, or `Err(MissingConfiguration)` when the
+    /// contract has not been initialised with one.  Callers must NOT fall back
+    /// to a zero/default token — failing closed is the required behaviour.
+    fn require_token(env: &Env) -> Result<Address, Error> {
+        env.storage()
+            .instance()
+            .get(&DataKey::Token)
+            .ok_or(Error::MissingConfiguration)
+    }
+
+    /// Return the admin address, or `Err(MissingConfiguration)` when absent.
+    fn require_admin(env: &Env) -> Result<Address, Error> {
+        env.storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::MissingConfiguration)
+    }
+
+    /// Return the label configuration.  Unlike the token/admin reads above,
+    /// label config has a safe permissive default (unrestricted, empty list),
+    /// so this helper keeps the existing fallback behaviour and is provided
+    /// for symmetry only.
+    fn require_label_config(env: &Env) -> LabelConfig {
+        env.storage()
+            .persistent()
+            .get(&DataKey::LabelConfig)
+            .unwrap_or_else(|| Self::default_label_config(env))
+    }
+
+    // -------------------------------------------------------------------------
+    // Issue #1807 — Callback depth tracking
+    // -------------------------------------------------------------------------
+
+    /// Increment the callback depth counter and return an error if the new
+    /// depth would exceed `MAX_CALLBACK_DEPTH`.
+    ///
+    /// Must be paired with `release_callback_depth` on every success and error
+    /// path.  Soroban rolls back instance storage on transaction failure, so
+    /// the counter is automatically cleared on panics / `Err` returns.
+    fn acquire_callback_depth(env: &Env) -> Result<(), Error> {
+        let depth: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::CallbackDepth)
+            .unwrap_or(0);
+        if depth >= MAX_CALLBACK_DEPTH {
+            return Err(Error::CallbackDepthExceeded);
+        }
+        env.storage()
+            .instance()
+            .set(&DataKey::CallbackDepth, &(depth + 1));
+        Ok(())
+    }
+
+    /// Decrement the callback depth counter after a token interaction completes.
+    fn release_callback_depth(env: &Env) {
+        let depth: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::CallbackDepth)
+            .unwrap_or(0);
+        let new_depth = depth.saturating_sub(1);
+        env.storage()
+            .instance()
+            .set(&DataKey::CallbackDepth, &new_depth);
+    }
+
     /// Initialize the contract with an admin and token address. Call once.
     pub fn init(env: Env, admin: Address, token: Address) -> Result<(), Error> {
         if env.storage().instance().has(&DataKey::Admin) {
@@ -752,6 +889,10 @@ impl ProgramEscrowContract {
         }
         Self::require_contract_admin(&env);
 
+        // Issue #1811: validate the admin address before it is used to derive
+        // any persistent storage key.
+        Self::validate_participant_address(&env, &admin)?;
+
         if env
             .storage()
             .persistent()
@@ -761,6 +902,10 @@ impl ProgramEscrowContract {
         }
 
         Self::validate_program_input(&name, total_funding)?;
+
+        // Issue #1810: fail closed — require a valid token address before
+        // proceeding with a value-moving operation.
+        let token_addr = Self::require_token(&env)?;
 
         let jurisdiction = Self::build_jurisdiction(
             juris_tag,
@@ -806,10 +951,11 @@ impl ProgramEscrowContract {
             },
         );
 
-        // INTERACTION: external token transfer is last
-        let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
+        // Issue #1807: track callback depth around the external token transfer.
+        Self::acquire_callback_depth(&env)?;
         let token_client = token::Client::new(&env, &token_addr);
         token_client.transfer(&admin, &env.current_contract_address(), &total_funding);
+        Self::release_callback_depth(&env);
 
         // GUARD: release reentrancy lock
         reentrancy_guard::release(&env);

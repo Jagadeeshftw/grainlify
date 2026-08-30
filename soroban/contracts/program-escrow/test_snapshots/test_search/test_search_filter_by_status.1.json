@@ -821,6 +821,18 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "CallbackDepth"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "u32": 0
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "ReentrancyGuard"
                             }
                           ]
