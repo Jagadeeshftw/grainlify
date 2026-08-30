@@ -160,6 +160,15 @@ pub enum Error {
     LabelNotAllowed = 16,
     // Ownership transfer errors
     TransferProposalNotFound = 17,
+
+    /// Required configuration is absent or malformed; operation fails closed.
+    ///
+    /// **When raised:** A fee, reserve, or allowlist read returns no value and
+    /// the contract is configured to fail closed rather than fall back to a
+    /// permissive default.
+    /// **Client action:** Ensure the contract is fully initialised with all
+    /// required configuration before calling mutating entrypoints.
+    MissingConfiguration = 18,
 }
 
 #[contracttype]
@@ -609,6 +618,39 @@ impl ProgramEscrowContract {
             })
     }
 
+    // -------------------------------------------------------------------------
+    // Issue #1810 — Fail-closed configuration reads
+    // -------------------------------------------------------------------------
+
+    /// Return the token address, or `Err(MissingConfiguration)` when the
+    /// contract has not been initialised with one.  Callers must NOT fall back
+    /// to a zero/default token — failing closed is the required behaviour.
+    fn require_token(env: &Env) -> Result<Address, Error> {
+        env.storage()
+            .instance()
+            .get(&DataKey::Token)
+            .ok_or(Error::MissingConfiguration)
+    }
+
+    /// Return the admin address, or `Err(MissingConfiguration)` when absent.
+    fn require_admin(env: &Env) -> Result<Address, Error> {
+        env.storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::MissingConfiguration)
+    }
+
+    /// Return the label configuration.  Unlike the token/admin reads above,
+    /// label config has a safe permissive default (unrestricted, empty list),
+    /// so this helper keeps the existing fallback behaviour and is provided
+    /// for symmetry only.
+    fn require_label_config(env: &Env) -> LabelConfig {
+        env.storage()
+            .persistent()
+            .get(&DataKey::LabelConfig)
+            .unwrap_or_else(|| Self::default_label_config(env))
+    }
+
     /// Initialize the contract with an admin and token address. Call once.
     pub fn init(env: Env, admin: Address, token: Address) -> Result<(), Error> {
         if env.storage().instance().has(&DataKey::Admin) {
@@ -762,6 +804,10 @@ impl ProgramEscrowContract {
 
         Self::validate_program_input(&name, total_funding)?;
 
+        // Issue #1810: fail closed — require a valid token address before
+        // proceeding with a value-moving operation.
+        let token_addr = Self::require_token(&env)?;
+
         let jurisdiction = Self::build_jurisdiction(
             juris_tag,
             juris_requires_kyc,
@@ -807,7 +853,6 @@ impl ProgramEscrowContract {
         );
 
         // INTERACTION: external token transfer is last
-        let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
         let token_client = token::Client::new(&env, &token_addr);
         token_client.transfer(&admin, &env.current_contract_address(), &total_funding);
 

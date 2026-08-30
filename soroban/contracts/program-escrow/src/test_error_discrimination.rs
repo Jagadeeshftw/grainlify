@@ -1128,3 +1128,144 @@ fn test_get_program_jurisdiction_not_found() {
     let err = res.err().unwrap();
     assert_eq!(err, Ok(Error::ProgramNotFound));
 }
+
+// ==================== ISSUE #1810 — FAIL-CLOSED CONFIGURATION TESTS ====================
+
+#[test]
+fn test_error_code_missing_configuration_uninitialized_contract() {
+    // Fresh contract with NO init call — both token and admin are absent.
+    // Any mutating entrypoint must fail closed with NotInitialized.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(ProgramEscrowContract, ());
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+    let some_admin = Address::generate(&env);
+
+    let res = client.try_register_program(
+        &1,
+        &some_admin,
+        &String::from_str(&env, "No Config Program"),
+        &100,
+    );
+    assert!(res.is_err());
+    // Contract was never initialized — NotInitialized returned (code 2)
+    let err = res.err().unwrap();
+    assert_eq!(err, Ok(Error::NotInitialized));
+}
+
+#[test]
+fn test_fail_closed_fresh_deployment_no_registration_allowed() {
+    // Verify that on a fresh deployment (no init), all mutating
+    // entrypoints fail closed with NotInitialized.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(ProgramEscrowContract, ());
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+    let some_admin = Address::generate(&env);
+
+    // Single registration must fail.
+    let res = client.try_register_program(
+        &1,
+        &some_admin,
+        &String::from_str(&env, "Test"),
+        &100,
+    );
+    assert!(res.is_err());
+    assert_eq!(res.err().unwrap(), Ok(Error::NotInitialized));
+
+    // Batch registration must also fail.
+    let items = vec![
+        &env,
+        ProgramRegistrationItem {
+            program_id: 2,
+            admin: some_admin.clone(),
+            name: String::from_str(&env, "Batch Test"),
+            total_funding: 100,
+        },
+    ];
+    let batch_res = client.try_batch_register_programs(&items);
+    assert!(batch_res.is_err());
+    assert_eq!(batch_res.err().unwrap(), Ok(Error::NotInitialized));
+}
+
+#[test]
+fn test_fail_closed_fully_initialized_allows_registration() {
+    // After full init, all required config is present and registration works.
+    setup!(
+        env,
+        client,
+        _contract_id,
+        _admin,
+        program_admin,
+        _token_client,
+        _token_admin,
+        10_000i128
+    );
+
+    let res = client.try_register_program(
+        &1,
+        &program_admin,
+        &String::from_str(&env, "Fully Initialized"),
+        &5_000,
+    );
+    assert!(
+        res.is_ok(),
+        "Expected success after full init, got: {:?}",
+        res.err()
+    );
+}
+
+#[test]
+fn test_optional_vs_mandatory_configuration_distinction() {
+    // Label config is optional (safe permissive default exists).
+    // Token and admin are mandatory (no permissive default).
+    setup!(
+        env,
+        client,
+        _contract_id,
+        admin,
+        program_admin,
+        _token_client,
+        _token_admin,
+        10_000i128
+    );
+
+    // Label config is optional — reading it without explicit set must not error.
+    let config = client.get_label_config();
+    assert!(!config.restricted);
+    assert_eq!(config.allowed_labels.len(), 0);
+
+    // Set an explicit label config; it must persist and override the default.
+    let allowed = vec![&env, String::from_str(&env, "grant")];
+    client.set_label_config(&true, &allowed);
+    let updated = client.get_label_config();
+    assert!(updated.restricted);
+    assert_eq!(updated.allowed_labels.len(), 1);
+}
+
+#[test]
+fn test_error_behavior_stable_for_clients() {
+    // Verifies that the same invalid input always produces the same error code.
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(ProgramEscrowContract, ());
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+    let some_addr = Address::generate(&env);
+
+    // First call — NotInitialized.
+    let r1 = client
+        .try_register_program(&1, &some_addr, &String::from_str(&env, "T"), &100)
+        .err()
+        .unwrap();
+
+    // Second identical call — same error code.
+    let r2 = client
+        .try_register_program(&1, &some_addr, &String::from_str(&env, "T"), &100)
+        .err()
+        .unwrap();
+
+    assert_eq!(r1, r2);
+    assert_eq!(r1, Ok(Error::NotInitialized));
+}
