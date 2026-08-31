@@ -1,0 +1,371 @@
+name: "Build Reproducibility — cdylib wasm artifacts"
+
+# Verifies that every deployable cdylib wasm artifact is produced from a
+# *clean* Cargo target directory on every push and PR that touches Rust or
+# CI source.  Fails the job if any expected .wasm file is absent or empty.
+#
+# Authoritative package list (excludes host-only helpers and probes):
+#
+#   contracts/bounty_escrow workspace (bounty_escrow/Cargo.toml)
+#     • bounty_escrow.wasm          — main bounty escrow contract
+#     • escrow.wasm                 — internal sub-contract (bounty_escrow WS)
+#
+#   contracts/ packages (individual manifests)
+#     • grainlify_core.wasm
+#     • program_escrow.wasm
+#     • view_facade.wasm
+#     • escrow_view_facade.wasm
+#
+#   soroban/ workspace (soroban/Cargo.toml)
+#     • escrow.wasm                 — soroban/contracts/escrow
+#     • program_escrow.wasm         — soroban/contracts/program-escrow
+#
+#   Excluded (not cdylib / host-only):
+#     • grainlify_stream            — no crate-type; testutils-only, host side
+#     • grainlify_contracts         — [[bin]] + rlib, not cdylib
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - "contracts/**/*.rs"
+      - "contracts/**/*.toml"
+      - "soroban/**/*.rs"
+      - "soroban/**/*.toml"
+      - ".github/workflows/build-reproducibility.yml"
+      - "scripts/verify-wasm-artifacts.sh"
+  pull_request:
+    branches: [master, main]
+    paths:
+      - "contracts/**/*.rs"
+      - "contracts/**/*.toml"
+      - "soroban/**/*.rs"
+      - "soroban/**/*.toml"
+      - ".github/workflows/build-reproducibility.yml"
+      - "scripts/verify-wasm-artifacts.sh"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  # Disable incremental compilation so the build always starts from scratch
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  # ────────────────────────────────────────────────────────────────────────────
+  # Record compiler and SDK versions.  Runs independently so the version info
+  # is available even if the build job is cancelled.
+  # ────────────────────────────────────────────────────────────────────────────
+  record-versions:
+    name: Record compiler and SDK versions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Capture compiler and SDK versions
+        run: |
+          {
+            echo "=== rustc ==="
+            rustc -Vv
+            echo
+            echo "=== cargo ==="
+            cargo -V
+            echo
+            echo "=== installed targets ==="
+            rustup target list --installed
+            echo
+            echo "=== contracts/ workspace — resolved stellar deps ==="
+            cargo tree \
+              --manifest-path contracts/bounty_escrow/Cargo.toml \
+              --workspace --locked --prefix none \
+              | grep -E '^(soroban-sdk|soroban-env-host|soroban-env-common|stellar-xdr) v' \
+              | sort -u
+            echo
+            echo "=== contracts/grainlify-core — resolved stellar deps ==="
+            cargo tree \
+              --manifest-path contracts/grainlify-core/Cargo.toml \
+              --locked --prefix none \
+              | grep -E '^(soroban-sdk|soroban-env-host|soroban-env-common|stellar-xdr) v' \
+              | sort -u
+            echo
+            echo "=== soroban/ workspace — resolved stellar deps ==="
+            cargo tree \
+              --manifest-path soroban/Cargo.toml \
+              --workspace --locked --prefix none \
+              | grep -E '^(soroban-sdk|soroban-env-host|soroban-env-common|stellar-xdr) v' \
+              | sort -u
+          } | tee build-versions.txt
+
+      - name: Upload version record
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-versions
+          path: build-versions.txt
+          if-no-files-found: error
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Clean build of the contracts/ bounty_escrow workspace.
+  # Each workspace has its own Cargo.lock and target dir.
+  # ────────────────────────────────────────────────────────────────────────────
+  build-contracts-bounty-escrow:
+    name: Clean build — contracts/bounty_escrow workspace
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      # No Cargo target cache here — we want a fully clean build.
+      # The Cargo *registry* cache is kept to avoid re-downloading crates;
+      # only the compiled artifacts are rebuilt from scratch.
+      - name: Cache Cargo registry (download cache only)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('contracts/bounty_escrow/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-
+
+      - name: cargo clean — bounty_escrow workspace
+        run: |
+          cargo clean --manifest-path contracts/bounty_escrow/Cargo.toml
+          echo "Cargo target cleaned for contracts/bounty_escrow"
+
+      - name: Build — bounty_escrow workspace (wasm32-unknown-unknown, release)
+        run: |
+          cargo build \
+            --manifest-path contracts/bounty_escrow/Cargo.toml \
+            --workspace \
+            --target wasm32-unknown-unknown \
+            --release
+
+      - name: Assert wasm artifacts exist and are non-empty
+        run: |
+          bash scripts/verify-wasm-artifacts.sh \
+            contracts/bounty_escrow/target/wasm32-unknown-unknown/release \
+            bounty_escrow.wasm \
+            escrow.wasm
+
+      - name: List wasm artifacts with sizes
+        run: |
+          echo "━━━ bounty_escrow workspace artifacts ━━━"
+          find contracts/bounty_escrow/target/wasm32-unknown-unknown/release \
+            -maxdepth 1 -name "*.wasm" \
+            -exec ls -lh {} \;
+
+      - name: Upload wasm artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-contracts-bounty-escrow
+          path: contracts/bounty_escrow/target/wasm32-unknown-unknown/release/*.wasm
+          if-no-files-found: error
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Clean builds of the remaining stand-alone contracts/ packages.
+  # These have separate Cargo.toml manifests and separate target dirs.
+  # ────────────────────────────────────────────────────────────────────────────
+  build-contracts-standalone:
+    name: Clean build — contracts/ standalone packages
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: grainlify-core
+            manifest: contracts/grainlify-core/Cargo.toml
+            lockfile: contracts/grainlify-core/Cargo.lock
+            target_dir: contracts/grainlify-core/target
+            expected_wasm: grainlify_core.wasm
+
+          - name: program-escrow
+            manifest: contracts/program-escrow/Cargo.toml
+            lockfile: contracts/program-escrow/Cargo.lock
+            target_dir: contracts/program-escrow/target
+            expected_wasm: program_escrow.wasm
+
+          - name: view-facade
+            manifest: contracts/view-facade/Cargo.toml
+            lockfile: contracts/view-facade/Cargo.lock
+            target_dir: contracts/view-facade/target
+            expected_wasm: view_facade.wasm
+
+          - name: escrow-view-facade
+            manifest: contracts/escrow-view-facade/Cargo.toml
+            lockfile: contracts/escrow-view-facade/Cargo.lock
+            target_dir: contracts/escrow-view-facade/target
+            expected_wasm: escrow_view_facade.wasm
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo registry (download cache only)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles(matrix.lockfile) }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-
+
+      - name: cargo clean — ${{ matrix.name }}
+        run: |
+          cargo clean --manifest-path ${{ matrix.manifest }}
+          echo "Cargo target cleaned for ${{ matrix.name }}"
+
+      - name: Build — ${{ matrix.name }} (wasm32-unknown-unknown, release)
+        run: |
+          cargo build \
+            --manifest-path ${{ matrix.manifest }} \
+            --target wasm32-unknown-unknown \
+            --release
+
+      - name: Assert wasm artifact exists and is non-empty
+        run: |
+          bash scripts/verify-wasm-artifacts.sh \
+            ${{ matrix.target_dir }}/wasm32-unknown-unknown/release \
+            ${{ matrix.expected_wasm }}
+
+      - name: List wasm artifact with size
+        run: |
+          echo "━━━ ${{ matrix.name }} artifact ━━━"
+          ls -lh ${{ matrix.target_dir }}/wasm32-unknown-unknown/release/${{ matrix.expected_wasm }}
+
+      - name: Upload wasm artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-${{ matrix.name }}
+          path: ${{ matrix.target_dir }}/wasm32-unknown-unknown/release/${{ matrix.expected_wasm }}
+          if-no-files-found: error
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Clean build of the soroban/ workspace (escrow + program-escrow cdylibs).
+  # grainlify-stream is excluded: it has no crate-type in its Cargo.toml and
+  # is a testutils-only, host-side helper — it produces no deployable wasm.
+  # ────────────────────────────────────────────────────────────────────────────
+  build-soroban:
+    name: Clean build — soroban/ workspace
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo registry (download cache only)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('soroban/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-
+
+      - name: cargo clean — soroban workspace
+        run: |
+          cargo clean --manifest-path soroban/Cargo.toml
+          echo "Cargo target cleaned for soroban/"
+
+      - name: Build — soroban workspace (wasm32-unknown-unknown, release)
+        run: |
+          # Build only the cdylib packages; exclude grainlify-stream (host-only,
+          # no crate-type = cdylib, produces no deployable wasm).
+          cargo build \
+            --manifest-path soroban/Cargo.toml \
+            --package escrow \
+            --package program-escrow \
+            --target wasm32-unknown-unknown \
+            --release
+
+      - name: Assert wasm artifacts exist and are non-empty
+        run: |
+          bash scripts/verify-wasm-artifacts.sh \
+            soroban/target/wasm32-unknown-unknown/release \
+            escrow.wasm \
+            program_escrow.wasm
+
+      - name: List wasm artifacts with sizes
+        run: |
+          echo "━━━ soroban workspace artifacts ━━━"
+          find soroban/target/wasm32-unknown-unknown/release \
+            -maxdepth 1 -name "*.wasm" \
+            -exec ls -lh {} \;
+
+      - name: Upload wasm artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-soroban
+          path: soroban/target/wasm32-unknown-unknown/release/*.wasm
+          if-no-files-found: error
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Summary job: collects all wasm artifacts into one archive and prints a
+  # final report.  Only runs when every build job succeeds.
+  # ────────────────────────────────────────────────────────────────────────────
+  summarize:
+    name: Build reproducibility summary
+    runs-on: ubuntu-latest
+    needs:
+      - record-versions
+      - build-contracts-bounty-escrow
+      - build-contracts-standalone
+      - build-soroban
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all wasm artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wasm-*
+          path: all-wasm/
+
+      - name: Download version record
+        uses: actions/download-artifact@v4
+        with:
+          name: build-versions
+          path: .
+
+      - name: Print final report
+        run: |
+          echo "════════════════════════════════════════════════════════════════"
+          echo "  Build Reproducibility Report"
+          echo "  All cdylib wasm artifacts produced from a clean target dir"
+          echo "════════════════════════════════════════════════════════════════"
+          echo ""
+          echo "── Compiler / SDK versions ──────────────────────────────────"
+          cat build-versions.txt
+          echo ""
+          echo "── Produced wasm artifacts ──────────────────────────────────"
+          find all-wasm -name "*.wasm" | sort | while read -r f; do
+            size=$(stat -c "%s" "$f")
+            printf "  %-70s  %9d bytes\n" "$f" "$size"
+          done
+          echo ""
+          echo "✅ All expected cdylib wasm artifacts verified non-empty."
+
+      - name: Upload combined wasm archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: all-wasm-artifacts
+          path: all-wasm/
+          if-no-files-found: error
