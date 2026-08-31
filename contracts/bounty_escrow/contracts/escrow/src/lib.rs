@@ -5878,6 +5878,16 @@ impl BountyEscrowContract {
             return Err(Error::FundsNotLocked);
         }
 
+        // Centralize liability accounting for claims: a pending claim may only
+        // reserve what is still owed after prior partial withdrawals/refunds.
+        // Capturing the *current* remaining liability here (instead of the full
+        // original `escrow.amount`) guarantees a claim can never be authorized
+        // for more than the escrow actually still owes. (Issue #1809)
+        let claim_amount = escrow.remaining_amount;
+        if claim_amount <= 0 {
+            return Err(Error::InvalidAmount);
+        }
+
         let now = env.ledger().timestamp();
         let claim_window: u64 = env
             .storage()
@@ -5887,7 +5897,7 @@ impl BountyEscrowContract {
         let claim = ClaimRecord {
             bounty_id,
             recipient: recipient.clone(),
-            amount: escrow.amount,
+            amount: claim_amount,
             expires_at: now.saturating_add(claim_window),
             claimed: false,
             reason,
@@ -5959,12 +5969,28 @@ impl BountyEscrowContract {
             .unwrap();
         Self::ensure_escrow_not_frozen(&env, bounty_id)?;
         Self::ensure_address_not_frozen(&env, &escrow.depositor)?;
-        escrow.status = EscrowStatus::Released;
-        escrow.remaining_amount = 0;
+
+        // Centralize liability decrement (Issue #1809): a claim may only draw
+        // against the remaining liability still held by the escrow. If a partial
+        // withdrawal/refund already reduced `remaining_amount` below the claimed
+        // amount, executing the claim would overdraw the escrow's on-chain
+        // balance, so reject it (INV-2: sum of remaining == contract balance).
+        if claim.amount > escrow.remaining_amount {
+            reentrancy_guard::release(&env);
+            return Err(Error::InsufficientFunds);
+        }
+        escrow.remaining_amount = escrow.remaining_amount.checked_sub(claim.amount).unwrap();
+        if escrow.remaining_amount == 0 {
+            escrow.status = EscrowStatus::Released;
+        }
         env.storage()
             .persistent()
             .set(&DataKey::Escrow(bounty_id), &escrow);
-        Self::renew_escrow_record(&env, bounty_id, true);
+        Self::renew_escrow_record(
+            &env,
+            bounty_id,
+            escrow.remaining_amount == 0,
+        );
 
         claim.claimed = true;
         env.storage()
@@ -5990,6 +6016,9 @@ impl BountyEscrowContract {
                 claimed_at: now,
             },
         );
+
+        // INV-2: Verify aggregate balance matches token balance after claim
+        multitoken_invariants::assert_after_disbursement(&env);
 
         // GUARD: release reentrancy lock
         reentrancy_guard::release(&env);
@@ -6053,12 +6082,24 @@ impl BountyEscrowContract {
             .unwrap();
         Self::ensure_escrow_not_frozen(&env, bounty_id)?;
         Self::ensure_address_not_frozen(&env, &escrow.depositor)?;
-        escrow.status = EscrowStatus::Released;
-        escrow.remaining_amount = 0;
+
+        // Centralize liability decrement (Issue #1809): see `claim`.
+        if claim.amount > escrow.remaining_amount {
+            reentrancy_guard::release(&env);
+            return Err(Error::InsufficientFunds);
+        }
+        escrow.remaining_amount = escrow.remaining_amount.checked_sub(claim.amount).unwrap();
+        if escrow.remaining_amount == 0 {
+            escrow.status = EscrowStatus::Released;
+        }
         env.storage()
             .persistent()
             .set(&DataKey::Escrow(bounty_id), &escrow);
-        Self::renew_escrow_record(&env, bounty_id, true);
+        Self::renew_escrow_record(
+            &env,
+            bounty_id,
+            escrow.remaining_amount == 0,
+        );
 
         claim.claimed = true;
         env.storage()
@@ -6085,6 +6126,9 @@ impl BountyEscrowContract {
             },
         );
 
+        // INV-2: Verify aggregate balance matches token balance after claim
+        multitoken_invariants::assert_after_disbursement(&env);
+
         // GUARD: release reentrancy lock
         reentrancy_guard::release(&env);
         Ok(())
@@ -6102,11 +6146,19 @@ impl BountyEscrowContract {
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         admin.require_auth();
 
+        // Idempotency (Issue #1809): cancellation is a no-op if the claim was
+        // already cancelled/consumed — as long as the bounty itself still exists.
+        // A missing escrow means the bounty never existed, which is a real error.
+        let escrow_exists = env.storage().persistent().has(&DataKey::Escrow(bounty_id))
+            || env.storage().persistent().has(&DataKey::EscrowAnon(bounty_id));
         if !env
             .storage()
             .persistent()
             .has(&DataKey::PendingClaim(bounty_id))
         {
+            if escrow_exists {
+                return Ok(());
+            }
             return Err(Error::BountyNotFound);
         }
         let claim: ClaimRecord = env

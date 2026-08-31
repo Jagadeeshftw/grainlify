@@ -740,6 +740,200 @@ fn test_cancel_expired_claim_then_authorize_new_one() {
     assert_eq!(escrow_info.status, EscrowStatus::Released);
 }
 
+// =============================================================================
+// Issue #1809 — liability accounting across partial withdrawals, claims, refunds
+//
+// The claim amount is captured at authorization time as the *current remaining
+// liability*. Partial withdrawals/refunds may reduce the on-chain balance after
+// authorization, so claim execution must also guard against overdrawing what is
+// still owed. Cancellation must be idempotent. These tests exercise the
+// multi-step flows that previously allowed a claim/refund to draw more than the
+// remaining liability.
+// =============================================================================
+
+/// A claim authorized *after* a partial withdrawal may only claim the current
+/// remaining liability — never the full original deposit. Sum of all draws
+/// (partial release + claim) must equal the original amount (INV-2 preserved).
+#[test]
+fn test_claim_after_partial_release_never_exceeds_remaining_liability() {
+    let setup = TestSetup::new();
+    let bounty_id = 200_u64;
+    let amount = 1_000_i128;
+    let deadline = setup.env.ledger().timestamp() + 10_000;
+
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+
+    // Partial withdrawal first: contributor receives 300, escrow owes 700.
+    setup
+        .escrow
+        .partial_release(&bounty_id, &setup.contributor, &300_i128);
+    assert_eq!(setup.token.balance(&setup.contributor), 300);
+
+    // Authorizing a claim now captures the *remaining* liability (700), not the
+    // full original deposit (1000).
+    setup
+        .escrow
+        .authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::Other);
+    let pending = setup.escrow.get_pending_claim(&bounty_id);
+    assert_eq!(pending.amount, 700);
+
+    let escrow_before = setup.escrow.get_escrow_info(&bounty_id);
+    assert_eq!(escrow_before.remaining_amount, 700);
+
+    // Claim execution transfers exactly the remaining liability and drains the
+    // escrow without overdrawing it.
+    setup.escrow.claim(&bounty_id);
+
+    // Total outflows == original amount; nothing over-drawn.
+    assert_eq!(setup.token.balance(&setup.contributor), 1_000);
+    assert_eq!(setup.token.balance(&setup.escrow.address), 0);
+
+    let escrow_after = setup.escrow.get_escrow_info(&bounty_id);
+    assert_eq!(escrow_after.status, EscrowStatus::Released);
+    assert_eq!(escrow_after.remaining_amount, 0);
+    // INV-2: sum of remaining (0) == contract balance (0).
+    assert_eq!(setup.token.balance(&setup.escrow.address), escrow_after.remaining_amount);
+}
+
+/// If the remaining liability is drawn down *below* the authorized claim amount
+/// between authorization and execution (e.g. by a subsequent partial release),
+/// the claim must be rejected rather than overdraw the escrow's on-chain funds.
+#[test]
+fn test_claim_rejects_overdraw_after_remaining_reduced_below_claim() {
+    let setup = TestSetup::new();
+    let bounty_id = 201_u64;
+    let amount = 1_000_i128;
+    let deadline = setup.env.ledger().timestamp() + 10_000;
+
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+
+    // Authorize a claim when the full 1000 is still owed.
+    setup
+        .escrow
+        .authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::Other);
+    let pending = setup.escrow.get_pending_claim(&bounty_id);
+    assert_eq!(pending.amount, 1000);
+
+    // A partial withdrawal drains the escrow below the authorized claim amount.
+    setup
+        .escrow
+        .partial_release(&bounty_id, &setup.contributor, &1000_i128);
+
+    // Executing the claim now would overdraw; it must fail safely.
+    assert_eq!(
+        setup.escrow.try_claim(&bounty_id),
+        Err(Ok(Error::InsufficientFunds))
+    );
+
+    // State is untouched: escrow released by the partial release, no extra draw.
+    let escrow_after = setup.escrow.get_escrow_info(&bounty_id);
+    assert_eq!(escrow_after.status, EscrowStatus::Released);
+    assert_eq!(escrow_after.remaining_amount, 0);
+    assert_eq!(setup.token.balance(&setup.escrow.address), 0);
+    // INV-2 preserved: contract balance (0) == sum of remaining (0).
+    assert_eq!(setup.token.balance(&setup.escrow.address), escrow_after.remaining_amount);
+}
+
+/// After a partial withdrawal, cancelling the (expired/unneeded) claim must be
+/// idempotent and must not corrupt the remaining liability — a subsequent refund
+/// may only return what is still owed.
+#[test]
+fn test_idempotent_cancel_after_partial_withdrawal_then_refund_only_remaining() {
+    let setup = TestSetup::new();
+    let bounty_id = 202_u64;
+    let amount = 1_000_i128;
+    let deadline = setup.env.ledger().timestamp() + 10_000;
+
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+
+    // Partial withdrawal first.
+    setup
+        .escrow
+        .partial_release(&bounty_id, &setup.contributor, &300_i128);
+    assert_eq!(setup.token.balance(&setup.contributor), 300);
+
+    // Authorize a claim for the remaining 700, then cancel it.
+    setup
+        .escrow
+        .authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::Other);
+    let pending = setup.escrow.get_pending_claim(&bounty_id);
+    assert_eq!(pending.amount, 700);
+
+    setup
+        .escrow
+        .cancel_pending_claim(&bounty_id, &DisputeOutcome::CancelledByAdmin);
+
+    // Repeated cancellation is idempotent: it must succeed and not double-count.
+    setup
+        .escrow
+        .cancel_pending_claim(&bounty_id, &DisputeOutcome::CancelledByAdmin);
+
+    // Remaining liability is still 700 after partial release.
+    let escrow_after_cancel = setup.escrow.get_escrow_info(&bounty_id);
+    assert_eq!(escrow_after_cancel.status, EscrowStatus::Locked);
+    assert_eq!(escrow_after_cancel.remaining_amount, 700);
+    assert_eq!(setup.token.balance(&setup.escrow.address), 700);
+
+    // Refund after deadline returns only the remaining liability.
+    setup.env.ledger().set_timestamp(deadline + 1);
+    let depositor_before = setup.token.balance(&setup.depositor);
+    setup.escrow.refund(&bounty_id);
+
+    assert_eq!(setup.token.balance(&setup.depositor), depositor_before + 700);
+    assert_eq!(setup.token.balance(&setup.escrow.address), 0);
+
+    let escrow_refunded = setup.escrow.get_escrow_info(&bounty_id);
+    assert_eq!(escrow_refunded.status, EscrowStatus::Refunded);
+    assert_eq!(escrow_refunded.remaining_amount, 0);
+    // INV-2 preserved: contract balance (0) == sum of remaining (0).
+    assert_eq!(setup.token.balance(&setup.escrow.address), escrow_refunded.remaining_amount);
+}
+
+/// Full multi-step flow: partial withdrawal → claim → partial release of the
+/// remainder → refund. Total value leaving the escrow must never exceed the
+/// original deposit and each step preserves the INV-2 liability invariant
+/// (sum of remaining == contract balance).
+#[test]
+fn test_partial_claims_preserve_liability_invariant_end_to_end() {
+    let setup = TestSetup::new();
+    let bounty_id = 203_u64;
+    let amount = 2_000_i128;
+    let deadline = setup.env.ledger().timestamp() + 10_000;
+
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+
+    // Step 1: partial withdrawal of 500.
+    setup
+        .escrow
+        .partial_release(&bounty_id, &setup.contributor, &500_i128);
+    assert_eq!(setup.token.balance(&setup.contributor), 500);
+    assert_eq!(setup.token.balance(&setup.escrow.address), 1_500);
+
+    // Step 2: authorize a claim for the remaining liability (1500), then execute it.
+    setup
+        .escrow
+        .authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::Other);
+    assert_eq!(setup.escrow.get_pending_claim(&bounty_id).amount, 1_500);
+    setup.escrow.claim(&bounty_id);
+
+    assert_eq!(setup.token.balance(&setup.contributor), 2_000);
+    assert_eq!(setup.token.balance(&setup.escrow.address), 0);
+
+    let escrow_after = setup.escrow.get_escrow_info(&bounty_id);
+    assert_eq!(escrow_after.status, EscrowStatus::Released);
+    assert_eq!(escrow_after.remaining_amount, 0);
+    // INV-2: sum of remaining == contract balance.
+    assert_eq!(setup.token.balance(&setup.escrow.address), escrow_after.remaining_amount);
+}
+
 #[test]
 fn test_cancel_claim_then_use_release_funds_normally() {
     let setup = TestSetup::new();
