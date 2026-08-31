@@ -106,8 +106,36 @@ fn test_claim_after_expiry_fails() {
 
     t.env.ledger().set(LedgerInfo { timestamp: now + 7_200, ..t.env.ledger().get() });
 
-    assert_eq!(t.client.get_claim(&t.program_id, &claim_id).status, ClaimStatus::Pending);
+    assert_eq!(t.client.get_claim(&t.program_id, &claim_id).status, ClaimStatus::Expired);
     t.client.execute_claim(&t.program_id, &claim_id, &t.contributor);
+}
+
+#[test]
+#[should_panic(expected = "ClaimExpired")]
+fn test_execute_at_exact_deadline_is_expired() {
+    let t = setup();
+    let now = t.env.ledger().timestamp();
+    let claim_id =
+        t.client.create_pending_claim(&t.program_id, &t.contributor, &5_000_i128, &(now + 3_600));
+
+    t.env.ledger().set(LedgerInfo { timestamp: now + 3_600, ..t.env.ledger().get() });
+    assert_eq!(t.client.get_claim(&t.program_id, &claim_id).status, ClaimStatus::Expired);
+    t.client.execute_claim(&t.program_id, &claim_id, &t.contributor);
+}
+
+#[test]
+fn test_claim_one_second_before_deadline_executes() {
+    let t = setup();
+    let now = t.env.ledger().timestamp();
+    let amount: i128 = 4_000;
+    let claim_id =
+        t.client.create_pending_claim(&t.program_id, &t.contributor, &amount, &(now + 3_600));
+
+    t.env.ledger().set(LedgerInfo { timestamp: now + 3_599, ..t.env.ledger().get() });
+    assert_eq!(t.client.get_claim(&t.program_id, &claim_id).status, ClaimStatus::Pending);
+    let before = t.token.balance(&t.contributor);
+    t.client.execute_claim(&t.program_id, &claim_id, &t.contributor);
+    assert_eq!(t.token.balance(&t.contributor) - before, amount);
 }
 
 #[test]
@@ -129,7 +157,7 @@ fn test_admin_cancel_pending_claim_restores_escrow() {
 }
 
 #[test]
-fn test_admin_cancel_expired_claim_succeeds() {
+fn test_admin_cancels_expired_claim_restores_escrow() {
     let t = setup();
     let now = t.env.ledger().timestamp();
     let amount: i128 = 3_000;
@@ -138,6 +166,7 @@ fn test_admin_cancel_expired_claim_succeeds() {
 
     t.env.ledger().set(LedgerInfo { timestamp: now + 7_200, ..t.env.ledger().get() });
 
+    assert_eq!(t.client.get_claim(&t.program_id, &claim_id).status, ClaimStatus::Expired);
     let balance_before = t.client.get_remaining_balance();
     t.client.cancel_claim(&t.program_id, &claim_id, &t.admin);
 
@@ -189,4 +218,16 @@ fn test_wrong_recipient_cannot_execute_claim() {
         t.client.create_pending_claim(&t.program_id, &t.contributor, &5_000_i128, &(now + 86_400));
 
     t.client.execute_claim(&t.program_id, &claim_id, &Address::generate(&t.env));
+}
+
+#[test]
+#[should_panic(expected = "ClaimAlreadyProcessed")]
+fn test_cannot_cancel_completed_claim() {
+    let t = setup();
+    let now = t.env.ledger().timestamp();
+    let claim_id =
+        t.client.create_pending_claim(&t.program_id, &t.contributor, &5_000_i128, &(now + 86_400));
+
+    t.client.execute_claim(&t.program_id, &claim_id, &t.contributor);
+    t.client.cancel_claim(&t.program_id, &claim_id, &t.admin);
 }

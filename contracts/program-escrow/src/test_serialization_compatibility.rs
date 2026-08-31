@@ -369,6 +369,7 @@ fn serialization_compatibility_public_types_and_events() {
     ];
 
     assert_roundtrip(&env, &ClaimStatus::Pending);
+    assert_roundtrip(&env, &ClaimStatus::Expired);
     assert_roundtrip(&env, &CircuitState::HalfOpen);
 
     let mut computed: std::vec::Vec<(&str, std::string::String)> = std::vec::Vec::new();
