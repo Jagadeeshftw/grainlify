@@ -504,8 +504,8 @@ fn check_no_reentrancy_locks(env: &Env) -> bool {
         .instance()
         .get::<_, u32>(&crate::DataKey::ReentrancyGuard)
     {
-        if guard != 0 {
-            return false; // Reentrancy lock is stuck
+        if guard == 2 {
+            return false; // Reentrancy lock is stuck (ENTERED = 2)
         }
     }
     true

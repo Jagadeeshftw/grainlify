@@ -75,6 +75,8 @@ mod test_archival_ttl;
 #[cfg(test)]
 mod test_batch_soa_benchmark;
 #[cfg(test)]
+mod test_bounded_pagination;
+#[cfg(test)]
 mod test_deterministic_event_ordering;
 
 use crate::events::{

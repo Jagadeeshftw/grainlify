@@ -40,50 +40,7 @@ fn create_escrow_contract<'a>(e: &Env) -> (BountyEscrowContractClient<'a>, Addre
 /// Helper to simulate upgrade safely by temporarily swapping the u32 ReentrancyGuard to a bool
 /// so that the upgrade_safety module can inspect it without ConversionError.
 fn simulate_upgrade_safe(env: &Env) -> upgrade_safety::UpgradeSafetyReport {
-    let is_initialized = env.storage().instance().has(&crate::DataKey::Admin);
-    let mut original_guard: Option<u32> = None;
-    let mut swapped = false;
-
-    if is_initialized {
-        let has_guard = env
-            .storage()
-            .instance()
-            .has(&crate::DataKey::ReentrancyGuard);
-        if has_guard {
-            if let Some(val) = env
-                .storage()
-                .instance()
-                .get::<crate::DataKey, u32>(&crate::DataKey::ReentrancyGuard)
-            {
-                original_guard = Some(val);
-            }
-            env.storage()
-                .instance()
-                .set(&crate::DataKey::ReentrancyGuard, &false);
-            swapped = true;
-        } else {
-            env.storage()
-                .instance()
-                .set(&crate::DataKey::ReentrancyGuard, &false);
-            swapped = true;
-        }
-    }
-
-    let report = upgrade_safety::simulate_upgrade(env);
-
-    if swapped {
-        if let Some(guard_val) = original_guard {
-            env.storage()
-                .instance()
-                .set(&crate::DataKey::ReentrancyGuard, &guard_val);
-        } else {
-            env.storage()
-                .instance()
-                .remove(&crate::DataKey::ReentrancyGuard);
-        }
-    }
-
-    report
+    upgrade_safety::simulate_upgrade(env)
 }
 
 /// Full test harness: env + admin + depositor + contributor + token + escrow.
