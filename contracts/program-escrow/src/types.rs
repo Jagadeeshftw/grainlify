@@ -49,7 +49,7 @@ pub const AUTH_KEY_INDEX: Symbol = symbol_short!("AuthIdx");
 pub const FEE_CONFIG: Symbol = symbol_short!("FeeCfg");
 pub const FEE_COLLECTED: Symbol = symbol_short!("FeeCol");
 /// Event symbol for insurance-reserve withdrawal audit events.
-pub const INSURANCE_RESERVE_WITHDRAWN: Symbol = insurance_reserve::INSURANCE_RESERVE_WITHDRAWN;
+pub const INSURANCE_RESERVE_WITHDRAWN: Symbol = crate::insurance_reserve::INSURANCE_RESERVE_WITHDRAWN;
 /// Storage key for the set of consumed idempotency keys (batch payout).
 pub const PAYOUT_IDEM_KEYS: Symbol = symbol_short!("PayIdem");
 /// Event symbol emitted when a batch_payout replay is detected.
