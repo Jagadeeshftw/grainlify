@@ -4,7 +4,11 @@
 //! reproducer, which makes boundary regressions straightforward to diagnose.
 
 use proptest::prelude::*;
+use soroban_sdk::testutils::Ledger;
 use soroban_sdk::Env;
+
+extern crate alloc;
+use alloc::vec::Vec;
 
 use crate::threshold_monitor::{self, ThresholdConfig};
 

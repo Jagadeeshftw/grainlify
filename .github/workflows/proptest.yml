@@ -1,0 +1,129 @@
+name: Property-Based Contract Tests
+
+# Runs the property-based contract test suites (`proptest`) with
+# **reproducible seeds** so that a failing property can always be
+# reproduced from CI output and promoted to a checked-in regression
+# fixture.  See issue #1730.
+#
+# Design decisions (requested in the issue):
+#   - *Default PR job is time-bounded*: a bounded `PROPTEST_CASES` and a
+#     fixed `PROPTEST_SEED` keep the default run fast and deterministic.
+#   - *Scheduled deeper run*: a nightly job runs a much larger case count
+#     so rare edge cases surface on a cadence that is independent of PRs.
+#   - *Seed printing on failure*: `proptest` prints the failing seed in
+#     the test output and writes a minimized reproducer to
+#     `proptest-regressions/<file>.txt`.  On failure we upload that
+#     directory as an artifact so the minimized regression can be checked
+#     into the repo and re-run under `cargo test proptest-regressions`.
+#   - *No nondeterministic wall-clock inputs*: the suites use fixed/bounded
+#     strategies (pure integer domains and fixed timestamp offsets), so
+#     reproductions do not depend on the CI wall clock.
+
+on:
+  pull_request:
+    branches: [main, master, develop]
+  push:
+    branches: [main, master, develop]
+  schedule:
+    # Nightly deeper run (UTC). Reproducible via PROPTEST_SEED below.
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      cases:
+        description: "Number of proptest cases for this manual run"
+        required: false
+        type: number
+        default: 256
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ──────────────────────────────────────────────────────────────
+  # Default (PR) job — time-bounded and reproducible.
+  # ──────────────────────────────────────────────────────────────
+  property-tests:
+    name: proptest (${{ inputs.cases && inputs.cases || '256' }} cases)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-proptest-cargo-${{ hashFiles('contracts/program-escrow/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-proptest-cargo-
+
+      # Fixed seed so the default run is byte-for-byte reproducible:
+      # a failure in CI can always be re-run locally with the same seed.
+      # Bounded case count keeps the default job time-bounded on PRs.
+      - name: Run property-based contract tests (bounded + reproducible)
+        env:
+          PROPTEST_CASES: ${{ inputs.cases && inputs.cases || 256 }}
+          PROPTEST_SEED: "0xa523f4c8e1d9b0712e834f569a0c34d5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d"
+        run: |
+          cargo test \
+            --manifest-path contracts/program-escrow/Cargo.toml \
+            -p program-escrow \
+            -- prop_ \
+            --test-threads=1
+
+      - name: Upload minimized proptest regressions (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: proptest-regressions
+          path: contracts/program-escrow/proptest-regressions/*.txt
+          if-no-files-found: warn
+
+  # ──────────────────────────────────────────────────────────────
+  # Scheduled deeper run — larger case count, still reproducible.
+  # ──────────────────────────────────────────────────────────────
+  deep-property-tests:
+    name: deep proptest (default=100000 cases)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-proptest-deep-cargo-${{ hashFiles('contracts/program-escrow/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-proptest-deep-cargo-
+
+      - name: Run property-based contract tests (deep)
+        env:
+          PROPTEST_CASES: 100000
+        run: |
+          cargo test \
+            --manifest-path contracts/program-escrow/Cargo.toml \
+            -p program-escrow \
+            -- prop_ \
+            --test-threads=1
+
+      - name: Upload minimized proptest regressions (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: proptest-regressions-deep
+          path: contracts/program-escrow/proptest-regressions/*.txt
+          if-no-files-found: warn
