@@ -1,4 +1,5 @@
 name: SDK Version Check
+# Enforces the single repository target + owned dual-tree exception (issues #1743, #1848).
 
 on:
   pull_request:

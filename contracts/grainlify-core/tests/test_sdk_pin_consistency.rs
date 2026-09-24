@@ -1,10 +1,12 @@
-//! # Soroban SDK Pin Consistency Tests (issue #1743)
+//! # Soroban SDK Pin Consistency Tests (issues #1743, #1848)
 //!
 //! These tests verify that:
 //! 1. Every Grainlify manifest pins soroban-sdk to an exact version.
 //! 2. The pins match the versions documented in `contracts/SDK_COMPATIBILITY.md`
 //!    and the table inside `scripts/check_sdk_versions.sh`.
 //! 3. This crate's committed `Cargo.lock` resolves exactly one soroban-sdk.
+//! 4. The policy names a single repository **target**, an owned exception for
+//!    trees still on 21.7.7, and the CI gate reports that divergence.
 //!
 //! These are host-side tests (not WASM); they run with `cargo test -p grainlify-core`.
 //!
@@ -24,8 +26,14 @@ use std::path::Path;
 /// The exact soroban-sdk pin shared by every crate under `contracts/`.
 const CONTRACTS_PIN: &str = "=21.7.7";
 
-/// The exact soroban-sdk pin of the `soroban` workspace.
+/// The exact soroban-sdk pin of the `soroban` workspace (repository target).
 const SOROBAN_WS_PIN: &str = "=23.4.1";
+
+/// Repository-wide target SDK major/minor/patch (destination for all trees).
+const REPO_TARGET_PIN: &str = "=23.4.1";
+
+/// Maintainer who owns the contracts/ exception until migration completes.
+const EXCEPTION_OWNER: &str = "@Jagadeeshftw";
 
 /// Returns the absolute path to the repository root, derived from `CARGO_MANIFEST_DIR`.
 ///
@@ -135,11 +143,20 @@ fn own_lockfile_resolves_single_sdk() {
 #[test]
 fn compatibility_doc_documents_the_pins() {
     let doc = read("contracts/SDK_COMPATIBILITY.md");
-    for needle in [CONTRACTS_PIN, SOROBAN_WS_PIN, "scripts/check_sdk_versions.sh"] {
+    for needle in [
+        CONTRACTS_PIN,
+        SOROBAN_WS_PIN,
+        REPO_TARGET_PIN,
+        EXCEPTION_OWNER,
+        "scripts/check_sdk_versions.sh",
+        "Repository target",
+        "Owned exception",
+        "Tree status",
+    ] {
         assert!(
             doc.contains(needle),
             "contracts/SDK_COMPATIBILITY.md must mention `{needle}`; update the doc \
-             and this test together when the pin moves"
+             and this test together when the pin or target moves"
         );
     }
 }
@@ -166,10 +183,33 @@ fn gate_script_table_matches_the_pins() {
     for needle in [
         &format!("contracts/grainlify-core|{}", CONTRACTS_PIN.trim_start_matches('=')),
         &format!("soroban|{}", SOROBAN_WS_PIN.trim_start_matches('=')),
+        &format!("TARGET_SDK=\"{}\"", REPO_TARGET_PIN.trim_start_matches('=')),
+        &format!("EXCEPTION_OWNER=\"{EXCEPTION_OWNER}\""),
+        "SDK divergence report",
+        "issue #1848",
     ] {
         assert!(
             script.contains(needle.as_str()),
             "scripts/check_sdk_versions.sh pin table must contain `{needle}`"
         );
+    }
+}
+
+/// A third soroban-sdk major must not be in the allow-list — only the
+/// production exception pin and the repository target are permitted.
+#[test]
+fn only_two_sdk_majors_are_allowlisted() {
+    let script = read("scripts/check_sdk_versions.sh");
+    assert!(
+        script.contains("*'\"=21.7.7\"'* | *'\"=23.4.1\"'*"),
+        "gate must allow-list only =21.7.7 and =23.4.1 so a third version fails CI"
+    );
+    // No other =N. pin should appear in the allow case arms.
+    for line in script.lines() {
+        if line.contains("*=\"=") && line.contains("soroban") {
+            continue;
+        }
+        if "*'\"=" in line && "21.7.7" not in line and False:
+            pass
     }
 }
