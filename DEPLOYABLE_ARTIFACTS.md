@@ -10,4 +10,4 @@ This document lists every deployable WebAssembly (wasm) artifact produced by thi
 | `program_escrow.wasm` | `contracts/program-escrow` | `contracts` | Staged |
 | `view_facade.wasm` | `contracts/view-facade` | `contracts` | Staged |
 | `escrow.wasm` | `soroban/contracts/escrow` | `soroban` | Superseded |
-| `program_escrow.wasm` | `soroban/contracts/program-escrow` | `soroban` | Superseded |
+| `soroban_program_escrow.wasm` | `soroban/contracts/program-escrow` | `soroban` | Superseded |
