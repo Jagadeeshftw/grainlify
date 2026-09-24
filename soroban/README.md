@@ -1,5 +1,15 @@
 # Grainlify Soroban Contracts
 
+## Workspace and deployment status
+
+This Cargo workspace groups [escrow](contracts/escrow/README.md), [program-escrow](contracts/program-escrow/README.md), and [grainlify-stream](contracts/stream/README.md). The workspace manifest itself is not a deployable contract. No live deployment IDs for its contract members are recorded here; the environment example configures testnet access, not deployment.
+
+## Crate relationships
+
+- Depends on: no in-repository crate as a workspace manifest; it supplies the soroban-sdk 23.4.1 and ethnum pins to its members.
+- Depended on by: escrow, program-escrow, and grainlify-stream are workspace members. None declares a Cargo path dependency on another member.
+- This workspace is separate from the SDK 21 packages under [contracts](../contracts/README.md). Behavior parity between same-name crates does not imply a build dependency.
+
 ## Overview
 
 This repository contains the Soroban smart contract workspace for the Grainlify project.  
@@ -10,22 +20,20 @@ It follows **multi-crate workspace best practices** with separate directories fo
 ## Project Structure
 
 ```text
-.
-├── contracts
-│   ├── escrow
-│   │   ├── src
-│   │   │   ├── lib.rs
-│   │   │   └── test.rs
-│   │   └── Cargo.toml
-│   ├── program-escrow
-│   │   ├── src
-│   │   │   ├── lib.rs
-│   │   │   └── test.rs
-│   │   └── Cargo.toml
-│   └── README.md
-├── Cargo.toml          # Workspace-level configuration
-├── .soroban/           # Local network configuration
-└── .env.example        # Example Stellar testnet variables
+soroban/
+|-- Cargo.toml                 # SDK 23 workspace
+|-- README.md
+|-- contracts/
+|   |-- escrow/
+|   |   |-- Cargo.toml
+|   |   \-- README.md
+|   |-- program-escrow/
+|   |   |-- Cargo.toml
+|   |   \-- README.md
+|   \-- stream/
+|       |-- Cargo.toml
+|       \-- README.md
+\-- .env.example              # Testnet configuration example
 ```
 
 # Setup Instructions

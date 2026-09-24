@@ -1,5 +1,13 @@
 # Program Escrow Search Notes
 
+## Crate, deployment, and relationships
+
+This SDK 23 Soroban contract registers programs and provides indexed, cursor-based search, labels, jurisdiction rules, and ownership controls. No network deployment or contract ID is recorded in this repository.
+
+- Depends on: no other in-repository crate. It inherits soroban-sdk 23.4.1 and ethnum from the [Soroban workspace](../../README.md) and uses a token contract at runtime.
+- Depended on by: no in-repository Cargo package declares a dependency on this crate.
+- Same-name distinction: [contracts/program-escrow](../../../contracts/program-escrow/README.md) is the SDK 21 contract focused on holding program funds and paying recipients. These packages are independent despite sharing a name.
+
 ## Search indexing assumptions
 
 `program-escrow` search helpers are implemented with a persisted `ProgramIndex`
