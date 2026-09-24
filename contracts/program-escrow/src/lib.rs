@@ -1678,6 +1678,8 @@ impl ProgramEscrowContract {
         Self::get_fee_config_internal(&env)
     }
 
+    const FEE_CONFIG_UPDATED: Symbol = symbol_short!("FeeCfgUpd");
+
     /// Update fee parameters (admin only). `None` leaves a field unchanged.
     ///
     /// # `insurance_reserve_bps`
@@ -1738,6 +1740,23 @@ impl ProgramEscrowContract {
             cfg.insurance_reserve_bps = bps;
         }
         env.storage().instance().set(&FEE_CONFIG, &cfg);
+
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap_or(env.current_contract_address());
+        env.events().publish(
+            (FEE_CONFIG_UPDATED,),
+            FeeConfigUpdatedEvent {
+                version: EVENT_VERSION_V2,
+                admin,
+                lock_fee_rate: cfg.lock_fee_rate,
+                payout_fee_rate: cfg.payout_fee_rate,
+                lock_fixed_fee: cfg.lock_fixed_fee,
+                payout_fixed_fee: cfg.payout_fixed_fee,
+                fee_recipient: cfg.fee_recipient.clone(),
+                fee_enabled: cfg.fee_enabled,
+                insurance_reserve_bps: cfg.insurance_reserve_bps,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
     }
 
     /// Check if a program exists (legacy single-program check).

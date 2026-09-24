@@ -195,6 +195,22 @@ pub struct FeeConfig {
     pub insurance_reserve_bps: u32,
 }
 
+/// Event emitted when fee config is updated.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeeConfigUpdatedEvent {
+    pub version: u32,
+    pub admin: Address,
+    pub lock_fee_rate: i128,
+    pub payout_fee_rate: i128,
+    pub lock_fixed_fee: i128,
+    pub payout_fixed_fee: i128,
+    pub fee_recipient: Address,
+    pub fee_enabled: bool,
+    pub insurance_reserve_bps: u32,
+    pub timestamp: u64,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FeeCollectedEvent {
