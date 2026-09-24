@@ -34,7 +34,7 @@ def check_inventory():
     missing = []
     for crate in crates:
         # Check if the exact wasm name is in the inventory table
-        if f'\{crate}\' not in inventory_content and f'{crate}' not in inventory_content:
+        if f'`{crate}`' not in inventory_content and f'{crate}' not in inventory_content:
             missing.append(crate)
 
     if missing:
