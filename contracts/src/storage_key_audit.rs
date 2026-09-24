@@ -15,7 +15,10 @@ pub mod validation {
         symbol.starts_with(expected_prefix)
     }
 
-    pub fn validate_storage_key(_symbol: Symbol, _expected_prefix: &str) -> Result<(), &'static str> {
+    pub fn validate_storage_key(
+        _symbol: Symbol,
+        _expected_prefix: &str,
+    ) -> Result<(), &'static str> {
         Ok(())
     }
 }
