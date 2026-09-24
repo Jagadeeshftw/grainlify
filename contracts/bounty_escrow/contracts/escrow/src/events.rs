@@ -39,8 +39,8 @@
 //! * All `symbol_short!` strings are ≤ 9 bytes — Soroban rejects longer values,
 //!   which would corrupt topic-based filtering.
 use crate::CapabilityAction;
-use soroban_sdk::{contracttype, symbol_short, Address, BytesN, Env, Symbol};
 use grainlify_core::CorrelationId;
+use soroban_sdk::{contracttype, symbol_short, Address, BytesN, Env, Symbol};
 
 // ── Version constant ─────────────────────────────────────────────────────────
 
@@ -101,24 +101,15 @@ pub fn emit_bounty_initialized(env: &Env, event: BountyEscrowInitialized) {
 }
 
 pub fn emit_admin_proposed(e: &Env, old: Address, new: Address) {
-    e.events().publish(
-        (symbol_short!("adm_prop"),),
-        (old, new),
-    );
+    e.events().publish((symbol_short!("adm_prop"),), (old, new));
 }
 
 pub fn emit_admin_transferred(e: &Env, old: Address, new: Address) {
-    e.events().publish(
-        (symbol_short!("admin_tx"),),
-        (old, new),
-    );
+    e.events().publish((symbol_short!("admin_tx"),), (old, new));
 }
 
 pub fn emit_admin_transfer_cancelled_v1(e: &Env, admin: Address) {
-    e.events().publish(
-        (symbol_short!("adm_cncl2"),),
-        (admin,),
-    );
+    e.events().publish((symbol_short!("adm_cncl2"),), (admin,));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -657,7 +648,6 @@ pub fn emit_fee_routing_changed(env: &Env, event: FeeRoutingChanged) {
     env.events().publish(topics, event.clone());
 }
 
-
 /// Payload for the [`emit_fee_routed`] event
 ///
 /// Emitted when a split fee is distributed to multiple recipients.
@@ -1082,10 +1072,7 @@ pub struct ParticipantListSchemaVersionSet {
 }
 
 /// Emit [`ParticipantListSchemaVersionSet`].
-pub fn emit_participant_list_schema_version_set(
-    env: &Env,
-    event: ParticipantListSchemaVersionSet,
-) {
+pub fn emit_participant_list_schema_version_set(env: &Env, event: ParticipantListSchemaVersionSet) {
     let topics = (symbol_short!("pf_schema"),);
     env.events().publish(topics, event);
 }
