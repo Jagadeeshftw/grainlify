@@ -15,7 +15,10 @@
 #[cfg(test)]
 mod tests {
     use crate::{ContractKind, GrainlifyContract, GrainlifyContractClient};
-    use soroban_sdk::{testutils::{Address as _, Ledger as _}, Address, Env, String};
+    use soroban_sdk::{
+        testutils::{Address as _, Ledger as _},
+        Address, Env, String,
+    };
 
     fn setup(env: &Env) -> (GrainlifyContractClient, Address) {
         let id = env.register_contract(None, GrainlifyContract);
@@ -228,11 +231,21 @@ mod tests {
         assert_eq!(client.deployed_contract_count(), 0);
 
         let addr1 = make_address(&env);
-        client.register_deployed_contract(&addr1, &make_string(&env, "c1"), &ContractKind::Other, &1);
+        client.register_deployed_contract(
+            &addr1,
+            &make_string(&env, "c1"),
+            &ContractKind::Other,
+            &1,
+        );
         assert_eq!(client.deployed_contract_count(), 1);
 
         let addr2 = make_address(&env);
-        client.register_deployed_contract(&addr2, &make_string(&env, "c2"), &ContractKind::Other, &1);
+        client.register_deployed_contract(
+            &addr2,
+            &make_string(&env, "c2"),
+            &ContractKind::Other,
+            &1,
+        );
         assert_eq!(client.deployed_contract_count(), 2);
 
         client.deregister_deployed_contract(&addr1);
@@ -270,7 +283,12 @@ mod tests {
 
         for _ in 0..3 {
             let addr = make_address(&env);
-            client.register_deployed_contract(&addr, &make_string(&env, "c"), &ContractKind::Other, &1);
+            client.register_deployed_contract(
+                &addr,
+                &make_string(&env, "c"),
+                &ContractKind::Other,
+                &1,
+            );
         }
 
         // offset=1, limit=2 should return exactly the last 2 items
@@ -404,13 +422,19 @@ mod tests {
             .expect("entry must exist after re-registration");
 
         // DOCUMENTED BEHAVIOUR: latest values win.
-        assert_eq!(entry.name, name_v2, "name must reflect the second registration");
+        assert_eq!(
+            entry.name, name_v2,
+            "name must reflect the second registration"
+        );
         assert_eq!(
             entry.kind,
             ContractKind::ProgramEscrow,
             "kind must reflect the second registration"
         );
-        assert_eq!(entry.version, 99, "version must reflect the second registration");
+        assert_eq!(
+            entry.version, 99,
+            "version must reflect the second registration"
+        );
         assert_eq!(
             entry.address, addr,
             "address field in the entry must match the registered address"
@@ -477,8 +501,7 @@ mod tests {
         // DOCUMENTED BEHAVIOUR: address appears exactly once in the list.
         let occurrences = list.iter().filter(|e| e.address == addr).count();
         assert_eq!(
-            occurrences,
-            1,
+            occurrences, 1,
             "address must appear exactly once in list after three re-registrations \
              (grainlify-core uses update-in-place, not duplicate-append)"
         );
@@ -553,7 +576,10 @@ mod tests {
             "re-registering after deregister must create a single fresh entry"
         );
         let entry = client.get_deployed_contract(&addr).unwrap();
-        assert_eq!(entry.version, 2, "entry must reflect the post-deregister version");
+        assert_eq!(
+            entry.version, 2,
+            "entry must reflect the post-deregister version"
+        );
     }
 
     /// Verify that re-registration with a different ContractKind is reflected
