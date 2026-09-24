@@ -20,7 +20,7 @@ Every tree is either **on target** or an **owned exception**. A third SDK major 
 
 | Tree / manifest root | Current pin | Status | Owner | Notes |
 |---|---|---|---|---|
-| `soroban/` (workspace: escrow, program-escrow, stream) | `=23.4.1` | **On target** | `@Jagadeeshftw` | Protocol-23 sandbox / next-line contracts. |
+| `soroban/` (workspace: escrow, soroban-program-escrow, stream) | `=23.4.1` | **On target** | `@Jagadeeshftw` | Protocol-23 sandbox / next-line contracts. |
 | `contracts/` (grainlify-contracts) | `=21.7.7` | **Exception — migrating** | `@Jagadeeshftw` | Deployable production tree; stays on protocol 21 until the pin-move checklist below is green. |
 | `contracts/bounty_escrow` (workspace) | `=21.7.7` | **Exception — migrating** | `@Jagadeeshftw` | Same production pin as `contracts/`. |
 | `contracts/grainlify-core` | `=21.7.7` | **Exception — migrating** | `@Jagadeeshftw` | Anchor of the production graph. |
@@ -61,7 +61,7 @@ Notes:
 | `contracts/program-escrow` | `=21.7.7` | 21 | behind (exception) |
 | `contracts/view-facade` | `=21.7.7` | 21 | behind (exception) |
 | `contracts/escrow-view-facade` | `=21.7.7` | 21 | behind (exception) |
-| `soroban/` (workspace: escrow, program-escrow, stream) | `=23.4.1` | 23 | on target |
+| `soroban/` (workspace: escrow, soroban-program-escrow, stream) | `=23.4.1` | 23 | on target |
 
 ## The gate
 

@@ -3,6 +3,14 @@ name = "grainlify-contracts"
 version = "0.1.0"
 edition = "2021"
 
+# This package used to belong to no workspace, so nothing built or tested it
+# and the storage-collision audit it carries never ran. Declaring it as its own
+# workspace makes it a workspace member that `cargo test --workspace` builds;
+# `contracts/scripts/ci-contracts.sh` runs it on every pull request.
+[workspace]
+resolver = "2"
+members = ["."]
+
 [dependencies]
 soroban-sdk = "=21.7.7"
 ethnum = "1.5"

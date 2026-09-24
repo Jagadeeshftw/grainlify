@@ -353,9 +353,7 @@ fn test_escrow_data_invariants_remain_valid_with_drained_token() {
             archived: false,
             archived_at: None,
         };
-        env.storage()
-            .persistent()
-            .set(&DataKey::Escrow(bounty_id), &drained);
+        crate::BountyEscrowContract::write_escrow(&env, bounty_id, &drained).unwrap();
     });
 
     let info = escrow.get_escrow_info(&bounty_id);
@@ -430,9 +428,7 @@ fn test_partial_fee_creates_documented_accounting_discrepancy() {
             archived: false,
             archived_at: None,
         };
-        env.storage()
-            .persistent()
-            .set(&DataKey::Escrow(bounty_id), &recording);
+        crate::BountyEscrowContract::write_escrow(&env, bounty_id, &recording).unwrap();
     });
 
     let info = escrow.get_escrow_info(&bounty_id);
@@ -499,9 +495,7 @@ fn test_release_panics_when_contract_balance_drained_by_fee_token() {
             archived: false,
             archived_at: None,
         };
-        env.storage()
-            .persistent()
-            .set(&DataKey::Escrow(bounty_id), &drained);
+        crate::BountyEscrowContract::write_escrow(&env, bounty_id, &drained).unwrap();
     });
 
     // release_funds → token.transfer(contract, contributor, 1_000)
@@ -605,9 +599,7 @@ fn test_publish_detects_token_balance_shortfall_via_inv2() {
             archived: false,
             archived_at: None,
         };
-        env.storage()
-            .persistent()
-            .set(&DataKey::Escrow(bounty_id), &draft);
+        crate::BountyEscrowContract::write_escrow(&env, bounty_id, &draft).unwrap();
 
         // Register in the global index so sum_active_escrow_balances finds it
         // once it is promoted to Locked by publish().
@@ -667,9 +659,7 @@ fn test_publish_succeeds_when_token_balance_matches_escrow() {
             archived: false,
             archived_at: None,
         };
-        env.storage()
-            .persistent()
-            .set(&DataKey::Escrow(bounty_id), &draft);
+        crate::BountyEscrowContract::write_escrow(&env, bounty_id, &draft).unwrap();
 
         let mut idx: soroban_sdk::Vec<u64> = env
             .storage()
