@@ -768,10 +768,7 @@ fn test_early_refund_with_admin_approval() {
     ctx.client
         .approve_refund(&1u64, &DEFAULT_AMOUNT, &ctx.depositor, &RefundMode::Full);
     ctx.client.refund(&1u64);
-    assert_eq!(
-        ctx.client.get_escrow(&1u64).status,
-        EscrowStatus::Refunded
-    );
+    assert_eq!(ctx.client.get_escrow(&1u64).status, EscrowStatus::Refunded);
 }
 
 #[test]
