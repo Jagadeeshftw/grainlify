@@ -318,8 +318,7 @@ impl<'a> Harness<'a> {
 
     /// Arm the token to attempt `action` during the next `transfer`.
     fn arm(&self, action: ReentryAction) {
-        self.token()
-            .configure_attack(&self.escrow.address, &action);
+        self.token().configure_attack(&self.escrow.address, &action);
     }
 
     /// Disarm the token so subsequent transfers behave normally.
@@ -367,7 +366,9 @@ fn test_lock_funds_reentry_via_transfer_rejected_state_unchanged() {
     p.deadline = deadline;
     h.arm(ReentryAction::LockFunds(p));
 
-    let result = h.escrow.try_lock_funds(&h.depositor, &1_u64, &1_000, &deadline);
+    let result = h
+        .escrow
+        .try_lock_funds(&h.depositor, &1_u64, &1_000, &deadline);
     assert!(result.is_err(), "reentrant lock_funds must be rejected");
 
     // Full rollback: neither bounty #1 (outer call) nor #2 (attempted reentry)
@@ -398,7 +399,10 @@ fn test_lock_funds_anonymous_reentry_rejected_state_unchanged() {
     let result =
         h.escrow
             .try_lock_funds_anonymous(&h.depositor, &commitment, &3_u64, &1_000, &deadline);
-    assert!(result.is_err(), "reentrant lock_funds_anonymous must be rejected");
+    assert!(
+        result.is_err(),
+        "reentrant lock_funds_anonymous must be rejected"
+    );
 
     assert_eq!(h.token().balance(&h.depositor), 1_000_000_000);
     assert_eq!(h.token().balance(&h.escrow.address), 0);
@@ -435,7 +439,10 @@ fn test_batch_lock_funds_reentry_rejected_state_unchanged() {
         },
     ];
     let result = h.escrow.try_batch_lock_funds(&items);
-    assert!(result.is_err(), "reentrant batch_lock_funds must be rejected");
+    assert!(
+        result.is_err(),
+        "reentrant batch_lock_funds must be rejected"
+    );
 
     assert!(h.escrow.try_get_escrow_info(&10_u64).is_err());
     assert!(h.escrow.try_get_escrow_info(&11_u64).is_err());
@@ -467,7 +474,11 @@ fn test_release_funds_reentry_rejected_state_unchanged() {
     assert!(result.is_err(), "reentrant release_funds must be rejected");
 
     let info = h.escrow.get_escrow_info(&1_u64);
-    assert_eq!(info.status, EscrowStatus::Locked, "outer release must roll back");
+    assert_eq!(
+        info.status,
+        EscrowStatus::Locked,
+        "outer release must roll back"
+    );
     assert_eq!(info.remaining_amount, 1_000);
     assert_eq!(h.token().balance(&h.contributor), 0);
     assert_eq!(h.token().balance(&h.escrow.address), 1_000);
@@ -489,10 +500,16 @@ fn test_partial_release_reentry_rejected_state_unchanged() {
     h.arm(ReentryAction::PartialRelease(p));
 
     let result = h.escrow.try_partial_release(&1_u64, &h.contributor, &400);
-    assert!(result.is_err(), "reentrant partial_release must be rejected");
+    assert!(
+        result.is_err(),
+        "reentrant partial_release must be rejected"
+    );
 
     let info = h.escrow.get_escrow_info(&1_u64);
-    assert_eq!(info.remaining_amount, 1_000, "no payout must have been recorded");
+    assert_eq!(
+        info.remaining_amount, 1_000,
+        "no payout must have been recorded"
+    );
     assert_eq!(info.status, EscrowStatus::Locked);
     assert_eq!(h.token().balance(&h.contributor), 0);
 }
@@ -553,10 +570,16 @@ fn test_release_with_capability_reentry_rejected_state_unchanged() {
         &h.contributor,
         &capability_id,
     );
-    assert!(result.is_err(), "reentrant release_with_capability must be rejected");
+    assert!(
+        result.is_err(),
+        "reentrant release_with_capability must be rejected"
+    );
 
     let info = h.escrow.get_escrow_info(&1_u64);
-    assert_eq!(info.remaining_amount, 1_000, "capability release must roll back");
+    assert_eq!(
+        info.remaining_amount, 1_000,
+        "capability release must roll back"
+    );
     let cap = h.escrow.get_capability(&capability_id);
     assert_eq!(cap.remaining_uses, 2, "capability must remain unconsumed");
 }
@@ -588,10 +611,19 @@ fn test_batch_release_funds_reentry_rejected_state_unchanged() {
         },
     ];
     let result = h.escrow.try_batch_release_funds(&items);
-    assert!(result.is_err(), "reentrant batch_release_funds must be rejected");
+    assert!(
+        result.is_err(),
+        "reentrant batch_release_funds must be rejected"
+    );
 
-    assert_eq!(h.escrow.get_escrow_info(&10_u64).status, EscrowStatus::Locked);
-    assert_eq!(h.escrow.get_escrow_info(&11_u64).status, EscrowStatus::Locked);
+    assert_eq!(
+        h.escrow.get_escrow_info(&10_u64).status,
+        EscrowStatus::Locked
+    );
+    assert_eq!(
+        h.escrow.get_escrow_info(&11_u64).status,
+        EscrowStatus::Locked
+    );
     assert_eq!(h.token().balance(&h.contributor), 0);
 }
 
@@ -640,7 +672,10 @@ fn test_refund_resolved_reentry_rejected_state_unchanged() {
     h.arm(ReentryAction::Refund(p));
 
     let result = h.escrow.try_refund_resolved(&5_u64, &h.depositor);
-    assert!(result.is_err(), "reentrant refund_resolved must be rejected");
+    assert!(
+        result.is_err(),
+        "reentrant refund_resolved must be rejected"
+    );
 
     // Read the raw AnonymousEscrow record directly — get_escrow_info only
     // covers the non-anonymous path.
@@ -651,7 +686,11 @@ fn test_refund_resolved_reentry_rejected_state_unchanged() {
             .persistent()
             .get(&DataKey::EscrowAnon(5_u64))
             .unwrap();
-        assert_eq!(anon.status, EscrowStatus::Locked, "refund_resolved must roll back");
+        assert_eq!(
+            anon.status,
+            EscrowStatus::Locked,
+            "refund_resolved must roll back"
+        );
         assert_eq!(anon.remaining_amount, 1_000);
     });
     assert_eq!(h.token().balance(&h.escrow.address), 1_000);
@@ -680,13 +719,19 @@ fn test_refund_with_capability_reentry_rejected_state_unchanged() {
     p.bounty_id = 1;
     h.arm(ReentryAction::Refund(p));
 
-    let result =
-        h.escrow
-            .try_refund_with_capability(&1_u64, &400, &h.depositor, &capability_id);
-    assert!(result.is_err(), "reentrant refund_with_capability must be rejected");
+    let result = h
+        .escrow
+        .try_refund_with_capability(&1_u64, &400, &h.depositor, &capability_id);
+    assert!(
+        result.is_err(),
+        "reentrant refund_with_capability must be rejected"
+    );
 
     let info = h.escrow.get_escrow_info(&1_u64);
-    assert_eq!(info.remaining_amount, 1_000, "capability refund must roll back");
+    assert_eq!(
+        info.remaining_amount, 1_000,
+        "capability refund must roll back"
+    );
     let cap = h.escrow.get_capability(&capability_id);
     assert_eq!(cap.remaining_uses, 2, "capability must remain unconsumed");
 }
@@ -718,9 +763,16 @@ fn test_emergency_withdraw_reentry_rejected_state_unchanged() {
     h.arm(ReentryAction::EmergencyWithdraw(p));
 
     let result = h.escrow.try_emergency_withdraw(&target);
-    assert!(result.is_err(), "reentrant emergency_withdraw must be rejected");
+    assert!(
+        result.is_err(),
+        "reentrant emergency_withdraw must be rejected"
+    );
 
-    assert_eq!(h.token().balance(&target), 0, "no funds must reach either target");
+    assert_eq!(
+        h.token().balance(&target),
+        0,
+        "no funds must reach either target"
+    );
     assert_eq!(h.token().balance(&target2), 0);
     assert_eq!(
         h.token().balance(&h.escrow.address),
@@ -889,7 +941,9 @@ fn test_disarm_after_rejected_attack_allows_normal_retry() {
     p.deadline = deadline;
     h.arm(ReentryAction::LockFunds(p));
 
-    let result = h.escrow.try_lock_funds(&h.depositor, &1_u64, &1_000, &deadline);
+    let result = h
+        .escrow
+        .try_lock_funds(&h.depositor, &1_u64, &1_000, &deadline);
     assert!(result.is_err());
     assert!(h.escrow.try_get_escrow_info(&1_u64).is_err());
 
