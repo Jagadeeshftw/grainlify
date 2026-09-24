@@ -117,7 +117,7 @@ pub const fn registered_count() -> usize {
 // ============================================================================
 
 /// Validates that a set of error codes from another contract don't conflict with this contract.
-/// 
+///
 /// This function is used by the validation script to ensure cross-contract error code uniqueness.
 /// While Soroban contracts have independent error namespaces, avoiding conflicts improves
 /// developer experience and prevents confusion in SDK generation.
@@ -143,7 +143,7 @@ pub const fn no_cross_contract_conflicts(other_registry: &[RegistryEntry]) -> bo
 }
 
 /// Finds all error codes that conflict with another contract's registry.
-/// 
+///
 /// Returns a const array of conflicting error codes. This function is primarily
 /// used in tests and validation scripts to provide detailed conflict information.
 ///
@@ -160,7 +160,7 @@ pub const fn find_conflicts(other_registry: &[RegistryEntry]) -> &[u32] {
 }
 
 /// Validates that error codes are within their designated ranges.
-/// 
+///
 /// This function ensures that error codes follow the established range conventions:
 /// - 1-99: Common errors
 /// - 100-199: Governance errors  
@@ -175,15 +175,15 @@ pub const fn validate_ranges() -> bool {
     let mut i = 0;
     while i < GRAINLIFY_CORE_REGISTRY.len() {
         let code = GRAINLIFY_CORE_REGISTRY[i].0;
-        
+
         // Check if code is in a valid range
-        let in_valid_range = (code >= 1 && code <= 99) ||
-                           (code >= 100 && code <= 199) ||
-                           (code >= 200 && code <= 299) ||
-                           (code >= 300 && code <= 399) ||
-                           (code >= 400 && code <= 499) ||
-                           (code >= 1000);
-        
+        let in_valid_range = (code >= 1 && code <= 99)
+            || (code >= 100 && code <= 199)
+            || (code >= 200 && code <= 299)
+            || (code >= 300 && code <= 399)
+            || (code >= 400 && code <= 499)
+            || (code >= 1000);
+
         if !in_valid_range {
             return false;
         }
@@ -193,7 +193,7 @@ pub const fn validate_ranges() -> bool {
 }
 
 /// Gets the range category for a given error code.
-/// 
+///
 /// Returns a string describing the range category for the error code.
 /// This is useful for documentation and SDK generation.
 ///
@@ -221,7 +221,7 @@ pub const fn get_range_category(code: u32) -> &'static str {
 }
 
 /// Compile-time range validation assertion.
-/// 
+///
 /// Ensures all error codes in the registry are within their designated ranges.
 /// This will produce a compile error if any error code is out of range.
 const _RANGE_CHECK: () = {
