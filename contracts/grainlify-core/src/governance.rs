@@ -1,5 +1,4 @@
 use crate::asset;
-use soroban_sdk::xdr::ToXdr;
 use soroban_sdk::{contracttype, symbol_short, Address, BytesN, Env, Map, Symbol};
 
 /// Represents the lifecycle stages of a governance proposal.
@@ -158,12 +157,14 @@ fn storage_key_for_role(role: &Role) -> Symbol {
 }
 
 fn require_not_zero_or_self(env: &Env, candidate: &Address) -> Result<(), Error> {
-    let bytes = candidate.to_xdr(env);
-    let all_zero = bytes.iter().all(|b| b == 0);
-    if all_zero {
-        return Err(Error::InvalidRoleHolder);
-    }
-    if *candidate == env.current_contract_address() {
+    // The canonical all-zero contract address, expressed as a StrKey. The
+    // address is compared by value rather than via its XDR bytes, because the
+    // XDR encoding of a host address object is not portable across builds.
+    let zero = Address::from_string(&soroban_sdk::String::from_str(
+        env,
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+    ));
+    if *candidate == zero || *candidate == env.current_contract_address() {
         return Err(Error::InvalidRoleHolder);
     }
     Ok(())
@@ -313,11 +314,7 @@ impl GovernanceContract {
         Ok(())
     }
 
-    pub fn set_emergency_role(
-        env: Env,
-        admin: Address,
-        new_holder: Address,
-    ) -> Result<(), Error> {
+    pub fn set_emergency_role(env: Env, admin: Address, new_holder: Address) -> Result<(), Error> {
         admin.require_auth();
         require_not_zero_or_self(&env, &new_holder)?;
         require_role(&env, &admin, Role::Admin)?;
@@ -325,10 +322,8 @@ impl GovernanceContract {
         let previous = get_role_holder(&env, Role::Emergency);
         store_role(&env, Role::Emergency, &new_holder);
 
-        env.events().publish(
-            (symbol_short!("emg_role"),),
-            (previous, new_holder.clone()),
-        );
+        env.events()
+            .publish((symbol_short!("emg_role"),), (previous, new_holder.clone()));
         Ok(())
     }
 
@@ -340,10 +335,8 @@ impl GovernanceContract {
         let previous = get_role_holder(&env, Role::Upgrade);
         store_role(&env, Role::Upgrade, &new_holder);
 
-        env.events().publish(
-            (symbol_short!("upg_role"),),
-            (previous, new_holder.clone()),
-        );
+        env.events()
+            .publish((symbol_short!("upg_role"),), (previous, new_holder.clone()));
         Ok(())
     }
 
@@ -355,10 +348,8 @@ impl GovernanceContract {
         let previous = get_role_holder(&env, Role::Config);
         store_role(&env, Role::Config, &new_holder);
 
-        env.events().publish(
-            (symbol_short!("cfg_role"),),
-            (previous, new_holder.clone()),
-        );
+        env.events()
+            .publish((symbol_short!("cfg_role"),), (previous, new_holder.clone()));
         Ok(())
     }
 
@@ -679,11 +670,7 @@ impl GovernanceContract {
         Ok(proposal.status)
     }
 
-    pub fn execute_proposal(
-        env: Env,
-        executor: Address,
-        proposal_id: u32,
-    ) -> Result<(), Error> {
+    pub fn execute_proposal(env: Env, executor: Address, proposal_id: u32) -> Result<(), Error> {
         executor.require_auth();
         require_role(&env, &executor, Role::Upgrade)?;
         require_not_emergency_paused(&env)?;

@@ -175,8 +175,8 @@ fn escrow_view_facade_lib_rs_references_abi_matrix() {
 #[test]
 fn matrix_documents_payout_record_sync_risk() {
     let matrix_path = repo_root().join("docs").join("abi-stability-matrix.md");
-    let content = fs::read_to_string(&matrix_path)
-        .expect("docs/abi-stability-matrix.md should be readable");
+    let content =
+        fs::read_to_string(&matrix_path).expect("docs/abi-stability-matrix.md should be readable");
 
     assert!(
         content.contains("PayoutRecord"),
@@ -189,8 +189,8 @@ fn matrix_documents_payout_record_sync_risk() {
 #[test]
 fn matrix_documents_program_delegate_info_sync_risk() {
     let matrix_path = repo_root().join("docs").join("abi-stability-matrix.md");
-    let content = fs::read_to_string(&matrix_path)
-        .expect("docs/abi-stability-matrix.md should be readable");
+    let content =
+        fs::read_to_string(&matrix_path).expect("docs/abi-stability-matrix.md should be readable");
 
     assert!(
         content.contains("ProgramDelegateInfo"),
@@ -203,8 +203,8 @@ fn matrix_documents_program_delegate_info_sync_risk() {
 #[test]
 fn matrix_documents_escrow_status_sync_risk() {
     let matrix_path = repo_root().join("docs").join("abi-stability-matrix.md");
-    let content = fs::read_to_string(&matrix_path)
-        .expect("docs/abi-stability-matrix.md should be readable");
+    let content =
+        fs::read_to_string(&matrix_path).expect("docs/abi-stability-matrix.md should be readable");
 
     assert!(
         content.contains("EscrowStatus"),
@@ -217,15 +217,11 @@ fn matrix_documents_escrow_status_sync_risk() {
 #[test]
 fn matrix_defines_breaking_changes() {
     let matrix_path = repo_root().join("docs").join("abi-stability-matrix.md");
-    let content = fs::read_to_string(&matrix_path)
-        .expect("docs/abi-stability-matrix.md should be readable");
+    let content =
+        fs::read_to_string(&matrix_path).expect("docs/abi-stability-matrix.md should be readable");
 
     // Verify the core breaking-change concepts are described.
-    let breaking_concepts = [
-        "Breaking Change",
-        "Removing a field",
-        "Reordering fields",
-    ];
+    let breaking_concepts = ["Breaking Change", "Removing a field", "Reordering fields"];
     for concept in &breaking_concepts {
         assert!(
             content.contains(concept),
@@ -239,8 +235,8 @@ fn matrix_defines_breaking_changes() {
 #[test]
 fn matrix_defines_additive_changes() {
     let matrix_path = repo_root().join("docs").join("abi-stability-matrix.md");
-    let content = fs::read_to_string(&matrix_path)
-        .expect("docs/abi-stability-matrix.md should be readable");
+    let content =
+        fs::read_to_string(&matrix_path).expect("docs/abi-stability-matrix.md should be readable");
 
     assert!(
         content.contains("Additive"),

@@ -1,6 +1,9 @@
 #![cfg(test)]
 
-use soroban_sdk::{testutils::{Address as _, Ledger}, Address, BytesN, Env, Vec as SorobanVec};
+use soroban_sdk::{
+    testutils::{Address as _, Ledger},
+    Address, BytesN, Env, Vec as SorobanVec,
+};
 
 use crate::{GrainlifyContract, GrainlifyContractClient, UpgradeProposalRecord};
 
@@ -8,7 +11,7 @@ fn wasm_hash(env: &Env, seed: u8) -> BytesN<32> {
     BytesN::from_array(env, &[seed; 32])
 }
 
-fn setup(env: &Env) -> (GrainlifyContractClient, [Address; 3]) {
+fn setup(env: &Env) -> (GrainlifyContractClient<'_>, [Address; 3]) {
     let id = env.register_contract(None, GrainlifyContract);
     let client = GrainlifyContractClient::new(env, &id);
     let signers = [
@@ -32,7 +35,10 @@ fn assert_unchanged(
     previous_version: Option<u32>,
     timelock: Option<u64>,
 ) {
-    assert_eq!(client.get_upgrade_proposal(&proposal_id), Some(proposal.clone()));
+    assert_eq!(
+        client.get_upgrade_proposal(&proposal_id),
+        Some(proposal.clone())
+    );
     assert_eq!(client.get_version(), version);
     assert_eq!(client.get_previous_version(), previous_version);
     assert_eq!(client.get_timelock_status(&proposal_id), timelock);
@@ -108,8 +114,10 @@ fn expired_state_rejects_approval_and_execution_without_changes() {
     client.approve_upgrade(&proposal_id, &signers[1]);
     let proposal = client.get_upgrade_proposal(&proposal_id).unwrap();
     let version = client.get_version();
-    let timelock = client.get_timelock_status(&proposal_id);
     env.ledger().set_timestamp(expiry);
+    // `get_timelock_status` derives the remaining seconds from the current
+    // ledger timestamp, so it must be sampled at the timestamp used below.
+    let timelock = client.get_timelock_status(&proposal_id);
 
     for action in [0, 1] {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

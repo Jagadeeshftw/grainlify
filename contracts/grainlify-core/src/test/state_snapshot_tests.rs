@@ -37,19 +37,14 @@
 
 extern crate std;
 
-use soroban_sdk::{
-    testutils::{Address as _, budget as _},
-    Address, BytesN, Env, Vec as SorobanVec,
-};
+use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, Vec as SorobanVec};
 
-use crate::{
-    ContractError, GrainlifyContract, GrainlifyContractClient, CONFIG_SNAPSHOT_LIMIT,
-};
+use crate::{ContractError, GrainlifyContract, GrainlifyContractClient, CONFIG_SNAPSHOT_LIMIT};
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 /// Initializes a contract with a single admin and returns (client, admin).
-fn setup_admin(env: &Env) -> (GrainlifyContractClient, Address) {
+fn setup_admin(env: &Env) -> (GrainlifyContractClient<'_>, Address) {
     let id = env.register_contract(None, GrainlifyContract);
     let client = GrainlifyContractClient::new(env, &id);
     let admin = Address::generate(env);
@@ -991,12 +986,16 @@ fn bench_list_and_compare_snapshot_growth() {
         assert_eq!(listed.len(), n);
         std::println!(
             "[BENCH] op=list_config_snapshots n={} cpu_insns={} mem_bytes={}",
-            n, list_cpu, list_mem
+            n,
+            list_cpu,
+            list_mem
         );
         assert!(
             list_cpu >= prev_list_cpu,
             "list CPU should grow with N: n={} cpu={} prev={}",
-            n, list_cpu, prev_list_cpu
+            n,
+            list_cpu,
+            prev_list_cpu
         );
         prev_list_cpu = list_cpu;
 
@@ -1005,7 +1004,9 @@ fn bench_list_and_compare_snapshot_growth() {
         let page_cpu = env.budget().cpu_instruction_cost();
         std::println!(
             "[BENCH] op=list_config_snapshots_page n={} page={} cpu_insns={}",
-            n, page.len(), page_cpu
+            n,
+            page.len(),
+            page_cpu
         );
 
         env.budget().reset_default();
@@ -1014,12 +1015,15 @@ fn bench_list_and_compare_snapshot_growth() {
         let cmp_mem = env.budget().memory_bytes_cost();
         std::println!(
             "[BENCH] op=compare_snapshots n={} cpu_insns={} mem_bytes={}",
-            n, cmp_cpu, cmp_mem
+            n,
+            cmp_cpu,
+            cmp_mem
         );
         assert!(
             cmp_cpu < 5_000_000,
             "compare_snapshots should stay O(1); n={} cpu={}",
-            n, cmp_cpu
+            n,
+            cmp_cpu
         );
     }
 
@@ -1051,11 +1055,13 @@ fn bench_paginated_list_cheaper_than_full_scan() {
 
     std::println!(
         "[BENCH] op=list_full_vs_page full_cpu={} page_cpu={}",
-        full_cpu, page_cpu
+        full_cpu,
+        page_cpu
     );
     assert!(
         page_cpu < full_cpu,
         "paginated list should cost less than full scan: page={} full={}",
-        page_cpu, full_cpu
+        page_cpu,
+        full_cpu
     );
 }

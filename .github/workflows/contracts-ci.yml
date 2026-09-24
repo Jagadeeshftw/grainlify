@@ -77,3 +77,46 @@ jobs:
           name: bounty-escrow-wasm
           path: contracts/bounty_escrow/target/wasm32-unknown-unknown/release/*.wasm
           if-no-files-found: error
+
+  # ──────────────────────────────────────────────────────────────
+  # grainlify-core gates (issue #1869).
+  # grainlify-core is depended on by program-escrow, view-facade and
+  # escrow-view-facade, so it gets the same build/test gates as the escrow
+  # crates plus the crate's formatting and lint gates. Runs the exact same
+  # commands as ./contracts/scripts/ci-grainlify-core.sh.
+  # No continue-on-error: a failing test (including a migration-replay or
+  # upgrade-rollback test) must fail the job.
+  # ──────────────────────────────────────────────────────────────
+  grainlify-core:
+    name: grainlify-core (fmt + clippy + tests + wasm)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            contracts/grainlify-core/target/
+          key: ${{ runner.os }}-grainlify-core-cargo-${{ hashFiles('contracts/grainlify-core/Cargo.lock', 'contracts/grainlify-core/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-grainlify-core-cargo-
+
+      - name: Run grainlify-core CI gates
+        run: bash contracts/scripts/ci-grainlify-core.sh
+
+      - name: Upload deployable wasm
+        uses: actions/upload-artifact@v4
+        with:
+          name: grainlify-core-wasm
+          path: contracts/grainlify-core/target/wasm32-unknown-unknown/release/*.wasm
+          if-no-files-found: error

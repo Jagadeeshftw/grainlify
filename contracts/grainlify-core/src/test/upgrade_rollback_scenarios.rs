@@ -40,7 +40,7 @@ fn fake_wasm_v3(env: &Env) -> BytesN<32> {
     BytesN::from_array(env, &[0xEF; 32])
 }
 
-fn setup_admin(env: &Env) -> (GrainlifyContractClient, Address) {
+fn setup_admin(env: &Env) -> (GrainlifyContractClient<'_>, Address) {
     let id = env.register_contract(None, GrainlifyContract);
     let client = GrainlifyContractClient::new(env, &id);
     let admin = Address::generate(env);
@@ -48,7 +48,7 @@ fn setup_admin(env: &Env) -> (GrainlifyContractClient, Address) {
     (client, admin)
 }
 
-fn setup_multisig(env: &Env) -> (GrainlifyContractClient, [Address; 3]) {
+fn setup_multisig(env: &Env) -> (GrainlifyContractClient<'_>, [Address; 3]) {
     let id = env.register_contract(None, GrainlifyContract);
     let client = GrainlifyContractClient::new(env, &id);
     let s1 = Address::generate(env);
@@ -62,7 +62,7 @@ fn setup_multisig(env: &Env) -> (GrainlifyContractClient, [Address; 3]) {
     (client, [s1, s2, s3])
 }
 
-fn setup_multisig_custom(env: &Env, threshold: u32) -> (GrainlifyContractClient, [Address; 3]) {
+fn setup_multisig_custom(env: &Env, threshold: u32) -> (GrainlifyContractClient<'_>, [Address; 3]) {
     let id = env.register_contract(None, GrainlifyContract);
     let client = GrainlifyContractClient::new(env, &id);
     let s1 = Address::generate(env);
@@ -82,7 +82,7 @@ fn setup_multisig_custom(env: &Env, threshold: u32) -> (GrainlifyContractClient,
 
 /// Approvals on proposal A must NOT carry over to proposal B.
 #[test]
-#[should_panic(expected = "Threshold not met")]
+#[should_panic(expected = "Timelock not started - call approve_upgrade first")]
 fn test_partial_approvals_do_not_carry_across_proposals() {
     let env = Env::default();
     env.mock_all_auths();
@@ -99,7 +99,7 @@ fn test_partial_approvals_do_not_carry_across_proposals() {
 
 /// A proposal with zero approvals must not be executable.
 #[test]
-#[should_panic(expected = "Threshold not met")]
+#[should_panic(expected = "Timelock not started - call approve_upgrade first")]
 fn test_zero_approvals_not_executable() {
     let env = Env::default();
     env.mock_all_auths();
@@ -126,7 +126,7 @@ fn test_two_different_signers_meet_threshold() {
 
 /// 3-of-3 threshold: all signers must approve.
 #[test]
-#[should_panic(expected = "Threshold not met")]
+#[should_panic(expected = "Timelock not started - call approve_upgrade first")]
 fn test_3_of_3_rejects_with_only_two_approvals() {
     let env = Env::default();
     env.mock_all_auths();
@@ -205,7 +205,7 @@ fn test_proposals_store_independent_hashes() {
 
 /// Approving proposal for hash_v1 and executing it doesn't change hash_v2 proposal.
 #[test]
-#[should_panic(expected = "Threshold not met")]
+#[should_panic(expected = "Timelock not started - call approve_upgrade first")]
 fn test_executing_one_proposal_leaves_other_unaffected() {
     let env = Env::default();
     env.mock_all_auths();
@@ -324,6 +324,7 @@ fn test_migration_state_persists_through_rollback() {
     let (client, _admin) = setup_admin(&env);
 
     let hash = BytesN::from_array(&env, &[0xAA; 32]);
+    client.commit_migration(&3u32, &hash, &0u64);
     client.migrate(&3, &hash);
     assert_eq!(client.get_version(), 3);
 
@@ -400,7 +401,7 @@ fn test_multisig_rollback_proposal_after_failed_upgrade() {
 
 /// Sequential proposals: old proposal approvals don't leak to new one.
 #[test]
-#[should_panic(expected = "Threshold not met")]
+#[should_panic(expected = "Timelock not started - call approve_upgrade first")]
 fn test_sequential_proposals_approvals_isolated() {
     let env = Env::default();
     env.mock_all_auths();
