@@ -17,10 +17,13 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MANIFEST="$ROOT_DIR/contracts/bounty_escrow/Cargo.toml"
 
-echo "==> [1/2] Workspace tests (host target)"
+echo "==> [1/3] Clippy lint check"
+cargo clippy --manifest-path "$MANIFEST" --workspace --all-targets -- -D warnings
+
+echo "==> [2/3] Workspace tests (host target)"
 cargo test --manifest-path "$MANIFEST" --workspace
 
-echo "==> [2/2] Deployable wasm release build"
+echo "==> [3/3] Deployable wasm release build"
 cargo build --manifest-path "$MANIFEST" --workspace --target wasm32-unknown-unknown --release
 
 echo "==> All contract CI gates passed."
