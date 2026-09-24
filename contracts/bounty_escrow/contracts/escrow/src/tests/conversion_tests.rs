@@ -1,6 +1,6 @@
 use super::*;
 use soroban_sdk::{
-    contract, contractimpl, testutils::Address as _, token, Address, Env, Vec, IntoVal,
+    contract, contractimpl, testutils::Address as _, token, Address, Env, IntoVal, Vec,
 };
 
 #[contract]
@@ -9,20 +9,34 @@ pub struct MockRouter;
 #[contractimpl]
 impl MockRouter {
     pub fn set_rates(env: Env, quote_rate: i128, swap_rate: i128) {
-        env.storage().instance().set(&soroban_sdk::symbol_short!("q_rate"), &quote_rate);
-        env.storage().instance().set(&soroban_sdk::symbol_short!("s_rate"), &swap_rate);
+        env.storage()
+            .instance()
+            .set(&soroban_sdk::symbol_short!("q_rate"), &quote_rate);
+        env.storage()
+            .instance()
+            .set(&soroban_sdk::symbol_short!("s_rate"), &swap_rate);
     }
 
     pub fn get_rates(env: Env) -> (i128, i128) {
-        let q = env.storage().instance().get(&soroban_sdk::symbol_short!("q_rate")).unwrap_or(2);
-        let s = env.storage().instance().get(&soroban_sdk::symbol_short!("s_rate")).unwrap_or(2);
+        let q = env
+            .storage()
+            .instance()
+            .get(&soroban_sdk::symbol_short!("q_rate"))
+            .unwrap_or(2);
+        let s = env
+            .storage()
+            .instance()
+            .get(&soroban_sdk::symbol_short!("s_rate"))
+            .unwrap_or(2);
         (q, s)
     }
 
     /// Address the router pulls source tokens from via the allowance granted
     /// before `swap_exact_tokens_for_tokens` is invoked (the escrow contract).
     pub fn set_payer(env: Env, payer: Address) {
-        env.storage().instance().set(&soroban_sdk::symbol_short!("payer"), &payer);
+        env.storage()
+            .instance()
+            .set(&soroban_sdk::symbol_short!("payer"), &payer);
     }
 
     pub fn swap_exact_tokens_for_tokens(
@@ -36,7 +50,7 @@ impl MockRouter {
         let src = path.get(0).unwrap();
         let dest = path.get(path.len() - 1).unwrap();
         let (_, s_rate) = Self::get_rates(env.clone());
-        
+
         let actual_out = amount_in * s_rate;
 
         // Pull source tokens from the payer (the escrow contract) using the
@@ -57,7 +71,7 @@ impl MockRouter {
         // Transfer destination tokens to the recipient
         let dest_client = token::Client::new(&env, &dest);
         dest_client.transfer(&env.current_contract_address(), &to, &actual_out);
-        
+
         let mut result = Vec::new(&env);
         result.push_back(amount_in);
         result.push_back(actual_out);
@@ -152,7 +166,8 @@ fn test_release_with_conversion_happy_path() {
     let deadline = s.env.ledger().timestamp() + 3600;
 
     // Lock funds first
-    s.escrow.lock_funds(&s.depositor, &bounty_id, &amount, &deadline);
+    s.escrow
+        .lock_funds(&s.depositor, &bounty_id, &amount, &deadline);
 
     // Set the router
     s.escrow.set_router(&s.router_address);
@@ -190,7 +205,8 @@ fn test_release_with_conversion_router_not_configured() {
     let amount = 1000i128;
     let deadline = s.env.ledger().timestamp() + 3600;
 
-    s.escrow.lock_funds(&s.depositor, &bounty_id, &amount, &deadline);
+    s.escrow
+        .lock_funds(&s.depositor, &bounty_id, &amount, &deadline);
 
     let mut path = Vec::new(&s.env);
     path.push_back(s.token_a.address.clone());
@@ -214,7 +230,8 @@ fn test_release_with_conversion_slippage_exceeded() {
     let amount = 1000i128;
     let deadline = s.env.ledger().timestamp() + 3600;
 
-    s.escrow.lock_funds(&s.depositor, &bounty_id, &amount, &deadline);
+    s.escrow
+        .lock_funds(&s.depositor, &bounty_id, &amount, &deadline);
     s.escrow.set_router(&s.router_address);
 
     // Set MockRouter quote rate to 2, but actual swap rate to 1 (50% drop, exceeding 5% slippage)
