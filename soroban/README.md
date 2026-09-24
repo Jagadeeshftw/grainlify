@@ -5,6 +5,12 @@
 This repository contains the Soroban smart contract workspace for the Grainlify project.  
 It follows **multi-crate workspace best practices** with separate directories for each contract, allowing modular development and testing.
 
+> **Escrow authority:** the `escrow` crate below is **superseded** and is kept
+> for behavioural parity only; it is not deployed. The authoritative escrow
+> implementation is `contracts/bounty_escrow/contracts/escrow`
+> (`bounty_escrow.wasm`). See
+> [`docs/contracts/escrow-implementation-authority.md`](../docs/contracts/escrow-implementation-authority.md).
+
 ---
 
 ## Project Structure
