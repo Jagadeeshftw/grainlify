@@ -1,6 +1,9 @@
 #[cfg(test)]
 mod test {
-    use crate::{DataKey, GrainlifyContract, GrainlifyContractClient, LIVENESS_SCHEMA_VERSION, STORAGE_SCHEMA_VERSION};
+    use crate::{
+        DataKey, GrainlifyContract, GrainlifyContractClient, LIVENESS_SCHEMA_VERSION,
+        STORAGE_SCHEMA_VERSION,
+    };
     use soroban_sdk::{testutils::Address as _, Address, Env};
 
     fn setup_test(env: &Env) -> (GrainlifyContractClient, Address) {
@@ -95,7 +98,10 @@ mod test {
         let env = Env::default();
         let (client, _admin) = setup_test(&env);
 
-        assert_eq!(client.get_liveness_schema_version(), LIVENESS_SCHEMA_VERSION);
+        assert_eq!(
+            client.get_liveness_schema_version(),
+            LIVENESS_SCHEMA_VERSION
+        );
     }
 
     /// LW-06: LivenessSchemaVersion key is present in instance storage after init.
@@ -106,7 +112,9 @@ mod test {
 
         env.as_contract(&client.address, || {
             assert!(
-                env.storage().instance().has(&DataKey::LivenessSchemaVersion),
+                env.storage()
+                    .instance()
+                    .has(&DataKey::LivenessSchemaVersion),
                 "LivenessSchemaVersion must be written at init"
             );
         });
@@ -119,7 +127,10 @@ mod test {
         let (client, _admin) = setup_test(&env);
 
         let status = client.liveness_watchdog();
-        assert_eq!(status.last_ping_ts, 0, "last_ping_ts must be 0 before first ping");
+        assert_eq!(
+            status.last_ping_ts, 0,
+            "last_ping_ts must be 0 before first ping"
+        );
     }
 
     /// LW-08: paused and read_only are independent booleans.
