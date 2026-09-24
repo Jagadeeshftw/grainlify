@@ -147,9 +147,7 @@ mod test {
         let mut escrow = client.get_escrow_info(&bounty_id);
         escrow.remaining_amount = 2000;
         env.as_contract(&contract_id, || {
-            env.storage()
-                .persistent()
-                .set(&DataKey::Escrow(bounty_id), &escrow);
+            crate::BountyEscrowContract::write_escrow(&env, bounty_id, &escrow).unwrap();
         });
 
         assert!(
@@ -170,9 +168,7 @@ mod test {
         let mut escrow = client.get_escrow_info(&bounty_id);
         escrow.amount = -1;
         env.as_contract(&contract_id, || {
-            env.storage()
-                .persistent()
-                .set(&DataKey::Escrow(bounty_id), &escrow);
+            crate::BountyEscrowContract::write_escrow(&env, bounty_id, &escrow).unwrap();
         });
 
         assert!(
@@ -194,9 +190,7 @@ mod test {
         escrow.status = EscrowStatus::Released;
         escrow.remaining_amount = 100;
         env.as_contract(&contract_id, || {
-            env.storage()
-                .persistent()
-                .set(&DataKey::Escrow(bounty_id), &escrow);
+            crate::BountyEscrowContract::write_escrow(&env, bounty_id, &escrow).unwrap();
         });
 
         assert!(
@@ -217,9 +211,7 @@ mod test {
         let mut escrow = client.get_escrow_info(&bounty_id);
         escrow.remaining_amount = -500;
         env.as_contract(&contract_id, || {
-            env.storage()
-                .persistent()
-                .set(&DataKey::Escrow(bounty_id), &escrow);
+            crate::BountyEscrowContract::write_escrow(&env, bounty_id, &escrow).unwrap();
         });
 
         assert!(

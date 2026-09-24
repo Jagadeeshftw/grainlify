@@ -442,14 +442,60 @@ fn test_property_fuzz_lock_release_refund_invariants() {
     assert_eq!(client.get_balance(), expected_locked_balance);
 }
 
+/// Executes the high-load bounty lifecycle workload used by the stress tests.
+///
+/// Locks `count` bounties starting at `first_id`, then releases every even
+/// offset and refunds every odd offset once the ledger has advanced past the
+/// escrow deadline. The fixture is left fully drained: the contract's locked
+/// balance must return to zero before the `Env` is torn down.
+///
+/// The depositor is expected to already be whitelisted by the caller so the
+/// anti-abuse rate limiter does not introduce timing-dependent behaviour.
+fn run_high_load_bounty_workload(
+    env: &Env,
+    client: &BountyEscrowContractClient<'_>,
+    depositor: &Address,
+    contributor: &Address,
+    token_client: &token::Client<'_>,
+    first_id: u64,
+    count: u64,
+    start_timestamp: u64,
+) {
+    // Pin the ledger explicitly instead of relying on whatever
+    // `Env::default()` happens to provide, so the fixture is reproducible
+    // regardless of SDK defaults.
+    env.ledger().set_timestamp(start_timestamp);
+
+    for i in 0..count {
+        let amount = 100 + (i as i128 % 10);
+        let deadline = start_timestamp + 30 + i;
+        client.lock_funds(depositor, &(first_id + i), &amount, &deadline);
+    }
+    assert!(client.get_balance() > 0);
+
+    for i in 0..count {
+        let id = first_id + i;
+        if i % 2 == 0 {
+            client.release_funds(&id, contributor);
+        } else {
+            let info = client.get_escrow_info(&id);
+            env.ledger().set_timestamp(info.deadline);
+            client.refund(&id);
+        }
+    }
+
+    // Teardown invariant: every escrow is drained, so the `Env` is dropped with
+    // the contract holding no funds and no half-open lifecycle state behind it.
+    assert_eq!(client.get_balance(), 0);
+    assert!(token_client.balance(contributor) > 0);
+}
+
 #[test]
-#[ignore] // panic in destructor during cleanup (flaky in CI)
 fn test_stress_high_load_bounty_operations() {
     let (env, client, _contract_id) = create_test_env();
     let admin = Address::generate(&env);
     let depositor = Address::generate(&env);
     let contributor = Address::generate(&env);
-    let now = env.ledger().timestamp();
 
     env.mock_all_auths();
     env.budget().reset_unlimited();
@@ -457,24 +503,56 @@ fn test_stress_high_load_bounty_operations() {
     let token_admin = Address::generate(&env);
     let (token, token_client, token_admin_client) = create_token_contract(&env, &token_admin);
     client.init(&admin, &token);
+    // Whitelist the depositor so the anti-abuse cooldown/window checks cannot
+    // turn this fixture into a timing-dependent test.
+    client.set_whitelist(&depositor, &true);
     token_admin_client.mint(&depositor, &1_000_000);
 
-    for i in 0..40_u64 {
-        let amount = 100 + (i as i128 % 10);
-        let deadline = now + 30 + i;
-        client.lock_funds(&depositor, &(5_000 + i), &amount, &deadline);
-    }
-    assert!(client.get_balance() > 0);
+    run_high_load_bounty_workload(
+        &env,
+        &client,
+        &depositor,
+        &contributor,
+        &token_client,
+        5_000,
+        40,
+        1_000,
+    );
+}
 
-    for i in 0..40_u64 {
-        let id = 5_000 + i;
-        if i % 2 == 0 {
-            client.release_funds(&id, &contributor);
-        } else {
-            let info = client.get_escrow_info(&id);
-            env.ledger().set_timestamp(info.deadline);
-            client.refund(&id);
-        }
+/// Regression coverage for the destructor-time flakiness that originally caused
+/// `test_stress_high_load_bounty_operations` to be `#[ignore]`d (issue #1853).
+///
+/// Runs the same workload 100 times in a row against a single `Env`. Each round
+/// must drain back to a zero locked balance and must not leave the fixture in a
+/// state that panics when the environment is cleaned up.
+#[test]
+fn test_stress_high_load_bounty_operations_repeats_stably() {
+    let (env, client, _contract_id) = create_test_env();
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let contributor = Address::generate(&env);
+
+    env.mock_all_auths();
+    env.budget().reset_unlimited();
+
+    let token_admin = Address::generate(&env);
+    let (token, token_client, token_admin_client) = create_token_contract(&env, &token_admin);
+    client.init(&admin, &token);
+    client.set_whitelist(&depositor, &true);
+    token_admin_client.mint(&depositor, &10_000_000);
+
+    for round in 0..100_u64 {
+        run_high_load_bounty_workload(
+            &env,
+            &client,
+            &depositor,
+            &contributor,
+            &token_client,
+            20_000 + round * 10,
+            5,
+            1_000 + round * 1_000,
+        );
     }
 
     assert_eq!(client.get_balance(), 0);

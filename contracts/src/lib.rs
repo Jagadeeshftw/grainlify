@@ -5,6 +5,12 @@
 
 pub mod storage_key_audit;
 
+// Storage-key collision audit. Declared under `cfg(test)` so it only builds
+// for the test profile; `contracts/scripts/ci-contracts.sh` runs it on every
+// pull request via `cargo test --manifest-path contracts/Cargo.toml --workspace`.
+#[cfg(test)]
+pub mod storage_collision_tests;
+
 // # View-Facade Contract
 //
 // Exposes **read-only** queries over `ProgramData` and `FeeConfig` so
@@ -399,7 +405,7 @@ impl<'a> ViewFacade<'a> {
     /// # Example
     ///
     /// ```rust
-    /// use view_facade::{ViewFacade, Storage, ProgramData, FeeConfig, Recipient};
+    /// use grainlify_contracts::{ViewFacade, Storage, ProgramData, FeeConfig, Recipient};
     ///
     /// let mut storage = Storage::new();
     /// storage.set_program(ProgramData {

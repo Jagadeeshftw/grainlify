@@ -97,10 +97,7 @@ impl Suite {
         };
         self.token_admin.mint(&self.contract_id, &amount);
         self.env.as_contract(&self.contract_id, || {
-            self.env
-                .storage()
-                .persistent()
-                .set(&DataKey::Escrow(bounty_id), &escrow);
+            crate::BountyEscrowContract::write_escrow(&self.env, bounty_id, &escrow).unwrap();
             let mut index: Vec<u64> = self
                 .env
                 .storage()

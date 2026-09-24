@@ -30,3 +30,8 @@ debug-assertions = true
 
 [profile.test]
 overflow-checks = true
+
+# Built standalone by CI (build-reproducibility, wasm-size-budget,
+# sdk-version-check, storage-layout). Declare an empty workspace so this crate
+# stays independent of the `contracts` workspace now rooted at contracts/Cargo.toml.
+[workspace]
