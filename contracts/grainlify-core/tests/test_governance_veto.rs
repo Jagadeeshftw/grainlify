@@ -1,9 +1,9 @@
 #![cfg(test)]
 
-use soroban_sdk::{symbol_short, Address, BytesN, Env, Symbol};
 use grainlify_core::governance::{
-    GovernanceContract, GovernanceConfig, ProposalStatus, VotingScheme, Error,
+    Error, GovernanceConfig, GovernanceContract, ProposalStatus, VotingScheme,
 };
+use soroban_sdk::{symbol_short, Address, BytesN, Env, Symbol};
 
 #[test]
 fn test_veto_proposal_success() {
@@ -27,7 +27,8 @@ fn test_veto_proposal_success() {
     };
 
     GovernanceContract::init_governance_state(env.clone(), admin.clone(), config).unwrap();
-    GovernanceContract::set_security_council(env.clone(), admin.clone(), security_council.clone()).unwrap();
+    GovernanceContract::set_security_council(env.clone(), admin.clone(), security_council.clone())
+        .unwrap();
 
     // Create proposal
     let proposal_id = GovernanceContract::create_proposal(
@@ -35,7 +36,8 @@ fn test_veto_proposal_success() {
         proposer.clone(),
         dummy_hash.clone(),
         symbol_short!("test"),
-    ).unwrap();
+    )
+    .unwrap();
 
     // Advance time past voting period
     env.ledger().set_timestamp(150);
@@ -74,14 +76,16 @@ fn test_veto_proposal_not_security_council() {
     };
 
     GovernanceContract::init_governance_state(env.clone(), admin.clone(), config).unwrap();
-    GovernanceContract::set_security_council(env.clone(), admin.clone(), security_council.clone()).unwrap();
+    GovernanceContract::set_security_council(env.clone(), admin.clone(), security_council.clone())
+        .unwrap();
 
     let proposal_id = GovernanceContract::create_proposal(
         env.clone(),
         proposer.clone(),
         dummy_hash.clone(),
         symbol_short!("test"),
-    ).unwrap();
+    )
+    .unwrap();
 
     env.ledger().set_timestamp(150);
     GovernanceContract::finalize_proposal(env.clone(), proposal_id).unwrap();
@@ -119,13 +123,15 @@ fn test_veto_proposal_security_council_not_set() {
         proposer.clone(),
         dummy_hash.clone(),
         symbol_short!("test"),
-    ).unwrap();
+    )
+    .unwrap();
 
     env.ledger().set_timestamp(150);
     GovernanceContract::finalize_proposal(env.clone(), proposal_id).unwrap();
 
     // Try to veto without Security Council set
-    let result = GovernanceContract::veto_proposal(env.clone(), security_council.clone(), proposal_id);
+    let result =
+        GovernanceContract::veto_proposal(env.clone(), security_council.clone(), proposal_id);
     assert_eq!(result, Err(Error::SecurityCouncilNotSet));
 }
 
@@ -150,17 +156,20 @@ fn test_veto_proposal_not_approved() {
     };
 
     GovernanceContract::init_governance_state(env.clone(), admin.clone(), config).unwrap();
-    GovernanceContract::set_security_council(env.clone(), admin.clone(), security_council.clone()).unwrap();
+    GovernanceContract::set_security_council(env.clone(), admin.clone(), security_council.clone())
+        .unwrap();
 
     let proposal_id = GovernanceContract::create_proposal(
         env.clone(),
         proposer.clone(),
         dummy_hash.clone(),
         symbol_short!("test"),
-    ).unwrap();
+    )
+    .unwrap();
 
     // Try to veto while proposal is still Active
-    let result = GovernanceContract::veto_proposal(env.clone(), security_council.clone(), proposal_id);
+    let result =
+        GovernanceContract::veto_proposal(env.clone(), security_council.clone(), proposal_id);
     assert_eq!(result, Err(Error::CannotVeto));
 }
 
@@ -185,14 +194,16 @@ fn test_veto_proposal_after_timelock() {
     };
 
     GovernanceContract::init_governance_state(env.clone(), admin.clone(), config).unwrap();
-    GovernanceContract::set_security_council(env.clone(), admin.clone(), security_council.clone()).unwrap();
+    GovernanceContract::set_security_council(env.clone(), admin.clone(), security_council.clone())
+        .unwrap();
 
     let proposal_id = GovernanceContract::create_proposal(
         env.clone(),
         proposer.clone(),
         dummy_hash.clone(),
         symbol_short!("test"),
-    ).unwrap();
+    )
+    .unwrap();
 
     env.ledger().set_timestamp(150);
     GovernanceContract::finalize_proposal(env.clone(), proposal_id).unwrap();
@@ -201,7 +212,8 @@ fn test_veto_proposal_after_timelock() {
     env.ledger().set_timestamp(201);
 
     // Try to veto after timelock has passed
-    let result = GovernanceContract::veto_proposal(env.clone(), security_council.clone(), proposal_id);
+    let result =
+        GovernanceContract::veto_proposal(env.clone(), security_council.clone(), proposal_id);
     assert_eq!(result, Err(Error::CannotVeto));
 }
 
@@ -226,7 +238,8 @@ fn test_set_and_get_security_council() {
     GovernanceContract::init_governance_state(env.clone(), admin.clone(), config).unwrap();
 
     // Set Security Council
-    GovernanceContract::set_security_council(env.clone(), admin.clone(), security_council.clone()).unwrap();
+    GovernanceContract::set_security_council(env.clone(), admin.clone(), security_council.clone())
+        .unwrap();
 
     // Get Security Council
     let retrieved = GovernanceContract::get_security_council(env.clone()).unwrap();
@@ -254,14 +267,16 @@ fn test_vetoed_proposal_cannot_be_executed() {
     };
 
     GovernanceContract::init_governance_state(env.clone(), admin.clone(), config).unwrap();
-    GovernanceContract::set_security_council(env.clone(), admin.clone(), security_council.clone()).unwrap();
+    GovernanceContract::set_security_council(env.clone(), admin.clone(), security_council.clone())
+        .unwrap();
 
     let proposal_id = GovernanceContract::create_proposal(
         env.clone(),
         proposer.clone(),
         dummy_hash.clone(),
         symbol_short!("test"),
-    ).unwrap();
+    )
+    .unwrap();
 
     env.ledger().set_timestamp(150);
     GovernanceContract::finalize_proposal(env.clone(), proposal_id).unwrap();
