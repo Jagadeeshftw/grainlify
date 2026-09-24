@@ -64,7 +64,8 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             contracts/bounty_escrow/target/
-          key: ${{ runner.os }}-contracts-cargo-${{ hashFiles('contracts/bounty_escrow/Cargo.lock', 'contracts/bounty_escrow/Cargo.toml', 'contracts/grainlify-core/Cargo.toml') }}
+            contracts/program-escrow/target/
+          key: ${{ runner.os }}-contracts-cargo-${{ hashFiles('contracts/bounty_escrow/Cargo.lock', 'contracts/bounty_escrow/Cargo.toml', 'contracts/program-escrow/Cargo.lock', 'contracts/program-escrow/Cargo.toml', 'contracts/grainlify-core/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-contracts-cargo-
 
