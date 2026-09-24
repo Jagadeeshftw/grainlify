@@ -48,6 +48,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Verify Wasm Inventory
+        run: python3 scripts/check_inventory.py
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
