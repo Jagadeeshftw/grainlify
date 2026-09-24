@@ -78,6 +78,12 @@ mod test_batch_soa_benchmark;
 mod test_bounded_pagination;
 #[cfg(test)]
 mod test_deterministic_event_ordering;
+#[cfg(test)]
+mod event_payload_fixtures;
+#[cfg(test)]
+mod test_event_payload_fixtures;
+#[cfg(test)]
+mod test_event_schema;
 
 use crate::events::{
     emit_admin_rotation_accepted, emit_admin_rotation_cancelled, emit_admin_rotation_proposed,
