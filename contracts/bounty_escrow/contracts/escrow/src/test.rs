@@ -794,7 +794,10 @@ fn test_claim_after_partial_release_never_exceeds_remaining_liability() {
     assert_eq!(escrow_after.status, EscrowStatus::Released);
     assert_eq!(escrow_after.remaining_amount, 0);
     // INV-2: sum of remaining (0) == contract balance (0).
-    assert_eq!(setup.token.balance(&setup.escrow.address), escrow_after.remaining_amount);
+    assert_eq!(
+        setup.token.balance(&setup.escrow.address),
+        escrow_after.remaining_amount
+    );
 }
 
 /// If the remaining liability is drawn down *below* the authorized claim amount
@@ -835,7 +838,10 @@ fn test_claim_rejects_overdraw_after_remaining_reduced_below_claim() {
     assert_eq!(escrow_after.remaining_amount, 0);
     assert_eq!(setup.token.balance(&setup.escrow.address), 0);
     // INV-2 preserved: contract balance (0) == sum of remaining (0).
-    assert_eq!(setup.token.balance(&setup.escrow.address), escrow_after.remaining_amount);
+    assert_eq!(
+        setup.token.balance(&setup.escrow.address),
+        escrow_after.remaining_amount
+    );
 }
 
 /// After a partial withdrawal, cancelling the (expired/unneeded) claim must be
@@ -885,14 +891,20 @@ fn test_idempotent_cancel_after_partial_withdrawal_then_refund_only_remaining() 
     let depositor_before = setup.token.balance(&setup.depositor);
     setup.escrow.refund(&bounty_id);
 
-    assert_eq!(setup.token.balance(&setup.depositor), depositor_before + 700);
+    assert_eq!(
+        setup.token.balance(&setup.depositor),
+        depositor_before + 700
+    );
     assert_eq!(setup.token.balance(&setup.escrow.address), 0);
 
     let escrow_refunded = setup.escrow.get_escrow_info(&bounty_id);
     assert_eq!(escrow_refunded.status, EscrowStatus::Refunded);
     assert_eq!(escrow_refunded.remaining_amount, 0);
     // INV-2 preserved: contract balance (0) == sum of remaining (0).
-    assert_eq!(setup.token.balance(&setup.escrow.address), escrow_refunded.remaining_amount);
+    assert_eq!(
+        setup.token.balance(&setup.escrow.address),
+        escrow_refunded.remaining_amount
+    );
 }
 
 /// Full multi-step flow: partial withdrawal → claim → partial release of the
@@ -931,7 +943,10 @@ fn test_partial_claims_preserve_liability_invariant_end_to_end() {
     assert_eq!(escrow_after.status, EscrowStatus::Released);
     assert_eq!(escrow_after.remaining_amount, 0);
     // INV-2: sum of remaining == contract balance.
-    assert_eq!(setup.token.balance(&setup.escrow.address), escrow_after.remaining_amount);
+    assert_eq!(
+        setup.token.balance(&setup.escrow.address),
+        escrow_after.remaining_amount
+    );
 }
 
 #[test]
