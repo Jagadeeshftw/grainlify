@@ -1,0 +1,53 @@
+name: Rustfmt
+
+# Formatting gate for every Rust workspace in the repository:
+#   * contracts/                 (grainlify-contracts)
+#   * contracts/bounty_escrow/   (bounty-escrow + local path deps)
+#   * soroban/                   (escrow, program-escrow, stream)
+#
+# Without this, diffs across the three trees carried unrelated whitespace
+# changes. The job runs `cargo fmt --all -- --check`, so any misformatted
+# change fails CI instead of drifting in.
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - "contracts/**"
+      - "soroban/**"
+      - ".github/workflows/rustfmt.yml"
+  pull_request:
+    branches: [master, main]
+    paths:
+      - "contracts/**"
+      - "soroban/**"
+      - ".github/workflows/rustfmt.yml"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rustfmt:
+    name: cargo fmt --check (${{ matrix.workspace }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        workspace:
+          - contracts
+          - contracts/bounty_escrow
+          - soroban
+    steps:
+      - uses: actions/checkout@v4
+
+      # Formatting output is toolchain-specific, so the rustfmt version is
+      # pinned here rather than tracking `stable`.
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96.1
+          components: rustfmt
+
+      - name: Check formatting
+        working-directory: ${{ matrix.workspace }}
+        run: cargo fmt --all -- --check
