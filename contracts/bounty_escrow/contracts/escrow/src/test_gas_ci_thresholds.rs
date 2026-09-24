@@ -53,7 +53,6 @@ use std::{eprintln, println};
 use super::*;
 use crate::gas_budget::{GasBudgetConfig, OperationBudget};
 use soroban_sdk::{
-    symbol_short,
     testutils::{Address as _, Ledger},
     token, Address, Env, Vec,
 };
@@ -109,26 +108,33 @@ mod budgets {
     /// `WASM_OPTIMIZATION_REPORT.md`). Update intentionally with PR
     /// justification.
     pub const WASM_SIZE_BUDGET_BYTES: u64 = 260_000;
-
-    /// "Large regressions" = > 50 % delta. Hard-gated regardless of mode.
-    pub const HARD_GATE_BPS: u64 = 15_000;
-
-    /// "Warn regressions" = > 15 % delta. Advisory-only in warn mode.
-    pub const WARN_BPS: u64 = 1_500;
 }
 
 // ============================================================================
-// B. Mode selection — via ESCROW_GAS_MODE env var
+// B. Baseline loading & enforcement — via gas_baseline.json & ESCROW_GAS_MODE
 // ============================================================================
 
+/// Committed baseline JSON containing recorded costs for all critical paths.
+pub const BASELINE_JSON: &str = include_str!("../gas_baseline.json");
+
+/// Stated tolerance in basis points beyond the recorded baseline (1,000 bps = 10.0%).
+pub const STATED_TOLERANCE_BPS: u64 = 1_000;
+
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
-enum RunMode {
+pub enum RunMode {
     Strict,
     Warn,
     Collect,
 }
 
-fn run_mode() -> RunMode {
+pub fn run_mode() -> RunMode {
+    if let Ok(val) = std::env::var("ESCROW_GAS_MODE") {
+        match val.to_ascii_lowercase().as_str() {
+            "warn" => return RunMode::Warn,
+            "collect" => return RunMode::Collect,
+            _ => return RunMode::Strict,
+        }
+    }
     match option_env!("ESCROW_GAS_MODE")
         .map(|s| s.to_ascii_lowercase())
         .as_deref()
@@ -139,51 +145,189 @@ fn run_mode() -> RunMode {
     }
 }
 
-fn basis(actual: u64, limit: u64) -> u64 {
-    if limit == 0 {
-        return 0;
-    }
-    (actual as u128 * 10_000 / limit as u128) as u64
+pub fn get_baseline(label: &str, dimension: &str) -> Option<u64> {
+    let key = std::format!("\"{}\"", label);
+    let path_pos = BASELINE_JSON.find(&key)?;
+    let after_path = &BASELINE_JSON[path_pos..];
+    let end_pos = after_path.find('}')?;
+    let block = &after_path[..end_pos];
+    let dim_key = std::format!("\"{}\"", dimension);
+    let dim_pos = block.find(&dim_key)?;
+    let after_dim = &block[dim_pos + dim_key.len()..];
+    let colon_pos = after_dim.find(':')?;
+    let num_str: std::string::String = after_dim[colon_pos + 1..]
+        .chars()
+        .skip_while(|c| c.is_whitespace())
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    num_str.parse::<u64>().ok()
 }
 
-/// Enforce a single budget dimension according to the current RunMode.
-///
-/// - `actual > limit * HARD_GATE_BPS / 10_000` → **hard FAIL** in all modes
-/// - `actual > limit * WARN_BPS / 10_000` → fail in Strict, warn in Warn
-/// - Always prints the JSON measurement row in Collect mode
-fn enforce(label: &'static str, dimension: &'static str, actual: u64, limit: u64) {
-    let bps = basis(actual, limit);
-    let over_hard = limit > 0 && bps > budgets::HARD_GATE_BPS;
-    let over_warn = limit > 0 && bps > 10_000 + budgets::WARN_BPS;
+pub fn get_tolerance_bps() -> u64 {
+    if let Some(pos) = BASELINE_JSON.find("\"tolerance_bps\"") {
+        let after = &BASELINE_JSON[pos + 15..];
+        if let Some(colon) = after.find(':') {
+            let num: std::string::String = after[colon + 1..]
+                .chars()
+                .skip_while(|c| c.is_whitespace())
+                .take_while(|c| c.is_ascii_digit())
+                .collect();
+            if let Ok(val) = num.parse::<u64>() {
+                return val;
+            }
+        }
+    }
+    STATED_TOLERANCE_BPS
+}
 
-    // Collect mode: always print JSON, never fail
-    if run_mode() == RunMode::Collect {
+#[derive(Clone, Debug)]
+pub struct MeasurementRecord {
+    pub op: &'static str,
+    pub dim: &'static str,
+    pub actual: u64,
+    pub baseline: u64,
+    pub allowed_ceiling: u64,
+    pub bps_delta: i64,
+    pub passed: bool,
+}
+
+static RECORDS: std::sync::Mutex<std::vec::Vec<MeasurementRecord>> =
+    std::sync::Mutex::new(std::vec::Vec::new());
+
+pub fn record_and_enforce(
+    label: &'static str,
+    dimension: &'static str,
+    actual: u64,
+    legacy_limit: u64,
+    mode: RunMode,
+) {
+    let tolerance_bps = get_tolerance_bps();
+    let baseline = get_baseline(label, dimension).unwrap_or(legacy_limit);
+    let allowed_ceiling = baseline.saturating_add(
+        ((baseline as u128 * tolerance_bps as u128) / 10_000) as u64,
+    );
+
+    let bps_delta = if actual >= baseline {
+        ((actual.saturating_sub(baseline) as u128 * 10_000) / baseline.max(1) as u128) as i64
+    } else {
+        -(((baseline.saturating_sub(actual) as u128 * 10_000) / baseline.max(1) as u128) as i64)
+    };
+
+    let passed = actual <= allowed_ceiling;
+
+    if let Ok(mut lock) = RECORDS.lock() {
+        if let Some(existing) = lock.iter_mut().find(|r| r.op == label && r.dim == dimension) {
+            *existing = MeasurementRecord {
+                op: label,
+                dim: dimension,
+                actual,
+                baseline,
+                allowed_ceiling,
+                bps_delta,
+                passed,
+            };
+        } else {
+            lock.push(MeasurementRecord {
+                op: label,
+                dim: dimension,
+                actual,
+                baseline,
+                allowed_ceiling,
+                bps_delta,
+                passed,
+            });
+        }
+    }
+
+    // Persist current report snapshot to file
+    write_gas_benchmark_report();
+
+    if mode == RunMode::Collect {
         println!(
-            "{{\"op\":\"{}\",\"dim\":\"{}\",\"actual\":{},\"limit\":{},\"bps\":{}}}",
-            label, dimension, actual, limit, bps
+            "{{\"op\":\"{}\",\"dim\":\"{}\",\"actual\":{},\"baseline\":{},\"allowed_ceiling\":{},\"bps_delta\":{}}}",
+            label, dimension, actual, baseline, allowed_ceiling, bps_delta
         );
         return;
     }
 
-    if over_hard {
-        panic!(
-            "[GAS-HARD] {label} {dimension}: actual {actual} exceeds limit {limit} by {bps} bps (> hard gate {}). \
-             Intentional increases require PR review + budget bump.",
-            budgets::HARD_GATE_BPS
-        );
+    if !passed {
+        match mode {
+            RunMode::Strict => {
+                panic!(
+                    "[GAS-REGRESSION] {label} {dimension}: actual {actual} exceeds recorded baseline {baseline} by {bps_delta} bps (> stated tolerance {} bps / {:.1}%). Allowed ceiling is {allowed_ceiling}. Intentional increases require updating gas_baseline.json with review.",
+                    tolerance_bps, tolerance_bps as f64 / 100.0
+                );
+            }
+            RunMode::Warn => {
+                eprintln!(
+                    "[GAS-WARN] {label} {dimension}: actual {actual} exceeds recorded baseline {baseline} by {bps_delta} bps (> stated tolerance {} bps). Allowed ceiling: {allowed_ceiling} (trend only).",
+                    tolerance_bps
+                );
+            }
+            RunMode::Collect => unreachable!(),
+        }
+    }
+}
+
+/// Enforce a single budget dimension according to the current RunMode and recorded baseline.
+pub fn enforce(label: &'static str, dimension: &'static str, actual: u64, limit: u64) {
+    record_and_enforce(label, dimension, actual, limit, run_mode());
+}
+
+pub fn write_gas_benchmark_report() {
+    use std::io::Write;
+    let records = match RECORDS.lock() {
+        Ok(guard) => guard.clone(),
+        Err(_) => return,
+    };
+    if records.is_empty() {
+        return;
     }
 
-    if over_warn {
-        match run_mode() {
-            RunMode::Strict => panic!(
-                "[GAS-REGRESSION] {label} {dimension}: actual {actual} exceeds limit {limit} by {bps} bps (> warn {} bps). \
-                 Use ESCROW_GAS_MODE=warn for trend-only reporting, or bump budget after review.",
-                budgets::WARN_BPS
-            ),
-            RunMode::Warn => eprintln!(
-                "[GAS-WARN] {label} {dimension}: actual {actual} / limit {limit} = {bps} bps (trend only)"
-            ),
-            RunMode::Collect => unreachable!(),
+    let mode = run_mode();
+    let mode_name = match mode {
+        RunMode::Strict => "strict (enforcing default)",
+        RunMode::Warn => "warn (advisory)",
+        RunMode::Collect => "collect (recording)",
+    };
+
+    let all_passed = records.iter().all(|r| r.passed);
+    let status_str = if all_passed { "✅ PASSED" } else { "❌ FAILED (REGRESSION)" };
+    let tolerance_bps = get_tolerance_bps();
+
+    let mut content = std::string::String::new();
+    content.push_str("# Gas & Resource Benchmark Gate Report — bounty-escrow\n\n");
+    content.push_str(&std::format!("- **Overall Gate Status**: {}\n", status_str));
+    content.push_str(&std::format!("- **Execution Mode**: `{}`\n", mode_name));
+    content.push_str(&std::format!("- **Stated Tolerance**: {} bps ({:.1}%)\n", tolerance_bps, tolerance_bps as f64 / 100.0));
+    content.push_str("- **Committed Baseline File**: `gas_baseline.json`\n");
+    content.push_str(&std::format!("- **WASM Size Budget Ceiling**: {} bytes\n\n", budgets::WASM_SIZE_BUDGET_BYTES));
+
+    content.push_str("| Operation | Dimension | Actual Cost | Recorded Baseline | Delta | Allowed Ceiling (+tolerance) | Gate Status |\n");
+    content.push_str("|:---|:---:|---:|---:|---:|---:|:---:|\n");
+
+    for r in &records {
+        let delta_str = if r.bps_delta >= 0 {
+            std::format!("+{:.2}% (+{} bps)", r.bps_delta as f64 / 100.0, r.bps_delta)
+        } else {
+            std::format!("{:.2}% ({} bps)", r.bps_delta as f64 / 100.0, r.bps_delta)
+        };
+        let status_badge = if r.passed { "PASS" } else { "**FAIL (REGRESSION)**" };
+        content.push_str(&std::format!(
+            "| `{}` | {} | {} | {} | {} | {} | {} |\n",
+            r.op, r.dim.to_ascii_uppercase(), r.actual, r.baseline, delta_str, r.allowed_ceiling, status_badge
+        ));
+    }
+
+    content.push_str("\n---\n*Report published as a CI artifact on every run.*\n");
+
+    let paths = [
+        "gas_benchmark_report.md",
+        "contracts/bounty_escrow/contracts/escrow/gas_benchmark_report.md",
+    ];
+    for p in &paths {
+        if let Ok(mut f) = std::fs::File::create(p) {
+            let _ = f.write_all(content.as_bytes());
         }
     }
 }
@@ -862,6 +1006,17 @@ fn gas_ci_consolidated_report_table() {
             budgets::payout::REFUND_MAX_CPU, budgets::payout::REFUND_MAX_MEM);
     }
 
+    // --- Payout partial release ---
+    {
+        let f = Fixture::new();
+        f.populate_60_locked();
+        let (cpu, mem) = f.measure(|| {
+            f.client.partial_release(&60, &f.contributor, &5_000);
+        });
+        row("payout: partial_release (5k from escrow #60)", cpu, mem,
+            budgets::payout::PARTIAL_RELEASE_MAX_CPU, budgets::payout::PARTIAL_RELEASE_MAX_MEM);
+    }
+
     // --- Pagination ---
     {
         let f = Fixture::new();
@@ -884,13 +1039,100 @@ fn gas_ci_consolidated_report_table() {
     {
         let f = Fixture::new();
         f.populate_60_locked();
-        let (cpu, mem) = f.measure(|| { let _r = upgrade_safety::simulate_upgrade(&f.env); });
+        let (cpu, mem) = f.measure(|| {
+            let _r = f
+                .env
+                .as_contract(&f.contract_id, || upgrade_safety::simulate_upgrade(&f.env));
+        });
         row("migration: simulate_upgrade (60 escrows)", cpu, mem,
             budgets::migration::SIMULATE_UPGRADE_60_CPU,
             budgets::migration::SIMULATE_UPGRADE_60_MEM);
+    }
+    {
+        let f = Fixture::new();
+        let target = Address::generate(&f.env);
+        let (cpu, mem) = f.measure(|| {
+            f.env.as_contract(&f.contract_id, || {
+                f.env.storage().instance().set(
+                    &DataKey::DeprecationState,
+                    &DeprecationState {
+                        deprecated: true,
+                        migration_target: Some(target.clone()),
+                    },
+                );
+            });
+            emit_deprecation_state_changed(
+                &f.env,
+                DeprecationStateChanged {
+                    deprecated: true,
+                    migration_target: Some(target.clone()),
+                    admin: f.admin.clone(),
+                    timestamp: f.env.ledger().timestamp(),
+                },
+            );
+        });
+        row("migration: set_deprecation_target", cpu, mem,
+            budgets::migration::SET_DEPRECATION_TARGET_CPU,
+            budgets::migration::SET_DEPRECATION_TARGET_MEM);
     }
 
     println!();
     println!("[WASM] budget_ceiling_bytes = {}", budgets::WASM_SIZE_BUDGET_BYTES);
     println!("_ESCROW_GAS_MODE=collect: baselines printed above. No thresholds enforced._");
 }
+
+// ============================================================================
+// N. Baseline integrity & gate regression validation
+// ============================================================================
+
+#[test]
+fn gas_ci_baseline_file_covers_all_ten_paths() {
+    let required_paths = [
+        "create_lock_index60_large_amount",
+        "batch_lock_n20_on_60_index",
+        "batch_release_n20_on_60_index",
+        "payout_release_escrow60",
+        "payout_refund_escrow60_deadline",
+        "payout_partial_release_5k_from_escrow60",
+        "pagination_whitelist_60total_limit50",
+        "pagination_aggregate_stats_60",
+        "migration_simulate_upgrade_60_escrows",
+        "migration_set_deprecation_target",
+    ];
+
+    for path in required_paths {
+        let cpu = get_baseline(path, "cpu");
+        let mem = get_baseline(path, "mem");
+        assert!(cpu.is_some() && cpu.unwrap() > 0, "Missing or invalid baseline CPU for {}", path);
+        assert!(mem.is_some() && mem.unwrap() > 0, "Missing or invalid baseline MEM for {}", path);
+    }
+}
+
+#[test]
+fn gas_ci_gate_fails_when_cost_exceeds_baseline_beyond_tolerance() {
+    let result = std::panic::catch_unwind(|| {
+        let baseline = 1_000_000u64;
+        let regressed_actual = 1_150_000u64; // +15% (> 10% stated tolerance)
+        record_and_enforce("test_validation_regression", "cpu", regressed_actual, baseline, RunMode::Strict);
+    });
+    assert!(
+        result.is_err(),
+        "Expected gate check to fail in Strict mode when cost exceeds baseline + tolerance"
+    );
+}
+
+#[test]
+fn gas_ci_gate_passes_within_stated_tolerance() {
+    let baseline = 1_000_000u64;
+    let actual_within_tolerance = 1_050_000u64; // +5% (<= 10% stated tolerance)
+    record_and_enforce("test_validation_pass", "cpu", actual_within_tolerance, baseline, RunMode::Strict);
+}
+
+#[test]
+fn gas_ci_report_artifact_file_is_written() {
+    write_gas_benchmark_report();
+    let path = std::path::Path::new("gas_benchmark_report.md");
+    let fallback = std::path::Path::new("contracts/bounty_escrow/contracts/escrow/gas_benchmark_report.md");
+    assert!(path.exists() || fallback.exists(), "gas_benchmark_report.md should be written");
+}
+
