@@ -724,6 +724,28 @@ pub struct EscrowMetadata {
     pub reference_hash: Option<soroban_sdk::Bytes>,
 }
 
+/// Discovery metadata attached to a bounty escrow so off-chain indexers can
+/// group and filter escrows by their originating repository, issue, type and
+/// free-form tags.
+///
+/// This is intentionally distinct from [`EscrowMetadata`], which carries
+/// on-chain risk flags and notification preferences.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BountyTaggingMetadata {
+    /// Slug of the repository the bounty belongs to, e.g. `stellar/rs-soroban-sdk`.
+    pub repo_id: Option<String>,
+    /// Identifier of the originating issue or ticket.
+    pub issue_id: Option<String>,
+    /// Bounty classification, e.g. `bug_fix`, `feature`, `documentation`.
+    pub bounty_type: Option<String>,
+    /// Free-form tags used for faceted filtering.
+    pub tags: Vec<String>,
+    /// Extensible key/value pairs for consumers that need fields beyond the
+    /// first-class ones above.
+    pub custom_fields: Vec<(String, String)>,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EscrowStatus {
@@ -987,6 +1009,18 @@ pub enum DataKey {
     EscrowIndexTtl,
     /// Last guaranteed live-until ledger for a depositor index.
     DepositorIndexTtl(Address),
+    /// Discovery metadata for a bounty, stored separately from the risk-flag
+    /// [`EscrowMetadata`]. See [`BountyTaggingMetadata`].
+    ///
+    /// Tagging keys are appended so existing DataKey discriminants remain
+    /// stable for deployed contracts.
+    TaggingMetadata(u64),
+    /// Ordered index of bounty_ids that carry a given `repo_id`.
+    TaggingRepoIndex(String),
+    /// Ordered index of bounty_ids that carry a given `bounty_type`.
+    TaggingTypeIndex(String),
+    /// Ordered index of bounty_ids that carry a given tag.
+    TaggingTagIndex(String),
 }
 
 #[contracttype]
@@ -8558,6 +8592,267 @@ impl BountyEscrowContract {
 
         Ok(())
     }
+
+    // -----------------------------------------------------------------------
+    // Bounty discovery metadata
+    //
+    // Tagging metadata is deliberately kept out of `EscrowMetadata`, which
+    // carries on-chain risk flags and notification preferences.
+    // -----------------------------------------------------------------------
+
+    /// Locks funds for `bounty_id` and attaches discovery metadata in one step.
+    pub fn lock_funds_with_metadata(
+        env: Env,
+        depositor: Address,
+        bounty_id: u64,
+        amount: i128,
+        deadline: u64,
+        metadata: BountyTaggingMetadata,
+    ) -> Result<(), Error> {
+        Self::lock_funds(env.clone(), depositor, bounty_id, amount, deadline)?;
+        Self::write_tagging_metadata(&env, bounty_id, &metadata);
+        Ok(())
+    }
+
+    /// Replaces the discovery metadata of an existing escrow.
+    ///
+    /// Query indexes are rewritten for the new values, so a stale facet can
+    /// never keep matching after an update.
+    pub fn update_escrow_metadata(
+        env: Env,
+        bounty_id: u64,
+        metadata: BountyTaggingMetadata,
+    ) -> Result<(), Error> {
+        if !env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
+            return Err(Error::BountyNotFound);
+        }
+        Self::write_tagging_metadata(&env, bounty_id, &metadata);
+        Ok(())
+    }
+
+    /// Returns the discovery metadata for `bounty_id`.
+    ///
+    /// Escrows that were never tagged return an all-empty value rather than
+    /// erroring, so indexers can read metadata uniformly.
+    pub fn get_escrow_metadata(env: Env, bounty_id: u64) -> BountyTaggingMetadata {
+        env.storage()
+            .persistent()
+            .get(&DataKey::TaggingMetadata(bounty_id))
+            .unwrap_or_else(|| BountyTaggingMetadata {
+                repo_id: None,
+                issue_id: None,
+                bounty_type: None,
+                tags: Vec::new(&env),
+                custom_fields: Vec::new(&env),
+            })
+    }
+
+    /// Returns a page of bounty_ids tagged with `repo_id`.
+    pub fn query_escrows_by_repo_id(
+        env: Env,
+        repo_id: String,
+        start: u32,
+        limit: u32,
+    ) -> Vec<u64> {
+        let index: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::TaggingRepoIndex(repo_id))
+            .unwrap_or(Vec::new(&env));
+        Self::paginate_tagging_index(&env, index, start, limit)
+    }
+
+    /// Returns a page of bounty_ids classified as `bounty_type`.
+    pub fn query_escrows_by_bounty_type(
+        env: Env,
+        bounty_type: String,
+        start: u32,
+        limit: u32,
+    ) -> Vec<u64> {
+        let index: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::TaggingTypeIndex(bounty_type))
+            .unwrap_or(Vec::new(&env));
+        Self::paginate_tagging_index(&env, index, start, limit)
+    }
+
+    /// Returns a page of bounty_ids carrying `tag`.
+    pub fn query_escrows_by_tag(env: Env, tag: String, start: u32, limit: u32) -> Vec<u64> {
+        let index: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::TaggingTagIndex(tag))
+            .unwrap_or(Vec::new(&env));
+        Self::paginate_tagging_index(&env, index, start, limit)
+    }
+
+    /// Returns a page of escrows whose locked `amount` falls inside the
+    /// inclusive range `[min_amount, max_amount]`.
+    pub fn query_escrows_by_amount(
+        env: Env,
+        min_amount: i128,
+        max_amount: i128,
+        start: u32,
+        limit: u32,
+    ) -> Vec<u64> {
+        let mut matches: Vec<u64> = Vec::new(&env);
+        for bounty_id in Self::all_bounty_ids(&env).iter() {
+            let escrow: Escrow = match env.storage().persistent().get(&DataKey::Escrow(bounty_id)) {
+                Some(escrow) => escrow,
+                None => continue,
+            };
+            if escrow.amount >= min_amount && escrow.amount <= max_amount {
+                matches.push_back(bounty_id);
+            }
+        }
+        Self::paginate_tagging_index(&env, matches, start, limit)
+    }
+
+    /// Returns a page of escrows whose `deadline` falls inside the inclusive
+    /// range `[min_deadline, max_deadline]`.
+    pub fn query_escrows_by_deadline(
+        env: Env,
+        min_deadline: u64,
+        max_deadline: u64,
+        start: u32,
+        limit: u32,
+    ) -> Vec<u64> {
+        let mut matches: Vec<u64> = Vec::new(&env);
+        for bounty_id in Self::all_bounty_ids(&env).iter() {
+            let escrow: Escrow = match env.storage().persistent().get(&DataKey::Escrow(bounty_id)) {
+                Some(escrow) => escrow,
+                None => continue,
+            };
+            if escrow.deadline >= min_deadline && escrow.deadline <= max_deadline {
+                matches.push_back(bounty_id);
+            }
+        }
+        Self::paginate_tagging_index(&env, matches, start, limit)
+    }
+
+    /// All bounty_ids known to the contract, in lock order.
+    fn all_bounty_ids(env: &Env) -> Vec<u64> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::EscrowIndex)
+            .unwrap_or(Vec::new(env))
+    }
+
+    /// Slices `index` to the `[start, start + limit)` window.
+    fn paginate_tagging_index(env: &Env, index: Vec<u64>, start: u32, limit: u32) -> Vec<u64> {
+        let mut page: Vec<u64> = Vec::new(env);
+        let mut skipped: u32 = 0;
+        let mut taken: u32 = 0;
+        for bounty_id in index.iter() {
+            if skipped < start {
+                skipped += 1;
+                continue;
+            }
+            if taken >= limit {
+                break;
+            }
+            page.push_back(bounty_id);
+            taken += 1;
+        }
+        page
+    }
+
+    /// Validates, stores and re-indexes the tagging metadata of `bounty_id`.
+    fn write_tagging_metadata(env: &Env, bounty_id: u64, metadata: &BountyTaggingMetadata) {
+        Self::validate_tagging_metadata(env, metadata);
+
+        if let Some(previous) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, BountyTaggingMetadata>(&DataKey::TaggingMetadata(bounty_id))
+        {
+            Self::unindex_tagging_metadata(env, bounty_id, &previous);
+        }
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::TaggingMetadata(bounty_id), metadata);
+
+        if let Some(repo_id) = metadata.repo_id.clone() {
+            Self::index_tagging_entry(env, &DataKey::TaggingRepoIndex(repo_id), bounty_id);
+        }
+        if let Some(bounty_type) = metadata.bounty_type.clone() {
+            Self::index_tagging_entry(env, &DataKey::TaggingTypeIndex(bounty_type), bounty_id);
+        }
+        for tag in metadata.tags.iter() {
+            Self::index_tagging_entry(env, &DataKey::TaggingTagIndex(tag), bounty_id);
+        }
+    }
+
+    /// Drops `bounty_id` from every facet it was previously indexed under.
+    fn unindex_tagging_metadata(env: &Env, bounty_id: u64, metadata: &BountyTaggingMetadata) {
+        if let Some(repo_id) = metadata.repo_id.clone() {
+            Self::deindex_tagging_entry(env, &DataKey::TaggingRepoIndex(repo_id), bounty_id);
+        }
+        if let Some(bounty_type) = metadata.bounty_type.clone() {
+            Self::deindex_tagging_entry(env, &DataKey::TaggingTypeIndex(bounty_type), bounty_id);
+        }
+        for tag in metadata.tags.iter() {
+            Self::deindex_tagging_entry(env, &DataKey::TaggingTagIndex(tag), bounty_id);
+        }
+    }
+
+    /// Adds `bounty_id` to `key`, preserving lock order and skipping duplicates.
+    fn index_tagging_entry(env: &Env, key: &DataKey, bounty_id: u64) {
+        let mut index: Vec<u64> = env.storage().persistent().get(key).unwrap_or(Vec::new(env));
+        let mut already_indexed = false;
+        for indexed in index.iter() {
+            if indexed == bounty_id {
+                already_indexed = true;
+                break;
+            }
+        }
+        if !already_indexed {
+            index.push_back(bounty_id);
+            env.storage().persistent().set(key, &index);
+        }
+    }
+
+    /// Removes `bounty_id` from `key` if present.
+    fn deindex_tagging_entry(env: &Env, key: &DataKey, bounty_id: u64) {
+        let index: Vec<u64> = match env.storage().persistent().get(key) {
+            Some(index) => index,
+            None => return,
+        };
+        let mut retained: Vec<u64> = Vec::new(env);
+        let mut removed = false;
+        for indexed in index.iter() {
+            if indexed == bounty_id {
+                removed = true;
+            } else {
+                retained.push_back(indexed);
+            }
+        }
+        if removed {
+            env.storage().persistent().set(key, &retained);
+        }
+    }
+
+    /// Enforces the shared length bounds on every human-readable tagging field.
+    fn validate_tagging_metadata(env: &Env, metadata: &BountyTaggingMetadata) {
+        if let Some(repo_id) = metadata.repo_id.clone() {
+            validation::validate_tag(env, &repo_id, "repo_id");
+        }
+        if let Some(issue_id) = metadata.issue_id.clone() {
+            validation::validate_tag(env, &issue_id, "issue_id");
+        }
+        if let Some(bounty_type) = metadata.bounty_type.clone() {
+            validation::validate_tag(env, &bounty_type, "bounty_type");
+        }
+        for tag in metadata.tags.iter() {
+            validation::validate_tag(env, &tag, "tag");
+        }
+        for field in metadata.custom_fields.iter() {
+            validation::validate_tag(env, &field.0, "custom field key");
+            validation::validate_tag(env, &field.1, "custom field value");
+        }
+    }
 }
 
 // Test-only shims moved out of #[contractimpl] to avoid macro expansion issues.
@@ -8752,7 +9047,8 @@ mod test;
 // #[cfg(test)] mod test_invariants;
 #[cfg(test)]
 mod test_lifecycle;
-// #[cfg(test)] mod test_metadata_tagging;
+#[cfg(test)]
+mod test_metadata_tagging;
 // #[cfg(test)] mod test_partial_payout_rounding;
 // #[cfg(test)] mod test_participant_filter_mode;
 // #[cfg(test)] mod test_pause;
