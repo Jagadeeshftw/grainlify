@@ -20,8 +20,47 @@
 //! - `GovernanceConfig` fields are evolving; do not assume field stability across minor versions.
 //! - Any change to an INTERNAL function that is also tested by external test crates must be
 //!   coordinated with those test crates in the same PR.
+//!
+//! ## Feature-Flag Model & Supported Combinations
+//!
+//! Complete documentation of all supported and unsupported feature combinations,
+//! plus facade dependency architecture, is maintained in:
+//!
+//! **[`contracts/grainlify-core/FEATURE_FLAGS.md`](../FEATURE_FLAGS.md)**
+//!
 #[cfg(test)]
 extern crate std;
+
+// ============================================================================
+// Feature-Flag Model Invariant & Compatibility Checks (Issue #1885)
+// ============================================================================
+
+// Test suites that exercise GrainlifyContract/GrainlifyContractClient require the `contract` feature.
+#[cfg(all(feature = "wasm_tests", not(feature = "contract")))]
+compile_error!(
+    "Feature combination error: 'wasm_tests' requires the 'contract' feature. \
+    Please enable the 'contract' feature or use default features."
+);
+
+#[cfg(all(feature = "upgrade_rollback_tests", not(feature = "contract")))]
+compile_error!(
+    "Feature combination error: 'upgrade_rollback_tests' requires the 'contract' feature. \
+    Please enable the 'contract' feature or use default features."
+);
+
+#[cfg(all(feature = "governance_contract_tests", not(feature = "contract")))]
+compile_error!(
+    "Feature combination error: 'governance_contract_tests' requires the 'contract' feature. \
+    Please enable the 'contract' feature or use default features."
+);
+
+// 'testutils' relies on host capabilities and std; it cannot be targeted to wasm32.
+#[cfg(all(target_arch = "wasm32", feature = "testutils"))]
+compile_error!(
+    "Feature combination error: 'testutils' cannot be compiled for target wasm32-unknown-unknown. \
+    Test utilities are host-only."
+);
+
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, Address, Bytes, BytesN, Env,
     String, Symbol, Vec,

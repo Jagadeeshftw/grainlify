@@ -17,10 +17,13 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MANIFEST="$ROOT_DIR/contracts/bounty_escrow/Cargo.toml"
 
-echo "==> [1/2] Workspace tests (host target)"
+echo "==> [1/3] Workspace tests (host target)"
 cargo test --manifest-path "$MANIFEST" --workspace
 
-echo "==> [2/2] Deployable wasm release build"
+echo "==> [2/3] Deployable wasm release build"
 cargo build --manifest-path "$MANIFEST" --workspace --target wasm32-unknown-unknown --release
+
+echo "==> [3/3] Feature-flag matrix & facade assertion gates (issue #1885)"
+bash "$ROOT_DIR/contracts/scripts/check-feature-matrix.sh"
 
 echo "==> All contract CI gates passed."

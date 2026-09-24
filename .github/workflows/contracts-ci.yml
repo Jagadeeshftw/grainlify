@@ -77,3 +77,34 @@ jobs:
           name: bounty-escrow-wasm
           path: contracts/bounty_escrow/target/wasm32-unknown-unknown/release/*.wasm
           if-no-files-found: error
+
+  # ──────────────────────────────────────────────────────────────
+  # Feature-flag matrix & facade default-features assertion gates (issue #1885).
+  # Asserts every supported feature combination builds and facades'
+  # default-features = false requirement is satisfied.
+  # ──────────────────────────────────────────────────────────────
+  feature-flag-matrix:
+    name: feature-flags (grainlify-core combinations matrix)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none, wasm32-unknown-unknown
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            contracts/grainlify-core/target/
+          key: ${{ runner.os }}-contracts-feature-matrix-${{ hashFiles('contracts/grainlify-core/Cargo.toml', 'contracts/grainlify-core/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-contracts-feature-matrix-
+
+      - name: Run feature matrix and facade build assertions
+        run: bash contracts/scripts/check-feature-matrix.sh
