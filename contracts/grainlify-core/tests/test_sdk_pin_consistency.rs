@@ -43,8 +43,7 @@ fn repo_root() -> std::path::PathBuf {
 
 fn read(rel: &str) -> String {
     let path = repo_root().join(rel);
-    fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("could not read {}: {e}", path.display()))
+    fs::read_to_string(&path).unwrap_or_else(|e| panic!("could not read {}: {e}", path.display()))
 }
 
 /// Every soroban-sdk requirement in a manifest must be `workspace = true` or an
@@ -66,7 +65,10 @@ fn assert_manifest_pins(rel: &str, expected: &str) {
             "{rel}: soroban-sdk requirement is not the exact pin {expected}: `{line}`"
         );
     }
-    assert!(seen > 0, "{rel}: expected at least one soroban-sdk requirement");
+    assert!(
+        seen > 0,
+        "{rel}: expected at least one soroban-sdk requirement"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -135,7 +137,11 @@ fn own_lockfile_resolves_single_sdk() {
 #[test]
 fn compatibility_doc_documents_the_pins() {
     let doc = read("contracts/SDK_COMPATIBILITY.md");
-    for needle in [CONTRACTS_PIN, SOROBAN_WS_PIN, "scripts/check_sdk_versions.sh"] {
+    for needle in [
+        CONTRACTS_PIN,
+        SOROBAN_WS_PIN,
+        "scripts/check_sdk_versions.sh",
+    ] {
         assert!(
             doc.contains(needle),
             "contracts/SDK_COMPATIBILITY.md must mention `{needle}`; update the doc \
@@ -164,7 +170,10 @@ fn sdk_runs_at_the_documented_target_protocol() {
 fn gate_script_table_matches_the_pins() {
     let script = read("scripts/check_sdk_versions.sh");
     for needle in [
-        &format!("contracts/grainlify-core|{}", CONTRACTS_PIN.trim_start_matches('=')),
+        &format!(
+            "contracts/grainlify-core|{}",
+            CONTRACTS_PIN.trim_start_matches('=')
+        ),
         &format!("soroban|{}", SOROBAN_WS_PIN.trim_start_matches('=')),
     ] {
         assert!(
