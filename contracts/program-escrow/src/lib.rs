@@ -557,8 +557,8 @@ impl ProgramEscrowContract {
     // ========================================================================
 
     /// Validate idempotency key format and constraints
-    fn validate_idempotency_key(idempotency_key: &String) {
-        Self::validate_idempotency_key_format(idempotency_key);
+    fn validate_idempotency_key(env: &Env, idempotency_key: &String) {
+        Self::validate_idempotency_key_format(env, idempotency_key);
     }
 
     /// Check if an idempotency key has been used before
@@ -650,7 +650,7 @@ impl ProgramEscrowContract {
         // If no idempotency key provided, proceed with normal operation
         let idempotency_key = match idempotency_key {
             Some(key) => {
-                Self::validate_idempotency_key(&key);
+                Self::validate_idempotency_key(env, &key);
                 key
             }
             None => return Ok(()), // No idempotency key, proceed normally
@@ -725,7 +725,7 @@ impl ProgramEscrowContract {
         // Check if program already exists
         let program_key = DataKey::Program(program_id.clone());
         if env.storage().instance().has(&program_key) {
-            panic!("Program already initialized");
+            panic_with_error!(&env, &ContractError::ProgramAlreadyExists);
         }
 
         // ── Token allowlist enforcement ──────────────────────────────────────
@@ -764,15 +764,14 @@ impl ProgramEscrowContract {
                 token_client.transfer(&creator, &contract_address, &amount);
 
                 let cfg = Self::get_fee_config_internal(&env);
-                let fee = Self::combined_fee_amount(
-                    amount,
+                let fee = Self::combined_fee_amount(&env, amount,
                     cfg.lock_fee_rate,
                     cfg.lock_fixed_fee,
                     cfg.fee_enabled,
                 );
                 let net = amount.checked_sub(fee).unwrap_or(0);
                 if net <= 0 {
-                    panic!("Lock fee consumes entire initial liquidity");
+                    panic_with_error!(&env, &ContractError::LockFeeExceedsAmount);
                 }
                 if fee > 0 {
                     let (reserve_share, recipient_share) =
@@ -1025,11 +1024,11 @@ impl ProgramEscrowContract {
 
     /// Require the initialized program to be Active before moving escrowed funds.
     ///
-    /// # Panics
-    /// Panics with `ERR_PROGRAM_NOT_ACTIVE` (107) when the program is still Draft.
-    fn require_active_program(program_data: &ProgramData) {
+    /// # Errors
+    /// Traps with typed `ContractError::ProgramNotActive` (107) when the program is still Draft.
+    fn require_active_program(env: &Env, program_data: &ProgramData) {
         if program_data.status != ProgramStatus::Active {
-            panic!("{}", errors::ERR_PROGRAM_NOT_ACTIVE);
+            panic_with_error!(env, &ContractError::ProgramNotActive);
         }
     }
 
@@ -1053,7 +1052,7 @@ impl ProgramEscrowContract {
         Self::require_program_owner_or_admin(&env, &program_data, &caller);
 
         if program_data.status != ProgramStatus::Draft {
-            panic!("Program already published");
+            panic_with_error!(&env, &ContractError::InvalidState);
         }
 
         program_data.status = ProgramStatus::Active;
@@ -1098,19 +1097,19 @@ impl ProgramEscrowContract {
 
         // Validate program_id (basic length check)
         if program_id.len() == 0 {
-            panic!("Program ID cannot be empty");
+            panic_with_error!(&env, &ContractError::InvalidProgramId);
         }
 
         if let Some(ref meta) = metadata {
             // Validate metadata fields (basic checks)
             if let Some(ref name) = meta.program_name {
                 if name.len() == 0 {
-                    panic!("Program name cannot be empty if provided");
+                    panic_with_error!(&env, &ContractError::InvalidConfig);
                 }
             }
             // Enforce custom_fields size/length limits (shared with update path).
             if meta.custom_fields.len() > MAX_PROGRAM_METADATA_CUSTOM_FIELDS {
-                panic!("Metadata custom fields exceed limit");
+                panic_with_error!(&env, &ContractError::MetadataUpdateFailed);
             }
             validate_metadata_custom_fields(meta);
         }
@@ -1181,7 +1180,7 @@ impl ProgramEscrowContract {
         {
             let mut program_ids: soroban_sdk::Vec<String> = soroban_sdk::Vec::new(&env);
             for i in 0..batch_size {
-                program_ids.push_back(items.get(i).unwrap().program_id.clone());
+                program_ids.push_back(items.get(i).unwrap_or_else(|| panic_with_error!(&env, &ContractError::EntryNotFound)).program_id.clone());
             }
             let deduped = gas_optimization::deduplicate_program_ids(&env, &program_ids);
             if deduped.len() < program_ids.len() {
@@ -1189,7 +1188,7 @@ impl ProgramEscrowContract {
             }
         }
         for i in 0..batch_size {
-            let program_key = DataKey::Program(items.get(i).unwrap().program_id.clone());
+            let program_key = DataKey::Program(items.get(i).unwrap_or_else(|| panic_with_error!(&env, &ContractError::EntryNotFound)).program_id.clone());
             if env.storage().instance().has(&program_key) {
                 return Err(BatchError::ProgramAlreadyExists);
             }
@@ -1203,7 +1202,7 @@ impl ProgramEscrowContract {
             .unwrap_or(vec![&env]);
 
         for i in 0..batch_size {
-            let item = items.get(i).unwrap();
+            let item = items.get(i).unwrap_or_else(|| panic_with_error!(&env, &ContractError::EntryNotFound));
             let program_id = item.program_id.clone();
             let authorized_payout_key = item.authorized_payout_key.clone();
             let token_address = item.token_address.clone();
@@ -1346,13 +1345,13 @@ impl ProgramEscrowContract {
 
             if program_data.status == ProgramStatus::Draft {
                 reentrancy_guard::clear_entered(&env);
-                panic!("Program in Draft status");
+                panic_with_error!(&env, &ContractError::ProgramNotActive);
             }
 
             let token_client = token::Client::new(&env, &program_data.token_address);
             if token_client.balance(&contract_address) < item.amount {
                 reentrancy_guard::clear_entered(&env);
-                panic!("Insufficient contract balance");
+                panic_with_error!(&env, &ContractError::InsufficientBalance);
             }
 
             let (fee_amount, net_amount) = if fee_config.fee_enabled && fee_config.lock_fee_rate > 0
@@ -1457,7 +1456,7 @@ impl ProgramEscrowContract {
 
             if program_data.status == ProgramStatus::Draft {
                 reentrancy_guard::clear_entered(&env);
-                panic!("Program in Draft status");
+                panic_with_error!(&env, &ContractError::ProgramNotActive);
             }
 
             let mut schedules: soroban_sdk::Vec<ProgramReleaseSchedule> = env
@@ -1468,7 +1467,7 @@ impl ProgramEscrowContract {
 
             let mut found = false;
             for i in 0..schedules.len() {
-                let mut schedule = schedules.get(i).unwrap();
+                let mut schedule = schedules.get(i).unwrap_or_else(|| panic_with_error!(&env, &ContractError::ScheduleNotFound));
                 if schedule.schedule_id == item.schedule_id {
                     if schedule.released {
                         reentrancy_guard::clear_entered(&env);
@@ -1476,11 +1475,11 @@ impl ProgramEscrowContract {
                     }
                     if schedule.release_timestamp > now {
                         reentrancy_guard::clear_entered(&env);
-                        panic!("Schedule not yet due");
+                        panic_with_error!(&env, &ContractError::ScheduleNotDue);
                     }
                     if schedule.amount > program_data.remaining_balance {
                         reentrancy_guard::clear_entered(&env);
-                        panic!("Insufficient program balance for release");
+                        panic_with_error!(&env, &ContractError::InsufficientBalance);
                     }
 
                     // Circuit breaker check
@@ -1533,23 +1532,23 @@ impl ProgramEscrowContract {
     }
 
     /// Fee from basis points using ceiling division so fractional fees do not leave dust.
-    fn calculate_fee(amount: i128, fee_rate: i128) -> i128 {
+    fn calculate_fee(env: &Env, amount: i128, fee_rate: i128) -> i128 {
         if fee_rate == 0 || amount == 0 {
             return 0;
         }
         let numerator = amount
             .checked_mul(fee_rate)
             .and_then(|n| n.checked_add(BASIS_POINTS - 1))
-            .unwrap_or_else(|| panic!("Fee calculation overflow"));
+            .unwrap_or_else(|| panic_with_error!(env, &ContractError::Overflow));
         numerator / BASIS_POINTS
     }
 
     /// Percentage + fixed fee, capped to `amount`.
-    fn combined_fee_amount(amount: i128, rate_bps: i128, fixed: i128, fee_enabled: bool) -> i128 {
+    fn combined_fee_amount(env: &Env, amount: i128, rate_bps: i128, fixed: i128, fee_enabled: bool) -> i128 {
         if !fee_enabled || amount <= 0 || fixed < 0 {
             return 0;
         }
-        let pct = Self::calculate_fee(amount, rate_bps);
+        let pct = Self::calculate_fee(env, amount, rate_bps);
         pct.saturating_add(fixed).min(amount).max(0)
     }
 
@@ -1622,9 +1621,9 @@ impl ProgramEscrowContract {
     /// Emits `InsuranceReserveWithdrawnEvent` for audit purposes.
     pub fn withdraw_insurance_reserve(env: Env, target: Address, amount: i128) {
         if !env.storage().instance().has(&DataKey::Admin) {
-            panic!("Not initialized");
+            panic_with_error!(&env, &ContractError::ProgramInitFailed);
         }
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
         admin.require_auth();
 
         let (balance_before, balance_after) =
@@ -1638,7 +1637,7 @@ impl ProgramEscrowContract {
             .storage()
             .instance()
             .get(&PROGRAM_DATA)
-            .unwrap_or_else(|| panic!("Program not initialized"));
+            .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
         let token_client = token::Client::new(&env, &program_data.token_address);
         token_client.transfer(&env.current_contract_address(), &target, &amount);
 
@@ -1715,13 +1714,13 @@ impl ProgramEscrowContract {
         }
         if let Some(f) = lock_fixed_fee {
             if f < 0 {
-                panic!("Invalid lock fixed fee");
+                panic_with_error!(&env, &ContractError::InvalidFeeRate);
             }
             cfg.lock_fixed_fee = f;
         }
         if let Some(f) = payout_fixed_fee {
             if f < 0 {
-                panic!("Invalid payout fixed fee");
+                panic_with_error!(&env, &ContractError::InvalidFeeRate);
             }
             cfg.payout_fixed_fee = f;
         }
@@ -1780,19 +1779,19 @@ impl ProgramEscrowContract {
 
         // 1. Contract must be initialized
         if !env.storage().instance().has(&PROGRAM_DATA) {
-            panic!("Program not initialized");
+            panic_with_error!(&env, &ContractError::ProgramInitFailed);
         }
 
-        let mut program_data: ProgramData = env.storage().instance().get(&PROGRAM_DATA).unwrap();
+        let mut program_data: ProgramData = env.storage().instance().get(&PROGRAM_DATA).unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
 
         // 2. Operational state: paused
         if Self::check_paused(&env, Some(&program_data.program_id), symbol_short!("lock")) {
-            panic!("Funds Paused");
+            panic_with_error!(&env, &ContractError::Paused);
         }
 
         // 3. Input validation
         if amount <= 0 {
-            panic!("Amount must be greater than zero");
+            panic_with_error!(&env, &ContractError::InvalidAmount);
         }
 
         let contract_address = env.current_contract_address();
@@ -1810,7 +1809,7 @@ impl ProgramEscrowContract {
             let diff = crate::token_math::safe_sub(balance_after, balance_before);
 
             if diff <= 0 {
-                panic!("Inbound transfer failed or zero value");
+                panic_with_error!(&env, &ContractError::TokenTransferFailed);
             }
             diff
         } else {
@@ -1823,15 +1822,14 @@ impl ProgramEscrowContract {
         let fee_config = Self::get_fee_config_internal(&env);
 
         // Calculate fees based on actually received tokens
-        let fee_amount = Self::combined_fee_amount(
-            actual_received,
+        let fee_amount = Self::combined_fee_amount(&env, actual_received,
             fee_config.lock_fee_rate,
             fee_config.lock_fixed_fee,
             fee_config.fee_enabled,
         );
         let net_amount = amount.checked_sub(fee_amount).unwrap_or(0);
         if net_amount <= 0 {
-            panic!("Lock fee consumes entire lock amount");
+            panic_with_error!(&env, &ContractError::LockFeeExceedsAmount);
         }
 
         let contract_address = env.current_contract_address();
@@ -1863,12 +1861,12 @@ impl ProgramEscrowContract {
         program_data.total_funds = program_data
             .total_funds
             .checked_add(amount)
-            .unwrap_or_else(|| panic!("Total funds overflow"));
+            .unwrap_or_else(|| panic_with_error!(&env, &ContractError::Overflow));
 
         program_data.remaining_balance = program_data
             .remaining_balance
             .checked_add(net_amount)
-            .unwrap_or_else(|| panic!("Remaining balance overflow"));
+            .unwrap_or_else(|| panic_with_error!(&env, &ContractError::Overflow));
 
         // Store updated data — sync both legacy PROGRAM_DATA and keyed program storage
         let program_id_sync = program_data.program_id.clone();
@@ -1902,7 +1900,7 @@ impl ProgramEscrowContract {
     /// This must be called before any admin protected functions (like pause) can be used.
     pub fn initialize_contract(env: Env, admin: Address) {
         if env.storage().instance().has(&DataKey::Admin) {
-            panic!("Already initialized");
+            panic_with_error!(&env, &ContractError::ProgramAlreadyExists);
         }
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage()
@@ -1949,7 +1947,7 @@ impl ProgramEscrowContract {
     /// must authorize and the new address becomes admin.
     pub fn set_admin(env: Env, admin: Address) {
         if env.storage().instance().has(&DataKey::Admin) {
-            let current: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+            let current: Address = env.storage().instance().get(&DataKey::Admin).unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
             current.require_auth();
         }
         env.storage().instance().set(&DataKey::Admin, &admin);
@@ -2157,7 +2155,7 @@ impl ProgramEscrowContract {
 
         let has_pending = schedules.iter().any(|s| !s.released);
         if has_pending {
-            panic!("Cannot archive program with pending release schedules");
+            panic_with_error!(&env, &ContractError::ScheduleNotFound);
         }
 
         program_data.archived = true;
@@ -2210,7 +2208,7 @@ impl ProgramEscrowContract {
             .storage()
             .instance()
             .get(&DataKey::Admin)
-            .unwrap_or_else(|| panic!("Not initialized"));
+            .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
         admin.require_auth();
         admin
     }
@@ -2315,7 +2313,7 @@ impl ProgramEscrowContract {
             .get(&DataKey::ReadOnlyMode)
             .unwrap_or(false);
         if read_only {
-            panic!("Read-only mode");
+            panic_with_error!(&env, &ContractError::InvalidState);
         }
     }
 
@@ -2326,7 +2324,7 @@ impl ProgramEscrowContract {
                 .storage()
                 .instance()
                 .get(&program_key)
-                .unwrap_or_else(|| panic!("Program not found"));
+                .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramNotFound));
         }
 
         if env.storage().instance().has(&PROGRAM_DATA) {
@@ -2334,13 +2332,13 @@ impl ProgramEscrowContract {
                 .storage()
                 .instance()
                 .get(&PROGRAM_DATA)
-                .unwrap_or_else(|| panic!("Program not initialized"));
+                .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
             if &program_data.program_id == program_id {
                 return program_data;
             }
         }
 
-        panic!("Program not found");
+        panic_with_error!(&env, &ContractError::ProgramNotFound);
     }
 
     /// Record a status transition in the program's lifecycle timeline.
@@ -2404,7 +2402,7 @@ impl ProgramEscrowContract {
                 .storage()
                 .instance()
                 .get(&PROGRAM_DATA)
-                .unwrap_or_else(|| panic!("Program not initialized"));
+                .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
             if &existing.program_id == program_id {
                 env.storage().instance().set(&PROGRAM_DATA, program_data);
             }
@@ -2460,7 +2458,7 @@ impl ProgramEscrowContract {
             return caller.clone();
         }
 
-        panic!("Unauthorized");
+        panic_with_error!(&env, &ContractError::Unauthorized);
     }
 
     fn require_program_actor(
@@ -2473,7 +2471,7 @@ impl ProgramEscrowContract {
 
         // Reject delegate actions on programs in Draft status
         if program_data.status == ProgramStatus::Draft {
-            panic!("Cannot perform delegate actions on program in Draft status");
+            panic_with_error!(&env, &ContractError::ProgramNotActive);
         }
 
         if *caller == program_data.authorized_payout_key {
@@ -2501,15 +2499,15 @@ impl ProgramEscrowContract {
             return caller.clone();
         }
 
-        panic!("Unauthorized");
+        panic_with_error!(&env, &ContractError::Unauthorized);
     }
 
-    fn validate_delegate_permissions(permissions: u32) {
+    fn validate_delegate_permissions(env: &Env, permissions: u32) {
         if permissions == 0 {
-            panic!("Delegate permissions cannot be empty");
+            panic_with_error!(env, &ContractError::DelegatePermissionsInsufficient);
         }
         if permissions & !DELEGATE_PERMISSION_MASK != 0 {
-            panic!("Unsupported delegate permissions");
+            panic_with_error!(env, &ContractError::DelegatePermissionsInsufficient);
         }
     }
 
@@ -2555,7 +2553,7 @@ impl ProgramEscrowContract {
         }
         state.count += 1;
         if state.count > DELEGATE_META_MAX_OPS_PER_WINDOW {
-            panic!("Delegate metadata update rate limit exceeded");
+            panic_with_error!(&env, &ContractError::InvalidState);
         }
         env.storage().instance().set(&key, &state);
     }
@@ -2592,19 +2590,19 @@ impl ProgramEscrowContract {
         delegate: Address,
         permissions: u32,
     ) -> ProgramData {
-        Self::validate_delegate_permissions(permissions);
+        Self::validate_delegate_permissions(&env, permissions);
 
         let mut program_data = Self::get_program_data_by_id(&env, &program_id);
         
         // Reject delegate operations on programs in Draft status
         if program_data.status == ProgramStatus::Draft {
-            panic!("Cannot set delegate on program in Draft status");
+            panic_with_error!(&env, &ContractError::ProgramNotActive);
         }
         
         let updated_by = Self::require_program_owner_or_admin(&env, &program_data, &caller);
 
         if delegate == program_data.authorized_payout_key {
-            panic!("Delegate must differ from owner");
+            panic_with_error!(&env, &ContractError::InvalidState);
         }
 
         program_data.delegate = Some(delegate.clone());
@@ -2632,7 +2630,7 @@ impl ProgramEscrowContract {
         
         // Reject delegate operations on programs in Draft status
         if program_data.status == ProgramStatus::Draft {
-            panic!("Cannot revoke delegate on program in Draft status");
+            panic_with_error!(&env, &ContractError::ProgramNotActive);
         }
         
         let revoked_by = Self::require_program_owner_or_admin(&env, &program_data, &caller);
@@ -2910,7 +2908,7 @@ impl ProgramEscrowContract {
         metadata: ProgramMetadata,
     ) -> ProgramData {
         if metadata.custom_fields.len() > MAX_PROGRAM_METADATA_CUSTOM_FIELDS {
-            panic!("Metadata custom fields exceed limit");
+            panic_with_error!(&env, &ContractError::MetadataUpdateFailed);
         }
 
         let program_data = Self::get_program_data_by_id(&env, &program_id);
@@ -3031,19 +3029,19 @@ impl ProgramEscrowContract {
     ) {
         let admin = Self::require_admin(&env);
         if slippage_bps > 500 {
-            panic!("FoT router slippage exceeds maximum (500 bps = 5%)");
+            panic_with_error!(&env, &ContractError::InvalidState);
         }
         if max_fot_multiplier_bps < crate::BASIS_POINTS as u32
             || max_fot_multiplier_bps > crate::fot_routing::MAX_FOT_MULTIPLIER_BPS
         {
-            panic!("FoT router max multiplier must be between 10000 and 100000 basis points");
+            panic_with_error!(&env, &ContractError::InvalidState);
         }
 
         let mut program_data: ProgramData = env
             .storage()
             .instance()
             .get(&PROGRAM_DATA)
-            .unwrap_or_else(|| panic!("Program not initialized"));
+            .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
 
         program_data.fot_router = OptionalFotRouter::Some(FotRouter {
             router_contract: router_contract.clone(),
@@ -3080,7 +3078,7 @@ impl ProgramEscrowContract {
             .storage()
             .instance()
             .get(&PROGRAM_DATA)
-            .unwrap_or_else(|| panic!("Program not initialized"));
+            .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
 
         program_data.fot_router = OptionalFotRouter::None;
 
@@ -3118,16 +3116,16 @@ impl ProgramEscrowContract {
         unpause_at: Option<u64>,
     ) {
         if !env.storage().instance().has(&DataKey::Admin) {
-            panic!("Not initialized");
+            panic_with_error!(&env, &ContractError::ProgramInitFailed);
         }
 
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
         admin.require_auth();
 
         // Enforce 256-character bound on reason to prevent storage abuse.
         if let Some(ref r) = reason {
             if r.len() > PAUSE_REASON_MAX_LEN {
-                panic!("Pause reason exceeds maximum length of 256 characters");
+                panic_with_error!(&env, &ContractError::InvalidConfig);
             }
         }
 
@@ -3259,15 +3257,15 @@ impl ProgramEscrowContract {
         unpause_at: Option<u64>,
     ) {
         if !env.storage().instance().has(&DataKey::Admin) {
-            panic!("Not initialized");
+            panic_with_error!(&env, &ContractError::ProgramInitFailed);
         }
 
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
         admin.require_auth();
 
         if let Some(ref r) = reason {
             if r.len() > PAUSE_REASON_MAX_LEN {
-                panic!("Pause reason exceeds maximum length of 256 characters");
+                panic_with_error!(&env, &ContractError::InvalidConfig);
             }
         }
 
@@ -3322,16 +3320,16 @@ impl ProgramEscrowContract {
             .get(&DataKey::MaintenanceMode)
             .unwrap_or(false);
         if in_maintenance {
-            panic!("Contract is in read-only maintenance mode");
+            panic_with_error!(&env, &ContractError::InvalidState);
         }
     }
 
     /// Update maintenance mode (admin only).
     pub fn set_maintenance_mode(env: Env, enabled: bool) {
         if !env.storage().instance().has(&DataKey::Admin) {
-            panic!("Not initialized");
+            panic_with_error!(&env, &ContractError::ProgramInitFailed);
         }
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
         admin.require_auth();
 
         env.storage()
@@ -3350,21 +3348,21 @@ impl ProgramEscrowContract {
     /// Emergency withdraw all program funds (admin only, must have lock_paused = true).
     pub fn emergency_withdraw(env: Env, target: Address) {
         if !env.storage().instance().has(&DataKey::Admin) {
-            panic!("Not initialized");
+            panic_with_error!(&env, &ContractError::ProgramInitFailed);
         }
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
         admin.require_auth();
 
         let flags = Self::get_pause_flags(&env);
         if !flags.lock_paused {
-            panic!("Not paused");
+            panic_with_error!(&env, &ContractError::Paused);
         }
 
         let program_data: ProgramData = env
             .storage()
             .instance()
             .get(&PROGRAM_DATA)
-            .unwrap_or_else(|| panic!("Program not initialized"));
+            .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
         let token_client = token::TokenClient::new(&env, &program_data.token_address);
 
         let contract_address = env.current_contract_address();
@@ -3624,7 +3622,7 @@ impl ProgramEscrowContract {
         caller.require_auth();
         let admin = error_recovery::get_circuit_admin(&env).expect("Circuit admin not set");
         if caller != admin {
-            panic!("Unauthorized: only circuit admin can reset");
+            panic_with_error!(&env, &ContractError::Unauthorized);
         }
         error_recovery::reset_circuit_breaker(&env, &admin);
     }
@@ -3640,7 +3638,7 @@ impl ProgramEscrowContract {
         caller.require_auth();
         let admin = error_recovery::get_circuit_admin(&env).expect("Circuit admin not set");
         if caller != admin {
-            panic!("Unauthorized: only circuit admin can configure");
+            panic_with_error!(&env, &ContractError::Unauthorized);
         }
 
         let config = error_recovery::CircuitBreakerConfig {
@@ -3695,7 +3693,7 @@ impl ProgramEscrowContract {
         admin.require_auth();
         let stored = error_recovery::get_circuit_admin(&env).expect("Circuit admin not set");
         if admin != stored {
-            panic!("Unauthorized: only circuit admin can emergency-open circuit");
+            panic_with_error!(&env, &ContractError::Unauthorized);
         }
         error_recovery::open_circuit(&env);
     }
@@ -3736,7 +3734,7 @@ impl ProgramEscrowContract {
         cooldown_period: u64,
     ) {
         // Only admin can update rate limit config
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
         admin.require_auth();
 
         let config = RateLimitConfig {
@@ -3794,7 +3792,7 @@ impl ProgramEscrowContract {
     pub fn set_program_spend_threshold(env: Env, program_id: String, threshold_amount: i128) {
         let admin = Self::require_admin(&env);
         if threshold_amount <= 0 {
-            panic!("Invalid spend threshold");
+            panic_with_error!(&env, &ContractError::InvalidState);
         }
 
         let mut cfg: MultisigConfig = env
@@ -3938,7 +3936,7 @@ impl ProgramEscrowContract {
     ) -> Option<PayoutIdempotencyKey> {
         match idempotency_key {
             Some(key) => {
-                Self::validate_idempotency_key_format(key);
+                Self::validate_idempotency_key_format(&env, key);
                 Self::check_idempotency_key(env, key)
             }
             None => None,
@@ -3948,10 +3946,10 @@ impl ProgramEscrowContract {
     /// Validate idempotency key format without checking storage.
     ///
     /// This helper is kept for explicit format assertions in internal code.
-    fn validate_idempotency_key_format(key: &String) {
+    fn validate_idempotency_key_format(env: &Env, key: &String) {
         let key_len = key.len() as usize;
         if key_len < MIN_IDEMPOTENCY_KEY_LENGTH as usize || key_len > MAX_IDEMPOTENCY_KEY_LENGTH as usize {
-            panic!("IdempotencyKeyInvalid");
+            panic_with_error!(env, &ContractError::InvalidConfig);
         }
         let mut buf = [0u8; 128];
         key.copy_into_slice(&mut buf[..key_len]);
@@ -3964,7 +3962,7 @@ impl ProgramEscrowContract {
                 || b == b'-'
                 || b == b'_';
             if !valid_char {
-                panic!("IdempotencyKeyInvalid");
+                panic_with_error!(env, &ContractError::InvalidConfig);
             }
             i += 1;
         }
@@ -4017,10 +4015,10 @@ impl ProgramEscrowContract {
         program_data.authorized_payout_key.require_auth();
 
         if window_size == 0 {
-            panic!("window_size must be greater than zero");
+            panic_with_error!(&env, &ContractError::InvalidAmount);
         }
         if max_amount < 0 {
-            panic!("max_amount must be non-negative");
+            panic_with_error!(&env, &ContractError::InvalidAmount);
         }
 
         let cfg = ProgramSpendingConfig {
@@ -4059,7 +4057,7 @@ impl ProgramEscrowContract {
         // Validate threshold if provided
         if let Some(t) = threshold {
             if t < 1 || t > 100 {
-                panic!("{}", errors::ContractError::InvalidCircuitBreakerThreshold as u32);
+                panic_with_error!(&env, &ContractError::InvalidCircuitBreakerThreshold);
             }
         }
 
@@ -4150,7 +4148,7 @@ impl ProgramEscrowContract {
             .storage()
             .instance()
             .get(&PROGRAM_DATA)
-            .unwrap_or_else(|| panic!("Program not initialized"));
+            .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
 
         // ── Replay detection ───────────────────────────────────────────────
         // Check the shared DataKey::IdempotencyKey namespace (instance storage)
@@ -4282,14 +4280,14 @@ impl ProgramEscrowContract {
         let new_total = state
             .amount_released
             .checked_add(amount)
-            .unwrap_or_else(|| panic!("Spending window overflow"));
+            .unwrap_or_else(|| panic_with_error!(&env, &ContractError::Overflow));
 
         if new_total > cfg.max_amount {
             let program_data: ProgramData = env
                 .storage()
                 .instance()
                 .get(&PROGRAM_DATA)
-                .unwrap_or_else(|| panic!("Program not initialized"));
+                .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
 
             // Emit rejection event before panicking (CEI: event before state change)
             env.events().publish(
@@ -4303,7 +4301,7 @@ impl ProgramEscrowContract {
                     cfg.window_size,
                 ),
             );
-            panic!("Program spending limit exceeded for current window");
+            panic_with_error!(&env, &ContractError::InvalidState);
         }
 
         // Commit updated state
@@ -4379,14 +4377,14 @@ impl ProgramEscrowContract {
 
         // Guard: cannot rotate to the same key.
         if new_key == program_data.authorized_payout_key {
-            panic!("New key must differ from current key");
+            panic_with_error!(&env, &ContractError::InvalidState);
         }
 
         // Replay protection: validate the nonce before any state change.
         let nonce_key = DataKey::RotationNonce(program_id.clone());
         let current_nonce: u64 = env.storage().instance().get(&nonce_key).unwrap_or(0);
         if expected_nonce != current_nonce {
-            panic!("Invalid nonce");
+            panic_with_error!(&env, &ContractError::InvalidState);
         }
 
         // Auth: caller must be the current payout key or the contract admin.
@@ -4398,7 +4396,7 @@ impl ProgramEscrowContract {
             .get::<DataKey, Address>(&DataKey::Admin)
             .map_or(false, |admin| caller == admin);
         if !is_payout_key && !is_admin {
-            panic!("Unauthorized");
+            panic_with_error!(&env, &ContractError::Unauthorized);
         }
 
         // Increment nonce to invalidate any future replay of this rotation.
@@ -4443,7 +4441,7 @@ impl ProgramEscrowContract {
             .storage()
             .instance()
             .get(&DataKey::Admin)
-            .unwrap_or_else(|| panic!("Not initialized"));
+            .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
         admin.require_auth();
     }
 
@@ -4501,7 +4499,7 @@ impl ProgramEscrowContract {
                 timestamp: env.ledger().timestamp(),
             },
         );
-        panic!("Token not on allowlist");
+        panic_with_error!(&env, &ContractError::TokenNotAllowed);
     }
 
     /// Add a token to the allowlist **and permanently bind its decimal scale**
@@ -4543,7 +4541,7 @@ impl ProgramEscrowContract {
         let admin = Self::require_admin(&env);
 
         if decimals > MAX_TOKEN_DECIMALS {
-            panic!("Decimals exceed maximum (18)");
+            panic_with_error!(&env, &ContractError::InvalidState);
         }
 
         // Immutability guard. A configured scale is written exactly once; any
@@ -4551,16 +4549,16 @@ impl ProgramEscrowContract {
         let dec_key = DataKey::TokenDecimals(token.clone());
         if let Some(existing) = env.storage().instance().get::<DataKey, u32>(&dec_key) {
             if existing != decimals {
-                panic!("Token decimals are immutable");
+                panic_with_error!(&env, &ContractError::InvalidState);
             }
-            panic!("Token already on allowlist");
+            panic_with_error!(&env, &ContractError::TokenAlreadyAllowed);
         }
 
         // Defense in depth: the V2 list is the canonical membership record.
         let mut v2 = Self::get_token_allowlist_v2_internal(&env);
         for entry in v2.iter() {
             if entry.token == token {
-                panic!("Token already on allowlist");
+                panic_with_error!(&env, &ContractError::TokenAlreadyAllowed);
             }
         }
 
@@ -4635,7 +4633,7 @@ impl ProgramEscrowContract {
             }
         }
         if !found {
-            panic!("Token not in allowlist");
+            panic_with_error!(&env, &ContractError::TokenNotAllowed);
         }
         env.storage()
             .instance()
@@ -4767,8 +4765,8 @@ impl ProgramEscrowContract {
     ) -> BytesN<32> {
         let mut leaves: Vec<BytesN<32>> = Vec::new(env);
         for i in 0..recipients.len() {
-            let recipient = recipients.get(i).unwrap();
-            let amount = amounts.get(i).unwrap();
+            let recipient = recipients.get(i).unwrap_or_else(|| panic_with_error!(&env, &ContractError::EntryNotFound));
+            let amount = amounts.get(i).unwrap_or_else(|| panic_with_error!(&env, &ContractError::EntryNotFound));
             let leaf_data = (recipient, amount).to_xdr(env);
             let leaf_hash: BytesN<32> = env.crypto().sha256(&leaf_data).into();
             leaves.push_back(leaf_hash);
@@ -4780,9 +4778,9 @@ impl ProgramEscrowContract {
             let mut next_level: Vec<BytesN<32>> = Vec::new(env);
             let mut i = 0;
             while i < level.len() {
-                let left = level.get(i).unwrap();
+                let left = level.get(i).unwrap_or_else(|| panic_with_error!(&env, &ContractError::EntryNotFound));
                 let right = if i + 1 < level.len() {
-                    level.get(i + 1).unwrap()
+                    level.get(i + 1).unwrap_or_else(|| panic_with_error!(&env, &ContractError::EntryNotFound))
                 } else {
                     left.clone() // Duplicate last leaf if odd count
                 };
@@ -4793,7 +4791,7 @@ impl ProgramEscrowContract {
             }
             level = next_level;
         }
-        level.get(0).unwrap()
+        level.get(0).unwrap_or_else(|| panic_with_error!(&env, &ContractError::EntryNotFound))
 
     }
 
@@ -4838,18 +4836,18 @@ impl ProgramEscrowContract {
                 .persistent()
                 .has(&DataKey::IdempotencyKey(key.clone()))
             {
-                panic!("Payout already processed");
+                panic_with_error!(&env, &ContractError::DuplicateEntry);
             }
         }
 
         // 2. Contract must be initialized
         let program_data: ProgramData = match env.storage().instance().get(&PROGRAM_DATA) {
             Some(d) => d,
-            None => panic!("Program not initialized"),
+            None => panic_with_error!(&env, &ContractError::ProgramInitFailed),
         };
 
         // 2b. Program lifecycle: Draft programs must be published before payouts.
-        Self::require_active_program(&program_data);
+        Self::require_active_program(&env, &program_data);
 
         // 3. Operational state: paused
         //    PRECEDENCE LAYER 1 (highest): Pause / maintenance mode.
@@ -4858,11 +4856,11 @@ impl ProgramEscrowContract {
         //    regardless of automated circuit-breaker state.
         //    See docs/program-escrow/CIRCUIT_BREAKER_ENFORCEMENT.md §Layer Definitions.
         if Self::check_paused(&env, Some(&program_data.program_id), symbol_short!("release")) {
-            panic!("Funds Paused");
+            panic_with_error!(&env, &ContractError::Paused);
         }
 
         if Self::dispute_state(&env) == DisputeState::Open {
-            panic!("Payout blocked: dispute open");
+            panic_with_error!(&env, &ContractError::DisputeAlreadyOpen);
         }
 
         // 3c. Circuit breaker — single authoritative check before all business
@@ -4870,9 +4868,9 @@ impl ProgramEscrowContract {
         if let Err(err_code) = error_recovery::check_and_allow_with_thresholds(&env) {
             reentrancy_guard::release(&env);
             if err_code == error_recovery::ERR_CIRCUIT_OPEN {
-                panic!("Circuit breaker is OPEN");
+                panic_with_error!(&env, &ContractError::CircuitBreakerOpen);
             } else {
-                panic!("Operation rejected by circuit breaker");
+                panic_with_error!(&env, &ContractError::CircuitBreakerOpen);
             }
         }
 
@@ -4880,11 +4878,11 @@ impl ProgramEscrowContract {
 
         // 5a. Length / empty / batch-size checks (deterministic ordering)
         if recipients.len() != amounts.len() {
-            panic!("Recipients and amounts vectors must have the same length");
+            panic_with_error!(&env, &ContractError::InvalidAmount);
         }
 
         if recipients.len() == 0 {
-            panic!("Cannot process empty batch");
+            panic_with_error!(&env, &ContractError::InvalidBatchSize);
         }
 
         if recipients.len() > MAX_BATCH_SIZE {
@@ -4892,14 +4890,14 @@ impl ProgramEscrowContract {
         }
 
         for i in 0..amounts.len() {
-            if amounts.get(i).unwrap() <= 0 {
-                panic!("All amounts must be greater than zero");
+            if amounts.get(i).unwrap_or_else(|| panic_with_error!(&env, &ContractError::EntryNotFound)) <= 0 {
+                panic_with_error!(&env, &ContractError::InvalidAmount);
             }
         }
         for i in 0..recipients.len() {
             for j in (i + 1)..recipients.len() {
-                if recipients.get(i).unwrap() == recipients.get(j).unwrap() {
-                    panic!("Duplicate recipient in batch");
+                if recipients.get(i).unwrap_or_else(|| panic_with_error!(&env, &ContractError::EntryNotFound)) == recipients.get(j).unwrap_or_else(|| panic_with_error!(&env, &ContractError::EntryNotFound)) {
+                    panic_with_error!(&env, &ContractError::DuplicateEntry);
                 }
             }
         }
@@ -4908,7 +4906,7 @@ impl ProgramEscrowContract {
         for amount in amounts.iter() {
             total_payout = match total_payout.checked_add(amount) {
                 Some(v) => v,
-                None => panic!("Payout amount overflow"),
+                None => panic_with_error!(&env, &ContractError::Overflow),
             };
         }
 
@@ -4926,14 +4924,9 @@ impl ProgramEscrowContract {
             if existing_record.success {
                 return program_data;
             } else {
-                if let Some(error_code) = existing_record.error_code {
-                    panic!(
-                        "Idempotency retry: operation failed with code {}",
-                        error_code
-                    );
-                } else {
-                    panic!("Idempotency retry: operation failed");
-                }
+                // Typed trap: prior failure is replayed as InvalidState (code was opaque).
+                let _ = existing_record.error_code;
+                panic_with_error!(&env, &ContractError::InvalidState);
             }
         }
 
@@ -4941,11 +4934,11 @@ impl ProgramEscrowContract {
         //    Deterministic ordering: threshold before balance so clients observe
         //    stable failures regardless of current balance.
         if Self::enforce_spend_threshold(&env, &program_data.program_id, total_payout).is_err() {
-            panic!("Spend threshold exceeded");
+            panic_with_error!(&env, &ContractError::SpendLimitExceeded);
         }
         Self::enforce_spending_window(&env, &program_data.program_id, total_payout);
         if total_payout > program_data.remaining_balance {
-            panic!("Insufficient balance");
+            panic_with_error!(&env, &ContractError::InsufficientBalance);
         }
 
         // 8. Pre-validate fees for every entry BEFORE any transfer.
@@ -4958,12 +4951,11 @@ impl ProgramEscrowContract {
         let mut transfer_amounts: soroban_sdk::Vec<i128> = soroban_sdk::Vec::new(&env);
         let mut total_actual_outflow: i128 = 0;
         for i in 0..recipients.len() {
-            let gross = amounts.get(i).unwrap();
+            let gross = amounts.get(i).unwrap_or_else(|| panic_with_error!(&env, &ContractError::EntryNotFound));
             let pay_fee = if batch_fee_waived {
                 0
             } else {
-                Self::combined_fee_amount(
-                    gross,
+                Self::combined_fee_amount(&env, gross,
                     cfg.payout_fee_rate,
                     cfg.payout_fixed_fee,
                     cfg.fee_enabled,
@@ -4971,7 +4963,7 @@ impl ProgramEscrowContract {
             };
             let net = match gross.checked_sub(pay_fee) {
                 Some(v) if v > 0 => v,
-                _ => panic!("Payout fee consumes entire payout"),
+                _ => panic_with_error!(&env, &ContractError::InvalidFeeRate),
             };
 
             // Apply FoT routing to compute actual transfer amount needed
@@ -4997,7 +4989,7 @@ impl ProgramEscrowContract {
 
         // Balance check uses the actual total outflow including FoT markup.
         if total_actual_outflow > program_data.remaining_balance {
-            panic!("Insufficient balance");
+            panic_with_error!(&env, &ContractError::InsufficientBalance);
         }
 
         // 9. Execute transfers — all pre-validation passed; this section must not fail.
@@ -5007,10 +4999,10 @@ impl ProgramEscrowContract {
         let token_client = token::Client::new(&env, &program_data.token_address);
 
         for i in 0..recipients.len() {
-            let recipient = recipients.get(i).unwrap().clone();
-            let transfer_amount = transfer_amounts.get(i).unwrap();
-            let pay_fee = fee_amounts.get(i).unwrap();
-            let _gross = amounts.get(i).unwrap();
+            let recipient = recipients.get(i).unwrap_or_else(|| panic_with_error!(&env, &ContractError::EntryNotFound)).clone();
+            let transfer_amount = transfer_amounts.get(i).unwrap_or_else(|| panic_with_error!(&env, &ContractError::EntryNotFound));
+            let pay_fee = fee_amounts.get(i).unwrap_or_else(|| panic_with_error!(&env, &ContractError::EntryNotFound));
+            let _gross = amounts.get(i).unwrap_or_else(|| panic_with_error!(&env, &ContractError::EntryNotFound));
 
             if pay_fee > 0 {
                 let (reserve_share, recipient_share) =
@@ -5193,7 +5185,7 @@ impl ProgramEscrowContract {
                 .persistent()
                 .has(&DataKey::IdempotencyKey(key.clone()))
             {
-                panic!("Payout already processed");
+                panic_with_error!(&env, &ContractError::DuplicateEntry);
             }
         }
 
@@ -5202,19 +5194,19 @@ impl ProgramEscrowContract {
             .storage()
             .instance()
             .get(&PROGRAM_DATA)
-            .unwrap_or_else(|| panic!("Program not initialized"));
+            .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
 
         // 2b. Program lifecycle: Draft programs must be published before payouts.
-        Self::require_active_program(&program_data);
+        Self::require_active_program(&env, &program_data);
 
         // 3. Operational state: paused
         if Self::check_paused(&env, Some(&program_data.program_id), symbol_short!("release")) {
-            panic!("Funds Paused");
+            panic_with_error!(&env, &ContractError::Paused);
         }
 
         // 3b. Dispute guard — payouts blocked while a dispute is open
         if Self::dispute_state(&env) == DisputeState::Open {
-            panic!("Payout blocked: dispute open");
+            panic_with_error!(&env, &ContractError::DisputeAlreadyOpen);
         }
 
         // 3c. Circuit breaker check — runs before all business logic so that
@@ -5223,9 +5215,9 @@ impl ProgramEscrowContract {
         if let Err(err_code) = error_recovery::check_and_allow_with_thresholds(&env) {
             reentrancy_guard::clear_entered(&env);
             if err_code == error_recovery::ERR_CIRCUIT_OPEN {
-                panic!("Circuit breaker is OPEN");
+                panic_with_error!(&env, &ContractError::CircuitBreakerOpen);
             } else {
-                panic!("Operation rejected by circuit breaker");
+                panic_with_error!(&env, &ContractError::CircuitBreakerOpen);
             }
         }
 
@@ -5234,7 +5226,7 @@ impl ProgramEscrowContract {
 
         // 5. Input validation
         if amount <= 0 {
-            panic!("Amount must be greater than zero");
+            panic_with_error!(&env, &ContractError::InvalidAmount);
         }
 
         // 5a. Idempotency key validation (deterministic behavior)
@@ -5253,14 +5245,9 @@ impl ProgramEscrowContract {
                 return program_data;
             } else {
                 // Retry the same error
-                if let Some(error_code) = existing_record.error_code {
-                    panic!(
-                        "Idempotency retry: operation failed with code {}",
-                        error_code
-                    );
-                } else {
-                    panic!("Idempotency retry: operation failed");
-                }
+                // Typed trap: prior failure is replayed as InvalidState (code was opaque).
+                let _ = existing_record.error_code;
+                panic_with_error!(&env, &ContractError::InvalidState);
             }
         }
 
@@ -5268,7 +5255,7 @@ impl ProgramEscrowContract {
         // Deterministic error ordering: spend threshold check runs before
         // balance checks, so clients observe stable failures.
         if Self::enforce_spend_threshold(&env, &program_data.program_id, amount).is_err() {
-            panic!("Spend threshold exceeded");
+            panic_with_error!(&env, &ContractError::SpendLimitExceeded);
         }
 
         // Per-window spending limit check (after per-payout threshold, before balance)
@@ -5280,8 +5267,7 @@ impl ProgramEscrowContract {
         let pay_fee = if Self::is_fee_waived(cfg.fee_waivers, &PayoutType::Single) {
             0
         } else {
-            Self::combined_fee_amount(
-                amount,
+            Self::combined_fee_amount(&env, amount,
                 cfg.payout_fee_rate,
                 cfg.payout_fixed_fee,
                 cfg.fee_enabled,
@@ -5289,7 +5275,7 @@ impl ProgramEscrowContract {
         };
         let net = amount.checked_sub(pay_fee).unwrap_or(0);
         if net <= 0 {
-            panic!("Payout fee consumes entire payout");
+            panic_with_error!(&env, &ContractError::InvalidFeeRate);
         }
 
         // Apply FoT routing to compute actual transfer amount needed
@@ -5308,7 +5294,7 @@ impl ProgramEscrowContract {
 
         // Balance check accounts for the actual outflow including FoT markup
         if total_debit > program_data.remaining_balance {
-            panic!("Insufficient balance");
+            panic_with_error!(&env, &ContractError::InsufficientBalance);
         }
 
         if pay_fee > 0 {
@@ -5454,7 +5440,7 @@ impl ProgramEscrowContract {
                     .storage()
                     .instance()
                     .get(&PROGRAM_DATA)
-                    .unwrap_or_else(|| panic!("Program not initialized"));
+                    .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
 
                 env.events().publish(
                     (symbol_short!("IdmReplay"),),
@@ -5478,7 +5464,7 @@ impl ProgramEscrowContract {
                 .storage()
                 .instance()
                 .get(&PROGRAM_DATA)
-                .unwrap_or_else(|| panic!("Program not initialized"));
+                .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
 
             env.events().publish(
                 (symbol_short!("IdmReplay"),),
@@ -5541,7 +5527,7 @@ impl ProgramEscrowContract {
         env.storage()
             .instance()
             .get(&PROGRAM_DATA)
-            .unwrap_or_else(|| panic!("Program not initialized"))
+            .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed))
     }
 
     /// Get program information by program id.
@@ -5574,7 +5560,7 @@ impl ProgramEscrowContract {
         let v2_key = DataKey::MetadataV2(program_id.clone());
         if env.storage().instance().has(&v2_key) {
             let compressed: CompressedProgramMetadata =
-                env.storage().instance().get(&v2_key).unwrap();
+                env.storage().instance().get(&v2_key).unwrap_or_else(|| panic_with_error!(&env, &ContractError::InvalidState));
             return Some(compressed.into_legacy(&env));
         }
         // Fall back to legacy (V1) format.
@@ -5590,7 +5576,7 @@ impl ProgramEscrowContract {
             .storage()
             .instance()
             .get(&PROGRAM_DATA)
-            .unwrap_or_else(|| panic!("Program not initialized"));
+            .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
 
         program_data.remaining_balance
     }
@@ -5681,16 +5667,16 @@ impl ProgramEscrowContract {
             .storage()
             .instance()
             .get(&PROGRAM_DATA)
-            .unwrap_or_else(|| panic!("Program not initialized"));
+            .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
 
         if program_data.status == ProgramStatus::Draft {
-            panic!("Program is in Draft status. Publish the program first.");
+            panic_with_error!(&env, &ContractError::ProgramNotActive);
         }
 
         Self::authorize_release_actor(&env, &program_data, caller.as_ref());
 
         if amount <= 0 {
-            panic!("Amount must be greater than zero");
+            panic_with_error!(&env, &ContractError::InvalidAmount);
         }
 
         let mut schedules: soroban_sdk::Vec<ProgramReleaseSchedule> = env
@@ -5751,7 +5737,7 @@ impl ProgramEscrowContract {
             .storage()
             .instance()
             .get(&PROGRAM_DATA)
-            .unwrap_or_else(|| panic!("Program not initialized"));
+            .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
 
         Self::authorize_release_actor(&env, &program_data, caller.as_ref());
 
@@ -5765,7 +5751,7 @@ impl ProgramEscrowContract {
         let mut due_schedules: soroban_sdk::Vec<ProgramReleaseSchedule> = Vec::new(&env);
         
         for i in 0..schedules.len() {
-            let s = schedules.get(i).unwrap();
+            let s = schedules.get(i).unwrap_or_else(|| panic_with_error!(&env, &ContractError::ScheduleNotFound));
             if !s.released && now >= s.release_timestamp {
                 due_schedules.push_back(s);
             }
@@ -5826,15 +5812,15 @@ impl ProgramEscrowContract {
             .storage()
             .instance()
             .get(&PROGRAM_DATA)
-            .unwrap_or_else(|| panic!("Program not initialized"));
+            .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
 
         if program_data.status == ProgramStatus::Draft {
-            panic!("Program is in Draft status. Publish the program first.");
+            panic_with_error!(&env, &ContractError::ProgramNotActive);
         }
         Self::authorize_release_actor(&env, &program_data, caller.as_ref());
 
         if Self::check_paused(&env, Some(&program_data.program_id), symbol_short!("release")) {
-            panic!("Funds Paused");
+            panic_with_error!(&env, &ContractError::Paused);
         }
 
         let mut schedules: soroban_sdk::Vec<ProgramReleaseSchedule> = env
@@ -5864,8 +5850,8 @@ impl ProgramEscrowContract {
                 .storage()
                 .instance()
                 .get(&EPOCH_SNAPSHOTS)
-                .unwrap_or_else(|| panic!("Epoch snapshots map not found"));
-            let snapshot = snapshots.get(eid).unwrap_or_else(|| panic!("Epoch snapshot not found"));
+                .unwrap_or_else(|| panic_with_error!(&env, &ContractError::EntryNotFound));
+            let snapshot = snapshots.get(eid).unwrap_or_else(|| panic_with_error!(&env, &ContractError::EntryNotFound));
             snapshot_schedules = Some(snapshot.schedules);
         }
 
@@ -5877,16 +5863,16 @@ impl ProgramEscrowContract {
         if let Some(ref snap_scheds) = snapshot_schedules {
             let snap_len = snap_scheds.len();
             for snap_i in 0..snap_len {
-                let s = snap_scheds.get(snap_i).unwrap();
+                let s = snap_scheds.get(snap_i).unwrap_or_else(|| panic_with_error!(&env, &ContractError::InvalidState));
                 // Find matching schedule_id in main schedules
                 for i in 0..len {
-                    let existing = schedules.get(i).unwrap();
+                    let existing = schedules.get(i).unwrap_or_else(|| panic_with_error!(&env, &ContractError::ScheduleNotFound));
                     if existing.schedule_id == s.schedule_id && !existing.released {
                         // Insert-sort by schedule_id (ascending)
                         let mut inserted = false;
                         for j in 0..due_entries.len() {
-                            let entry_packed = due_entries.get(j).unwrap();
-                            let existing_in_list = schedules.get((entry_packed >> 32) as u32).unwrap();
+                            let entry_packed = due_entries.get(j).unwrap_or_else(|| panic_with_error!(&env, &ContractError::InvalidState));
+                            let existing_in_list = schedules.get((entry_packed >> 32) as u32).unwrap_or_else(|| panic_with_error!(&env, &ContractError::ScheduleNotFound));
                             if existing.schedule_id < existing_in_list.schedule_id {
                                 let packed = ((i as u64) << 32) | (snap_i as u64);
                                 due_entries = Self::vec_insert_at_u64(&env, due_entries, j, packed);
@@ -5903,13 +5889,13 @@ impl ProgramEscrowContract {
             }
         } else {
             for i in 0..len {
-                let s = schedules.get(i).unwrap();
+                let s = schedules.get(i).unwrap_or_else(|| panic_with_error!(&env, &ContractError::ScheduleNotFound));
                 if !s.released && now >= s.release_timestamp {
                     // Insert-sort by schedule_id (ascending) for determinism
                     let mut inserted = false;
                     for j in 0..due_entries.len() {
-                        let entry_packed = due_entries.get(j).unwrap();
-                        let existing_in_list = schedules.get((entry_packed >> 32) as u32).unwrap();
+                        let entry_packed = due_entries.get(j).unwrap_or_else(|| panic_with_error!(&env, &ContractError::InvalidState));
+                        let existing_in_list = schedules.get((entry_packed >> 32) as u32).unwrap_or_else(|| panic_with_error!(&env, &ContractError::ScheduleNotFound));
                         if s.schedule_id < existing_in_list.schedule_id {
                             let packed = ((i as u64) << 32) | (u32::MAX as u64);
                             due_entries = Self::vec_insert_at_u64(&env, due_entries, j, packed);
@@ -5926,13 +5912,13 @@ impl ProgramEscrowContract {
 
         // Process due schedules in sorted order; skip (don't panic) on insufficient balance
         for k in 0..due_entries.len() {
-            let entry_packed = due_entries.get(k).unwrap();
+            let entry_packed = due_entries.get(k).unwrap_or_else(|| panic_with_error!(&env, &ContractError::InvalidState));
             let i = (entry_packed >> 32) as u32;
             let snap_i = (entry_packed & 0xFFFFFFFF) as u32;
-            let mut schedule = schedules.get(i).unwrap();
+            let mut schedule = schedules.get(i).unwrap_or_else(|| panic_with_error!(&env, &ContractError::ScheduleNotFound));
 
             let (exec_amount, exec_recipient) = if snap_i != u32::MAX {
-                let s = snapshot_schedules.as_ref().unwrap().get(snap_i).unwrap();
+                let s = snapshot_schedules.as_ref().unwrap_or_else(|| panic_with_error!(&env, &ContractError::ScheduleNotFound)).get(snap_i).unwrap_or_else(|| panic_with_error!(&env, &ContractError::ScheduleNotFound));
                 (s.amount, s.recipient.clone())
             } else {
                 (schedule.amount, schedule.recipient.clone())
@@ -6021,7 +6007,7 @@ impl ProgramEscrowContract {
             if i == pos {
                 result.push_back(value);
             }
-            result.push_back(v.get(i).unwrap());
+            result.push_back(v.get(i).unwrap_or_else(|| panic_with_error!(&env, &ContractError::InvalidState)));
         }
         if pos >= v.len() {
             result.push_back(value);
@@ -6040,7 +6026,7 @@ impl ProgramEscrowContract {
             if i == pos {
                 result.push_back(value);
             }
-            result.push_back(v.get(i).unwrap());
+            result.push_back(v.get(i).unwrap_or_else(|| panic_with_error!(&env, &ContractError::InvalidState)));
         }
         if pos >= v.len() {
             result.push_back(value);
@@ -6086,7 +6072,7 @@ impl ProgramEscrowContract {
         // 4. Contract balance check (detects FoT issues if tokens were sent beforehand)
 
         if amount <= 0 {
-            panic!("Amount must be greater than zero");
+            panic_with_error!(&env, &ContractError::InvalidAmount);
         }
 
         let program_key = DataKey::Program(program_id.clone());
@@ -6094,10 +6080,10 @@ impl ProgramEscrowContract {
             .storage()
             .instance()
             .get(&program_key)
-            .unwrap_or_else(|| panic!("Program not found"));
+            .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramNotFound));
 
         if program_data.status == ProgramStatus::Draft {
-            panic!("Program is in Draft status. Publish the program first.");
+            panic_with_error!(&env, &ContractError::ProgramNotActive);
         }
 
         let token_client = token::Client::new(&env, &program_data.token_address);
@@ -6106,7 +6092,7 @@ impl ProgramEscrowContract {
         // Ensure contract actually holds enough tokens to cover this lock.
         // If tokens were sent via direct transfer and a fee was taken, this check will catch it.
         if token_client.balance(&contract_address) < amount {
-            panic!("Insufficient contract balance to cover lock (possible fee-on-transfer issue)");
+            panic_with_error!(&env, &ContractError::InsufficientBalance);
         }
 
         let fee_config = Self::get_fee_config_internal(&env);
@@ -6179,14 +6165,14 @@ impl ProgramEscrowContract {
             .storage()
             .instance()
             .get(&program_key)
-            .unwrap_or_else(|| panic!("Program not found"));
+            .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramNotFound));
 
         if program_data.status == ProgramStatus::Draft {
-            panic!("Program is in Draft status. Publish the program first.");
+            panic_with_error!(&env, &ContractError::ProgramNotActive);
         }
 
         if amount <= 0 || amount > program_data.remaining_balance {
-            panic!("Invalid payout amount");
+            panic_with_error!(&env, &ContractError::InvalidAmount);
         }
 
         let token_client = token::Client::new(&env, &program_data.token_address);
@@ -6294,7 +6280,7 @@ impl ProgramEscrowContract {
                 .storage()
                 .instance()
                 .get(&PROGRAM_DATA)
-                .unwrap_or_else(|| panic!("Program not initialized"));
+                .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
             program.authorized_payout_key.require_auth();
         }
         payout_splits::set_split_config(&env, &program_id, beneficiaries)
@@ -6312,7 +6298,7 @@ impl ProgramEscrowContract {
                 .storage()
                 .instance()
                 .get(&PROGRAM_DATA)
-                .unwrap_or_else(|| panic!("Program not initialized"));
+                .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
             program.authorized_payout_key.require_auth();
         }
         payout_splits::disable_split_config(&env, &program_id);
@@ -6327,10 +6313,10 @@ impl ProgramEscrowContract {
             .storage()
             .instance()
             .get(&PROGRAM_DATA)
-            .unwrap_or_else(|| panic!("Program not initialized"));
+            .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
 
         if program.status == ProgramStatus::Draft {
-            panic!("Program is in Draft status. Publish the program first.");
+            panic_with_error!(&env, &ContractError::ProgramNotActive);
         }
 
         program.authorized_payout_key.require_auth();
@@ -6357,7 +6343,7 @@ impl ProgramEscrowContract {
             .storage()
             .instance()
             .get(&PROGRAM_DATA)
-            .unwrap_or_else(|| panic!("Program not initialized"));
+            .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
         Self::paginate_filtered(&env, program_data.payout_history, offset, limit, |record| {
             record.recipient == recipient
         })
@@ -6435,7 +6421,7 @@ impl ProgramEscrowContract {
             .storage()
             .instance()
             .get(&PROGRAM_DATA)
-            .unwrap_or_else(|| panic!("Program not initialized"));
+            .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
         Self::paginate_filtered(&env, program_data.payout_history, offset, limit, |record| {
             record.amount >= min_amount && record.amount <= max_amount
         })
@@ -6457,7 +6443,7 @@ impl ProgramEscrowContract {
             .storage()
             .instance()
             .get(&PROGRAM_DATA)
-            .unwrap_or_else(|| panic!("Program not initialized"));
+            .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
         Self::paginate_filtered(&env, program_data.payout_history, offset, limit, |record| {
             record.timestamp >= min_timestamp && record.timestamp <= max_timestamp
         })
@@ -6506,7 +6492,7 @@ impl ProgramEscrowContract {
             .storage()
             .instance()
             .get(&PROGRAM_DATA)
-            .unwrap_or_else(|| panic!("Program not initialized"));
+            .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
         let schedules: soroban_sdk::Vec<ProgramReleaseSchedule> = env
             .storage()
             .instance()
@@ -6517,7 +6503,7 @@ impl ProgramEscrowContract {
         let mut released_count = 0u32;
 
         for i in 0..schedules.len() {
-            let schedule = schedules.get(i).unwrap();
+            let schedule = schedules.get(i).unwrap_or_else(|| panic_with_error!(&env, &ContractError::ScheduleNotFound));
             if schedule.released {
                 released_count += 1;
             } else {
@@ -6550,7 +6536,7 @@ impl ProgramEscrowContract {
             .storage()
             .instance()
             .get(&PROGRAM_DATA)
-            .unwrap_or_else(|| panic!("Program not initialized"));
+            .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
         Self::paginate_filtered(&env, program_data.payout_history, offset, limit, |record| {
             record.recipient == recipient
         })
@@ -6566,7 +6552,7 @@ impl ProgramEscrowContract {
         let mut results = Vec::new(&env);
 
         for i in 0..schedules.len() {
-            let schedule = schedules.get(i).unwrap();
+            let schedule = schedules.get(i).unwrap_or_else(|| panic_with_error!(&env, &ContractError::ScheduleNotFound));
             if !schedule.released {
                 results.push_back(schedule);
             }
@@ -6585,7 +6571,7 @@ impl ProgramEscrowContract {
         let mut results = Vec::new(&env);
 
         for i in 0..schedules.len() {
-            let schedule = schedules.get(i).unwrap();
+            let schedule = schedules.get(i).unwrap_or_else(|| panic_with_error!(&env, &ContractError::ScheduleNotFound));
             if !schedule.released && schedule.release_timestamp <= now {
                 results.push_back(schedule);
             }
@@ -6603,7 +6589,7 @@ impl ProgramEscrowContract {
         let mut total = 0i128;
 
         for i in 0..schedules.len() {
-            let schedule = schedules.get(i).unwrap();
+            let schedule = schedules.get(i).unwrap_or_else(|| panic_with_error!(&env, &ContractError::ScheduleNotFound));
             if !schedule.released {
                 total += schedule.amount;
             }
@@ -6657,7 +6643,7 @@ impl ProgramEscrowContract {
         let end = if offset + limit > total { total } else { offset + limit };
         let mut result = Vec::new(&env);
         for i in offset..end {
-            let pid = registry.get(i).unwrap();
+            let pid = registry.get(i).unwrap_or_else(|| panic_with_error!(&env, &ContractError::InvalidState));
             let program_data = Self::get_program_data_by_id(&env, &pid);
             result.push_back(ProgramDelegateInfo {
                 program_id: pid.clone(),
@@ -6687,7 +6673,7 @@ impl ProgramEscrowContract {
                 return s;
             }
         }
-        panic!("Schedule not found");
+        panic_with_error!(&env, &ContractError::ScheduleNotFound);
     }
 
     pub fn get_all_prog_release_schedules(env: Env) -> soroban_sdk::Vec<ProgramReleaseSchedule> {
@@ -6719,7 +6705,7 @@ impl ProgramEscrowContract {
         let program_data = Self::get_program_info(env.clone());
 
         if program_data.status == ProgramStatus::Draft {
-            panic!("Program is in Draft status. Publish the program first.");
+            panic_with_error!(&env, &ContractError::ProgramNotActive);
         }
 
         let caller = Self::authorize_release_actor(&env, &program_data, caller.as_ref());
@@ -6728,10 +6714,10 @@ impl ProgramEscrowContract {
 
         let mut found = false;
         for i in 0..schedules.len() {
-            let mut s = schedules.get(i).unwrap();
+            let mut s = schedules.get(i).unwrap_or_else(|| panic_with_error!(&env, &ContractError::ScheduleNotFound));
             if s.schedule_id == schedule_id {
                 if s.released {
-                    panic!("Already released");
+                    panic_with_error!(&env, &ContractError::ScheduleAlreadyReleased);
                 }
 
                 // Per-window spending limit check before transfer
@@ -6752,7 +6738,7 @@ impl ProgramEscrowContract {
         }
 
         if !found {
-            panic!("Schedule not found");
+            panic_with_error!(&env, &ContractError::ScheduleNotFound);
         }
 
         env.storage().instance().set(&SCHEDULES, &schedules);
@@ -6789,13 +6775,13 @@ impl ProgramEscrowContract {
 
         let mut found = false;
         for i in 0..schedules.len() {
-            let mut s = schedules.get(i).unwrap();
+            let mut s = schedules.get(i).unwrap_or_else(|| panic_with_error!(&env, &ContractError::ScheduleNotFound));
             if s.schedule_id == schedule_id {
                 if s.released {
-                    panic!("Already released");
+                    panic_with_error!(&env, &ContractError::ScheduleAlreadyReleased);
                 }
                 if now < s.release_timestamp {
-                    panic!("Not yet due");
+                    panic_with_error!(&env, &ContractError::InvalidState);
                 }
 
                 // Per-window spending limit check before transfer
@@ -6816,7 +6802,7 @@ impl ProgramEscrowContract {
         }
 
         if !found {
-            panic!("Schedule not found");
+            panic_with_error!(&env, &ContractError::ScheduleNotFound);
         }
 
         env.storage().instance().set(&SCHEDULES, &schedules);
@@ -6857,7 +6843,7 @@ impl ProgramEscrowContract {
         claim_deadline: u64,
     ) -> u64 {
         if Self::check_paused(&env, Some(&program_id), symbol_short!("release")) {
-            panic!("Funds Paused");
+            panic_with_error!(&env, &ContractError::Paused);
         }
         claim_period::create_pending_claim(&env, &program_id, &recipient, amount, claim_deadline)
     }
@@ -6867,7 +6853,7 @@ impl ProgramEscrowContract {
     /// Claims are part of the release path, so `release_paused` blocks them.
     pub fn execute_claim(env: Env, program_id: String, claim_id: u64, recipient: Address) {
         if Self::check_paused(&env, Some(&program_id), symbol_short!("release")) {
-            panic!("Funds Paused");
+            panic_with_error!(&env, &ContractError::Paused);
         }
         claim_period::execute_claim(&env, &program_id, claim_id, &recipient)
     }
@@ -6878,7 +6864,7 @@ impl ProgramEscrowContract {
     /// blocks it independently of lock and release operations.
     pub fn cancel_claim(env: Env, program_id: String, claim_id: u64, admin: Address) {
         if Self::check_paused(&env, Some(&program_id), symbol_short!("refund")) {
-            panic!("Funds Paused");
+            panic_with_error!(&env, &ContractError::Paused);
         }
         claim_period::cancel_claim(&env, &program_id, claim_id, &admin)
     }
@@ -6921,7 +6907,7 @@ impl ProgramEscrowContract {
 
         // Only one active dispute at a time
         if Self::dispute_state(&env) == DisputeState::Open {
-            panic!("Dispute already open");
+            panic_with_error!(&env, &ContractError::NoActiveDispute);
         }
 
         let now = env.ledger().timestamp();
@@ -6929,7 +6915,7 @@ impl ProgramEscrowContract {
             .storage()
             .instance()
             .get(&PROGRAM_DATA)
-            .unwrap_or_else(|| panic!("Program not initialized"));
+            .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
 
         let record = DisputeRecord {
             raised_by: admin.clone(),
@@ -6976,10 +6962,10 @@ impl ProgramEscrowContract {
             .storage()
             .instance()
             .get(&DataKey::Dispute)
-            .unwrap_or_else(|| panic!("No dispute found"));
+            .unwrap_or_else(|| panic_with_error!(&env, &ContractError::NoActiveDispute));
 
         if record.state != DisputeState::Open {
-            panic!("No open dispute to resolve");
+            panic_with_error!(&env, &ContractError::NoActiveDispute);
         }
 
         let now = env.ledger().timestamp();
@@ -6987,7 +6973,7 @@ impl ProgramEscrowContract {
             .storage()
             .instance()
             .get(&PROGRAM_DATA)
-            .unwrap_or_else(|| panic!("Program not initialized"));
+            .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
 
         record.state = DisputeState::Resolved;
         record.resolved_by = Some(admin.clone());
@@ -7045,7 +7031,7 @@ impl ProgramEscrowContract {
             };
         }
 
-        let program_data = program_data.unwrap();
+        let program_data = program_data.unwrap_or_else(|| panic_with_error!(&env, &ContractError::InvalidState));
         let schedules: soroban_sdk::Vec<ProgramReleaseSchedule> = env
             .storage()
             .instance()
@@ -7136,19 +7122,19 @@ impl ProgramEscrowContract {
 
         // Validate configuration parameters
         if config.base_fee_bps < 0 || config.base_fee_bps > 10000 {
-            panic!("Invalid base fee rate");
+            panic_with_error!(&env, &ContractError::InvalidDynamicPricingConfig);
         }
         if config.max_fee_bps < config.min_fee_bps {
-            panic!("Max fee must be >= min fee");
+            panic_with_error!(&env, &ContractError::InvalidDynamicPricingConfig);
         }
         if config.max_change_bps < 0 || config.max_change_bps > 10000 {
-            panic!("Invalid max change rate");
+            panic_with_error!(&env, &ContractError::InvalidDynamicPricingConfig);
         }
         if config.smoothing_alpha_bps < 0 || config.smoothing_alpha_bps > 10000 {
-            panic!("Invalid smoothing alpha");
+            panic_with_error!(&env, &ContractError::InvalidDynamicPricingConfig);
         }
         if config.min_update_interval == 0 {
-            panic!("Min update interval must be > 0");
+            panic_with_error!(&env, &ContractError::InvalidDynamicPricingConfig);
         }
 
         // Initialize pricing state if not exists
@@ -7291,7 +7277,7 @@ impl ProgramEscrowContract {
             .expect("Dynamic pricing not configured");
 
         if !config.enabled {
-            panic!("Dynamic pricing is not enabled");
+            panic_with_error!(&env, &ContractError::DynamicPricingNotEnabled);
         }
 
         let state: PricingState = env
