@@ -9,6 +9,13 @@ This repository contains Grainlify's Stellar Soroban smart contracts and their s
 - `benchmarks/` contains contract performance baselines and thresholds.
 - `scripts/` and `fix/` contain contract validation, testing, upgrade, and maintenance utilities.
 
+## System Documentation
+
+The following documents describe the current architecture and behavior of the system:
+- [Deployable Artifacts](DEPLOYABLE_ARTIFACTS.md) - Lists every deployable WebAssembly artifact produced by this repository.
+- [Release Schedules Usage](RELEASE_SCHEDULES_USAGE.md) - Details the time-based release schedules (vesting) feature for escrow contracts.
+- [Upgrade and Migration Policy](UPGRADE_AND_MIGRATION_POLICY.md) - Defines the rules and requirements for authorizing, executing, and reverting contract upgrades.
+
 ## Local validation
 
 Run the primary workspace tests with:
