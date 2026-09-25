@@ -523,6 +523,16 @@ pub mod rbac {
 
 const BASIS_POINTS: i128 = 10_000;
 const MAX_FEE_RATE: i128 = 5_000; // 50% max fee
+
+/// Hard ceiling on the number of items in a single batch call.
+///
+/// This is the *maximum*; the *effective* cap is read per call from
+/// [`Self::get_max_batch_size`] / [`Self::get_max_release_batch_size`], which an
+/// admin can lower (never raise) via [`Self::set_batch_size_caps`]. Enforced on
+/// all five batch entry points: [`Self::batch_lock_funds`], [`Self::batch_lock`],
+/// [`Self::batch_lock_funds_soa`], [`Self::batch_release_funds`] and
+/// [`Self::batch_release_funds_soa`], each rejecting an empty or oversized batch
+/// with [`Error::InvalidBatchSize`] before any element is touched.
 const MAX_BATCH_SIZE: u32 = 20;
 const DEFAULT_ADMIN_ROTATION_TIMELOCK: u64 = 86_400;
 const MIN_ADMIN_ROTATION_TIMELOCK: u64 = 3_600;
@@ -7818,7 +7828,15 @@ impl BountyEscrowContract {
     ///   depositor, amount, deadline).
     ///
     /// # Returns
-    /// Number of bounties successfully locked (equals `items.len()` on success).
+    /// Number of bounties successfully locked. Because the call is atomic this
+    /// is **always** `items.len()` on success — there is no "3 of 5 locked"
+    /// outcome. On any `Err`, **no** bounty is locked and the contract is
+    /// exactly as it was before the call, so the caller retries by re-submitting
+    /// the corrected whole batch rather than resuming from the failed element.
+    /// The error identifies the condition, not the offending index.
+    ///
+    /// See [`docs/batch-failure-semantics.md`](../../../../../docs/batch-failure-semantics.md)
+    /// for the full model.
     ///
     /// # Errors
     /// * [`Error::InvalidBatchSize`] — batch is empty or exceeds `MAX_BATCH_SIZE`
@@ -8021,14 +8039,65 @@ impl BountyEscrowContract {
         Ok(locked_count)
     }
 
-    /// Alias for batch_lock_funds to match the requested naming convention.
+    /// Alias for [`Self::batch_lock_funds`], kept so callers can use the
+    /// shorter name. Byte-for-byte the same call, with the same semantics.
+    ///
+    /// # Failure model
+    ///
+    /// **All-or-nothing**, exactly as [`Self::batch_lock_funds`]: all items are
+    /// validated before any state is written, and any failure rolls the whole
+    /// batch back. This is an alias, not a wrapper, so it introduces no
+    /// additional behaviour of its own.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(n)` where `n == items.len()` — every element locked. `Err(e)` — no
+    /// element locked; see [`Self::batch_lock_funds`] for the error set.
+    ///
+    /// # See also
+    ///
+    /// [`docs/batch-failure-semantics.md`](../../../../../docs/batch-failure-semantics.md)
     pub fn batch_lock(env: Env, items: Vec<LockFundsItem>) -> Result<u32, Error> {
         Self::batch_lock_funds(env, items)
     }
 
-    /// Structure-of-Arrays (SoA) variant of `batch_lock_funds`.
+    /// Structure-of-Arrays (SoA) variant of [`Self::batch_lock_funds`].
     /// Reduces host-to-guest deserialization overhead by accepting parallel arrays
     /// of primitives instead of an array of structs.
+    ///
+    /// # Failure model
+    ///
+    /// **All-or-nothing**, identical to [`Self::batch_lock_funds`]. This variant
+    /// adds exactly one precondition of its own: the parallel arrays must be the
+    /// same length. That check runs *first* and returns
+    /// [`Error::BatchSizeMismatch`] before any element is interpreted, so a
+    /// misaligned call never locks anything.
+    ///
+    /// Once the arrays are aligned, the items are zipped into
+    /// [`LockFundsItem`]s and handed to [`Self::batch_lock_funds`] unchanged — so
+    /// ordering guarantees, duplicate detection, the size cap and rollback all
+    /// behave exactly as they do for the AoS form.
+    ///
+    /// # Arguments
+    /// * `bounty_ids`, `depositors`, `amounts`, `deadlines` — four parallel
+    ///   arrays of equal length, each of 1..=[`MAX_BATCH_SIZE`] elements.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(n)` where `n == bounty_ids.len()` — every element locked. `Err(e)` —
+    /// no element locked.
+    ///
+    /// # Errors
+    /// * [`Error::BatchSizeMismatch`] — the arrays are not all the same length
+    /// * [`Error::InvalidBatchSize`] — length 0 or above the effective cap
+    /// * [`Error::ContractDeprecated`], [`Error::FundsPaused`],
+    ///   [`Error::NotInitialized`], [`Error::BountyExists`],
+    ///   [`Error::DuplicateBountyId`], [`Error::InvalidAmount`] — as for
+    ///   [`Self::batch_lock_funds`]
+    ///
+    /// # See also
+    ///
+    /// [`docs/batch-failure-semantics.md`](../../../../../docs/batch-failure-semantics.md)
     pub fn batch_lock_funds_soa(
         env: Env,
         bounty_ids: Vec<u64>,
@@ -8090,7 +8159,16 @@ impl BountyEscrowContract {
     ///   contributor address).
     ///
     /// # Returns
-    /// Number of bounties successfully released (equals `items.len()` on success).
+    /// Number of bounties successfully released. Because the call is atomic
+    /// this is **always** `items.len()` on success — there is no "3 of 5
+    /// released" outcome, and no contributor is paid for a partial batch. On any
+    /// `Err`, **no** bounty is released, no token moves, and the contract is
+    /// exactly as it was before the call, so the caller retries by re-submitting
+    /// the corrected whole batch. The error identifies the condition, not the
+    /// offending index.
+    ///
+    /// See [`docs/batch-failure-semantics.md`](../../../../../docs/batch-failure-semantics.md)
+    /// for the full model.
     ///
     /// # Errors
     /// * [`Error::InvalidBatchSize`] — batch is empty or exceeds `MAX_BATCH_SIZE`
@@ -8260,9 +8338,37 @@ impl BountyEscrowContract {
         Ok(count)
     }
 
-    /// Structure-of-Arrays (SoA) variant of `batch_release_funds`.
+    /// Structure-of-Arrays (SoA) variant of [`Self::batch_release_funds`].
     /// Reduces host-to-guest deserialization overhead by accepting parallel arrays
     /// of primitives instead of an array of structs.
+    ///
+    /// # Failure model
+    ///
+    /// **All-or-nothing**, identical to [`Self::batch_release_funds`]. The one
+    /// added precondition is that the two parallel arrays must be the same
+    /// length, checked first and returning [`Error::BatchSizeMismatch`] before
+    /// any element is interpreted — so a misaligned call disburses nothing.
+    ///
+    /// # Arguments
+    /// * `bounty_ids`, `contributors` — two parallel arrays of equal length,
+    ///   each of 1..=[`MAX_BATCH_SIZE`] elements.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(n)` where `n == bounty_ids.len()` — every element released and paid
+    /// out. `Err(e)` — no element released, and no contributor is paid.
+    ///
+    /// # Errors
+    /// * [`Error::BatchSizeMismatch`] — the arrays are not the same length
+    /// * [`Error::InvalidBatchSize`] — length 0 or above the effective cap
+    /// * [`Error::ContractDeprecated`], [`Error::FundsPaused`],
+    ///   [`Error::NotInitialized`], [`Error::BountyNotFound`],
+    ///   [`Error::FundsNotLocked`], [`Error::DuplicateBountyId`] — as for
+    ///   [`Self::batch_release_funds`]
+    ///
+    /// # See also
+    ///
+    /// [`docs/batch-failure-semantics.md`](../../../../../docs/batch-failure-semantics.md)
     pub fn batch_release_funds_soa(
         env: Env,
         bounty_ids: Vec<u64>,
@@ -10450,9 +10556,15 @@ mod escrow_status_transition_tests {
 //     }
 // }
 
-// Pre-existing broken test modules excluded until their referenced types/methods are implemented:
-// #[cfg(test)] mod test_batch_failure_mode;
-// #[cfg(test)] mod test_batch_failure_modes;
+// Batch failure-mode suites re-enabled for issue #1877.
+#[cfg(test)]
+mod test_batch_failure_modes;
+#[cfg(test)]
+mod test_batch_failure_mode;
+// New in #1877: pins the documented all-or-nothing contract and the
+// return-value/size-limit semantics for all five batch entry points.
+#[cfg(test)]
+mod test_batch_failure_semantics;
 #[cfg(test)]
 mod test_admin_invalid_identifiers;
 #[cfg(test)]
