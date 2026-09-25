@@ -151,15 +151,13 @@ jobs:
           for manifest in $MANIFESTS; do
             echo "Checking authorization values in $manifest..."
 
-            AUTH_VALUES=$(jq -r '.. | objects | .authorization? // empty' "$manifest" | sort -u)
-
-            for auth in $AUTH_VALUES; do
-              if [[ ! " ${VALID_AUTH_VALUES[@]} " =~ " ${auth} " ]]; then
+            while IFS= read -r auth; do
+              if ! printf '%s\n' "${VALID_AUTH_VALUES[@]}" | grep -Fxq -- "$auth"; then
                 echo "❌ Invalid authorization value '$auth' in $manifest"
                 echo "Valid values: ${VALID_AUTH_VALUES[*]}"
                 exit 1
               fi
-            done
+            done < <(jq -r '.. | objects | .authorization? | strings' "$manifest" | sort -u)
 
             echo "✅ $manifest has valid authorization values"
           done
