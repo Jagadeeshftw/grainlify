@@ -223,6 +223,7 @@ impl Fixture {
 
         client.init(&admin, &token_id);
         client.set_whitelist(&depositor, &true);
+        client.update_anti_abuse_config(&3600, &100, &0);
 
         // Wire a router (self) so release paths with swap-routing succeed
         // on the full validation path without tripping RouterNotConfigured.

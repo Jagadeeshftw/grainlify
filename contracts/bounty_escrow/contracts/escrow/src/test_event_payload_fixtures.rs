@@ -58,7 +58,10 @@ fn parse_contracttype_structs(src: &str) -> std::vec::Vec<(std::string::String, 
     let mut search_from = 0usize;
     while let Some(rel) = src[search_from..].find("pub struct ") {
         let abs = search_from + rel;
-        let lookback_start = abs.saturating_sub(300);
+        let mut lookback_start = abs.saturating_sub(300);
+        while lookback_start > 0 && !src.is_char_boundary(lookback_start) {
+            lookback_start -= 1;
+        }
         if !src[lookback_start..abs].contains("#[contracttype]") {
             search_from = abs + 11;
             continue;
@@ -123,7 +126,10 @@ fn parse_contracttype_enums(src: &str) -> std::vec::Vec<(std::string::String, st
     let mut search_from = 0usize;
     while let Some(rel) = src[search_from..].find("pub enum ") {
         let abs = search_from + rel;
-        let lookback_start = abs.saturating_sub(300);
+        let mut lookback_start = abs.saturating_sub(300);
+        while lookback_start > 0 && !src.is_char_boundary(lookback_start) {
+            lookback_start -= 1;
+        }
         if !src[lookback_start..abs].contains("#[contracttype]") {
             search_from = abs + 9;
             continue;
