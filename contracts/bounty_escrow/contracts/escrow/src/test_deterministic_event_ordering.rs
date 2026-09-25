@@ -66,7 +66,16 @@ fn setup() -> Ctx<'static> {
     let contract_id = env.register_contract(None, BountyEscrowContract);
     let client = BountyEscrowContractClient::new(&env, &contract_id);
     client.init(&admin, &token_id);
-    client.update_anti_abuse_config(&3600, &100, &0);
+    env.as_contract(&contract_id, || {
+        crate::anti_abuse::set_config(
+            &env,
+            crate::anti_abuse::AntiAbuseConfig {
+                window_size: 3600,
+                max_operations: 100,
+                cooldown_period: 0,
+            },
+        );
+    });
 
     Ctx {
         env,

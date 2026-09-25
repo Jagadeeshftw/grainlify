@@ -908,9 +908,6 @@ fn test_all_lifecycle_events_carry_v2_version() {
         }
         let result: Result<Symbol, _> = topics.get(0).unwrap().try_into_val(&ctx.env);
         let Ok(sym) = result else { continue };
-        {
-            continue;
-        };
 
         if sym == symbol_short!("init") {
             let p: events::BountyEscrowInitialized = data.into_val(&ctx.env);
