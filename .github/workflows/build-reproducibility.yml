@@ -18,7 +18,7 @@ name: "Build Reproducibility — cdylib wasm artifacts"
 #
 #   soroban/ workspace (soroban/Cargo.toml)
 #     • escrow.wasm                 — soroban/contracts/escrow
-#     • program_escrow.wasm         — soroban/contracts/program-escrow
+#     • soroban_program_escrow.wasm — soroban/contracts/program-escrow
 #
 #   Excluded (not cdylib / host-only):
 #     • grainlify_stream            — no crate-type; testutils-only, host side
@@ -293,7 +293,7 @@ jobs:
           cargo build \
             --manifest-path soroban/Cargo.toml \
             --package escrow \
-            --package program-escrow \
+            --package soroban-program-escrow \
             --target wasm32-unknown-unknown \
             --release
 
@@ -302,7 +302,7 @@ jobs:
           bash scripts/verify-wasm-artifacts.sh \
             soroban/target/wasm32-unknown-unknown/release \
             escrow.wasm \
-            program_escrow.wasm
+            soroban_program_escrow.wasm
 
       - name: List wasm artifacts with sizes
         run: |
