@@ -70,6 +70,13 @@ jobs:
 
       - name: Run contract CI gates
         run: bash contracts/scripts/ci-contracts.sh
+        # ci-contracts.sh runs (in order):
+        #   [1] cargo test on the bounty_escrow workspace – includes:
+        #       • test_analytics_monitoring  (issue #1882: analytics & monitoring suite)
+        #       • test_query_filters         (issue #1882: query-filter suite)
+        #       • all other enabled test modules
+        #   [2] cargo test on the grainlify-contracts workspace (storage-key audit)
+        #   [3] wasm release build + size recording
 
       - name: Upload deployable wasm
         uses: actions/upload-artifact@v4

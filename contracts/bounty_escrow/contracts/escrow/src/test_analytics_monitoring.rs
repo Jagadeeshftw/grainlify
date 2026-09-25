@@ -108,24 +108,28 @@ fn test_aggregate_stats_initial_state_is_zeroed() {
 }
 #[test]
 fn test_query_pagination_boundary() {
-    let setup = TestEnv::new(); // Assuming your existing test helper
-    let (admin, depositor) = (setup.admin, setup.depositor);
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let (token, token_admin) = create_token_contract(&env, &admin);
+    let escrow = create_escrow_contract(&env);
+    escrow.init(&admin, &token.address);
+    token_admin.mint(&depositor, &1_000_000);
+
+    let deadline = env.ledger().timestamp() + 2000;
 
     // Create 3 escrows
-    for i in 1..=3 {
-        setup.client.lock_funds(&depositor, &i, &1000, &2000);
-    }
+    escrow.lock_funds(&depositor, &1, &1000, &deadline);
+    escrow.lock_funds(&depositor, &2, &1000, &deadline);
+    escrow.lock_funds(&depositor, &3, &1000, &deadline);
 
     // Offset 1, Limit 1 should return exactly the 2nd escrow created
-    let results = setup
-        .client
-        .query_escrows_by_status(&EscrowStatus::Locked, &1, &1);
+    let results = escrow.query_escrows_by_status(&EscrowStatus::Locked, &1, &1);
     assert_eq!(results.len(), 1);
 
     // Offset 3 (out of bounds) should return empty vector, not panic
-    let oob_results = setup
-        .client
-        .query_escrows_by_status(&EscrowStatus::Locked, &3, &1);
+    let oob_results = escrow.query_escrows_by_status(&EscrowStatus::Locked, &3, &1);
     assert_eq!(oob_results.len(), 0);
 }
 

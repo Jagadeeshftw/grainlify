@@ -6,8 +6,8 @@
       "manifest": "contracts/bounty_escrow/Cargo.toml",
       "package": "bounty-escrow",
       "target_dir": "contracts/bounty_escrow",
-      "budget_bytes": 319488,
-      "description": "Bounty escrow contract"
+      "budget_bytes": 352256,
+      "description": "Bounty escrow contract. Budget raised from 319488 → 352256 (+32768 B) in issue #1882 to accommodate the analytics/monitoring surface: get_escrow_count, query_escrows_by_status, query_escrows_by_depositor, get_escrow_ids_by_status, updated query_escrows_by_amount, updated query_escrows_by_deadline (now return Vec<EscrowWithId>) and their paginate_escrows_with_id helper."
     },
     "grainlify_core": {
       "manifest": "contracts/grainlify-core/Cargo.toml",
