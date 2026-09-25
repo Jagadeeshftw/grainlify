@@ -77,3 +77,51 @@ jobs:
           name: bounty-escrow-wasm
           path: contracts/bounty_escrow/target/wasm32-unknown-unknown/release/*.wasm
           if-no-files-found: error
+
+  # ──────────────────────────────────────────────────────────────
+  # View-facade drift gate (issue #1870).
+  # Each facade mirrors types and feature flags from program-escrow.
+  # This job is deliberately standalone rather than folded into the
+  # `build-test` job above: that job currently stops at its first step on
+  # a pre-existing failure in the bounty-escrow workspace suite, and a gate
+  # that never runs cannot catch drift. The exhaustive struct literals in
+  # tests/conformance.rs turn a contract-only field addition into a compile
+  # error here.
+  # ──────────────────────────────────────────────────────────────
+  facade-conformance:
+    name: view facades match the contracts they mirror
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            contracts/view-facade/target/
+            contracts/escrow-view-facade/target/
+          key: ${{ runner.os }}-facade-conformance-${{ hashFiles('contracts/view-facade/Cargo.lock', 'contracts/escrow-view-facade/Cargo.lock', 'contracts/program-escrow/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-facade-conformance-
+
+      - name: view-facade conformance
+        run: |
+          cargo test \
+            --manifest-path contracts/view-facade/Cargo.toml \
+            --test conformance \
+            --test dependency_gating
+
+      - name: escrow-view-facade conformance
+        run: |
+          cargo test \
+            --manifest-path contracts/escrow-view-facade/Cargo.toml \
+            --test conformance \
+            --test dependency_gating
