@@ -9,14 +9,30 @@ pub mod namespaces {
 }
 
 pub mod validation {
-    use soroban_sdk::Symbol;
-
+    /// Returns `true` when `symbol` carries `expected_prefix`.
     pub fn validate_namespace(symbol: &str, expected_prefix: &str) -> bool {
         symbol.starts_with(expected_prefix)
     }
 
-    pub fn validate_storage_key(_symbol: Symbol, _expected_prefix: &str) -> Result<(), &'static str> {
-        Ok(())
+    /// Validates that `symbol` belongs to the `expected_prefix` namespace.
+    ///
+    /// A key that is not namespaced with its own contract's prefix aliases a
+    /// slot owned by another contract that shares the same storage space, so it
+    /// is rejected here. This is what makes the audit fail when a colliding or
+    /// mis-namespaced key is introduced.
+    ///
+    /// Only available on host/test targets, because `Symbol` string rendering
+    /// is not provided on `wasm32`; the audit always runs under `cargo test`.
+    #[cfg(not(target_family = "wasm"))]
+    pub fn validate_storage_key(
+        symbol: soroban_sdk::Symbol,
+        expected_prefix: &str,
+    ) -> Result<(), &'static str> {
+        if symbol.to_string().starts_with(expected_prefix) {
+            Ok(())
+        } else {
+            Err("storage key is not namespaced with the expected contract prefix")
+        }
     }
 }
 

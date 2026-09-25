@@ -22,3 +22,4 @@ ethnum = { workspace = true }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["alloc", "testutils"] }
+proptest = "1.4"

@@ -2039,3 +2039,66 @@ fn test_lock_and_release_fixed_fee_collection() {
     );
     assert_eq!(setup.token.balance(&fee_recipient), lock_fee + release_fee);
 }
+
+#[test]
+#[should_panic(expected = "Rate limit exceeded")]
+fn test_batch_lock_rejects_batch_over_rate_limit() {
+    let setup = TestSetup::new();
+    setup.env.as_contract(&setup.escrow.address, || {
+        crate::anti_abuse::set_config(
+            &setup.env,
+            crate::anti_abuse::AntiAbuseConfig {
+                window_size: 3600,
+                max_operations: 1,
+                cooldown_period: 0,
+            },
+        );
+    });
+
+    let deadline = setup.env.ledger().timestamp() + 1_000;
+    let mut items = Vec::new(&setup.env);
+    for bounty_id in 1..=2 {
+        items.push_back(LockFundsItem {
+            bounty_id,
+            depositor: setup.depositor.clone(),
+            amount: 1_000,
+            deadline,
+        });
+    }
+
+    setup.escrow.batch_lock_funds(&items);
+}
+
+#[test]
+#[should_panic(expected = "Rate limit exceeded")]
+fn test_batch_release_rejects_batch_over_rate_limit() {
+    let setup = TestSetup::new();
+    setup.escrow.set_whitelist_entry(&setup.depositor, &true);
+    let deadline = setup.env.ledger().timestamp() + 1_000;
+    for bounty_id in 1..=2 {
+        setup
+            .escrow
+            .lock_funds(&setup.depositor, &bounty_id, &1_000, &deadline);
+    }
+
+    setup.env.as_contract(&setup.escrow.address, || {
+        crate::anti_abuse::set_config(
+            &setup.env,
+            crate::anti_abuse::AntiAbuseConfig {
+                window_size: 3600,
+                max_operations: 1,
+                cooldown_period: 0,
+            },
+        );
+    });
+
+    let mut items = Vec::new(&setup.env);
+    for bounty_id in 1..=2 {
+        items.push_back(ReleaseFundsItem {
+            bounty_id,
+            contributor: setup.contributor.clone(),
+        });
+    }
+
+    setup.escrow.batch_release_funds(&items);
+}

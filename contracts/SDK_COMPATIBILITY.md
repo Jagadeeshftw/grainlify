@@ -16,7 +16,7 @@ XDR golden-test policy.
 | `contracts/program-escrow` | `=21.7.7` | 21 |
 | `contracts/view-facade` | `=21.7.7` | 21 |
 | `contracts/escrow-view-facade` | `=21.7.7` | 21 |
-| `soroban/` (workspace: escrow, program-escrow, stream) | `=23.4.1` | 23 |
+| `soroban/` (workspace: escrow, soroban-program-escrow, stream) | `=23.4.1` | 23 |
 
 Notes:
 

@@ -2,7 +2,7 @@
 
 ## Crate, deployment, and relationships
 
-This is the SDK 21 program fund and payout contract. It locks program prize pools and executes single, batch, and scheduled payouts. Its [manifest](../program-escrow-manifest.json) records no deployed network address, so deployment is not verified in this repository.
+This is the authoritative, deployable SDK 21 program fund and payout contract. It locks program prize pools and executes single, batch, and scheduled payouts. Its [manifest](../program-escrow-manifest.json) records no deployed network address, so deployment is not verified in this repository.
 
 - Depends on: [grainlify-core](../grainlify-core/README.md) through Cargo, plus soroban-sdk 21.7.7 and ethnum; it calls a configured token contract at runtime.
 - Depended on by: [view-facade](../view-facade/README.md) and [escrow-view-facade](../escrow-view-facade/README.md) both declare Cargo path dependencies and query its ABI.

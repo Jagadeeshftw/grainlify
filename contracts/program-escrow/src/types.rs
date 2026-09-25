@@ -195,6 +195,22 @@ pub struct FeeConfig {
     pub insurance_reserve_bps: u32,
 }
 
+/// Event emitted when fee config is updated.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeeConfigUpdatedEvent {
+    pub version: u32,
+    pub admin: Address,
+    pub lock_fee_rate: i128,
+    pub payout_fee_rate: i128,
+    pub lock_fixed_fee: i128,
+    pub payout_fixed_fee: i128,
+    pub fee_recipient: Address,
+    pub fee_enabled: bool,
+    pub insurance_reserve_bps: u32,
+    pub timestamp: u64,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FeeCollectedEvent {
@@ -1402,6 +1418,16 @@ pub enum DataKey {
     LifecycleTimeline(String),
     /// Per-program access-signal marker used by RBAC/monitoring subsystems.
     ProgramAccessSignal(String),
+    /// Ordered index of program_ids grouped by one metadata facet.
+    ///
+    /// The first field is the facet kind (see `METADATA_FACET_*`), the second
+    /// is the facet value, e.g. `("tag", "defi")`.
+    ///
+    /// Appended after the original variants so existing discriminants stay
+    /// stable for deployed contracts. `DataKey` sits close to the 50-case
+    /// `ScSpecUdtUnionCaseV0` ceiling, so every facet shares this single
+    /// variant instead of adding one variant per facet.
+    MetadataFacetIndex(Symbol, String),
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1600,6 +1626,13 @@ pub const DELEGATE_META_RATE_LIMIT_WINDOW: u64 = 3_600;
 /// Permits one update every ~6 minutes on average; enough for legitimate use
 /// while making sustained spam economically costly.
 pub const DELEGATE_META_MAX_OPS_PER_WINDOW: u32 = 10;
+
+/// Facet kind for `ProgramMetadata::program_type` in `DataKey::MetadataFacetIndex`.
+pub const METADATA_FACET_TYPE: Symbol = symbol_short!("type");
+/// Facet kind for `ProgramMetadata::ecosystem` in `DataKey::MetadataFacetIndex`.
+pub const METADATA_FACET_ECOSYSTEM: Symbol = symbol_short!("ecosystem");
+/// Facet kind for `ProgramMetadata::tags` in `DataKey::MetadataFacetIndex`.
+pub const METADATA_FACET_TAG: Symbol = symbol_short!("tag");
 
 /// Maximum number of entries in `ProgramMetadata::custom_fields`.
 /// Bounds on-chain storage regardless of who calls the update.
