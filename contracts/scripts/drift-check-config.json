@@ -143,8 +143,6 @@
         "get_gas_budget",
         "get_gas_budget_advisory_status",
         "batch_lock",
-        "batch_lock_funds_soa",
-        "batch_release_funds_soa",
         "get_risk_flags",
         "is_reentrancy_guard_locked",
         "get_hv_config_schema_version",
