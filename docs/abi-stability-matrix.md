@@ -132,9 +132,10 @@ within the same PR, or the `query_all_delegates` call will return garbage for th
 
 ## 4. Contract: program-escrow
 
-**Crate:** `contracts/program-escrow`  
+**Crate:** `contracts/program-escrow` (`program-escrow` — Authoritative deployed contract)  
 **Contract struct:** `ProgramEscrowContract`  
-**Purpose:** Manages hackathon and grant prize pools — fund locking, batch/single payouts, release schedules, and delegate authorization.
+**Purpose:** Manages hackathon and grant prize pools — fund locking, batch/single payouts, release schedules, and delegate authorization.  
+**Note on disambiguation:** Disambiguated from the workspace fixture crate `soroban-program-escrow` (`soroban/contracts/program-escrow`). This crate (`contracts/program-escrow`) is the authoritative deployed contract.
 
 ### 4.1 Key Exported Types
 

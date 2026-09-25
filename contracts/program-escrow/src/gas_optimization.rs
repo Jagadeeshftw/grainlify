@@ -310,7 +310,6 @@ pub mod event_helpers {
 }
 
 #[cfg(test)]
-#[cfg(any())] // #1876: pre-existing breakage (fails to compile); gated so token-allowlist + FoT suites run in CI
 mod tests {
     use super::*;
     use soroban_sdk::{vec, Env, Symbol};
@@ -382,8 +381,7 @@ mod tests {
 ///
 /// These tests iterate all 2^8 = 256 combinations of granular pause flags
 /// to verify that bitwise operations correctly read/write without corruption.
-#[cfg(test)]
-#[cfg(any())] // #1876: pre-existing breakage (fails to compile); gated so token-allowlist + FoT suites run in CI
+#[cfg(any())] // pre-existing breakage: Symbol::short("pflag_test") exceeds the 9-char limit and the module never imports Env
 mod packed_flag_coverage_tests {
     use super::packed_storage::*;
     use soroban_sdk::Symbol;

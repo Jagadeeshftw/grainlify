@@ -5,31 +5,37 @@
 
 pub mod storage_key_audit;
 
-//! # View-Facade Contract
-//!
-//! Exposes **read-only** queries over `ProgramData` and `FeeConfig` so
-//! that wallets, UIs, and off-chain indexers can inspect live state without
-//! paying gas for a mutating transaction.
-//!
-//! ## Entrypoints
-//!
-//! | Function | Kind | Description |
-//! |----------|------|-------------|
-//! | [`ViewFacade::get_program`] | view | Returns the full `ProgramData` for a program ID |
-//! | [`ViewFacade::get_fee_config`] | view | Returns the active `FeeConfig` |
-//! | [`ViewFacade::is_circuit_open`] | view | Returns the circuit-breaker state |
-//! | [`ViewFacade::simulate_payout`] | **view** | Computes net amounts, fees, and warnings without writing state |
-//!
-//! ## Security model
-//!
-//! All functions in this contract are **read-only**: they never call
-//! `storage.set`, `storage.remove`, or any function that transfers tokens.
-//! The circuit-breaker check inside `simulate_payout` only *reports* the
-//! breaker state as a warning — it does not abort the simulation, because
-//! the purpose is to let the UI show a preview even when payouts are
-//! currently paused.
-//!
-//! No authentication is required. All entrypoints are permissionless.
+// Storage-key collision audit. Declared under `cfg(test)` so it only builds
+// for the test profile; `contracts/scripts/ci-contracts.sh` runs it on every
+// pull request via `cargo test --manifest-path contracts/Cargo.toml --workspace`.
+#[cfg(test)]
+pub mod storage_collision_tests;
+
+// # View-Facade Contract
+//
+// Exposes **read-only** queries over `ProgramData` and `FeeConfig` so
+// that wallets, UIs, and off-chain indexers can inspect live state without
+// paying gas for a mutating transaction.
+//
+// ## Entrypoints
+//
+// | Function | Kind | Description |
+// |----------|------|-------------|
+// | [`ViewFacade::get_program`] | view | Returns the full `ProgramData` for a program ID |
+// | [`ViewFacade::get_fee_config`] | view | Returns the active `FeeConfig` |
+// | [`ViewFacade::is_circuit_open`] | view | Returns the circuit-breaker state |
+// | [`ViewFacade::simulate_payout`] | **view** | Computes net amounts, fees, and warnings without writing state |
+//
+// ## Security model
+//
+// All functions in this contract are **read-only**: they never call
+// `storage.set`, `storage.remove`, or any function that transfers tokens.
+// The circuit-breaker check inside `simulate_payout` only *reports* the
+// breaker state as a warning — it does not abort the simulation, because
+// the purpose is to let the UI show a preview even when payouts are
+// currently paused.
+//
+// No authentication is required. All entrypoints are permissionless.
 
 // ─── Storage key constants ────────────────────────────────────────────────────
 
@@ -384,7 +390,7 @@ impl<'a> ViewFacade<'a> {
     /// # Example
     ///
     /// ```rust
-    /// use view_facade::{ViewFacade, Storage, ProgramData, FeeConfig, Recipient};
+    /// use grainlify_contracts::{ViewFacade, Storage, ProgramData, FeeConfig, Recipient};
     ///
     /// let mut storage = Storage::new();
     /// storage.set_program(ProgramData {

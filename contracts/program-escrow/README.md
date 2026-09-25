@@ -1,5 +1,8 @@
 # Program Escrow Contract
 
+> **Authoritative Contract**: `contracts/program-escrow` (crate: `program-escrow`)  
+> **Deployment Status**: Authoritative deployable contract managing hackathon and grant prize pools on Stellar. (For the standalone Soroban workspace contract, see `soroban-program-escrow` in `soroban/contracts/program-escrow`).
+
 A Soroban smart contract for managing program-level escrow funds for hackathons and grant programs. This contract handles prize pools, tracks balances, and enables automated batch payouts to multiple contributors.
 
 ## Features

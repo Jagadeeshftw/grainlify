@@ -25,10 +25,10 @@ mod bulk_release_optimization_tests;
 mod chaos_batch_payout_tests;
 
 #[cfg(test)]
-#[cfg(any())] // #1876: pre-existing breakage (fails to compile); gated so token-allowlist + FoT suites run in CI
+#[cfg(any())] // pre-existing breakage: imports ProgramEscrowClient/ProgramEscrow, which are not in the crate root
 mod delegate_metadata_dos_tests;
 mod cross_entrypoint_idempotency_tests;
 
 #[cfg(test)]
-#[cfg(any())] // #1876: pre-existing breakage (fails to compile); gated so token-allowlist + FoT suites run in CI
+#[cfg(any())] // pre-existing breakage: imports DELEGATE_PERMISSION_PAYOUT, which is not in the crate root
 mod delegate_revocation_propagation_tests;

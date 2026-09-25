@@ -51,6 +51,11 @@ use grainlify_core::CorrelationId;
 /// optional fields do not require a version bump.
 pub const EVENT_VERSION_V2: u32 = 2;
 
+// Payload shapes for every `#[contracttype]` event/enum in this file are pinned by
+// `event_payload_fixtures.rs` (checked in `test_event_payload_fixtures.rs`).
+// Regenerate after schema edits: `python3 scripts/regen_event_payload_fixtures.py`
+// Breaking field changes must bump EVENT_VERSION_V2; additive optional fields may not.
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // INITIALIZATION EVENTS
 // ═══════════════════════════════════════════════════════════════════════════════

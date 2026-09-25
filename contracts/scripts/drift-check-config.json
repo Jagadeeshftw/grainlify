@@ -413,7 +413,8 @@
         "AutoUnpauseEvent",
         "EmergencyWithdrawEvent",
         "SplitConfigSetEvent",
-        "SplitPayoutEvent"
+        "SplitPayoutEvent",
+        "FeeConfigUpdatedEvent"
       ]
     }
   }
