@@ -33,6 +33,7 @@ mod tests {
             count: 2,
             total_amount: 1000,
             timestamp: 1,
+            correlation_id: 0,
         };
         assert_eq!(event.version, EVENT_VERSION_V2);
     }
@@ -44,6 +45,7 @@ mod tests {
             count: 1,
             total_amount: 500,
             timestamp: 2,
+            correlation_id: 0,
         };
         assert_eq!(event.version, EVENT_VERSION_V2);
     }
