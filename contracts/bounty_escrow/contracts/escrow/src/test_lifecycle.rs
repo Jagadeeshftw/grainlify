@@ -246,12 +246,15 @@ fn test_full_bounty_lifecycle_with_refund() {
     escrow_client.approve_refund(&bounty_id, &refund_amount, &depositor, &RefundMode::Partial);
 
     // Verify eligibility
-    let (can_refund, deadline_passed, eligible_amount, approval) =
+    let (can_refund, deadline_passed, remaining_amount, approval) =
         escrow_client.get_refund_eligibility(&bounty_id);
     assert!(can_refund);
     assert!(!deadline_passed);
-    assert_eq!(eligible_amount, refund_amount);
+    // The third return value is always the escrow's remaining_amount (not the
+    // approved refund amount). The approval amount lives in the approval object.
+    assert_eq!(remaining_amount, initial_amount);
     assert!(approval.is_some());
+    assert_eq!(approval.as_ref().unwrap().amount, refund_amount);
 
     // 8. Execute partial refund payout
     env.mock_auths(&[

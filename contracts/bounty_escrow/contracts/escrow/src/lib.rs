@@ -3302,9 +3302,10 @@ impl BountyEscrowContract {
     /// Return the refund records attached to an escrow for lifecycle tests and
     /// legacy clients. Missing bounties remain an explicit contract failure.
     pub fn get_refund_history(env: Env, bounty_id: u64) -> Vec<RefundRecord> {
-        Self::get_escrow_info(env, bounty_id)
-            .unwrap_or_else(|_| panic!("Bounty not found"))
-            .refund_history
+        match Self::get_escrow_info(env.clone(), bounty_id) {
+            Ok(escrow) => escrow.refund_history,
+            Err(e) => env.panic_with_error(e),
+        }
     }
 
     pub fn get_balance(env: Env) -> i128 {
@@ -4935,18 +4936,6 @@ impl BountyEscrowContract {
             )?;
         }
         soroban_sdk::log!(&env, "fee ok");
-
-        let mut depositor_index: Vec<u64> = env
-            .storage()
-            .persistent()
-            .get(&DataKey::DepositorIndex(depositor.clone()))
-            .unwrap_or(Vec::new(&env));
-        depositor_index.push_back(bounty_id);
-        env.storage().persistent().set(
-            &DataKey::DepositorIndex(depositor.clone()),
-            &depositor_index,
-        );
-        Self::renew_depositor_index(&env, &depositor, false);
 
         // Emit value allows for off-chain indexing
         emit_funds_locked(
@@ -6636,10 +6625,18 @@ impl BountyEscrowContract {
             .persistent()
             .get(&DataKey::RefundApproval(bounty_id));
         let deadline_passed = view.deadline > 0 && view.now >= view.deadline;
+        // Return the escrow's actual remaining_amount (not the refundable amount)
+        // so callers can always see how much is locked regardless of eligibility.
+        let remaining_amount: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Escrow(bounty_id))
+            .map(|e: Escrow| e.remaining_amount)
+            .unwrap_or(0);
         (
             view.eligible,
             deadline_passed,
-            view.amount,
+            remaining_amount,
             if view.approval_present {
                 approval
             } else {
@@ -7260,6 +7257,7 @@ impl BountyEscrowContract {
         }
 
         // GUARD: release reentrancy lock
+        monitoring::track_operation(&env, symbol_short!("refund"), refund_to, true);
         reentrancy_guard::release(&env);
         Ok(())
     }
@@ -8069,12 +8067,22 @@ impl BountyEscrowContract {
             let timestamp = env.ledger().timestamp();
 
             // Validate all items before processing (all-or-nothing approach)
+            // Track depositors already rate-limited in this batch to avoid double-counting.
+            let mut rate_limited_depositors: Vec<Address> = Vec::new(&env);
             for item in items.iter() {
                 // Participant filtering (blocklist-only / allowlist-only / disabled)
                 Self::check_participant_filter(&env, item.depositor.clone())?;
 
-                // Rate limit: check per-depositor across batch elements
-                anti_abuse::check_rate_limit(&env, item.depositor.clone());
+                // Rate limit: check per-depositor once across the batch.
+                // Multiple items from the same depositor in a single atomic batch
+                // count as one operation for rate-limiting purposes.
+                let already_checked = rate_limited_depositors
+                    .iter()
+                    .any(|d| d == item.depositor);
+                if !already_checked {
+                    anti_abuse::check_rate_limit(&env, item.depositor.clone());
+                    rate_limited_depositors.push_back(item.depositor.clone());
+                }
 
                 // Check if bounty already exists
                 if env
@@ -8339,6 +8347,9 @@ impl BountyEscrowContract {
 
             // Validate all items before processing (all-or-nothing approach)
             let mut total_amount: i128 = 0;
+            // Track contributors already rate-limited in this batch to avoid
+            // double-counting — mirrors the deduplication in batch_lock_funds.
+            let mut rate_limited_contributors: Vec<Address> = Vec::new(&env);
             for item in items.iter() {
                 // Check if bounty exists
                 if !env
@@ -8365,8 +8376,16 @@ impl BountyEscrowContract {
                     return Err(Error::FundsNotLocked);
                 }
 
-                // Rate limit: check per-contributor across batch elements
-                anti_abuse::check_rate_limit(&env, item.contributor.clone());
+                // Rate limit: check per-contributor once across the batch.
+                // Multiple items released to the same contributor in a single
+                // atomic batch count as one operation for rate-limiting purposes.
+                let already_checked = rate_limited_contributors
+                    .iter()
+                    .any(|c| c == item.contributor);
+                if !already_checked {
+                    anti_abuse::check_rate_limit(&env, item.contributor.clone());
+                    rate_limited_contributors.push_back(item.contributor.clone());
+                }
 
                 // Check for duplicate bounty_ids in the batch
                 let mut count = 0u32;
@@ -9370,7 +9389,7 @@ mod escrow_status_transition_tests {
 
             // Write escrow directly to contract storage
             self.env.as_contract(&self.contract_id, || {
-                Self::write_escrow(&self.env, bounty_id, &escrow)?;
+                BountyEscrowContract::write_escrow(&self.env, bounty_id, &escrow).unwrap();
             });
         }
     }

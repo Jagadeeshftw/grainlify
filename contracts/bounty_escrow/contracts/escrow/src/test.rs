@@ -2056,15 +2056,21 @@ fn test_batch_lock_rejects_batch_over_rate_limit() {
     });
 
     let deadline = setup.env.ledger().timestamp() + 1_000;
+
+    // Exhaust the depositor's 1-operation quota with a single lock_funds call.
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &100, &1_000, &deadline);
+
+    // The next operation (batch) from the same depositor should exceed
+    // max_operations=1 and panic with "Rate limit exceeded".
     let mut items = Vec::new(&setup.env);
-    for bounty_id in 1..=2 {
-        items.push_back(LockFundsItem {
-            bounty_id,
-            depositor: setup.depositor.clone(),
-            amount: 1_000,
-            deadline,
-        });
-    }
+    items.push_back(LockFundsItem {
+        bounty_id: 1,
+        depositor: setup.depositor.clone(),
+        amount: 1_000,
+        deadline,
+    });
 
     setup.escrow.batch_lock_funds(&items);
 }
@@ -2075,7 +2081,7 @@ fn test_batch_release_rejects_batch_over_rate_limit() {
     let setup = TestSetup::new();
     setup.escrow.set_whitelist_entry(&setup.depositor, &true);
     let deadline = setup.env.ledger().timestamp() + 1_000;
-    for bounty_id in 1..=2 {
+    for bounty_id in 1..=3 {
         setup
             .escrow
             .lock_funds(&setup.depositor, &bounty_id, &1_000, &deadline);
@@ -2092,8 +2098,20 @@ fn test_batch_release_rejects_batch_over_rate_limit() {
         );
     });
 
+    // Exhaust the contributor's 1-operation quota with a single-item batch
+    // release (batch_release_funds is what rate-limits the contributor).
+    setup.escrow.batch_release_funds(&vec![
+        &setup.env,
+        ReleaseFundsItem {
+            bounty_id: 1,
+            contributor: setup.contributor.clone(),
+        },
+    ]);
+
+    // The next batch from the same contributor should exceed max_operations=1
+    // and panic with "Rate limit exceeded".
     let mut items = Vec::new(&setup.env);
-    for bounty_id in 1..=2 {
+    for bounty_id in 2..=3 {
         items.push_back(ReleaseFundsItem {
             bounty_id,
             contributor: setup.contributor.clone(),
