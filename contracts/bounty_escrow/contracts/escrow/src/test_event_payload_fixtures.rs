@@ -26,6 +26,10 @@ use crate::event_payload_fixtures::{
     EventPayloadFixture, EVENT_ENUM_FIXTURES, EVENT_PAYLOAD_FIXTURES, FIXTURE_EVENT_VERSION,
 };
 use crate::events::EVENT_VERSION_V2;
+// The lib is `no_std` for wasm, but its test build links `std` (this module
+// already uses `std::string::String` / `std::vec::Vec`). `str::to_string`
+// needs its trait in scope, which a bare test build does not pull in.
+use std::string::ToString;
 
 fn clean_type(t: &str) -> std::string::String {
     let mut out = std::string::String::new();
