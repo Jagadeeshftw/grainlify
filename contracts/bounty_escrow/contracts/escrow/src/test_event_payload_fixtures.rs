@@ -29,6 +29,7 @@ use crate::event_payload_fixtures::{
     EventPayloadFixture, EVENT_ENUM_FIXTURES, EVENT_PAYLOAD_FIXTURES, FIXTURE_EVENT_VERSION,
 };
 use crate::events::EVENT_VERSION_V2;
+use std::string::ToString;
 
 fn clean_type(t: &str) -> std::string::String {
     let mut out = std::string::String::new();
@@ -76,6 +77,16 @@ fn parse_contracttype_structs(src: &str) -> std::vec::Vec<(std::string::String, 
         while lookback_start > 0 && !src.is_char_boundary(lookback_start) {
             lookback_start -= 1;
         }
+        // Compute lookback_start at a char boundary by walking backward from `abs`.
+        let lookback_start = {
+            let raw = abs.saturating_sub(300);
+            // Advance forward until we're on a char boundary.
+            let mut pos = raw;
+            while pos < abs && !src.is_char_boundary(pos) {
+                pos += 1;
+            }
+            pos
+        };
         if !src[lookback_start..abs].contains("#[contracttype]") {
             search_from = abs + 11;
             continue;
@@ -145,6 +156,15 @@ fn parse_contracttype_enums(src: &str) -> std::vec::Vec<(std::string::String, st
         while lookback_start > 0 && !src.is_char_boundary(lookback_start) {
             lookback_start -= 1;
         }
+        // Compute lookback_start at a char boundary by walking backward from `abs`.
+        let lookback_start = {
+            let raw = abs.saturating_sub(300);
+            let mut pos = raw;
+            while pos < abs && !src.is_char_boundary(pos) {
+                pos += 1;
+            }
+            pos
+        };
         if !src[lookback_start..abs].contains("#[contracttype]") {
             search_from = abs + 9;
             continue;

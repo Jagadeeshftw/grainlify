@@ -97,6 +97,13 @@ jobs:
 
       - name: Run contract CI gates
         run: bash contracts/scripts/ci-contracts.sh
+        # ci-contracts.sh runs (in order):
+        #   [1] cargo test on the bounty_escrow workspace – includes:
+        #       • test_analytics_monitoring  (issue #1882: analytics & monitoring suite)
+        #       • test_query_filters         (issue #1882: query-filter suite)
+        #       • all other enabled test modules
+        #   [2] cargo test on the grainlify-contracts workspace (storage-key audit)
+        #   [3] wasm release build + size recording
 
       - name: Run token allowlist + FoT routing suites
         run: cargo test --manifest-path contracts/program-escrow/Cargo.toml -- test_token_allowlist test_fot_routing

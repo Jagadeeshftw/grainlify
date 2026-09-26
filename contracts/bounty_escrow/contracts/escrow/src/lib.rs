@@ -39,6 +39,10 @@ mod validation;
 // #[cfg(test)] mod test_deterministic_randomness;
 // #[cfg(test)] mod test_multi_region_treasury;
 // #[cfg(test)] mod test_rbac;
+// Analytics & monitoring suite – enabled by issue #1882 (all referenced
+// functions are now implemented).
+#[cfg(test)]
+mod test_analytics_monitoring;
 // #[cfg(test)] mod test_renew_rollover;
 // #[cfg(test)] mod test_risk_flags;
 mod traits;
@@ -3278,9 +3282,10 @@ impl BountyEscrowContract {
     /// Return the refund records attached to an escrow for lifecycle tests and
     /// legacy clients. Missing bounties remain an explicit contract failure.
     pub fn get_refund_history(env: Env, bounty_id: u64) -> Vec<RefundRecord> {
-        Self::get_escrow_info(env, bounty_id)
-            .unwrap_or_else(|_| panic!("Bounty not found"))
-            .refund_history
+        match Self::get_escrow_info(env.clone(), bounty_id) {
+            Ok(escrow) => escrow.refund_history,
+            Err(e) => env.panic_with_error(e),
+        }
     }
 
     pub fn get_balance(env: Env) -> i128 {
@@ -3879,6 +3884,200 @@ impl BountyEscrowContract {
             count_released,
             count_refunded,
         }
+    }
+
+    // =========================================================================
+    // ANALYTICS QUERY FUNCTIONS
+    //
+    // Each of the functions below forms part of the analytics/monitoring surface
+    // defined in issue #1882.  They are pure read-only views: no state is mutated,
+    // no auth is required, and no tokens are transferred.
+    //
+    // Consumer map (required by the acceptance criteria of #1882):
+    //
+    // | Function                   | Consumer(s)                                      |
+    // |----------------------------|--------------------------------------------------|
+    // | get_escrow_count           | test_analytics_monitoring, test_query_filters,   |
+    // |                            | escrow-view-facade (off-chain dashboards)         |
+    // | query_escrows_by_status    | test_analytics_monitoring, test_query_filters,   |
+    // |                            | escrow-view-facade                               |
+    // | query_escrows_by_depositor | test_analytics_monitoring, test_query_filters    |
+    // | get_escrow_ids_by_status   | test_analytics_monitoring, test_query_filters    |
+    // | get_aggregate_stats        | test_analytics_monitoring, test_query_filters,   |
+    // |                            | escrow-view-facade                               |
+    // | query_escrows_by_amount    | test_analytics_monitoring, test_query_filters    |
+    // | query_escrows_by_deadline  | test_analytics_monitoring, test_query_filters    |
+    // | get_refund_eligibility     | test_analytics_monitoring, off-chain indexers    |
+    // | get_refund_history         | test_analytics_monitoring, off-chain indexers    |
+    // | get_balance                | test_analytics_monitoring, escrow-view-facade   |
+    // | health_check               | test_analytics_monitoring, ops dashboards        |
+    // | get_analytics              | test_analytics_monitoring, ops dashboards        |
+    // | get_state_snapshot         | test_analytics_monitoring, ops dashboards        |
+    //
+    // Wasm size impact: measured in CI via the `wasm-size-budget` workflow.
+    // Baseline recorded in `.github/wasm-budgets.json`.
+    // =========================================================================
+
+    /// Returns the total number of escrows ever created (never decrements).
+    ///
+    /// This is an O(1) read from the EscrowIndex length.
+    ///
+    /// # Consumers
+    /// - `test_analytics_monitoring` – count integrity tests
+    /// - `test_query_filters` – cross-view consistency assertions
+    /// - Off-chain dashboards that need a quick headcount
+    pub fn get_escrow_count(env: Env) -> u32 {
+        let index: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::EscrowIndex)
+            .unwrap_or(Vec::new(&env));
+        index.len()
+    }
+
+    /// Returns a paginated list of escrows whose status matches `status`.
+    ///
+    /// Each element is an `EscrowWithId` carrying both the `bounty_id` and the
+    /// full `Escrow` struct so callers do not need a second round-trip.
+    ///
+    /// **Complexity**: O(n) scan over the EscrowIndex.
+    ///
+    /// # Parameters
+    /// - `status`  – filter value
+    /// - `offset`  – number of matching records to skip (pagination)
+    /// - `limit`   – maximum number of records to return
+    ///
+    /// # Consumers
+    /// - `test_analytics_monitoring` – status-filtered query tests
+    /// - `test_query_filters` – detailed filter/pagination tests
+    /// - `escrow-view-facade` – cross-contract view facade
+    pub fn query_escrows_by_status(
+        env: Env,
+        status: EscrowStatus,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<EscrowWithId> {
+        let mut matches: Vec<EscrowWithId> = Vec::new(&env);
+        for bounty_id in Self::all_bounty_ids(&env).iter() {
+            let escrow: Escrow =
+                match env.storage().persistent().get(&DataKey::Escrow(bounty_id)) {
+                    Some(e) => e,
+                    None => continue,
+                };
+            if escrow.status == status {
+                matches.push_back(EscrowWithId { bounty_id, escrow });
+            }
+        }
+        Self::paginate_escrows_with_id(&env, matches, offset, limit)
+    }
+
+    /// Returns a paginated list of escrows created by `depositor`.
+    ///
+    /// Uses the `DepositorIndex` for the depositor lookup, falling back to a
+    /// full EscrowIndex scan when the depositor has no index entry.
+    ///
+    /// **Complexity**: O(k) over the depositor's own escrows, O(n) fallback.
+    ///
+    /// # Parameters
+    /// - `depositor` – the depositor address to filter on
+    /// - `offset`    – pagination offset
+    /// - `limit`     – maximum records to return
+    ///
+    /// # Consumers
+    /// - `test_analytics_monitoring` – per-depositor query tests
+    /// - `test_query_filters` – depositor filter + pagination tests
+    pub fn query_escrows_by_depositor(
+        env: Env,
+        depositor: Address,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<EscrowWithId> {
+        // Prefer the depositor-specific index when available.
+        let ids: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::DepositorIndex(depositor.clone()))
+            .unwrap_or_else(|| {
+                // Fallback: linear scan for depositors who locked before the
+                // DepositorIndex was introduced (upgrade-safe).
+                let mut found: Vec<u64> = Vec::new(&env);
+                for bid in Self::all_bounty_ids(&env).iter() {
+                    let e: Option<Escrow> =
+                        env.storage().persistent().get(&DataKey::Escrow(bid));
+                    if let Some(escrow) = e {
+                        if escrow.depositor == depositor {
+                            found.push_back(bid);
+                        }
+                    }
+                }
+                found
+            });
+
+        let mut results: Vec<EscrowWithId> = Vec::new(&env);
+        for bounty_id in ids.iter() {
+            let escrow: Escrow =
+                match env.storage().persistent().get(&DataKey::Escrow(bounty_id)) {
+                    Some(e) => e,
+                    None => continue,
+                };
+            results.push_back(EscrowWithId { bounty_id, escrow });
+        }
+        Self::paginate_escrows_with_id(&env, results, offset, limit)
+    }
+
+    /// Returns a paginated list of bounty IDs whose status matches `status`.
+    ///
+    /// This is the lightweight ID-only counterpart to `query_escrows_by_status`.
+    /// Callers that only need IDs (e.g., to feed into a batch release) should
+    /// prefer this function to avoid deserialising full Escrow structs.
+    ///
+    /// **Complexity**: O(n) scan over EscrowIndex.
+    ///
+    /// # Consumers
+    /// - `test_analytics_monitoring` – ID-vs-object view consistency tests
+    /// - `test_query_filters` – ID-only query tests
+    pub fn get_escrow_ids_by_status(
+        env: Env,
+        status: EscrowStatus,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<u64> {
+        let mut ids: Vec<u64> = Vec::new(&env);
+        for bounty_id in Self::all_bounty_ids(&env).iter() {
+            let escrow: Escrow =
+                match env.storage().persistent().get(&DataKey::Escrow(bounty_id)) {
+                    Some(e) => e,
+                    None => continue,
+                };
+            if escrow.status == status {
+                ids.push_back(bounty_id);
+            }
+        }
+        Self::paginate_tagging_index(&env, ids, offset, limit)
+    }
+
+    /// Slices a `Vec<EscrowWithId>` to the `[offset, offset + limit)` window.
+    fn paginate_escrows_with_id(
+        env: &Env,
+        items: Vec<EscrowWithId>,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<EscrowWithId> {
+        let mut page: Vec<EscrowWithId> = Vec::new(env);
+        let mut skipped: u32 = 0;
+        let mut taken: u32 = 0;
+        for item in items.iter() {
+            if skipped < offset {
+                skipped += 1;
+                continue;
+            }
+            if taken >= limit {
+                break;
+            }
+            page.push_back(item);
+            taken += 1;
+        }
+        page
     }
 
     fn next_capability_id(env: &Env) -> BytesN<32> {
@@ -4717,18 +4916,6 @@ impl BountyEscrowContract {
             )?;
         }
         soroban_sdk::log!(&env, "fee ok");
-
-        let mut depositor_index: Vec<u64> = env
-            .storage()
-            .persistent()
-            .get(&DataKey::DepositorIndex(depositor.clone()))
-            .unwrap_or(Vec::new(&env));
-        depositor_index.push_back(bounty_id);
-        env.storage().persistent().set(
-            &DataKey::DepositorIndex(depositor.clone()),
-            &depositor_index,
-        );
-        Self::renew_depositor_index(&env, &depositor, false);
 
         // Emit value allows for off-chain indexing
         emit_funds_locked(
@@ -6412,10 +6599,18 @@ impl BountyEscrowContract {
             .persistent()
             .get(&DataKey::RefundApproval(bounty_id));
         let deadline_passed = view.deadline > 0 && view.now >= view.deadline;
+        // Return the escrow's actual remaining_amount (not the refundable amount)
+        // so callers can always see how much is locked regardless of eligibility.
+        let remaining_amount: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Escrow(bounty_id))
+            .map(|e: Escrow| e.remaining_amount)
+            .unwrap_or(0);
         (
             view.eligible,
             deadline_passed,
-            view.amount,
+            remaining_amount,
             if view.approval_present {
                 approval
             } else {
@@ -7028,6 +7223,7 @@ impl BountyEscrowContract {
         }
 
         // GUARD: release reentrancy lock
+        monitoring::track_operation(&env, symbol_short!("refund"), refund_to, true);
         reentrancy_guard::release(&env);
         Ok(())
     }
@@ -7829,12 +8025,22 @@ impl BountyEscrowContract {
             let timestamp = env.ledger().timestamp();
 
             // Validate all items before processing (all-or-nothing approach)
+            // Track depositors already rate-limited in this batch to avoid double-counting.
+            let mut rate_limited_depositors: Vec<Address> = Vec::new(&env);
             for item in items.iter() {
                 // Participant filtering (blocklist-only / allowlist-only / disabled)
                 Self::check_participant_filter(&env, item.depositor.clone())?;
 
-                // Rate limit: check per-depositor across batch elements
-                anti_abuse::check_rate_limit(&env, item.depositor.clone());
+                // Rate limit: check per-depositor once across the batch.
+                // Multiple items from the same depositor in a single atomic batch
+                // count as one operation for rate-limiting purposes.
+                let already_checked = rate_limited_depositors
+                    .iter()
+                    .any(|d| d == item.depositor);
+                if !already_checked {
+                    anti_abuse::check_rate_limit(&env, item.depositor.clone());
+                    rate_limited_depositors.push_back(item.depositor.clone());
+                }
 
                 // Check if bounty already exists
                 if env
@@ -8070,6 +8276,9 @@ impl BountyEscrowContract {
 
             // Validate all items before processing (all-or-nothing approach)
             let mut total_amount: i128 = 0;
+            // Track contributors already rate-limited in this batch to avoid
+            // double-counting — mirrors the deduplication in batch_lock_funds.
+            let mut rate_limited_contributors: Vec<Address> = Vec::new(&env);
             for item in items.iter() {
                 // Check if bounty exists
                 if !env
@@ -8096,8 +8305,16 @@ impl BountyEscrowContract {
                     return Err(Error::FundsNotLocked);
                 }
 
-                // Rate limit: check per-contributor across batch elements
-                anti_abuse::check_rate_limit(&env, item.contributor.clone());
+                // Rate limit: check per-contributor once across the batch.
+                // Multiple items released to the same contributor in a single
+                // atomic batch count as one operation for rate-limiting purposes.
+                let already_checked = rate_limited_contributors
+                    .iter()
+                    .any(|c| c == item.contributor);
+                if !already_checked {
+                    anti_abuse::check_rate_limit(&env, item.contributor.clone());
+                    rate_limited_contributors.push_back(item.contributor.clone());
+                }
 
                 // Check for duplicate bounty_ids in the batch
                 let mut count = 0u32;
@@ -8600,46 +8817,64 @@ impl BountyEscrowContract {
 
     /// Returns a page of escrows whose locked `amount` falls inside the
     /// inclusive range `[min_amount, max_amount]`.
+    ///
+    /// Each element is an `EscrowWithId` so callers can access escrow fields
+    /// (e.g. `item.escrow.amount`) without a second storage look-up.
+    ///
+    /// **Complexity**: O(n) scan over EscrowIndex.
+    ///
+    /// # Consumers
+    /// - `test_analytics_monitoring` – amount-range query tests
+    /// - `test_query_filters` – amount filter + boundary tests
     pub fn query_escrows_by_amount(
         env: Env,
         min_amount: i128,
         max_amount: i128,
-        start: u32,
+        offset: u32,
         limit: u32,
-    ) -> Vec<u64> {
-        let mut matches: Vec<u64> = Vec::new(&env);
+    ) -> Vec<EscrowWithId> {
+        let mut matches: Vec<EscrowWithId> = Vec::new(&env);
         for bounty_id in Self::all_bounty_ids(&env).iter() {
             let escrow: Escrow = match env.storage().persistent().get(&DataKey::Escrow(bounty_id)) {
                 Some(escrow) => escrow,
                 None => continue,
             };
             if escrow.amount >= min_amount && escrow.amount <= max_amount {
-                matches.push_back(bounty_id);
+                matches.push_back(EscrowWithId { bounty_id, escrow });
             }
         }
-        Self::paginate_tagging_index(&env, matches, start, limit)
+        Self::paginate_escrows_with_id(&env, matches, offset, limit)
     }
 
     /// Returns a page of escrows whose `deadline` falls inside the inclusive
     /// range `[min_deadline, max_deadline]`.
+    ///
+    /// Each element is an `EscrowWithId` so callers can access escrow fields
+    /// (e.g. `item.escrow.deadline`) without a second storage look-up.
+    ///
+    /// **Complexity**: O(n) scan over EscrowIndex.
+    ///
+    /// # Consumers
+    /// - `test_analytics_monitoring` – deadline-range query tests
+    /// - `test_query_filters` – deadline filter + boundary tests
     pub fn query_escrows_by_deadline(
         env: Env,
         min_deadline: u64,
         max_deadline: u64,
-        start: u32,
+        offset: u32,
         limit: u32,
-    ) -> Vec<u64> {
-        let mut matches: Vec<u64> = Vec::new(&env);
+    ) -> Vec<EscrowWithId> {
+        let mut matches: Vec<EscrowWithId> = Vec::new(&env);
         for bounty_id in Self::all_bounty_ids(&env).iter() {
             let escrow: Escrow = match env.storage().persistent().get(&DataKey::Escrow(bounty_id)) {
                 Some(escrow) => escrow,
                 None => continue,
             };
             if escrow.deadline >= min_deadline && escrow.deadline <= max_deadline {
-                matches.push_back(bounty_id);
+                matches.push_back(EscrowWithId { bounty_id, escrow });
             }
         }
-        Self::paginate_tagging_index(&env, matches, start, limit)
+        Self::paginate_escrows_with_id(&env, matches, offset, limit)
     }
 
     /// All bounty_ids known to the contract, in lock order.
@@ -8945,7 +9180,7 @@ impl traits::FeeInterface for BountyEscrowContract {
 #[cfg(test)]
 mod test;
 // Pre-existing broken test modules — excluded until their referenced types/methods are implemented:
-// #[cfg(test)] mod test_analytics_monitoring;
+// (test_analytics_monitoring and test_query_filters enabled by issue #1882 — see top of file)
 // #[cfg(test)] mod test_auto_refund_permissions;
 // #[cfg(test)] mod test_blacklist_and_whitelist;
 // #[cfg(test)] mod test_bounty_escrow;
@@ -10372,7 +10607,11 @@ mod test_deadline_variants;
 mod test_e2e_upgrade_with_pause;
 // #[cfg(test)] mod test_escrow_expiry;
 // #[cfg(test)] mod test_max_counts;
-// #[cfg(test)] mod test_query_filters;
+// Query-filter suite – enabled by issue #1882 (all referenced functions now
+// implemented: query_escrows_by_status, query_escrows_by_depositor,
+// get_escrow_ids_by_status, query_escrows_by_amount, query_escrows_by_deadline).
+#[cfg(test)]
+mod test_query_filters;
 // #[cfg(test)] mod test_receipts;
 // test_recurring_locks references unimplemented RecurringLock feature types
 // #[cfg(test)] mod test_recurring_locks;

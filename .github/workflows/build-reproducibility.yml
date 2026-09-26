@@ -18,6 +18,7 @@ name: "Build Reproducibility — cdylib wasm artifacts"
 #     • bounty_escrow.wasm          — main bounty escrow contract
 #     • bounty_escrow.wasm          — sole bounty_escrow workspace package
 #     • bounty_escrow.wasm          — the ONE authoritative escrow contract
+#     • bounty_escrow.wasm          — main bounty escrow contract (package: bounty-escrow)
 #
 #   contracts/ packages (individual manifests)
 #     • grainlify_core.wasm
@@ -29,6 +30,8 @@ name: "Build Reproducibility — cdylib wasm artifacts"
 #     • escrow.wasm                 — soroban/contracts/escrow
 #     • soroban_program_escrow.wasm — soroban/contracts/program-escrow
 #     • program_escrow.wasm         — soroban/contracts/program-escrow
+#     • escrow.wasm                 — soroban/contracts/escrow (package: escrow)
+#     • soroban_program_escrow.wasm — soroban/contracts/program-escrow (package: soroban-program-escrow)
 #
 #   Excluded (not part of the deployable artifact inventory):
 #     • escrow                      — soroban/contracts/escrow is SUPERSEDED
@@ -364,7 +367,7 @@ jobs:
           cargo build \
             --manifest-path soroban/Cargo.toml \
             --package escrow \
-            --package program-escrow \
+            --package soroban-program-escrow \
             --target wasm32-unknown-unknown \
             --release
           mkdir -p /tmp/pass2
@@ -384,6 +387,10 @@ jobs:
             fi
             echo "✅ soroban/$artifact is bitwise reproducible across clean builds."
           done
+          bash scripts/verify-wasm-artifacts.sh \
+            soroban/target/wasm32-unknown-unknown/release \
+            escrow.wasm \
+            soroban_program_escrow.wasm
 
       - name: Upload verified wasm artifacts
         uses: actions/upload-artifact@v4

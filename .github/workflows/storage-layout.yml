@@ -35,3 +35,4 @@ jobs:
         run: test -f "$GITHUB_WORKSPACE/contracts/program-escrow/STORAGE_LAYOUT.md"
       - name: program-escrow storage layout doc exists
         run: test -f contracts/program-escrow/STORAGE_LAYOUT.md
+        run: test -f "${{ github.workspace }}/contracts/program-escrow/STORAGE_LAYOUT.md"
