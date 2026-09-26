@@ -1755,7 +1755,7 @@ impl ProgramEscrowContract {
 
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap_or(env.current_contract_address());
         env.events().publish(
-            (FEE_CONFIG_UPDATED,),
+            (Self::FEE_CONFIG_UPDATED,),
             FeeConfigUpdatedEvent {
                 version: EVENT_VERSION_V2,
                 admin,

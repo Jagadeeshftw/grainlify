@@ -7,8 +7,7 @@ name: "Build Reproducibility — cdylib wasm artifacts"
 # Authoritative package list (excludes host-only helpers and probes):
 #
 #   contracts/bounty_escrow workspace (bounty_escrow/Cargo.toml)
-#     • bounty_escrow.wasm          — main bounty escrow contract
-#     • escrow.wasm                 — internal sub-contract (bounty_escrow WS)
+#     • bounty_escrow.wasm          — main bounty escrow contract (package: bounty-escrow)
 #
 #   contracts/ packages (individual manifests)
 #     • grainlify_core.wasm
@@ -17,8 +16,8 @@ name: "Build Reproducibility — cdylib wasm artifacts"
 #     • escrow_view_facade.wasm
 #
 #   soroban/ workspace (soroban/Cargo.toml)
-#     • escrow.wasm                 — soroban/contracts/escrow
-#     • program_escrow.wasm         — soroban/contracts/program-escrow
+#     • escrow.wasm                 — soroban/contracts/escrow (package: escrow)
+#     • soroban_program_escrow.wasm — soroban/contracts/program-escrow (package: soroban-program-escrow)
 #
 #   Excluded (not cdylib / host-only):
 #     • grainlify_stream            — no crate-type; testutils-only, host side
@@ -153,8 +152,7 @@ jobs:
         run: |
           bash scripts/verify-wasm-artifacts.sh \
             contracts/bounty_escrow/target/wasm32-unknown-unknown/release \
-            bounty_escrow.wasm \
-            escrow.wasm
+            bounty_escrow.wasm
 
       - name: List wasm artifacts with sizes
         run: |
@@ -293,7 +291,7 @@ jobs:
           cargo build \
             --manifest-path soroban/Cargo.toml \
             --package escrow \
-            --package program-escrow \
+            --package soroban-program-escrow \
             --target wasm32-unknown-unknown \
             --release
 
@@ -302,7 +300,7 @@ jobs:
           bash scripts/verify-wasm-artifacts.sh \
             soroban/target/wasm32-unknown-unknown/release \
             escrow.wasm \
-            program_escrow.wasm
+            soroban_program_escrow.wasm
 
       - name: List wasm artifacts with sizes
         run: |

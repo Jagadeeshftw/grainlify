@@ -856,7 +856,7 @@ fn test_refund_history_empty_before_any_refund() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #4)")] // BountyNotFound
+#[should_panic(expected = "Error(Contract, #56)")] // BountyNotFound
 fn test_refund_history_panics_for_nonexistent_bounty() {
     let env = Env::default();
     env.mock_all_auths();
