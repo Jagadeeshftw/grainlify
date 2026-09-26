@@ -1,5 +1,5 @@
-use soroban_sdk::{contracttype, Address, Bytes, BytesN, Env};
 use crate::nonce;
+use soroban_sdk::{contracttype, Address, Bytes, BytesN, Env};
 
 /// Persistent storage key for a stored commitment.
 #[contracttype]
@@ -232,7 +232,14 @@ mod test {
 
             env.mock_all_auths();
             // First reveal succeeds
-            let r1 = verify_reveal(&env, &hash, creator.clone(), value.clone(), salt.clone(), None);
+            let r1 = verify_reveal(
+                &env,
+                &hash,
+                creator.clone(),
+                value.clone(),
+                salt.clone(),
+                None,
+            );
             assert_eq!(r1, Ok(()));
 
             // Second reveal of the same commitment fails
@@ -397,7 +404,14 @@ mod test {
 
             env.mock_all_auths();
             // Reveal with nonce 0 succeeds
-            let r1 = verify_reveal(&env, &hash, alice.clone(), val.clone(), salt.clone(), Some(0));
+            let r1 = verify_reveal(
+                &env,
+                &hash,
+                alice.clone(),
+                val.clone(),
+                salt.clone(),
+                Some(0),
+            );
             assert_eq!(r1, Ok(()));
 
             // Create a second commitment with a different hash

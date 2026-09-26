@@ -371,9 +371,7 @@ impl Fixture {
         // Wire a router (self) so release paths with swap-routing succeed
         // on the full validation path without tripping RouterNotConfigured.
         env.as_contract(&contract_id, || {
-            env.storage()
-                .instance()
-                .set(&DataKey::Router, &contract_id);
+            env.storage().instance().set(&DataKey::Router, &contract_id);
         });
 
         Self {
@@ -592,12 +590,10 @@ fn gas_ci_batch_release_max_n20() {
     f.mint(60 * 1_000);
     let deadline = f.env.ledger().timestamp() + 86_400;
     for id in 1..=40u64 {
-        f.client
-            .lock_funds(&f.depositor, &id, &1_000, &deadline);
+        f.client.lock_funds(&f.depositor, &id, &1_000, &deadline);
     }
     for id in 41..=60u64 {
-        f.client
-            .lock_funds(&f.depositor, &id, &1_000, &deadline);
+        f.client.lock_funds(&f.depositor, &id, &1_000, &deadline);
     }
 
     let mut items: Vec<ReleaseFundsItem> = Vec::new(&f.env);
@@ -663,8 +659,7 @@ fn gas_ci_payout_refund_after_deadline_index60() {
     let deadline = f.env.ledger().timestamp() + 100;
     f.mint(60 * 1_000);
     for id in 1..=60u64 {
-        f.client
-            .lock_funds(&f.depositor, &id, &1_000, &deadline);
+        f.client.lock_funds(&f.depositor, &id, &1_000, &deadline);
     }
     f.env
         .ledger()
@@ -695,8 +690,7 @@ fn gas_ci_payout_partial_release_on_60th_escrow() {
     f.populate_60_locked();
 
     let (cpu, mem) = f.measure(|| {
-        f.client
-            .partial_release(&60, &f.contributor, &5_000);
+        f.client.partial_release(&60, &f.contributor, &5_000);
     });
 
     enforce(
@@ -888,13 +882,9 @@ fn gas_ci_measurements_deterministic_per_binary() {
         let dl = f.env.ledger().timestamp() + 1000;
         let cpu0 = f.env.budget().cpu_instruction_cost();
         let mem0 = f.env.budget().memory_bytes_cost();
-        f.client
-            .lock_funds(&f.depositor, &1, &1_000_000, &dl);
+        f.client.lock_funds(&f.depositor, &1, &1_000_000, &dl);
         (
-            f.env
-                .budget()
-                .cpu_instruction_cost()
-                .saturating_sub(cpu0),
+            f.env.budget().cpu_instruction_cost().saturating_sub(cpu0),
             f.env.budget().memory_bytes_cost().saturating_sub(mem0),
         )
     }
@@ -931,14 +921,24 @@ fn gas_ci_consolidated_report_table() {
     }
 
     println!();
-    println!("| {:<46} | {:>16} | {:>12} | {:>16} | {:>12} |",
-        "Operation (worst-case input)", "CPU measured", "Mem measured", "CPU budget", "Mem budget");
-    println!("|{}|{}|{}|{}|{}|",
-        "-".repeat(48), "-".repeat(18), "-".repeat(14), "-".repeat(18), "-".repeat(14));
+    println!(
+        "| {:<46} | {:>16} | {:>12} | {:>16} | {:>12} |",
+        "Operation (worst-case input)", "CPU measured", "Mem measured", "CPU budget", "Mem budget"
+    );
+    println!(
+        "|{}|{}|{}|{}|{}|",
+        "-".repeat(48),
+        "-".repeat(18),
+        "-".repeat(14),
+        "-".repeat(18),
+        "-".repeat(14)
+    );
 
     let row = |label, cpu, mem, cpu_lim, mem_lim| {
-        println!("| {:<46} | {:>16} | {:>12} | {:>16} | {:>12} |",
-            label, cpu, mem, cpu_lim, mem_lim);
+        println!(
+            "| {:<46} | {:>16} | {:>12} | {:>16} | {:>12} |",
+            label, cpu, mem, cpu_lim, mem_lim
+        );
     };
 
     // --- Create ---
@@ -948,10 +948,16 @@ fn gas_ci_consolidated_report_table() {
         f.mint(budgets::LARGE_AMOUNT);
         let dl = f.env.ledger().timestamp() + 86_400;
         let (cpu, mem) = f.measure(|| {
-            f.client.lock_funds(&f.depositor, &61, &budgets::LARGE_AMOUNT, &dl);
+            f.client
+                .lock_funds(&f.depositor, &61, &budgets::LARGE_AMOUNT, &dl);
         });
-        row("create: lock (60-index + 1B amount)", cpu, mem,
-            budgets::create_lock::MAX_CPU, budgets::create_lock::MAX_MEM);
+        row(
+            "create: lock (60-index + 1B amount)",
+            cpu,
+            mem,
+            budgets::create_lock::MAX_CPU,
+            budgets::create_lock::MAX_MEM,
+        );
     }
 
     // --- Batch lock n=20 ---
@@ -963,13 +969,22 @@ fn gas_ci_consolidated_report_table() {
         let mut items: Vec<LockFundsItem> = Vec::new(&f.env);
         for i in 0..MAX_BATCH_SIZE as u64 {
             items.push_back(LockFundsItem {
-                bounty_id: 2000 + i, depositor: f.depositor.clone(),
-                amount: 1_000, deadline: dl,
+                bounty_id: 2000 + i,
+                depositor: f.depositor.clone(),
+                amount: 1_000,
+                deadline: dl,
             });
         }
-        let (cpu, mem) = f.measure(|| { f.client.batch_lock_funds(&items); });
-        row("batch: batch_lock_funds (n=20)", cpu, mem,
-            budgets::batch::BATCH_LOCK_N20_MAX_CPU, budgets::batch::BATCH_LOCK_N20_MAX_MEM);
+        let (cpu, mem) = f.measure(|| {
+            f.client.batch_lock_funds(&items);
+        });
+        row(
+            "batch: batch_lock_funds (n=20)",
+            cpu,
+            mem,
+            budgets::batch::BATCH_LOCK_N20_MAX_CPU,
+            budgets::batch::BATCH_LOCK_N20_MAX_MEM,
+        );
     }
 
     // --- Batch release n=20 ---
@@ -984,21 +999,36 @@ fn gas_ci_consolidated_report_table() {
         let mut items: Vec<ReleaseFundsItem> = Vec::new(&f.env);
         for id in 41..=60u64 {
             items.push_back(ReleaseFundsItem {
-                bounty_id: id, contributor: f.contributor.clone(),
+                bounty_id: id,
+                contributor: f.contributor.clone(),
             });
         }
-        let (cpu, mem) = f.measure(|| { f.client.batch_release_funds(&items); });
-        row("batch: batch_release_funds (n=20)", cpu, mem,
-            budgets::batch::BATCH_RELEASE_N20_MAX_CPU, budgets::batch::BATCH_RELEASE_N20_MAX_MEM);
+        let (cpu, mem) = f.measure(|| {
+            f.client.batch_release_funds(&items);
+        });
+        row(
+            "batch: batch_release_funds (n=20)",
+            cpu,
+            mem,
+            budgets::batch::BATCH_RELEASE_N20_MAX_CPU,
+            budgets::batch::BATCH_RELEASE_N20_MAX_MEM,
+        );
     }
 
     // --- Payout release ---
     {
         let f = Fixture::new();
         f.populate_60_locked();
-        let (cpu, mem) = f.measure(|| { f.client.release_funds(&60, &f.contributor); });
-        row("payout: release_funds (escrow #60)", cpu, mem,
-            budgets::payout::RELEASE_MAX_CPU, budgets::payout::RELEASE_MAX_MEM);
+        let (cpu, mem) = f.measure(|| {
+            f.client.release_funds(&60, &f.contributor);
+        });
+        row(
+            "payout: release_funds (escrow #60)",
+            cpu,
+            mem,
+            budgets::payout::RELEASE_MAX_CPU,
+            budgets::payout::RELEASE_MAX_MEM,
+        );
     }
 
     // --- Payout refund ---
@@ -1010,9 +1040,16 @@ fn gas_ci_consolidated_report_table() {
             f.client.lock_funds(&f.depositor, &id, &1_000, &dl);
         }
         f.env.ledger().set_timestamp(dl + 1);
-        let (cpu, mem) = f.measure(|| { f.client.refund(&60); });
-        row("payout: refund (after deadline)", cpu, mem,
-            budgets::payout::REFUND_MAX_CPU, budgets::payout::REFUND_MAX_MEM);
+        let (cpu, mem) = f.measure(|| {
+            f.client.refund(&60);
+        });
+        row(
+            "payout: refund (after deadline)",
+            cpu,
+            mem,
+            budgets::payout::REFUND_MAX_CPU,
+            budgets::payout::REFUND_MAX_MEM,
+        );
     }
 
     // --- Payout partial release ---
@@ -1030,18 +1067,30 @@ fn gas_ci_consolidated_report_table() {
     {
         let f = Fixture::new();
         f.populate_whitelist_60();
-        let (cpu, mem) = f.measure(|| { let _p = f.client.query_whitelist(&0, &50); });
-        row("pagination: query_whitelist (60 total, limit 50)", cpu, mem,
+        let (cpu, mem) = f.measure(|| {
+            let _p = f.client.query_whitelist(&0, &50);
+        });
+        row(
+            "pagination: query_whitelist (60 total, limit 50)",
+            cpu,
+            mem,
             budgets::pagination::QUERY_WL_60_TOTAL_50_LIMIT_CPU,
-            budgets::pagination::QUERY_WL_60_TOTAL_50_LIMIT_MEM);
+            budgets::pagination::QUERY_WL_60_TOTAL_50_LIMIT_MEM,
+        );
     }
     {
         let f = Fixture::new();
         f.populate_60_locked();
-        let (cpu, mem) = f.measure(|| { let _s = f.client.get_aggregate_stats(); });
-        row("pagination: get_aggregate_stats (60)", cpu, mem,
+        let (cpu, mem) = f.measure(|| {
+            let _s = f.client.get_aggregate_stats();
+        });
+        row(
+            "pagination: get_aggregate_stats (60)",
+            cpu,
+            mem,
             budgets::pagination::GET_AGGREGATE_60_CPU,
-            budgets::pagination::GET_AGGREGATE_60_MEM);
+            budgets::pagination::GET_AGGREGATE_60_MEM,
+        );
     }
 
     // --- Migration ---
@@ -1054,8 +1103,15 @@ fn gas_ci_consolidated_report_table() {
                 .as_contract(&f.contract_id, || upgrade_safety::simulate_upgrade(&f.env));
         });
         row("migration: simulate_upgrade (60 escrows)", cpu, mem,
+            let _r = upgrade_safety::simulate_upgrade(&f.env);
+        });
+        row(
+            "migration: simulate_upgrade (60 escrows)",
+            cpu,
+            mem,
             budgets::migration::SIMULATE_UPGRADE_60_CPU,
-            budgets::migration::SIMULATE_UPGRADE_60_MEM);
+            budgets::migration::SIMULATE_UPGRADE_60_MEM,
+        );
     }
     {
         let f = Fixture::new();
@@ -1086,7 +1142,10 @@ fn gas_ci_consolidated_report_table() {
     }
 
     println!();
-    println!("[WASM] budget_ceiling_bytes = {}", budgets::WASM_SIZE_BUDGET_BYTES);
+    println!(
+        "[WASM] budget_ceiling_bytes = {}",
+        budgets::WASM_SIZE_BUDGET_BYTES
+    );
     println!("_ESCROW_GAS_MODE=collect: baselines printed above. No thresholds enforced._");
 }
 

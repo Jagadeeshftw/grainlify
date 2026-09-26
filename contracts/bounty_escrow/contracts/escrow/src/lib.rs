@@ -86,13 +86,11 @@ mod test_event_schema;
 use crate::events::{
     emit_admin_rotation_accepted, emit_admin_rotation_cancelled, emit_admin_rotation_proposed,
     emit_admin_rotation_timelock_updated, emit_batch_funds_locked, emit_batch_funds_released,
-    emit_deprecation_state_changed,
-    emit_funds_locked, emit_funds_locked_anon, emit_funds_refunded, emit_funds_released,
-    emit_participant_filter_mode_changed, emit_participant_filter_queried,
+    emit_deprecation_state_changed, emit_funds_locked, emit_funds_locked_anon, emit_funds_refunded,
+    emit_funds_released, emit_participant_filter_mode_changed, emit_participant_filter_queried,
     emit_refund_approval_consumed, emit_refund_approval_set, emit_risk_flags_updated,
-    BatchFundsLocked, BatchFundsReleased,
-    ClaimCancelled, ClaimCreated, ClaimExecuted, CriticalOperationOutcome,
-    DeprecationStateChanged, EscrowPublished, FundsLocked,
+    BatchFundsLocked, BatchFundsReleased, ClaimCancelled, ClaimCreated, ClaimExecuted,
+    CriticalOperationOutcome, DeprecationStateChanged, EscrowPublished, FundsLocked,
     FundsLockedAnon, FundsRefunded, FundsReleased, ParticipantFilterModeChanged,
     ParticipantFilterQueried, RefundApprovalConsumed, RefundApprovalSet, RefundTriggerType,
     RiskFlagsUpdated, EVENT_VERSION_V2,
@@ -101,10 +99,6 @@ use soroban_sdk::{
     contract, contractclient, contracterror, contractimpl, contracttype, symbol_short, token, vec,
     Address, BytesN, Env, String, Symbol, Vec,
 };
-
-
-
-
 
 mod monitoring {
     use soroban_sdk::{contracttype, symbol_short, Address, Env, String, Symbol};
@@ -1492,9 +1486,7 @@ impl BountyEscrowContract {
         let previous: Option<u32> = env.storage().persistent().get(marker);
 
         if previous
-            .map(|live_until| {
-                live_until.saturating_sub(current_ledger) <= renewal_threshold
-            })
+            .map(|live_until| live_until.saturating_sub(current_ledger) <= renewal_threshold)
             .unwrap_or(true)
         {
             env.storage()
@@ -1505,13 +1497,11 @@ impl BountyEscrowContract {
                 .set(marker, &current_ledger.saturating_add(extension_ttl));
         }
 
-        env.storage()
-            .persistent()
-            .extend_ttl(
-                marker,
-                ARCHIVAL_MARKER_TTL / TTL_RENEWAL_DIVISOR,
-                ARCHIVAL_MARKER_TTL,
-            );
+        env.storage().persistent().extend_ttl(
+            marker,
+            ARCHIVAL_MARKER_TTL / TTL_RENEWAL_DIVISOR,
+            ARCHIVAL_MARKER_TTL,
+        );
     }
 
     fn renew_escrow_record(env: &Env, bounty_id: u64, archival: bool) {
@@ -1611,8 +1601,7 @@ impl BountyEscrowContract {
     /// Return whether an escrow record is live, archived/restorable, or unknown.
     pub fn probe_escrow_archival(env: Env, bounty_id: u64) -> PersistentRecordStatus {
         let marker = DataKey::EscrowTtl(bounty_id);
-        let regular =
-            Self::persistent_record_status(&env, &marker, &DataKey::Escrow(bounty_id));
+        let regular = Self::persistent_record_status(&env, &marker, &DataKey::Escrow(bounty_id));
         if regular == PersistentRecordStatus::Missing {
             Self::persistent_record_status(&env, &marker, &DataKey::EscrowAnon(bounty_id))
         } else {
@@ -1643,18 +1632,11 @@ impl BountyEscrowContract {
 
     /// Return whether the global escrow index is live, archived/restorable, or unknown.
     pub fn probe_index_archival(env: Env) -> PersistentRecordStatus {
-        Self::persistent_record_status(
-            &env,
-            &DataKey::EscrowIndexTtl,
-            &DataKey::EscrowIndex,
-        )
+        Self::persistent_record_status(&env, &DataKey::EscrowIndexTtl, &DataKey::EscrowIndex)
     }
 
     /// Return whether a depositor index is live, archived/restorable, or unknown.
-    pub fn probe_depositor_index_archival(
-        env: Env,
-        depositor: Address,
-    ) -> PersistentRecordStatus {
+    pub fn probe_depositor_index_archival(env: Env, depositor: Address) -> PersistentRecordStatus {
         Self::persistent_record_status(
             &env,
             &DataKey::DepositorIndexTtl(depositor.clone()),
@@ -2042,8 +2024,6 @@ impl BountyEscrowContract {
         let sum = pct.saturating_add(fixed);
         sum.min(amount).max(0)
     }
-
-
 
     /// Get fee configuration (internal helper)
     fn get_fee_config_internal(env: &Env) -> FeeConfig {
@@ -3280,7 +3260,10 @@ impl BountyEscrowContract {
             .get(&DataKey::Escrow(bounty_id))
             .ok_or(Error::BountyNotFound)?;
         let archival = escrow.archived
-            || matches!(escrow.status, EscrowStatus::Released | EscrowStatus::Refunded);
+            || matches!(
+                escrow.status,
+                EscrowStatus::Released | EscrowStatus::Refunded
+            );
         Self::renew_escrow_record(&env, bounty_id, archival);
         Ok(escrow)
     }
@@ -3289,8 +3272,7 @@ impl BountyEscrowContract {
     /// test suite. New callers should prefer `get_escrow_info` so missing
     /// records are represented as typed errors.
     pub fn get_escrow(env: Env, bounty_id: u64) -> Escrow {
-        Self::get_escrow_info(env, bounty_id)
-            .unwrap_or_else(|_| panic!("Bounty not found"))
+        Self::get_escrow_info(env, bounty_id).unwrap_or_else(|_| panic!("Bounty not found"))
     }
 
     /// Return the refund records attached to an escrow for lifecycle tests and
@@ -4845,7 +4827,10 @@ impl BountyEscrowContract {
                 .get::<DataKey, Escrow>(&DataKey::Escrow(id))
             {
                 let terminal = escrow.archived
-                    || matches!(escrow.status, EscrowStatus::Released | EscrowStatus::Refunded);
+                    || matches!(
+                        escrow.status,
+                        EscrowStatus::Released | EscrowStatus::Refunded
+                    );
                 Self::renew_escrow_record(&env, id, terminal);
                 if escrow.archived {
                     archived.push_back(id);
@@ -5776,11 +5761,7 @@ impl BountyEscrowContract {
             escrow.status = EscrowStatus::Released;
         }
         Self::write_escrow(&env, bounty_id, &escrow)?;
-        Self::renew_escrow_record(
-            &env,
-            bounty_id,
-            escrow.status == EscrowStatus::Released,
-        );
+        Self::renew_escrow_record(&env, bounty_id, escrow.status == EscrowStatus::Released);
 
         // INTERACTION: external token transfer is last
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
@@ -6036,11 +6017,7 @@ impl BountyEscrowContract {
             escrow.status = EscrowStatus::Released;
         }
         Self::write_escrow(&env, bounty_id, &escrow)?;
-        Self::renew_escrow_record(
-            &env,
-            bounty_id,
-            escrow.remaining_amount == 0,
-        );
+        Self::renew_escrow_record(&env, bounty_id, escrow.remaining_amount == 0);
 
         claim.claimed = true;
         env.storage()
@@ -6143,11 +6120,7 @@ impl BountyEscrowContract {
             escrow.status = EscrowStatus::Released;
         }
         Self::write_escrow(&env, bounty_id, &escrow)?;
-        Self::renew_escrow_record(
-            &env,
-            bounty_id,
-            escrow.remaining_amount == 0,
-        );
+        Self::renew_escrow_record(&env, bounty_id, escrow.remaining_amount == 0);
 
         claim.claimed = true;
         env.storage()
@@ -6198,7 +6171,10 @@ impl BountyEscrowContract {
         // already cancelled/consumed — as long as the bounty itself still exists.
         // A missing escrow means the bounty never existed, which is a real error.
         let escrow_exists = env.storage().persistent().has(&DataKey::Escrow(bounty_id))
-            || env.storage().persistent().has(&DataKey::EscrowAnon(bounty_id));
+            || env
+                .storage()
+                .persistent()
+                .has(&DataKey::EscrowAnon(bounty_id));
         if !env
             .storage()
             .persistent()
@@ -6811,11 +6787,7 @@ impl BountyEscrowContract {
         }
 
         Self::write_escrow(&env, bounty_id, &escrow)?;
-        Self::renew_escrow_record(
-            &env,
-            bounty_id,
-            escrow.status == EscrowStatus::Released,
-        );
+        Self::renew_escrow_record(&env, bounty_id, escrow.status == EscrowStatus::Released);
 
         // INTERACTION: external token transfer is last
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
@@ -6994,11 +6966,7 @@ impl BountyEscrowContract {
 
         // Save updated escrow
         Self::write_escrow(&env, bounty_id, &escrow)?;
-        Self::renew_escrow_record(
-            &env,
-            bounty_id,
-            escrow.status == EscrowStatus::Refunded,
-        );
+        Self::renew_escrow_record(&env, bounty_id, escrow.status == EscrowStatus::Refunded);
 
         // Remove approval after successful execution
         if approval.is_some() {
@@ -7516,11 +7484,7 @@ impl BountyEscrowContract {
 
         // Save updated escrow
         Self::write_anon_escrow(&env, bounty_id, &anon)?;
-        Self::renew_escrow_record(
-            &env,
-            bounty_id,
-            anon.status == EscrowStatus::Refunded,
-        );
+        Self::renew_escrow_record(&env, bounty_id, anon.status == EscrowStatus::Refunded);
 
         // Remove approval after successful execution
         if approval.is_some() {
@@ -7644,11 +7608,7 @@ impl BountyEscrowContract {
             },
         });
         Self::write_escrow(&env, bounty_id, &escrow)?;
-        Self::renew_escrow_record(
-            &env,
-            bounty_id,
-            escrow.status == EscrowStatus::Refunded,
-        );
+        Self::renew_escrow_record(&env, bounty_id, escrow.status == EscrowStatus::Refunded);
 
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
         let client = token::Client::new(&env, &token_addr);
@@ -9066,7 +9026,9 @@ mod escrow_status_transition_tests {
             let depositor = Address::generate(&env);
             let contributor = Address::generate(&env);
 
-            let token_id = env.register_stellar_asset_contract_v2(admin.clone()).address();
+            let token_id = env
+                .register_stellar_asset_contract_v2(admin.clone())
+                .address();
             let token_admin = token::StellarAssetClient::new(&env, &token_id);
 
             let contract_id = env.register_contract(None, BountyEscrowContract);

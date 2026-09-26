@@ -758,7 +758,11 @@ impl ProgramEscrowContract {
         Self::ensure_not_deprecated(&env)?;
         Self::require_contract_admin(&env);
 
-        if env.storage().persistent().has(&DataKey::Program(program_id)) {
+        if env
+            .storage()
+            .persistent()
+            .has(&DataKey::Program(program_id))
+        {
             return Err(Error::ProgramExists);
         }
 
@@ -1661,12 +1665,12 @@ impl ProgramEscrowContract {
 #[cfg(test)]
 mod test;
 #[cfg(test)]
-mod test_ownership_transfer;
-#[cfg(test)]
-mod test_search;
+mod test_error_discrimination;
 #[cfg(test)]
 mod test_full_lifecycle;
 #[cfg(test)]
 mod test_max_counts;
 #[cfg(test)]
-mod test_error_discrimination;
+mod test_ownership_transfer;
+#[cfg(test)]
+mod test_search;

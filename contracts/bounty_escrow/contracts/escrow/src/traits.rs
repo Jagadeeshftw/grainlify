@@ -62,7 +62,7 @@ use soroban_sdk::{symbol_short, Address, Env, Symbol, Vec};
 pub trait EscrowInterface {
     /// Lock `}amount` tokens from `depositor` for `bounty_id` until `deadline`.
     /// Note: `non_transferable_rewards` is always set to `None` in this trait;
-/// use the concrete contract to set it.
+    /// use the concrete contract to set it.
     fn lock_funds(
         env: &Env,
         depositor: Address,
@@ -264,9 +264,9 @@ pub trait NotificationPreferencesInterface {
     ///   is no merge semantics — the stored value is replaced atomically.
     ///
     /// #Returns
-///     Ok(account, old_preferences) containing the previously stored value.
-///     Err(InvalidAuth) when the caller is not the account.
-///     Err(InvalidArgument) if `notify_on_release` is false but the previous
+    ///     Ok(account, old_preferences) containing the previously stored value.
+    ///     Err(InvalidAuth) when the caller is not the account.
+    ///     Err(InvalidArgument) if `notify_on_release` is false but the previous
     fn set_notification_preferences(
         env: &Env,
         caller: Address,

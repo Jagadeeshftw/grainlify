@@ -1,6 +1,9 @@
 #![cfg(test)]
 
-use soroban_sdk::{testutils::{Address as _, Ledger}, Address, BytesN, Env, Vec as SorobanVec};
+use soroban_sdk::{
+    testutils::{Address as _, Ledger},
+    Address, BytesN, Env, Vec as SorobanVec,
+};
 
 use crate::{GrainlifyContract, GrainlifyContractClient, UpgradeProposalRecord};
 
@@ -32,7 +35,10 @@ fn assert_unchanged(
     previous_version: Option<u32>,
     timelock: Option<u64>,
 ) {
-    assert_eq!(client.get_upgrade_proposal(&proposal_id), Some(proposal.clone()));
+    assert_eq!(
+        client.get_upgrade_proposal(&proposal_id),
+        Some(proposal.clone())
+    );
     assert_eq!(client.get_version(), version);
     assert_eq!(client.get_previous_version(), previous_version);
     assert_eq!(client.get_timelock_status(&proposal_id), timelock);

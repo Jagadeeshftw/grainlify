@@ -313,11 +313,7 @@ impl GovernanceContract {
         Ok(())
     }
 
-    pub fn set_emergency_role(
-        env: Env,
-        admin: Address,
-        new_holder: Address,
-    ) -> Result<(), Error> {
+    pub fn set_emergency_role(env: Env, admin: Address, new_holder: Address) -> Result<(), Error> {
         admin.require_auth();
         require_not_zero_or_self(&env, &new_holder)?;
         require_role(&env, &admin, Role::Admin)?;
@@ -325,10 +321,8 @@ impl GovernanceContract {
         let previous = get_role_holder(&env, Role::Emergency);
         store_role(&env, Role::Emergency, &new_holder);
 
-        env.events().publish(
-            (symbol_short!("emg_role"),),
-            (previous, new_holder.clone()),
-        );
+        env.events()
+            .publish((symbol_short!("emg_role"),), (previous, new_holder.clone()));
         Ok(())
     }
 
@@ -340,10 +334,8 @@ impl GovernanceContract {
         let previous = get_role_holder(&env, Role::Upgrade);
         store_role(&env, Role::Upgrade, &new_holder);
 
-        env.events().publish(
-            (symbol_short!("upg_role"),),
-            (previous, new_holder.clone()),
-        );
+        env.events()
+            .publish((symbol_short!("upg_role"),), (previous, new_holder.clone()));
         Ok(())
     }
 
@@ -355,10 +347,8 @@ impl GovernanceContract {
         let previous = get_role_holder(&env, Role::Config);
         store_role(&env, Role::Config, &new_holder);
 
-        env.events().publish(
-            (symbol_short!("cfg_role"),),
-            (previous, new_holder.clone()),
-        );
+        env.events()
+            .publish((symbol_short!("cfg_role"),), (previous, new_holder.clone()));
         Ok(())
     }
 
@@ -679,11 +669,7 @@ impl GovernanceContract {
         Ok(proposal.status)
     }
 
-    pub fn execute_proposal(
-        env: Env,
-        executor: Address,
-        proposal_id: u32,
-    ) -> Result<(), Error> {
+    pub fn execute_proposal(env: Env, executor: Address, proposal_id: u32) -> Result<(), Error> {
         executor.require_auth();
         require_role(&env, &executor, Role::Upgrade)?;
         require_not_emergency_paused(&env)?;

@@ -2,7 +2,10 @@
 
 extern crate std;
 
-use soroban_sdk::{testutils::{Address as _, Ledger as _}, Address, Env};
+use soroban_sdk::{
+    testutils::{Address as _, Ledger as _},
+    Address, Env,
+};
 
 use crate::{GrainlifyContract, GrainlifyContractClient};
 
@@ -43,7 +46,11 @@ fn test_propose_and_execute_restore_after_timelock() {
     env.ledger().set_timestamp(env.ledger().timestamp() + 3_700);
     client.execute_config_snapshot_restore(&proposal_id);
 
-    assert_eq!(client.get_version(), 2, "version should be restored from snapshot");
+    assert_eq!(
+        client.get_version(),
+        2,
+        "version should be restored from snapshot"
+    );
     let proposal = client.get_config_change_proposal(&proposal_id).unwrap();
     assert!(proposal.executed);
     assert!(!proposal.cancelled);

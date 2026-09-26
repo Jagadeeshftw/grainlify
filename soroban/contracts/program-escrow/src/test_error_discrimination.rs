@@ -512,7 +512,10 @@ fn test_error_code_invalid_label_too_long() {
     );
 
     // Create a label that's 33 characters (exceeds MAX_LABEL_LENGTH of 32)
-    let long_label = String::from_str(&env, "this-is-a-very-long-label-that-exceeds-the-maximum-length");
+    let long_label = String::from_str(
+        &env,
+        "this-is-a-very-long-label-that-exceeds-the-maximum-length",
+    );
 
     let res = client.try_register_program_with_labels(
         &1,
@@ -572,10 +575,7 @@ fn test_error_code_label_not_allowed() {
     );
 
     // Set restricted label config
-    client.set_label_config(
-        &true,
-        &vec![&env, String::from_str(&env, "allowed-label")],
-    );
+    client.set_label_config(&true, &vec![&env, String::from_str(&env, "allowed-label")]);
 
     // Try to register with a label not in the allowed list
     let res = client.try_register_program_with_labels(
@@ -849,10 +849,7 @@ fn test_label_error_priority_not_allowed_over_invalid() {
     );
 
     // Set restricted label config
-    client.set_label_config(
-        &true,
-        &vec![&env, String::from_str(&env, "allowed-label")],
-    );
+    client.set_label_config(&true, &vec![&env, String::from_str(&env, "allowed-label")]);
 
     // Try to register with a label not in the allowed list
     let res = client.try_register_program_with_labels(
@@ -966,10 +963,7 @@ fn test_update_labels_not_allowed() {
     client.register_program(&1, &program_admin, &name, &5_000);
 
     // Set restricted label config
-    client.set_label_config(
-        &true,
-        &vec![&env, String::from_str(&env, "allowed-label")],
-    );
+    client.set_label_config(&true, &vec![&env, String::from_str(&env, "allowed-label")]);
 
     let res = client.try_update_program_labels(
         &program_admin,
@@ -1446,12 +1440,7 @@ fn test_fail_closed_fresh_deployment_no_registration_allowed() {
     let client = ProgramEscrowContractClient::new(&env, &contract_id);
     let some_admin = Address::generate(&env);
 
-    let res = client.try_register_program(
-        &1,
-        &some_admin,
-        &String::from_str(&env, "Test"),
-        &100,
-    );
+    let res = client.try_register_program(&1, &some_admin, &String::from_str(&env, "Test"), &100);
     assert!(res.is_err());
     assert_eq!(res.err().unwrap(), Ok(Error::NotInitialized));
 

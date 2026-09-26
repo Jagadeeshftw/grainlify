@@ -16,7 +16,13 @@ use soroban_sdk::testutils::Address as _;
 use soroban_sdk::{token, Address, Env};
 
 /// Helper: deploy an initialized escrow contract and mint tokens to a depositor.
-fn setup() -> (Env, BountyEscrowContractClient<'static>, Address, Address, Address) {
+fn setup() -> (
+    Env,
+    BountyEscrowContractClient<'static>,
+    Address,
+    Address,
+    Address,
+) {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -40,10 +46,7 @@ fn setup() -> (Env, BountyEscrowContractClient<'static>, Address, Address, Addre
 }
 
 /// Lock a valid escrow and return its bounty_id for subsequent use in negative tests.
-fn lock_valid_escrow(
-    client: &BountyEscrowContractClient<'static>,
-    depositor: &Address,
-) -> u64 {
+fn lock_valid_escrow(client: &BountyEscrowContractClient<'static>, depositor: &Address) -> u64 {
     let bounty_id = 42;
     let amount = 5_000;
     let deadline = client.env.ledger().timestamp() + 86_400;
@@ -124,8 +127,7 @@ fn test_release_funds_zero_id_no_freeze_record_created() {
 #[test]
 fn test_approve_refund_zero_id_returns_bounty_not_found() {
     let (_env, client, _admin, _depositor, contributor) = setup();
-    let result =
-        client.try_approve_refund(&0u64, &100i128, &contributor, &RefundMode::Full);
+    let result = client.try_approve_refund(&0u64, &100i128, &contributor, &RefundMode::Full);
     assert!(result.is_err(), "approve_refund(0) should fail");
     assert_eq!(
         result.unwrap_err().unwrap(),
@@ -137,12 +139,7 @@ fn test_approve_refund_zero_id_returns_bounty_not_found() {
 #[test]
 fn test_approve_refund_max_id_returns_bounty_not_found() {
     let (_env, client, _admin, _depositor, contributor) = setup();
-    let result = client.try_approve_refund(
-        &u64::MAX,
-        &100i128,
-        &contributor,
-        &RefundMode::Full,
-    );
+    let result = client.try_approve_refund(&u64::MAX, &100i128, &contributor, &RefundMode::Full);
     assert!(result.is_err(), "approve_refund(MAX) should fail");
     assert_eq!(
         result.unwrap_err().unwrap(),
@@ -154,8 +151,7 @@ fn test_approve_refund_max_id_returns_bounty_not_found() {
 #[test]
 fn test_approve_refund_nonexistent_id_returns_bounty_not_found() {
     let (_env, client, _admin, _depositor, contributor) = setup();
-    let result =
-        client.try_approve_refund(&777u64, &100i128, &contributor, &RefundMode::Full);
+    let result = client.try_approve_refund(&777u64, &100i128, &contributor, &RefundMode::Full);
     assert!(result.is_err(), "approve_refund(nonexistent) should fail");
     assert_eq!(
         result.unwrap_err().unwrap(),
@@ -169,8 +165,7 @@ fn test_approve_refund_zero_id_no_freeze_record_created() {
     let (_env, client, _admin, depositor, contributor) = setup();
     let valid_id = lock_valid_escrow(&client, &depositor);
 
-    let result =
-        client.try_approve_refund(&0u64, &100i128, &contributor, &RefundMode::Full);
+    let result = client.try_approve_refund(&0u64, &100i128, &contributor, &RefundMode::Full);
     assert!(result.is_err());
 
     // Confirm no freeze record on valid escrow or bounty 0
@@ -216,10 +211,7 @@ fn test_partial_release_max_id_returns_bounty_not_found() {
 fn test_partial_release_nonexistent_id_returns_bounty_not_found() {
     let (_env, client, _admin, _depositor, contributor) = setup();
     let result = client.try_partial_release(&123_456u64, &contributor, &100i128);
-    assert!(
-        result.is_err(),
-        "partial_release(nonexistent) should fail"
-    );
+    assert!(result.is_err(), "partial_release(nonexistent) should fail");
     assert_eq!(
         result.unwrap_err().unwrap(),
         Error::BountyNotFound,

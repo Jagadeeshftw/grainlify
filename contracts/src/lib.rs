@@ -39,9 +39,9 @@ pub mod storage_collision_tests;
 
 // ─── Storage key constants ────────────────────────────────────────────────────
 
-pub const KEY_PROGRAM_DATA:  &str = "PROGRAM_DATA";
-pub const KEY_FEE_CONFIG:    &str = "FEE_CONFIG";
-pub const KEY_CIRCUIT_OPEN:  &str = "CIRCUIT_OPEN";
+pub const KEY_PROGRAM_DATA: &str = "PROGRAM_DATA";
+pub const KEY_FEE_CONFIG: &str = "FEE_CONFIG";
+pub const KEY_CIRCUIT_OPEN: &str = "CIRCUIT_OPEN";
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
 
@@ -129,10 +129,7 @@ pub enum Warning {
     /// The program is not active; real payouts would be rejected.
     ProgramInactive { program_id: String },
     /// The total gross payout exceeds the program's remaining balance.
-    InsufficientBalance {
-        required: u128,
-        available: u128,
-    },
+    InsufficientBalance { required: u128, available: u128 },
     /// A recipient's gross amount is zero; they would receive nothing.
     ZeroAmountRecipient { address: Address },
     /// Computed net amount for a recipient rounded down to zero due to fees.
@@ -147,20 +144,35 @@ pub enum Warning {
 impl std::fmt::Display for Warning {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::CircuitBreakerOpen =>
-                write!(f, "CIRCUIT_BREAKER_OPEN: real payouts are currently suspended"),
-            Self::ProgramInactive { program_id } =>
-                write!(f, "PROGRAM_INACTIVE: program '{}' is not active", program_id),
-            Self::InsufficientBalance { required, available } =>
-                write!(f, "INSUFFICIENT_BALANCE: required {} but only {} available", required, available),
-            Self::ZeroAmountRecipient { address } =>
-                write!(f, "ZERO_AMOUNT: recipient '{}' has gross amount of 0", address),
-            Self::NetAmountZero { address } =>
-                write!(f, "NET_ZERO: fee consumed entire payout for '{}'", address),
-            Self::EmptyRecipientList =>
-                write!(f, "EMPTY_RECIPIENTS: no recipients provided"),
-            Self::DuplicateAddress { address } =>
-                write!(f, "DUPLICATE_ADDRESS: '{}' appears more than once", address),
+            Self::CircuitBreakerOpen => write!(
+                f,
+                "CIRCUIT_BREAKER_OPEN: real payouts are currently suspended"
+            ),
+            Self::ProgramInactive { program_id } => write!(
+                f,
+                "PROGRAM_INACTIVE: program '{}' is not active",
+                program_id
+            ),
+            Self::InsufficientBalance {
+                required,
+                available,
+            } => write!(
+                f,
+                "INSUFFICIENT_BALANCE: required {} but only {} available",
+                required, available
+            ),
+            Self::ZeroAmountRecipient { address } => write!(
+                f,
+                "ZERO_AMOUNT: recipient '{}' has gross amount of 0",
+                address
+            ),
+            Self::NetAmountZero { address } => {
+                write!(f, "NET_ZERO: fee consumed entire payout for '{}'", address)
+            }
+            Self::EmptyRecipientList => write!(f, "EMPTY_RECIPIENTS: no recipients provided"),
+            Self::DuplicateAddress { address } => {
+                write!(f, "DUPLICATE_ADDRESS: '{}' appears more than once", address)
+            }
         }
     }
 }
@@ -199,16 +211,16 @@ pub struct SimulationResult {
 /// Minimal in-process key-value store used to simulate ledger storage.
 /// Mirrors the pattern from `program-escrow`'s `Storage` type.
 pub struct Storage {
-    programs:     std::collections::HashMap<String, ProgramData>,
-    fee_config:   Option<FeeConfig>,
+    programs: std::collections::HashMap<String, ProgramData>,
+    fee_config: Option<FeeConfig>,
     circuit_open: bool,
 }
 
 impl Storage {
     pub fn new() -> Self {
         Self {
-            programs:     std::collections::HashMap::new(),
-            fee_config:   None,
+            programs: std::collections::HashMap::new(),
+            fee_config: None,
             circuit_open: false,
         }
     }
@@ -262,7 +274,8 @@ pub fn resolve_fee_rate(config: &FeeConfig, gross_amount: u128) -> u32 {
     let rate = if config.brackets.is_empty() {
         config.default_rate_bp
     } else {
-        config.brackets
+        config
+            .brackets
             .iter()
             .find(|b| b.ceiling.map_or(true, |c| gross_amount <= c))
             .map(|b| b.rate_bp)
@@ -286,7 +299,9 @@ pub fn resolve_fee_rate(config: &FeeConfig, gross_amount: u128) -> u32 {
 /// - `q * rate_bp` ≤ `(u128::MAX / 10_000) * 1_000` = `u128::MAX / 10` ✓
 /// - `r * rate_bp` ≤ `9_999 * 1_000` = `9_999_000` ✓
 pub fn compute_fee(gross_amount: u128, rate_bp: u32) -> u128 {
-    if rate_bp == 0 || gross_amount == 0 { return 0; }
+    if rate_bp == 0 || gross_amount == 0 {
+        return 0;
+    }
     let rate = rate_bp as u128;
     let q = gross_amount / BASIS_POINTS;
     let r = gross_amount % BASIS_POINTS;
@@ -501,9 +516,8 @@ impl<'a> ViewFacade<'a> {
 
             // Accumulate for weighted effective rate.
             // Use saturating_add to avoid overflow when amounts approach u128::MAX.
-            total_rate_bp_weighted = total_rate_bp_weighted.saturating_add(
-                (rate_bp as u128).saturating_mul(recipient.gross_amount),
-            );
+            total_rate_bp_weighted = total_rate_bp_weighted
+                .saturating_add((rate_bp as u128).saturating_mul(recipient.gross_amount));
             total_gross += recipient.gross_amount;
             total_fees += fee;
             total_net += net;
@@ -519,7 +533,7 @@ impl<'a> ViewFacade<'a> {
         if let Some(prog) = &program {
             if total_gross > prog.remaining_balance {
                 warnings.push(Warning::InsufficientBalance {
-                    required:  total_gross,
+                    required: total_gross,
                     available: prog.remaining_balance,
                 });
             }

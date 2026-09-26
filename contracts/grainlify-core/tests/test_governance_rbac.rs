@@ -1,9 +1,9 @@
 #![cfg(test)]
 
-use soroban_sdk::{symbol_short, Address, BytesN, Env, Symbol};
 use grainlify_core::governance::{
-    self, GovernanceContract, GovernanceConfig, ProposalStatus, VotingScheme, Role, Error, VoteType,
+    self, Error, GovernanceConfig, GovernanceContract, ProposalStatus, Role, VoteType, VotingScheme,
 };
+use soroban_sdk::{symbol_short, Address, BytesN, Env, Symbol};
 
 fn default_config(env: &Env) -> GovernanceConfig {
     GovernanceConfig {
@@ -48,9 +48,13 @@ fn test_set_emergency_role_authorized_succeeds() {
     let cfg = default_config(&env);
     GovernanceContract::init_governance_state(env.clone(), admin.clone(), cfg).unwrap();
 
-    let result = GovernanceContract::set_emergency_role(env.clone(), admin.clone(), new_holder.clone());
+    let result =
+        GovernanceContract::set_emergency_role(env.clone(), admin.clone(), new_holder.clone());
     assert!(result.is_ok());
-    assert_eq!(governance::get_role_holder(&env, Role::Emergency), Some(new_holder));
+    assert_eq!(
+        governance::get_role_holder(&env, Role::Emergency),
+        Some(new_holder)
+    );
 }
 
 #[test]
@@ -59,7 +63,8 @@ fn test_set_emergency_role_unauthorized_fails() {
     let (admin, _emerg, _upg, _cfg, other) = setup_governance(&env);
     let new_holder = Address::generate(&env);
 
-    let result = GovernanceContract::set_emergency_role(env.clone(), other.clone(), new_holder.clone());
+    let result =
+        GovernanceContract::set_emergency_role(env.clone(), other.clone(), new_holder.clone());
     assert_eq!(result, Err(Error::NotAuthorizedForRole));
 
     let original = governance::get_role_holder(&env, Role::Emergency).unwrap();
@@ -72,9 +77,13 @@ fn test_set_upgrade_role_authorized_succeeds() {
     let (admin, _e, _u, _c, _o) = setup_governance(&env);
     let new_holder = Address::generate(&env);
 
-    let result = GovernanceContract::set_upgrade_role(env.clone(), admin.clone(), new_holder.clone());
+    let result =
+        GovernanceContract::set_upgrade_role(env.clone(), admin.clone(), new_holder.clone());
     assert!(result.is_ok());
-    assert_eq!(governance::get_role_holder(&env, Role::Upgrade), Some(new_holder));
+    assert_eq!(
+        governance::get_role_holder(&env, Role::Upgrade),
+        Some(new_holder)
+    );
 }
 
 #[test]
@@ -83,7 +92,8 @@ fn test_set_upgrade_role_unauthorized_fails() {
     let (_admin, _e, _u, _c, other) = setup_governance(&env);
     let new_holder = Address::generate(&env);
 
-    let result = GovernanceContract::set_upgrade_role(env.clone(), other.clone(), new_holder.clone());
+    let result =
+        GovernanceContract::set_upgrade_role(env.clone(), other.clone(), new_holder.clone());
     assert_eq!(result, Err(Error::NotAuthorizedForRole));
 }
 
@@ -93,9 +103,13 @@ fn test_set_config_role_authorized_succeeds() {
     let (admin, _e, _u, _c, _o) = setup_governance(&env);
     let new_holder = Address::generate(&env);
 
-    let result = GovernanceContract::set_config_role(env.clone(), admin.clone(), new_holder.clone());
+    let result =
+        GovernanceContract::set_config_role(env.clone(), admin.clone(), new_holder.clone());
     assert!(result.is_ok());
-    assert_eq!(governance::get_role_holder(&env, Role::Config), Some(new_holder));
+    assert_eq!(
+        governance::get_role_holder(&env, Role::Config),
+        Some(new_holder)
+    );
 }
 
 #[test]
@@ -104,7 +118,8 @@ fn test_set_config_role_unauthorized_fails() {
     let (_admin, _e, _u, _c, other) = setup_governance(&env);
     let new_holder = Address::generate(&env);
 
-    let result = GovernanceContract::set_config_role(env.clone(), other.clone(), new_holder.clone());
+    let result =
+        GovernanceContract::set_config_role(env.clone(), other.clone(), new_holder.clone());
     assert_eq!(result, Err(Error::NotAuthorizedForRole));
 }
 
@@ -114,9 +129,13 @@ fn test_set_security_council_authorized_succeeds() {
     let (admin, _e, _u, _c, _o) = setup_governance(&env);
     let council = Address::generate(&env);
 
-    let result = GovernanceContract::set_security_council(env.clone(), admin.clone(), council.clone());
+    let result =
+        GovernanceContract::set_security_council(env.clone(), admin.clone(), council.clone());
     assert!(result.is_ok());
-    assert_eq!(GovernanceContract::get_security_council(env.clone()).unwrap(), council);
+    assert_eq!(
+        GovernanceContract::get_security_council(env.clone()).unwrap(),
+        council
+    );
 }
 
 #[test]
@@ -125,7 +144,8 @@ fn test_set_security_council_unauthorized_fails() {
     let (_admin, _e, _u, _c, other) = setup_governance(&env);
     let council = Address::generate(&env);
 
-    let result = GovernanceContract::set_security_council(env.clone(), other.clone(), council.clone());
+    let result =
+        GovernanceContract::set_security_council(env.clone(), other.clone(), council.clone());
     assert_eq!(result, Err(Error::NotAuthorizedForRole));
 }
 
@@ -281,13 +301,15 @@ fn test_execute_proposal_authorized_succeeds() {
         proposer.clone(),
         dummy_hash.clone(),
         symbol_short!("test"),
-    ).unwrap();
+    )
+    .unwrap();
 
     env.ledger().set_timestamp(101);
     GovernanceContract::finalize_proposal(env.clone(), proposal_id).unwrap();
     env.ledger().set_timestamp(151);
 
-    let result = GovernanceContract::execute_proposal(env.clone(), upgrade_role.clone(), proposal_id);
+    let result =
+        GovernanceContract::execute_proposal(env.clone(), upgrade_role.clone(), proposal_id);
     assert!(result.is_ok());
 }
 
@@ -310,7 +332,8 @@ fn test_execute_proposal_unauthorized_fails() {
         proposer.clone(),
         dummy_hash.clone(),
         symbol_short!("test"),
-    ).unwrap();
+    )
+    .unwrap();
 
     env.ledger().set_timestamp(101);
     GovernanceContract::finalize_proposal(env.clone(), proposal_id).unwrap();
@@ -357,16 +380,13 @@ fn test_cast_vote_blocked_by_emergency_pause() {
         proposer.clone(),
         dummy_hash.clone(),
         symbol_short!("test"),
-    ).unwrap();
+    )
+    .unwrap();
 
     GovernanceContract::emergency_pause(env.clone(), emergency.clone()).unwrap();
 
-    let result = GovernanceContract::cast_vote(
-        env.clone(),
-        voter.clone(),
-        proposal_id,
-        VoteType::For,
-    );
+    let result =
+        GovernanceContract::cast_vote(env.clone(), voter.clone(), proposal_id, VoteType::For);
     assert_eq!(result, Err(Error::EmergencyPaused));
 }
 
@@ -388,7 +408,8 @@ fn test_finalize_proposal_blocked_by_emergency_pause() {
         proposer.clone(),
         dummy_hash.clone(),
         symbol_short!("test"),
-    ).unwrap();
+    )
+    .unwrap();
 
     env.ledger().set_timestamp(101);
     GovernanceContract::emergency_pause(env.clone(), emergency.clone()).unwrap();
@@ -417,14 +438,16 @@ fn test_execute_proposal_blocked_by_emergency_pause() {
         proposer.clone(),
         dummy_hash.clone(),
         symbol_short!("test"),
-    ).unwrap();
+    )
+    .unwrap();
 
     env.ledger().set_timestamp(101);
     GovernanceContract::finalize_proposal(env.clone(), proposal_id).unwrap();
     env.ledger().set_timestamp(151);
     GovernanceContract::emergency_pause(env.clone(), emergency.clone()).unwrap();
 
-    let result = GovernanceContract::execute_proposal(env.clone(), upgrade_role.clone(), proposal_id);
+    let result =
+        GovernanceContract::execute_proposal(env.clone(), upgrade_role.clone(), proposal_id);
     assert_eq!(result, Err(Error::EmergencyPaused));
 }
 
@@ -441,27 +464,46 @@ fn test_rotated_admin_old_fails_new_succeeds() {
     let cfg = default_config(&env);
 
     GovernanceContract::init_governance_state(env.clone(), old_admin.clone(), cfg).unwrap();
-    assert_eq!(governance::get_role_holder(&env, Role::Admin), Some(old_admin.clone()));
+    assert_eq!(
+        governance::get_role_holder(&env, Role::Admin),
+        Some(old_admin.clone())
+    );
 
     GovernanceContract::rotate_admin(env.clone(), old_admin.clone(), new_admin.clone()).unwrap();
     GovernanceContract::confirm_admin_rotation(env.clone(), new_admin.clone()).unwrap();
 
-    assert_eq!(governance::get_role_holder(&env, Role::Admin), Some(new_admin.clone()));
+    assert_eq!(
+        governance::get_role_holder(&env, Role::Admin),
+        Some(new_admin.clone())
+    );
 
     let some_new_holder = Address::generate(&env);
-    let old_result = GovernanceContract::set_emergency_role(env.clone(), old_admin.clone(), some_new_holder.clone());
+    let old_result = GovernanceContract::set_emergency_role(
+        env.clone(),
+        old_admin.clone(),
+        some_new_holder.clone(),
+    );
     assert_eq!(old_result, Err(Error::NotAuthorizedForRole));
 
     let another_holder = Address::generate(&env);
-    let new_result = GovernanceContract::set_emergency_role(env.clone(), new_admin.clone(), another_holder.clone());
+    let new_result = GovernanceContract::set_emergency_role(
+        env.clone(),
+        new_admin.clone(),
+        another_holder.clone(),
+    );
     assert!(new_result.is_ok());
-    assert_eq!(governance::get_role_holder(&env, Role::Emergency), Some(another_holder));
+    assert_eq!(
+        governance::get_role_holder(&env, Role::Emergency),
+        Some(another_holder)
+    );
 
-    let old_rotate_result = GovernanceContract::rotate_admin(env.clone(), old_admin.clone(), Address::generate(&env));
+    let old_rotate_result =
+        GovernanceContract::rotate_admin(env.clone(), old_admin.clone(), Address::generate(&env));
     assert_eq!(old_rotate_result, Err(Error::NotAuthorizedForRole));
 
     let even_newer = Address::generate(&env);
-    let new_rotate_result = GovernanceContract::rotate_admin(env.clone(), new_admin.clone(), even_newer.clone());
+    let new_rotate_result =
+        GovernanceContract::rotate_admin(env.clone(), new_admin.clone(), even_newer.clone());
     assert!(new_rotate_result.is_ok());
 }
 
@@ -496,7 +538,10 @@ fn test_rotated_admin_wrong_address_cannot_confirm() {
     let result = GovernanceContract::confirm_admin_rotation(env.clone(), imposter.clone());
     assert_eq!(result, Err(Error::NoPendingAdminRotation));
 
-    assert_eq!(governance::get_role_holder(&env, Role::Admin), Some(old_admin.clone()));
+    assert_eq!(
+        governance::get_role_holder(&env, Role::Admin),
+        Some(old_admin.clone())
+    );
 }
 
 // ============================================================================
@@ -519,12 +564,16 @@ fn test_expired_pending_admin_rotation_fails() {
     let pending = GovernanceContract::get_pending_admin_rotation(env.clone()).unwrap();
     assert!(pending.expires_at > start_ts);
 
-    env.ledger().set_timestamp(pending.expires_at.saturating_add(1));
+    env.ledger()
+        .set_timestamp(pending.expires_at.saturating_add(1));
 
     let result = GovernanceContract::confirm_admin_rotation(env.clone(), new_admin.clone());
     assert_eq!(result, Err(Error::PendingAdminExpired));
 
-    assert_eq!(governance::get_role_holder(&env, Role::Admin), Some(old_admin.clone()));
+    assert_eq!(
+        governance::get_role_holder(&env, Role::Admin),
+        Some(old_admin.clone())
+    );
 
     assert!(GovernanceContract::get_pending_admin_rotation(env.clone()).is_none());
 }
@@ -590,7 +639,10 @@ fn test_set_emergency_role_zero_address_fails() {
 
     let result = GovernanceContract::set_emergency_role(env.clone(), admin.clone(), zero);
     assert_eq!(result, Err(Error::InvalidRoleHolder));
-    assert_eq!(governance::get_role_holder(&env, Role::Emergency), Some(original));
+    assert_eq!(
+        governance::get_role_holder(&env, Role::Emergency),
+        Some(original)
+    );
 }
 
 #[test]
@@ -630,9 +682,13 @@ fn test_set_emergency_role_contract_self_address_fails() {
     let self_addr = env.current_contract_address();
     let original = governance::get_role_holder(&env, Role::Emergency).unwrap();
 
-    let result = GovernanceContract::set_emergency_role(env.clone(), admin.clone(), self_addr.clone());
+    let result =
+        GovernanceContract::set_emergency_role(env.clone(), admin.clone(), self_addr.clone());
     assert_eq!(result, Err(Error::InvalidRoleHolder));
-    assert_eq!(governance::get_role_holder(&env, Role::Emergency), Some(original));
+    assert_eq!(
+        governance::get_role_holder(&env, Role::Emergency),
+        Some(original)
+    );
 }
 
 #[test]
@@ -656,7 +712,8 @@ fn test_config_role_cannot_set_emergency_role() {
     let (_admin, _e, _u, config_role, _o) = setup_governance(&env);
     let new_holder = Address::generate(&env);
 
-    let result = GovernanceContract::set_emergency_role(env.clone(), config_role.clone(), new_holder);
+    let result =
+        GovernanceContract::set_emergency_role(env.clone(), config_role.clone(), new_holder);
     assert_eq!(result, Err(Error::NotAuthorizedForRole));
 }
 
@@ -761,7 +818,8 @@ fn test_config_update_emits_event() {
         5500,
         6500,
         0,
-    ).unwrap();
+    )
+    .unwrap();
 
     let last_event = env.events().all().last().unwrap();
     let topic: Symbol = last_event.topics().get(0).unwrap().into_val(&env);
