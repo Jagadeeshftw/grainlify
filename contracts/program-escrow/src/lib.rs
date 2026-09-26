@@ -6676,7 +6676,7 @@ impl ProgramEscrowContract {
         amounts: soroban_sdk::Vec<i128>,
         merkle_root: soroban_sdk::BytesN<32>,
     ) -> BatchReceipt {
-        let program_data =
+        let _program_data =
             Self::batch_payout(env.clone(), recipients.clone(), amounts.clone());
 
         let batch_id_key = BatchReceiptKey::NextId;
