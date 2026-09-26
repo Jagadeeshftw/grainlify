@@ -1,22 +1,45 @@
+[workspace]
+resolver = "2"
+members = [
+  "escrow-view-facade",
+  "grainlify-core",
+  "program-escrow",
+  "view-facade",
+]
+# A bare `cargo test` / `cargo build` in contracts/ covers the root package too,
+# not just the members. The root package is a member in its own right: it used
+# to belong to no workspace, so nothing built or tested it and the
+# storage-collision audit it carries never ran (#1907).
+default-members = [
+  ".",
+  "escrow-view-facade",
+  "grainlify-core",
+  "program-escrow",
+  "view-facade",
+]
+# contracts/bounty_escrow is a workspace of its own (CI builds it through
+# --manifest-path contracts/bounty_escrow/Cargo.toml), and the `escrow` symlink
+# points into it, so neither path may be a member of this workspace.
+exclude = [
+  "bounty_escrow",
+  "escrow",
+]
+
+[workspace.dependencies]
+soroban-sdk = "=21.7.7"
+ethnum = "1.5"
+
 [package]
 name = "grainlify-contracts"
 version = "0.1.0"
 edition = "2021"
 
-# This package used to belong to no workspace, so nothing built or tested it
-# and the storage-collision audit it carries never ran. Declaring it as its own
-# workspace makes it a workspace member that `cargo test --workspace` builds;
-# `contracts/scripts/ci-contracts.sh` runs it on every pull request.
-[workspace]
-resolver = "2"
-members = ["."]
-
 [dependencies]
-soroban-sdk = "=21.7.7"
-ethnum = "1.5"
+soroban-sdk = { workspace = true }
+ethnum = { workspace = true }
 
 [dev-dependencies]
-soroban-sdk = { version = "=21.7.7", features = ["testutils"] }
+soroban-sdk = { workspace = true, features = ["testutils"] }
 
 [lib]
 name = "grainlify_contracts"
@@ -25,3 +48,24 @@ path = "src/lib.rs"
 [[bin]]
 name = "grainlify_contracts"
 path = "src/main.rs"
+
+# Profiles are workspace-global: the members this workspace absorbed used to
+# carry identical copies, and Cargo ignores profiles in non-root manifests.
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = 0
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+lto = true
+
+# For more information about this profile see https://soroban.stellar.org/docs/basic-tutorials/logging#cargotoml-profile
+[profile.release-with-logs]
+inherits = "release"
+debug-assertions = true
+
+[profile.test]
+overflow-checks = true
+debug = 0

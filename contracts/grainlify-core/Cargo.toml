@@ -21,24 +21,8 @@ governance_contract_tests = []
 wasm_tests = []
 
 [dependencies]
-soroban-sdk = "=21.7.7"
-ethnum = "1.5"
+soroban-sdk = { workspace = true }
+ethnum = { workspace = true }
 
 [dev-dependencies]
-soroban-sdk = { version = "=21.7.7", features = ["testutils"] }
-
-[profile.release]
-overflow-checks = true
-opt-level = "z"
-lto = true
-codegen-units = 1
-panic = "abort"
-
-[profile.test]
-overflow-checks = true
-debug = 0
-
-# Built standalone by CI (build-reproducibility, wasm-size-budget,
-# sdk-version-check, storage-layout). Declare an empty workspace so this crate
-# stays independent of the `contracts` workspace now rooted at contracts/Cargo.toml.
-[workspace]
+soroban-sdk = { workspace = true, features = ["testutils"] }

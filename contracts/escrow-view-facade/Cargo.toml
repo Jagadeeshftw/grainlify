@@ -7,31 +7,9 @@ edition = "2021"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-soroban-sdk = "=21.7.7"
+soroban-sdk = { workspace = true }
 program-escrow = { path = "../program-escrow", default-features = false }
-ethnum = "1.5"
+ethnum = { workspace = true }
 
 [dev-dependencies]
-soroban-sdk = { version = "=21.7.7", features = ["testutils"] }
-
-[profile.release]
-opt-level = "z"
-overflow-checks = true
-debug = 0
-strip = "symbols"
-debug-assertions = false
-panic = "abort"
-codegen-units = 1
-lto = true
-
-[profile.release-with-logs]
-inherits = "release"
-debug-assertions = true
-
-[profile.test]
-overflow-checks = true
-
-# Built standalone by CI (build-reproducibility, wasm-size-budget,
-# sdk-version-check, storage-layout). Declare an empty workspace so this crate
-# stays independent of the `contracts` workspace now rooted at contracts/Cargo.toml.
-[workspace]
+soroban-sdk = { workspace = true, features = ["testutils"] }

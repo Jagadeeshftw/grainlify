@@ -47,7 +47,14 @@ for entry in "${MANIFEST_PINS[@]}"; do
   IFS='|' read -r root expected status <<< "$entry"
   manifest="$ROOT_DIR/$root/Cargo.toml"
 
-  if [[ ! -f "$ROOT_DIR/$root/Cargo.lock" ]]; then
+  # Crates inside a Cargo workspace share the workspace root's lockfile, so
+  # resolve the manifest's owning workspace root instead of assuming the
+  # lockfile sits next to the manifest. Single-root crates resolve to
+  # themselves, so this is a no-op for them.
+  # `cargo locate-project` prints {"root":"<path>/Cargo.toml"}.
+  ws_root="$(cargo locate-project --workspace --manifest-path "$manifest" 2>/dev/null \
+    | sed -n 's/.*"root":"\(.*\)".*/\1/p' | sed 's|/Cargo.toml$||')" || ws_root=""
+  if [[ -z "$ws_root" || ! -f "$ws_root/Cargo.lock" ]]; then
     echo "FAIL $root: no committed Cargo.lock, the gate needs --locked resolution"
     fail=1
     continue
