@@ -1,6 +1,14 @@
 # View Facade
 
-A **read-only aggregation contract** for the Grainlify ecosystem on Stellar/Soroban.
+## Deployment status and crate relationships
+
+No network deployment or contract ID is recorded for this facade in the repository. The deployment command below is an instruction, not evidence of a live instance.
+
+- Depends on: [grainlify-core](../grainlify-core/README.md) and [program-escrow](../program-escrow/README.md) through Cargo path dependencies. It queries a supplied program-escrow contract address at runtime.
+- Depended on by: no other in-repository Cargo package declares a dependency on view-facade.
+- Unlike [escrow-view-facade](../escrow-view-facade/README.md), this facade maintains a contract registry and program-oriented query adapters; it does not build bounty summaries.
+
+A contract registry and read-focused query facade for the Grainlify ecosystem on Stellar/Soroban.
 
 ## Purpose
 

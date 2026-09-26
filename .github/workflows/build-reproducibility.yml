@@ -8,6 +8,7 @@ name: "Build Reproducibility — cdylib wasm artifacts"
 #
 #   contracts/bounty_escrow workspace (bounty_escrow/Cargo.toml)
 #     • bounty_escrow.wasm          — main bounty escrow contract
+#     • bounty_escrow.wasm          — sole bounty_escrow workspace package
 #
 #   contracts/ packages (individual manifests)
 #     • grainlify_core.wasm
