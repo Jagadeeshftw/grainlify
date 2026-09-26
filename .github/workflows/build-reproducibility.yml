@@ -8,7 +8,6 @@ name: "Build Reproducibility — cdylib wasm artifacts"
 #
 #   contracts/bounty_escrow workspace (bounty_escrow/Cargo.toml)
 #     • bounty_escrow.wasm          — main bounty escrow contract
-#     • escrow.wasm                 — internal sub-contract (bounty_escrow WS)
 #
 #   contracts/ packages (individual manifests)
 #     • grainlify_core.wasm
@@ -153,8 +152,7 @@ jobs:
         run: |
           bash scripts/verify-wasm-artifacts.sh \
             contracts/bounty_escrow/target/wasm32-unknown-unknown/release \
-            bounty_escrow.wasm \
-            escrow.wasm
+            bounty_escrow.wasm
 
       - name: List wasm artifacts with sizes
         run: |

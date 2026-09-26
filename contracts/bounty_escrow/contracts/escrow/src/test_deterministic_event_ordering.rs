@@ -88,6 +88,12 @@ fn lock_item(ctx: &Ctx, bounty_id: u64, depositor: Address, amount: i128) -> Loc
     }
 }
 
+/// Batch fixtures intentionally reuse participants. Exempt them from the
+/// anti-abuse cooldown so these tests exercise event ordering, not throttling.
+fn whitelist(ctx: &Ctx, address: &Address) {
+    ctx.client.set_whitelist(address, &true);
+}
+
 /// Enable a flat percentage fee (10%) on both lock and release, routed to a
 /// single recipient (no treasury split) — the simplest path that still
 /// exercises `FeeCollected` + `FeeRoutingInvariantChecked`.
@@ -164,6 +170,7 @@ fn bounty_ids_for_topic(ctx: &Ctx, target: Symbol) -> Vec<u64> {
 fn test_batch_lock_events_ordered_by_bounty_id_then_aggregate_last() {
     let ctx = setup();
     let depositor = Address::generate(&ctx.env);
+    whitelist(&ctx, &depositor);
     mint(&ctx, &depositor, AMOUNT * 3);
 
     let items = vec![
@@ -199,6 +206,7 @@ fn test_batch_lock_events_ordered_by_bounty_id_then_aggregate_last() {
 fn test_batch_lock_failure_emits_no_funds_locked_events() {
     let ctx = setup();
     let depositor = Address::generate(&ctx.env);
+    whitelist(&ctx, &depositor);
     mint(&ctx, &depositor, AMOUNT * 3);
 
     let items = vec![
@@ -237,6 +245,8 @@ fn test_batch_release_events_ordered_by_bounty_id_then_aggregate_last() {
     let ctx = setup();
     let depositor = Address::generate(&ctx.env);
     let contributor = Address::generate(&ctx.env);
+    whitelist(&ctx, &depositor);
+    whitelist(&ctx, &contributor);
     mint(&ctx, &depositor, AMOUNT * 3);
 
     let lock_items = vec![
@@ -292,6 +302,8 @@ fn test_batch_release_failure_emits_no_funds_released_events() {
     let ctx = setup();
     let depositor = Address::generate(&ctx.env);
     let contributor = Address::generate(&ctx.env);
+    whitelist(&ctx, &depositor);
+    whitelist(&ctx, &contributor);
     mint(&ctx, &depositor, AMOUNT);
 
     ctx.client.batch_lock_funds(&vec![

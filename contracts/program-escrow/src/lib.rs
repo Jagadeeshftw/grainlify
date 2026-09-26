@@ -1755,7 +1755,7 @@ impl ProgramEscrowContract {
 
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap_or(env.current_contract_address());
         env.events().publish(
-            (FEE_CONFIG_UPDATED,),
+            (Self::FEE_CONFIG_UPDATED,),
             FeeConfigUpdatedEvent {
                 version: EVENT_VERSION_V2,
                 admin,
@@ -7605,9 +7605,6 @@ impl ProgramEscrowContract {
 // mod test;
 
 
-#[cfg(test)]
-#[cfg(any())] // pre-existing breakage: duplicate fn names, misplaced #[test] attrs
-mod test;
 #[cfg(test)]
 #[cfg(any())] // pre-existing breakage: unclosed delimiter
 mod test_token_allowlist;

@@ -91,7 +91,7 @@ def main() -> int:
     if not EVENTS.is_file():
         print(f"missing {EVENTS}", file=sys.stderr)
         return 1
-    text = EVENTS.read_text()
+    text = EVENTS.read_text(encoding="utf-8")
     structs = parse_structs(text)
     enums = parse_enums(text)
     lines = []
@@ -162,7 +162,7 @@ def main() -> int:
         lines.append("    },")
     lines.append("];")
     lines.append("")
-    OUT.write_text("\n".join(lines) + "\n")
+    OUT.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"wrote {OUT} ({len(structs)} events, {len(enums)} enums)")
     return 0
 

@@ -248,6 +248,13 @@ impl Fixture {
         self.token_sac.mint(&self.depositor, &amount);
     }
 
+    /// Batch release validates every item independently. Whitelisting this
+    /// repeated contributor keeps batch benchmarks focused on release costs,
+    /// rather than intentionally triggering the per-address cooldown.
+    fn whitelist_batch_contributor(&self) {
+        self.client.set_whitelist(&self.contributor, &true);
+    }
+
     /// Populate 60 escrows as the representative worst-case index size.
     /// Returns the first/last bounty_id pair for later use in pagination.
     fn populate_60_locked(&self) -> (u64, u64) {
@@ -436,6 +443,7 @@ fn gas_ci_batch_lock_max_n20() {
 #[test]
 fn gas_ci_batch_release_max_n20() {
     let f = Fixture::new();
+    f.whitelist_batch_contributor();
     // Mature index: 40 baseline + 20-to-release = 60 total
     f.mint(60 * 1_000);
     let deadline = f.env.ledger().timestamp() + 86_400;
@@ -823,6 +831,7 @@ fn gas_ci_consolidated_report_table() {
     // --- Batch release n=20 ---
     {
         let f = Fixture::new();
+        f.whitelist_batch_contributor();
         f.mint(60 * 1_000);
         let dl = f.env.ledger().timestamp() + 86_400;
         for id in 1..=60u64 {

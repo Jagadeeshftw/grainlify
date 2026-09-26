@@ -32,4 +32,4 @@ jobs:
       - name: validate all deployable contract snapshots
         run: python3 scripts/verify-storage-layout-manifest.py
       - name: program-escrow package exists
-        run: test -f "$%7B github.workspace }%7$/workflowz/contracts/program-escrow/STORAGE_LAYOUT.md"
+        run: test -f "$GITHUB_WORKSPACE/contracts/program-escrow/STORAGE_LAYOUT.md"

@@ -7,8 +7,8 @@
 use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env, String, Symbol, Vec};
 use grainlify_core::CorrelationId;
 
-
-// Event types
+// Event topics and registry key shared by the contract implementation.
+// These were inadvertently dropped while resolving the split-types merge.
 pub const PROGRAM_INITIALIZED: Symbol = symbol_short!("PrgInit");
 pub const FUNDS_LOCKED: Symbol = symbol_short!("FndsLock");
 pub const BATCH_FUNDS_LOCKED: Symbol = symbol_short!("BatLck");
@@ -37,6 +37,8 @@ pub const CONTROLLER_ACCEPTED: Symbol = symbol_short!("CtrlAcc");
 pub const CONTROLLER_ROTATION_CANCELLED: Symbol = symbol_short!("CtrlCanc");
 pub const PRICE_UPDATED: Symbol = symbol_short!("PriceUpd");
 pub const DYNAMIC_PRICING_CONFIG_UPDATED: Symbol = symbol_short!("DynPricCg");
+
+
 
 // Storage keys
 pub const PROGRAM_DATA: Symbol = symbol_short!("ProgData");
