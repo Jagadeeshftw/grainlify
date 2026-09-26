@@ -34,7 +34,7 @@ jobs:
         run: |
           echo "Validating contract manifests against schema..."
 
-          MANIFESTS=$(find contracts -name "*-manifest.json" -not -path "*/node_modules/*" -not -name "storage-layout-manifest.json")
+          MANIFESTS=$(git ls-files 'contracts/*-manifest.json' | grep -v 'storage-layout-manifest.json')
 
           for manifest in $MANIFESTS; do
             echo "Validating $manifest..."
@@ -75,7 +75,7 @@ jobs:
         run: |
           echo "Validating manifest structure..."
 
-          MANIFESTS=$(find contracts -name "*-manifest.json" -not -path "*/node_modules/*" -not -name "storage-layout-manifest.json")
+          MANIFESTS=$(git ls-files 'contracts/*-manifest.json' | grep -v 'storage-layout-manifest.json')
 
           for manifest in $MANIFESTS; do
             echo "Checking structure of $manifest..."
@@ -102,7 +102,7 @@ jobs:
         run: |
           echo "Validating version formats..."
 
-          MANIFESTS=$(find contracts -name "*-manifest.json" -not -path "*/node_modules/*" -not -name "storage-layout-manifest.json")
+          MANIFESTS=$(git ls-files 'contracts/*-manifest.json' | grep -v 'storage-layout-manifest.json')
 
           for manifest in $MANIFESTS; do
             echo "Checking version format in $manifest..."
@@ -128,7 +128,7 @@ jobs:
         run: |
           echo "Validating authorization values..."
 
-          MANIFESTS=$(find contracts -name "*-manifest.json" -not -path "*/node_modules/*" -not -name "storage-layout-manifest.json")
+          MANIFESTS=$(git ls-files 'contracts/*-manifest.json' | grep -v 'storage-layout-manifest.json')
           VALID_AUTH_VALUES=(
             "admin"
             "signer"
@@ -182,7 +182,7 @@ jobs:
 
           EOF
 
-          MANIFESTS=$(find contracts -name "*-manifest.json" -not -path "*/node_modules/*" -not -name "storage-layout-manifest.json")
+          MANIFESTS=$(git ls-files 'contracts/*-manifest.json' | grep -v 'storage-layout-manifest.json')
           VALID_COUNT=0
 
           for manifest in $MANIFESTS; do
