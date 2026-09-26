@@ -393,7 +393,7 @@
     },
     "atomicity": "batch_payout uses all-or-nothing semantics. If any validation fails, no transfers occur and balance is unchanged.",
     "idempotency": "Optional idempotency key on single_payout and batch_payout ensures deterministic behavior on retries.",
-    "reentrancy_protection": "All payout paths acquire a reentrancy guard before any state read."
+    "reentrancy_protection": "batch_lock, batch_release, the guarded single_payout and batch_payout entry-point families, and automatic schedule processing acquire the instance-wide guard before state reads and hold it across token transfers."
   },
   "security_notes": [
     "Circuit breaker check runs before balance and threshold checks for deterministic, stable rejection messages.",
@@ -405,7 +405,8 @@
   "testing": {
     "coverage_target": "95%",
     "test_files": [
-      "contracts/program-escrow/src/test.rs"
+      "contracts/program-escrow/src/reentrancy_tests.rs",
+      "contracts/program-escrow/src/malicious_reentrant.rs"
     ],
     "circuit_breaker_test_cases": [
       "CB-01: Closed circuit allows payouts",

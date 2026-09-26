@@ -296,8 +296,8 @@ mod test_circuit_breaker_enforcement;
 #[cfg(test)]
 #[cfg(any())] // pre-existing breakage: uses std
 mod test_circuit_breaker_threshold;
-#[cfg(any())]
 mod reentrancy_tests;
+mod malicious_reentrant;
 #[cfg(any())] // pre-existing syntax error in file
 mod test_circuit_breaker_enforcement;
 // #[cfg(test)] mod test_dispute_resolution; // pre-existing breakage
@@ -318,7 +318,6 @@ pub use reputation::{
 };
 
 // #[cfg(test)] mod reentrancy_guard_standalone_test; // pre-existing breakage
-// #[cfg(test)] mod malicious_reentrant; // pre-existing breakage
 #[cfg(test)]
 mod test_granular_pause;
 
@@ -1300,8 +1299,9 @@ impl ProgramEscrowContract {
     /// Atomically lock funds for multiple programs.
     pub fn batch_lock(env: Env, items: Vec<LockItem>) -> Result<u32, BatchError> {
         Self::require_not_read_only(&env);
-        reentrancy_guard::check_not_entered(&env);
-        reentrancy_guard::set_entered(&env);
+        // Reentrancy guard for `batch_lock`; held across its fee-token transfer.
+        // Regression: `reentrancy_tests::test_batch_lock_guard_blocks_reentrant_token_transfer`.
+        reentrancy_guard::acquire(&env);
 
         if Self::check_paused(&env, None, symbol_short!("lock")) {
             reentrancy_guard::clear_entered(&env);
@@ -1378,11 +1378,15 @@ impl ProgramEscrowContract {
                 let (reserve_share, recipient_share) =
                     Self::split_fee_for_reserve(fee_amount, fee_config.insurance_reserve_bps);
                 if recipient_share > 0 {
+                    #[cfg(test)]
+                    malicious_reentrant::assert_escrow_guard(&env);
                     token_client.transfer(
                         &contract_address,
                         &fee_config.fee_recipient,
                         &recipient_share,
                     );
+                    #[cfg(test)]
+                    malicious_reentrant::assert_escrow_guard(&env);
                 }
                 Self::accrue_insurance_reserve(&env, reserve_share);
                 Self::emit_fee_collected(
@@ -1419,7 +1423,8 @@ impl ProgramEscrowContract {
             },
         );
 
-        reentrancy_guard::clear_entered(&env);
+        // Release only after every state write and event in `batch_lock` succeeds.
+        reentrancy_guard::release(&env);
         Ok(batch_size)
     }
 
@@ -1433,8 +1438,9 @@ impl ProgramEscrowContract {
     /// Atomically release multiple scheduled payouts.
     pub fn batch_release(env: Env, items: Vec<ReleaseItem>) -> Result<u32, BatchError> {
         Self::require_not_read_only(&env);
-        reentrancy_guard::check_not_entered(&env);
-        reentrancy_guard::set_entered(&env);
+        // Reentrancy guard for `batch_release`; held across its payout-token transfer.
+        // Regression: `reentrancy_tests::test_batch_release_guard_blocks_reentrant_token_transfer`.
+        reentrancy_guard::acquire(&env);
 
         if Self::check_paused(&env, None, symbol_short!("release")) {
             reentrancy_guard::clear_entered(&env);
@@ -1502,7 +1508,11 @@ impl ProgramEscrowContract {
                     }
 
                     let token_client = token::Client::new(&env, &program_data.token_address);
+                    #[cfg(test)]
+                    malicious_reentrant::assert_escrow_guard(&env);
                     token_client.transfer(&contract_address, &schedule.recipient, &schedule.amount);
+                    #[cfg(test)]
+                    malicious_reentrant::assert_escrow_guard(&env);
 
                     schedule.released = true;
                     schedule.released_at = Some(now);
@@ -1540,7 +1550,8 @@ impl ProgramEscrowContract {
             },
         );
 
-        reentrancy_guard::clear_entered(&env);
+        // Release only after every state write and event in `batch_release` succeeds.
+        reentrancy_guard::release(&env);
         Ok(batch_size)
     }
 
@@ -4894,8 +4905,10 @@ impl ProgramEscrowContract {
         // 6b. Idempotency key deduplication (needs total_payout)
         // 7.  Business logic: spend threshold, balance
         // 8.  Pre-validate fees for every entry (atomicity — no partial state)
-        // 9.  Execute transfers
+        // 9. Execute transfers
 
+        // Reentrancy guard for every `batch_payout*` entry point; held across all transfers.
+        // Regression: `reentrancy_tests::test_batch_payout_guard_blocks_reentrant_token_transfer`.
         reentrancy_guard::acquire(&env);
 
         if let Some(ref key) = idempotency_key {
@@ -5076,11 +5089,15 @@ impl ProgramEscrowContract {
                 let (reserve_share, recipient_share) =
                     Self::split_fee_for_reserve(pay_fee, cfg.insurance_reserve_bps);
                 if recipient_share > 0 {
+                    #[cfg(test)]
+                    malicious_reentrant::assert_escrow_guard(&env);
                     token_client.transfer(
                         &contract_address,
                         &cfg.fee_recipient,
                         &recipient_share,
                     );
+                    #[cfg(test)]
+                    malicious_reentrant::assert_escrow_guard(&env);
                 }
                 Self::accrue_insurance_reserve(&env, reserve_share);
                 Self::emit_fee_collected(
@@ -5097,7 +5114,11 @@ impl ProgramEscrowContract {
             #[cfg(test)]
             chaos::tick_before_transfer(&env, i);
 
+            #[cfg(test)]
+            malicious_reentrant::assert_escrow_guard(&env);
             token_client.transfer(&contract_address, &recipient, &transfer_amount);
+            #[cfg(test)]
+            malicious_reentrant::assert_escrow_guard(&env);
             error_recovery::record_success(&env);
             threshold_monitor::record_operation_success(&env);
             threshold_monitor::record_outflow(&env, pay_fee + transfer_amount);
@@ -5154,7 +5175,7 @@ impl ProgramEscrowContract {
             },
         );
 
-        // Release reentrancy guard on success.
+        // Release the `batch_payout` guard only after all state writes and events succeed.
         reentrancy_guard::release(&env);
         updated_data
     }
@@ -5243,6 +5264,8 @@ impl ProgramEscrowContract {
         // 6. Business logic (sufficient balance)
         // 7. Circuit breaker check
 
+        // Reentrancy guard for every `single_payout*` entry point; held across fee and payout transfers.
+        // Regression: `reentrancy_tests::test_single_payout_guard_blocks_reentrant_token_transfer`.
         reentrancy_guard::acquire(&env);
 
         // 1b. Idempotency check — runs before any state reads so duplicate
@@ -5369,7 +5392,11 @@ impl ProgramEscrowContract {
             let (reserve_share, recipient_share) =
                 Self::split_fee_for_reserve(pay_fee, cfg.insurance_reserve_bps);
             if recipient_share > 0 {
+                #[cfg(test)]
+                malicious_reentrant::assert_escrow_guard(&env);
                 token_client.transfer(&contract_address, &cfg.fee_recipient, &recipient_share);
+                #[cfg(test)]
+                malicious_reentrant::assert_escrow_guard(&env);
             }
             Self::accrue_insurance_reserve(&env, reserve_share);
             Self::emit_fee_collected(
@@ -5382,7 +5409,11 @@ impl ProgramEscrowContract {
             );
         }
 
+        #[cfg(test)]
+        malicious_reentrant::assert_escrow_guard(&env);
         token_client.transfer(&contract_address, &recipient, &transfer_amount);
+        #[cfg(test)]
+        malicious_reentrant::assert_escrow_guard(&env);
 
         error_recovery::record_success(&env);
         threshold_monitor::record_operation_success(&env);
@@ -5442,6 +5473,7 @@ impl ProgramEscrowContract {
             },
         );
 
+        // Release the `single_payout` guard only after all state writes and events succeed.
         reentrancy_guard::release(&env);
 
         updated_data
@@ -6051,6 +6083,8 @@ impl ProgramEscrowContract {
     /// - Gracefully handles schema migrations
     /// - Preserves payout history and schedule state across upgrades
     fn trigger_program_releases_internal(env: Env, caller: Option<Address>, epoch_id: Option<u64>) -> u32 {
+        // Reentrancy guard for automatic schedule processing; held across every payout transfer.
+        // Regression: `reentrancy_tests::test_trigger_program_releases_guard_blocks_reentrant_token_transfer`.
         reentrancy_guard::acquire(&env);
 
         let mut program_data: ProgramData = env
@@ -6196,7 +6230,11 @@ impl ProgramEscrowContract {
             });
 
             // Interaction: token transfer (after state updates)
+            #[cfg(test)]
+            malicious_reentrant::assert_escrow_guard(&env);
             token_client.transfer(&contract_address, &exec_recipient, &exec_amount);
+            #[cfg(test)]
+            malicious_reentrant::assert_escrow_guard(&env);
 
             // Emit per-schedule event
             env.events().publish(
@@ -6234,7 +6272,7 @@ impl ProgramEscrowContract {
             },
         );
 
-        // Clear reentrancy guard before returning
+        // Release the schedule-trigger guard only after all state writes and events succeed.
         reentrancy_guard::release(&env);
 
         released_count
