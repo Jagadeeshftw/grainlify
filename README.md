@@ -5,7 +5,7 @@ This repository contains Grainlify's Stellar Soroban smart contracts and their s
 ## Contract workspaces
 
 - `contracts/` contains the primary contract packages, SDK, manifests, and contract-focused documentation.
-- `soroban/` contains the Soroban workspace and its escrow, program-escrow, and stream contracts.
+- `soroban/` contains the Soroban workspace and its program-escrow and stream contracts; its `escrow` crate is superseded (reference/parity only).
 - `benchmarks/` contains contract performance baselines and thresholds.
 - `scripts/` and `fix/` contain contract validation, testing, upgrade, and maintenance utilities.
 
@@ -26,6 +26,10 @@ The deployment status in each README reflects evidence recorded in this reposito
 | [soroban/contracts/escrow](soroban/contracts/escrow/README.md) | Separate SDK 23 bounty-style escrow |
 | [soroban/contracts/program-escrow](soroban/contracts/program-escrow/README.md) | Separate SDK 23 program registry and search |
 | [soroban/contracts/stream](soroban/contracts/stream/README.md) | Gas regression test fixtures |
+> **Escrow authority:** the deployed escrow contract is
+> `contracts/bounty_escrow/contracts/escrow` (`bounty_escrow.wasm`). The
+> `soroban/contracts/escrow` crate is superseded and is never deployed. See
+> [`docs/contracts/escrow-implementation-authority.md`](docs/contracts/escrow-implementation-authority.md).
 
 ## Local validation
 

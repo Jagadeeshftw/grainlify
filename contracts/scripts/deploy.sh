@@ -23,8 +23,8 @@
 #   --              Everything after this is passed to the init function
 #
 # EXAMPLES:
-#   # Deploy escrow contract to testnet
-#   ./scripts/deploy.sh soroban/target/wasm32-unknown-unknown/release/escrow.wasm
+#   # Deploy the authoritative escrow contract to testnet
+#   ./scripts/deploy.sh bounty_escrow/target/wasm32-unknown-unknown/release/bounty_escrow.wasm
 #
 #   # Deploy to mainnet with specific identity
 #   ./scripts/deploy.sh contract.wasm -n mainnet -i mainnet-deployer

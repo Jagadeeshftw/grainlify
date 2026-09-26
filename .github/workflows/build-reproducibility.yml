@@ -9,6 +9,7 @@ name: "Build Reproducibility — cdylib wasm artifacts"
 #   contracts/bounty_escrow workspace (bounty_escrow/Cargo.toml)
 #     • bounty_escrow.wasm          — main bounty escrow contract
 #     • bounty_escrow.wasm          — sole bounty_escrow workspace package
+#     • bounty_escrow.wasm          — the ONE authoritative escrow contract
 #
 #   contracts/ packages (individual manifests)
 #     • grainlify_core.wasm
@@ -19,8 +20,12 @@ name: "Build Reproducibility — cdylib wasm artifacts"
 #   soroban/ workspace (soroban/Cargo.toml)
 #     • escrow.wasm                 — soroban/contracts/escrow
 #     • soroban_program_escrow.wasm — soroban/contracts/program-escrow
+#     • program_escrow.wasm         — soroban/contracts/program-escrow
 #
-#   Excluded (not cdylib / host-only):
+#   Excluded (not part of the deployable artifact inventory):
+#     • escrow                      — soroban/contracts/escrow is SUPERSEDED
+#                                     (reference/parity only, never deployed);
+#                                     see docs/contracts/escrow-implementation-authority.md
 #     • grainlify_stream            — no crate-type; testutils-only, host side
 #     • grainlify_contracts         — [[bin]] + rlib, not cdylib
 
@@ -254,7 +259,10 @@ jobs:
           if-no-files-found: error
 
   # ────────────────────────────────────────────────────────────────────────────
-  # Clean build of the soroban/ workspace (escrow + program-escrow cdylibs).
+  # Clean build of the soroban/ workspace (program-escrow cdylib).
+  # The soroban escrow crate is superseded (reference/parity only) and is
+  # excluded from the deployable artifact inventory so it cannot be mistaken
+  # for the authoritative contracts/bounty_escrow contract.
   # grainlify-stream is excluded: it has no crate-type in its Cargo.toml and
   # is a testutils-only, host-side helper — it produces no deployable wasm.
   # ────────────────────────────────────────────────────────────────────────────
@@ -287,12 +295,14 @@ jobs:
 
       - name: Build — soroban workspace (wasm32-unknown-unknown, release)
         run: |
-          # Build only the cdylib packages; exclude grainlify-stream (host-only,
-          # no crate-type = cdylib, produces no deployable wasm).
+          # Build only the deployable cdylib packages; exclude the superseded
+          # soroban escrow crate and grainlify-stream (host-only, no
+          # crate-type = cdylib, produces no deployable wasm).
           cargo build \
             --manifest-path soroban/Cargo.toml \
             --package escrow \
             --package soroban-program-escrow \
+            --package program-escrow \
             --target wasm32-unknown-unknown \
             --release
 
@@ -302,6 +312,7 @@ jobs:
             soroban/target/wasm32-unknown-unknown/release \
             escrow.wasm \
             soroban_program_escrow.wasm
+            program_escrow.wasm
 
       - name: List wasm artifacts with sizes
         run: |
