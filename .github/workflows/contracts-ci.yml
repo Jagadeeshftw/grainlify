@@ -6,12 +6,16 @@ on:
     paths:
       - "soroban/**"
       - "contracts/**"
+      - "scripts/check-program-escrow-no-traps.py"
+      - "scripts/tests/fixtures/program_escrow_unwrap_trap.rs"
       - ".github/workflows/contracts-ci.yml"
   pull_request:
     branches: [master, main]
     paths:
       - "soroban/**"
       - "contracts/**"
+      - "scripts/check-program-escrow-no-traps.py"
+      - "scripts/tests/fixtures/program_escrow_unwrap_trap.rs"
       - ".github/workflows/contracts-ci.yml"
 
 env:
@@ -35,6 +39,23 @@ jobs:
           cache-dependency-path: contracts/package-lock.json
       - name: Validate contract manifests
         run: npm test --prefix contracts
+
+  # ──────────────────────────────────────────────────────────────
+  # No opaque unwrap()/panic! traps in deployable program-escrow
+  # source (issue #1854). Test modules remain exempt.
+  # ──────────────────────────────────────────────────────────────
+  program-escrow-no-traps:
+    name: program-escrow no unwrap/panic
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Forbid unwrap()/panic! in deployable lib.rs
+        run: python3 scripts/check-program-escrow-no-traps.py
+      - name: Fixture proves the check fails on a planted unwrap()
+        run: >
+          python3 scripts/check-program-escrow-no-traps.py
+          --fixture scripts/tests/fixtures/program_escrow_unwrap_trap.rs
+          --expect-fail
 
   # ──────────────────────────────────────────────────────────────
   # Reproducible workspace build & test gates (issue #1700).
