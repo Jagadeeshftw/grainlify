@@ -30,6 +30,12 @@ The deployment status in each README reflects evidence recorded in this reposito
 > `contracts/bounty_escrow/contracts/escrow` (`bounty_escrow.wasm`). The
 > `soroban/contracts/escrow` crate is superseded and is never deployed. See
 > [`docs/contracts/escrow-implementation-authority.md`](docs/contracts/escrow-implementation-authority.md).
+## System Documentation
+
+The following documents describe the current architecture and behavior of the system:
+- [Deployable Artifacts](DEPLOYABLE_ARTIFACTS.md) - Lists every deployable WebAssembly artifact produced by this repository.
+- [Release Schedules Usage](RELEASE_SCHEDULES_USAGE.md) - Details the time-based release schedules (vesting) feature for escrow contracts.
+- [Upgrade and Migration Policy](UPGRADE_AND_MIGRATION_POLICY.md) - Defines the rules and requirements for authorizing, executing, and reverting contract upgrades.
 
 ## Local validation
 
