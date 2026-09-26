@@ -1174,7 +1174,7 @@ impl ProgramEscrowContract {
     /// * `BatchError::ProgramAlreadyExists` — a `program_id` already registered
     ///
     /// # Panics
-    /// * `"Token not on allowlist"` — if a token in an item is not on the allowlist
+    /// * `ContractError::TokenNotAllowed` — if a token in an item is not on the allowlist
     ///
     /// # Benchmark note
     /// Pre-validation runs in O(n log n) for deduplication (insertion sort) plus
@@ -4536,6 +4536,7 @@ impl ProgramEscrowContract {
             },
         );
         panic_with_error!(&env, &ContractError::TokenNotAllowed);
+        panic_with_error!(env, &ContractError::TokenNotAllowed);
     }
 
     /// Add a token to the allowlist **and permanently bind its decimal scale**
@@ -4617,6 +4618,36 @@ impl ProgramEscrowContract {
         let mut v1 = Self::get_token_allowlist_internal(&env);
         v1.push_back(token.clone());
         env.storage().instance().set(&DataKey::TokenAllowlist, &v1);
+
+        env.events().publish(
+            (TOKEN_DECIMALS_CONFIGURED,),
+            TokenDecimalsConfiguredEvent {
+                version: EVENT_VERSION_V2,
+                token: token.clone(),
+                configured_decimals: decimals,
+                reported_decimals,
+                configured_by: admin.clone(),
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        // Non-blocking telemetry: a live-scale disagreement is surfaced for
+        // indexers without rejecting the configuration.
+        if let Some(reported) = reported_decimals {
+            if reported != decimals {
+                env.events().publish(
+                    (TOKEN_DECIMALS_MISMATCH,),
+                    TokenDecimalsMismatchEvent {
+                        version: EVENT_VERSION_V2,
+                        token: token.clone(),
+                        configured_decimals: decimals,
+                        reported_decimals: reported,
+                        configured_by: admin.clone(),
+                        timestamp: env.ledger().timestamp(),
+                    },
+                );
+            }
+        }
 
         env.events().publish(
             (TOKEN_ALLOWLIST_UPDATED,),
@@ -7593,6 +7624,9 @@ impl ProgramEscrowContract {
 
 #[cfg(test)]
 #[cfg(any())] // pre-existing breakage: unclosed delimiter
+#[cfg(any())] // pre-existing breakage: duplicate fn names, misplaced #[test] attrs
+mod test;
+#[cfg(test)]
 mod test_token_allowlist;
 #[cfg(any())] // pre-existing breakage: #[test] inside impl blocks
 mod test_pagination;

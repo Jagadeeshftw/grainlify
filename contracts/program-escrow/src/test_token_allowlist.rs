@@ -24,9 +24,9 @@
 #![cfg(test)]
 
 use crate::{
-    ProgramEscrowContract, ProgramEscrowContractClient, TokenAllowlistSchemaVersionSet,
-    TokenAllowlistUpdatedEvent, TokenDecimalsMismatchEvent, TokenRejectedEvent, EVENT_VERSION_V2,
-    TOKEN_ALLOWLIST_SCHEMA_VERSION_V1,
+    errors::ContractError, ProgramEscrowContract, ProgramEscrowContractClient,
+    TokenAllowlistSchemaVersionSet, TokenAllowlistUpdatedEvent, TokenDecimalsMismatchEvent,
+    TokenRejectedEvent, EVENT_VERSION_V2, TOKEN_ALLOWLIST_SCHEMA_VERSION_V1,
 };
 use soroban_sdk::{
     testutils::{Address as _, Events, Ledger, MockAuth, MockAuthInvoke},
@@ -60,6 +60,17 @@ fn init_with_token(client: &ProgramEscrowContractClient, env: &Env, token: &Addr
     let program_id = String::from_str(env, "test-prog");
     let admin = Address::generate(env);
     client.init_program(&program_id, &admin, token, &admin, &None, &None);
+}
+
+/// Look up a token's configured decimal scale via the V2 allowlist snapshot.
+/// Returns `None` when the token is not listed.
+fn token_decimals(client: &ProgramEscrowContractClient, token: &Address) -> Option<u32> {
+    for entry in client.get_allowed_tokens_with_decimals().iter() {
+        if entry.token == *token {
+            return Some(entry.decimals);
+        }
+    }
+    None
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -101,6 +112,8 @@ fn test_init_program_succeeds_with_any_token_when_list_empty() {
 fn test_schema_version_is_v1_after_init() {
     let env = Env::default();
     let (client, _admin) = setup_contract(&env);
+    // The marker is written by initialize_program, not contract setup.
+    init_with_token(&client, &env, &make_token(&env));
     assert_eq!(
         client.get_allowlist_schema_version(),
         TOKEN_ALLOWLIST_SCHEMA_VERSION_V1
@@ -117,6 +130,12 @@ fn test_schema_version_event_emitted_on_init() {
 
     env.ledger().with_mut(|li| li.timestamp = 9_000);
     client.initialize_contract(&admin);
+
+    // The schema marker is written by initialize_program, not contract setup.
+    let program_id = String::from_str(&env, "schema-prog");
+    let payout_key = Address::generate(&env);
+    let token = make_token(&env);
+    client.initialize_program(&program_id, &payout_key, &token, &admin, &None, &None);
 
     let events = env.events().all();
     let schema_event = events.iter().find(|e| {
@@ -354,7 +373,7 @@ fn test_init_program_succeeds_with_listed_token() {
 }
 
 #[test]
-#[should_panic(expected = "Token not on allowlist")]
+#[should_panic(expected = "Error(Contract, #1100)")] // ContractError::TokenNotAllowed
 fn test_init_program_rejected_with_unlisted_token() {
     let env = Env::default();
     let (client, _admin) = setup_contract(&env);
@@ -424,6 +443,14 @@ fn test_token_rejected_event_emitted_on_rejection() {
         &None,
     );
     assert!(result.is_err(), "init with unlisted token must fail");
+    match result {
+        Err(Ok(err)) => assert_eq!(
+            err.get_code(),
+            ContractError::TokenNotAllowed as u32,
+            "unlisted token must surface the named TokenNotAllowed error"
+        ),
+        other => panic!("expected ContractError::TokenNotAllowed, got {other:?}"),
+    }
 
     // Verify TokenRejectedEvent was emitted
     let events = env.events().all();
@@ -569,7 +596,7 @@ fn test_add_remove_add_same_token() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
-#[should_panic(expected = "Token not on allowlist")]
+#[should_panic(expected = "Error(Contract, #1100)")] // ContractError::TokenNotAllowed
 fn test_initialize_program_alias_also_enforces_allowlist() {
     let env = Env::default();
     let (client, _admin) = setup_contract(&env);
@@ -656,12 +683,12 @@ fn test_token_decimals_are_immutable_after_a_payout() {
     // A Stellar Asset Contract reports seven decimals. Configure that scale,
     // make a real payout, then prove the historical scale cannot be changed.
     client.add_allowed_token_with_decimals(&token, &7);
-    assert_eq!(client.get_token_decimals(&token), Some(7));
+    assert_eq!(token_decimals(&client, &token), Some(7));
 
     let program_id = String::from_str(&env, "decimal-safety");
     let payout_key = Address::generate(&env);
     client.init_program(&program_id, &payout_key, &token, &payout_key, &None, &None);
-    client.publish_program();
+    client.publish_program(&program_id, &payout_key);
     let token_admin_client = token::StellarAssetClient::new(&env, &token);
     token_admin_client.mint(&client.address, &1_000);
     client.lock_program_funds(&1_000);
@@ -672,7 +699,7 @@ fn test_token_decimals_are_immutable_after_a_payout() {
         result.is_err(),
         "changing configured decimals must be rejected"
     );
-    assert_eq!(client.get_token_decimals(&token), Some(7));
+    assert_eq!(token_decimals(&client, &token), Some(7));
 }
 
 #[test]
@@ -684,7 +711,7 @@ fn test_decimal_mismatch_is_emitted_but_configuration_is_preserved() {
     // SAC's live decimals() is 7. An explicit application scale of 6 is
     // accepted but must be observable to downstream indexers.
     client.add_allowed_token_with_decimals(&token, &6);
-    assert_eq!(client.get_token_decimals(&token), Some(6));
+    assert_eq!(token_decimals(&client, &token), Some(6));
 
     let events = env.events().all();
     let event = events.iter().find(|e| {
@@ -746,7 +773,7 @@ fn test_get_token_decimals_returns_stored_value() {
     let token = make_token_dec(&env);
 
     client.add_allowed_token_with_decimals(&token, &18u32);
-    assert_eq!(client.get_token_decimals(&token), Some(18u32));
+    assert_eq!(token_decimals(&client, &token), Some(18u32));
 }
 
 #[test]
@@ -757,7 +784,7 @@ fn test_get_token_decimals_returns_zero_for_legacy_token() {
 
     // add via legacy path (no decimals) — scale is recorded as a known 0
     client.add_allowed_token(&token);
-    assert_eq!(client.get_token_decimals(&token), Some(0u32));
+    assert_eq!(token_decimals(&client, &token), Some(0u32));
 }
 
 #[test]
@@ -825,9 +852,9 @@ fn test_decimals_stored_independently_per_token() {
     client.add_allowed_token_with_decimals(&t7,  &7u32);
     client.add_allowed_token_with_decimals(&t18, &18u32);
 
-    assert_eq!(client.get_token_decimals(&t6),  Some(6u32));
-    assert_eq!(client.get_token_decimals(&t7),  Some(7u32));
-    assert_eq!(client.get_token_decimals(&t18), Some(18u32));
+    assert_eq!(token_decimals(&client, &t6),  Some(6u32));
+    assert_eq!(token_decimals(&client, &t7),  Some(7u32));
+    assert_eq!(token_decimals(&client, &t18), Some(18u32));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -849,7 +876,7 @@ fn test_add_token_with_max_decimals_succeeds() {
     let (client, _) = setup_contract(&env);
     let token = make_token_dec(&env);
     client.add_allowed_token_with_decimals(&token, &MAX_TOKEN_DECIMALS);
-    assert_eq!(client.get_token_decimals(&token), Some(MAX_TOKEN_DECIMALS));
+    assert_eq!(token_decimals(&client, &token), Some(MAX_TOKEN_DECIMALS));
 }
 
 #[test]
@@ -858,7 +885,7 @@ fn test_add_token_with_zero_decimals_succeeds() {
     let (client, _) = setup_contract(&env);
     let token = make_token_dec(&env);
     client.add_allowed_token_with_decimals(&token, &0u32);
-    assert_eq!(client.get_token_decimals(&token), Some(0u32));
+    assert_eq!(token_decimals(&client, &token), Some(0u32));
 }
 
 #[test]
@@ -882,12 +909,12 @@ fn test_remove_token_clears_decimal_cache() {
     let token = make_token_dec(&env);
 
     client.add_allowed_token_with_decimals(&token, &6u32);
-    assert_eq!(client.get_token_decimals(&token), Some(6u32));
+    assert_eq!(token_decimals(&client, &token), Some(6u32));
 
     client.remove_allowed_token(&token);
 
     // After removal, the stored scale must be cleared entirely
-    assert_eq!(client.get_token_decimals(&token), None);
+    assert_eq!(token_decimals(&client, &token), None);
     assert_eq!(client.get_allowed_tokens_with_decimals().len(), 0);
 }
 
@@ -903,7 +930,7 @@ fn test_remove_one_of_two_tokens_preserves_other_decimals() {
 
     client.remove_allowed_token(&t1);
 
-    assert_eq!(client.get_token_decimals(&t2), Some(18u32));
+    assert_eq!(token_decimals(&client, &t2), Some(18u32));
     let list = client.get_allowed_tokens_with_decimals();
     assert_eq!(list.len(), 1);
     assert_eq!(list.get(0).unwrap().decimals, 18u32);
@@ -1122,7 +1149,7 @@ fn test_duplicate_add_leaves_state_canonical() {
         .is_err());
 
     assert_eq!(client.get_allowed_tokens_with_decimals().len(), before);
-    assert_eq!(client.get_token_decimals(&token), Some(6u32));
+    assert_eq!(token_decimals(&client, &token), Some(6u32));
 }
 
 /// Removing the last token disables enforcement and the change is auditable via
@@ -1245,11 +1272,15 @@ fn test_payout_succeeds_after_token_removed_from_allowlist() {
     let token = sac.address();
 
     client.add_allowed_token_with_decimals(&token, &7u32);
+    // Sentinel keeps enforcement active after the target token is removed
+    // (an empty list disables enforcement, making every token allowed).
+    let sentinel = make_token(&env);
+    client.add_allowed_token(&sentinel);
 
     let program_id = String::from_str(&env, "grandfathered");
     let payout_key = Address::generate(&env);
     client.init_program(&program_id, &payout_key, &token, &payout_key, &None, &None);
-    client.publish_program();
+    client.publish_program(&program_id, &payout_key);
 
     let sac_admin = token::StellarAssetClient::new(&env, &token);
     sac_admin.mint(&client.address, &1_000);
@@ -1258,7 +1289,7 @@ fn test_payout_succeeds_after_token_removed_from_allowlist() {
     // Policy change after the program is already live.
     client.remove_allowed_token(&token);
     assert!(!client.is_token_allowed(&token));
-    assert_eq!(client.get_token_decimals(&token), None);
+    assert_eq!(token_decimals(&client, &token), None);
 
     // The existing program can still disburse its locked balance.
     let recipient = Address::generate(&env);
@@ -1273,7 +1304,7 @@ fn test_payout_succeeds_after_token_removed_from_allowlist() {
 /// The de-listed token can no longer initialize a *new* program while the
 /// allowlist stays non-empty.
 #[test]
-#[should_panic(expected = "Token not on allowlist")]
+#[should_panic(expected = "Error(Contract, #1100)")] // ContractError::TokenNotAllowed
 fn test_new_program_rejected_after_token_removed() {
     let env = Env::default();
     let (client, _admin) = setup_contract(&env);
@@ -1302,7 +1333,7 @@ fn test_adding_token_after_init_does_not_affect_existing_program() {
     let program_id = String::from_str(&env, "stable-cfg");
     let payout_key = Address::generate(&env);
     client.init_program(&program_id, &payout_key, &token, &payout_key, &None, &None);
-    client.publish_program();
+    client.publish_program(&program_id, &payout_key);
 
     let sac_admin = token::StellarAssetClient::new(&env, &token);
     sac_admin.mint(&client.address, &1_000);
@@ -1315,5 +1346,5 @@ fn test_adding_token_after_init_does_not_affect_existing_program() {
     let recipient = Address::generate(&env);
     client.single_payout(&recipient, &250, &None);
     assert_eq!(token::Client::new(&env, &token).balance(&recipient), 250);
-    assert_eq!(client.get_token_decimals(&token), Some(7u32));
+    assert_eq!(token_decimals(&client, &token), Some(7u32));
 }

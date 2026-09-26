@@ -94,6 +94,9 @@ jobs:
       - name: Run contract CI gates
         run: bash contracts/scripts/ci-contracts.sh
 
+      - name: Run token allowlist + FoT routing suites
+        run: cargo test --manifest-path contracts/program-escrow/Cargo.toml -- test_token_allowlist test_fot_routing
+
       - name: Upload deployable wasm
         uses: actions/upload-artifact@v4
         with:

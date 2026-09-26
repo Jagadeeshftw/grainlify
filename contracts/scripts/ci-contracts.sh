@@ -21,6 +21,10 @@ echo "==> [1/5] Workspace tests (host target)"
 cargo test --manifest-path "$MANIFEST" --workspace
 
 echo "==> [2/5] Storage-key collision audit (grainlify-contracts)"
+echo "==> [1/4] Workspace tests (host target)"
+cargo test --manifest-path "$MANIFEST" --workspace
+
+echo "==> [2/4] Storage-key collision audit (grainlify-contracts)"
 # `contracts/` used to belong to no workspace, so its storage-collision audit
 # was never built. It is now a workspace of its own and is exercised here, which
 # pins the audit to a check that runs on every pull request.
@@ -53,6 +57,10 @@ echo "==> [1/3] Workspace tests (host target)"
 cargo test --manifest-path "$MANIFEST" --workspace
 
 echo "==> [2/3] Deployable wasm release build"
+echo "==> [3/4] Token allowlist + FoT routing suites (program-escrow)"
+cargo test --manifest-path "$ROOT_DIR/contracts/program-escrow/Cargo.toml" -- test_token_allowlist test_fot_routing
+
+echo "==> [4/4] Deployable wasm release build"
 cargo build --manifest-path "$MANIFEST" --workspace --target wasm32-unknown-unknown --release
 
 echo "==> [3/3] Feature-flag matrix & facade assertion gates (issue #1885)"
