@@ -28,3 +28,10 @@ soroban/.soroban/network/
 
 # Test snapshots (auto-generated, environment-dependent)
 **/test_snapshots/
+
+# Rust / Cargo build output — never commit (issue #1889)
+/target/
+/target-*/
+**/target/
+**/target-*/
+**/target_*/
