@@ -133,13 +133,9 @@ fn test_revoke_then_reuse_release() {
     assert!(s.client.get_capability(&cap_id).revoked);
 
     // Replay attempt: release_with_capability using revoked token
-    let result = s.client.try_release_with_capability(
-        &bounty_id,
-        &contributor,
-        &500,
-        &s.delegate,
-        &cap_id,
-    );
+    let result =
+        s.client
+            .try_release_with_capability(&bounty_id, &contributor, &500, &s.delegate, &cap_id);
     assert_eq!(result.unwrap_err().unwrap(), Error::CapabilityRevoked);
 
     // State MUST be unchanged
@@ -172,9 +168,9 @@ fn test_revoke_then_reuse_refund() {
     s.client.revoke_capability(&s.admin, &cap_id);
 
     // Replay attempt
-    let result =
-        s.client
-            .try_refund_with_capability(&bounty_id, &1_000, &s.delegate, &cap_id);
+    let result = s
+        .client
+        .try_refund_with_capability(&bounty_id, &1_000, &s.delegate, &cap_id);
     assert_eq!(result.unwrap_err().unwrap(), Error::CapabilityRevoked);
 
     // State unchanged
@@ -202,13 +198,8 @@ fn test_revoke_prevents_all_subsequent_uses() {
     let contributor = Address::generate(&s.env);
 
     // First use succeeds
-    s.client.release_with_capability(
-        &bounty_id,
-        &contributor,
-        &1_000,
-        &s.delegate,
-        &cap_id,
-    );
+    s.client
+        .release_with_capability(&bounty_id, &contributor, &1_000, &s.delegate, &cap_id);
     let cap_after_use = s.client.get_capability(&cap_id);
     assert_eq!(cap_after_use.remaining_uses, 2);
     assert_eq!(cap_after_use.remaining_amount, 4_000);
@@ -261,13 +252,9 @@ fn test_expired_token_replay() {
     s.env.ledger().set_timestamp(expiry + 1);
 
     // Replay attempt with expired token
-    let result = s.client.try_release_with_capability(
-        &bounty_id,
-        &contributor,
-        &800,
-        &s.delegate,
-        &cap_id,
-    );
+    let result =
+        s.client
+            .try_release_with_capability(&bounty_id, &contributor, &800, &s.delegate, &cap_id);
     assert_eq!(result.unwrap_err().unwrap(), Error::CapabilityExpired);
 
     // Escrow untouched
@@ -297,9 +284,9 @@ fn test_expired_refund_capability_replay() {
 
     s.env.ledger().set_timestamp(expiry + 1);
 
-    let result =
-        s.client
-            .try_refund_with_capability(&bounty_id, &500, &s.delegate, &cap_id);
+    let result = s
+        .client
+        .try_refund_with_capability(&bounty_id, &500, &s.delegate, &cap_id);
     assert_eq!(result.unwrap_err().unwrap(), Error::CapabilityExpired);
 
     let escrow = s.client.get_escrow_info(&bounty_id);
@@ -329,7 +316,7 @@ fn test_cross_escrow_token_replay() {
 
     // Attempt to use it against bounty_b
     let result = s.client.try_release_with_capability(
-        &bounty_b,   // wrong escrow
+        &bounty_b, // wrong escrow
         &contributor,
         &1_000,
         &s.delegate,
@@ -399,13 +386,8 @@ fn test_exact_byte_replay_after_revoke() {
     let contributor = Address::generate(&s.env);
 
     // Perform one legitimate use to prove the token works
-    s.client.release_with_capability(
-        &bounty_id,
-        &contributor,
-        &1_000,
-        &s.delegate,
-        &cap_id,
-    );
+    s.client
+        .release_with_capability(&bounty_id, &contributor, &1_000, &s.delegate, &cap_id);
     assert_eq!(s.token_client.balance(&contributor), 1_000);
 
     // Store the raw bytes — simulate attacker retaining the ID
@@ -425,13 +407,9 @@ fn test_exact_byte_replay_after_revoke() {
     assert_eq!(replay1.unwrap_err().unwrap(), Error::CapabilityRevoked);
 
     // Second replay attempt (attacker retries)
-    let replay2 = s.client.try_release_with_capability(
-        &bounty_id,
-        &contributor,
-        &500,
-        &s.delegate,
-        &raw_id,
-    );
+    let replay2 =
+        s.client
+            .try_release_with_capability(&bounty_id, &contributor, &500, &s.delegate, &raw_id);
     assert_eq!(replay2.unwrap_err().unwrap(), Error::CapabilityRevoked);
 
     // Escrow must reflect only the one legitimate release (9_000 remaining)
@@ -454,13 +432,8 @@ fn test_single_use_token_byte_replay() {
     let contributor = Address::generate(&s.env);
 
     // Legitimate use — exhausts the token
-    s.client.release_with_capability(
-        &bounty_id,
-        &contributor,
-        &2_000,
-        &s.delegate,
-        &cap_id,
-    );
+    s.client
+        .release_with_capability(&bounty_id, &contributor, &2_000, &s.delegate, &cap_id);
 
     // Escrow is now Released
     let escrow = s.client.get_escrow_info(&bounty_id);
@@ -469,13 +442,9 @@ fn test_single_use_token_byte_replay() {
 
     // Byte-identical replay: escrow is Released so FundsNotLocked fires first,
     // but the important invariant is: no further funds can be extracted.
-    let replay = s.client.try_release_with_capability(
-        &bounty_id,
-        &contributor,
-        &1,
-        &s.delegate,
-        &cap_id,
-    );
+    let replay =
+        s.client
+            .try_release_with_capability(&bounty_id, &contributor, &1, &s.delegate, &cap_id);
     // Either FundsNotLocked (escrow already released) or CapabilityUsesExhausted
     // is acceptable — both confirm that replay is rejected.
     assert!(replay.is_err());

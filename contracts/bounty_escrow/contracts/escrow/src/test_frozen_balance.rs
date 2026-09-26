@@ -707,8 +707,5 @@ fn test_no_phantom_records_from_overlapping_freezes() {
 
     // Escrow 2 has no escrow-level record; contributor has no address record.
     assert!(t.client.get_escrow_freeze_record(&2).is_none());
-    assert!(t
-        .client
-        .get_address_freeze_record(&t.contributor)
-        .is_none());
+    assert!(t.client.get_address_freeze_record(&t.contributor).is_none());
 }

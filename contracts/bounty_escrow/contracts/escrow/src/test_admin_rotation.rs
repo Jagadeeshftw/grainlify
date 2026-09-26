@@ -1461,3 +1461,94 @@ fn test_timelock_duration_persists() {
         assert_eq!(client.get_rotation_timelock_duration(), 7200);
     }
 }
+
+use proptest::prelude::*;
+
+#[derive(Clone, Debug)]
+enum AdminAction {
+    Propose(usize),
+    Accept(usize),
+    Cancel(usize),
+    AdvanceTime(u64),
+}
+
+fn admin_actions_strategy() -> impl Strategy<Value = Vec<AdminAction>> {
+    prop::collection::vec(
+        prop_oneof![
+            (0..5usize).prop_map(AdminAction::Propose),
+            (0..5usize).prop_map(AdminAction::Accept),
+            (0..5usize).prop_map(AdminAction::Cancel),
+            (1..10000u64).prop_map(AdminAction::AdvanceTime),
+        ],
+        1..50
+    )
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(500))]
+    #[test]
+    fn prop_admin_rotation_invariants(actions in admin_actions_strategy()) {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, BountyEscrowContract);
+        let client = BountyEscrowContractClient::new(&env, &contract_id);
+
+        let mut actors = vec![];
+        for _ in 0..5 {
+            actors.push(Address::generate(&env));
+        }
+
+        let token = Address::generate(&env);
+        let mut current_admin = actors[0].clone();
+        let mut expected_pending_admin: Option<Address> = None;
+        
+        client.init(&current_admin, &token);
+
+        for action in actions {
+            match action {
+                AdminAction::Propose(idx) => {
+                    let proposer = current_admin.clone();
+                    env.mock_auths(&[&proposer]);
+                    let target = &actors[idx];
+                    
+                    if let Ok(Ok(_)) = client.try_propose_admin_rotation(target) {
+                        expected_pending_admin = Some(target.clone());
+                    }
+                }
+                AdminAction::Accept(idx) => {
+                    let caller = &actors[idx];
+                    env.mock_auths(&[&caller]);
+                    
+                    if let Ok(Ok(accepted)) = client.try_accept_admin_rotation() {
+                        // A rotation cannot be accepted by an address that was not proposed
+                        prop_assert_eq!(Some(caller.clone()), expected_pending_admin.clone(), "Only proposed admin can accept");
+                        
+                        current_admin = accepted;
+                        expected_pending_admin = None;
+                    }
+                }
+                AdminAction::Cancel(idx) => {
+                    let caller = &actors[idx];
+                    env.mock_auths(&[&caller]);
+                    
+                    if let Ok(Ok(_)) = client.try_cancel_admin_rotation() {
+                        // Cancelling a rotation restores the previous admin.
+                        // (Which is our current_admin)
+                        expected_pending_admin = None;
+                    }
+                }
+                AdminAction::AdvanceTime(secs) => {
+                    let current = env.ledger().timestamp();
+                    env.ledger().set_timestamp(current + secs);
+                }
+            }
+
+            // An invariant asserts an admin always exists after any sequence of rotation calls
+            let queried_admin = client.get_admin();
+            prop_assert!(queried_admin.is_some(), "Admin must always exist");
+            prop_assert_eq!(queried_admin.unwrap(), current_admin.clone(), "Queried admin must match our tracked current admin");
+
+            // Asserts the admin invariant
+            assert_single_authority(&env, &client, &current_admin);
+        }
+    }
+}

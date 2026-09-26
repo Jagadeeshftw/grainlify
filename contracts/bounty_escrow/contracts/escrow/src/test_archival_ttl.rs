@@ -144,11 +144,7 @@ fn archival_terminal_read_tolerates_missing_legacy_indexes() {
             .get(&DataKey::Escrow(bounty_id))
             .unwrap();
         escrow.status = EscrowStatus::Released;
-        setup
-            .env
-            .storage()
-            .persistent()
-            .set(&DataKey::Escrow(bounty_id), &escrow);
+        crate::BountyEscrowContract::write_escrow(&setup.env, bounty_id, &escrow).unwrap();
         setup
             .env
             .storage()

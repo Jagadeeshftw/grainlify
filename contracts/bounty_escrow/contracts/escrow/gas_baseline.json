@@ -1,0 +1,71 @@
+{
+  "contract": "bounty-escrow",
+  "version": "1.0.0",
+  "default_mode": "strict",
+  "tolerance_bps": 1000,
+  "tolerance_percentage": 10.0,
+  "description": "Committed gas cost baseline for bounty-escrow critical execution paths. In strict mode (default on PRs and CI), operations exceeding recorded cost beyond stated tolerance_bps (10%) fail the benchmark gate check.",
+  "paths": {
+    "create_lock_index60_large_amount": {
+      "operation": "create",
+      "description": "lock_funds with mature 60-escrow index and large 1B stroop amount",
+      "cpu": 2614652,
+      "mem": 472494
+    },
+    "batch_lock_n20_on_60_index": {
+      "operation": "batch",
+      "description": "batch_lock_funds with n=20 items on mature 60-escrow index",
+      "cpu": 19808371,
+      "mem": 5350430
+    },
+    "batch_release_n20_on_60_index": {
+      "operation": "batch",
+      "description": "batch_release_funds with n=20 items on mature 60-escrow index",
+      "cpu": 15231318,
+      "mem": 3212659
+    },
+    "payout_release_escrow60": {
+      "operation": "payout",
+      "description": "release_funds for escrow #60 on mature index with router",
+      "cpu": 1303289,
+      "mem": 342322
+    },
+    "payout_refund_escrow60_deadline": {
+      "operation": "payout",
+      "description": "refund for escrow #60 after deadline expiration",
+      "cpu": 2688146,
+      "mem": 479774
+    },
+    "payout_partial_release_5k_from_escrow60": {
+      "operation": "payout",
+      "description": "partial_release of 5,000 stroops from escrow #60",
+      "cpu": 2205092,
+      "mem": 347038
+    },
+    "pagination_whitelist_60total_limit50": {
+      "operation": "pagination",
+      "description": "query_whitelist with 60 total items, page size 50 (MAX)",
+      "cpu": 456266,
+      "mem": 90263
+    },
+    "pagination_aggregate_stats_60": {
+      "operation": "pagination",
+      "description": "get_aggregate_stats scanning 60 mature escrows",
+      "cpu": 1293614,
+      "mem": 110252
+    },
+    "migration_simulate_upgrade_60_escrows": {
+      "operation": "migration",
+      "description": "simulate_upgrade safety verification with 60 mature escrows",
+      "cpu": 13393590,
+      "mem": 3179105
+    },
+    "migration_set_deprecation_target": {
+      "operation": "migration",
+      "description": "set deprecation target state and event emission",
+      "cpu": 106920,
+      "mem": 16731
+    }
+  },
+  "wasm_size_budget_ceiling_bytes": 260000
+}

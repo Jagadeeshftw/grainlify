@@ -7,7 +7,9 @@ members = [
   "view-facade",
 ]
 # A bare `cargo test` / `cargo build` in contracts/ covers the root package too,
-# not just the members.
+# not just the members. The root package is a member in its own right: it used
+# to belong to no workspace, so nothing built or tested it and the
+# storage-collision audit it carries never ran (#1907).
 default-members = [
   ".",
   "escrow-view-facade",

@@ -50,7 +50,7 @@ fn test_token_allowlist_enforcement_blocks_unlisted() {
 }
 
 #[test]
-#[should_panic(expected = "Token not on allowlist")]
+#[should_panic(expected = "Error(Contract, #1100)")] // ContractError::TokenNotAllowed
 fn test_token_allowlist_enforcement_panic_unlisted() {
     let env = Env::default();
     let contract_id = env.register_contract(None, ProgramEscrowContract);
@@ -95,7 +95,7 @@ fn test_token_allowlist_batch_initialization() {
 }
 
 #[test]
-#[should_panic(expected = "Token not on allowlist")]
+#[should_panic(expected = "Error(Contract, #1100)")] // ContractError::TokenNotAllowed
 fn test_token_allowlist_batch_initialization_unlisted() {
     let env = Env::default();
     let contract_id = env.register_contract(None, ProgramEscrowContract);

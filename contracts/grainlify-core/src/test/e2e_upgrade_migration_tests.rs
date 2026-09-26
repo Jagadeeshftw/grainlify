@@ -31,6 +31,14 @@ fn migration_hash(env: &Env, seed: u8) -> BytesN<32> {
     BytesN::from_array(env, &[seed; 32])
 }
 
+/// Commit then migrate — `migrate` requires a live commitment for the target
+/// version (replay protection, issue #1087), so every migration in this suite
+/// goes through the commitment checkpoint.
+fn commit_and_migrate(client: &GrainlifyContractClient, target: u32, hash: &BytesN<32>) {
+    client.commit_migration(&target, hash, &0u64);
+    client.migrate(&target, hash);
+}
+
 /// Snapshot of contract state for verification
 #[derive(Clone, Debug)]
 struct StateSnapshot {
@@ -44,7 +52,7 @@ impl StateSnapshot {
         Self {
             version: client.get_version(),
             migration_state: client.get_migration_state(),
-            event_count: env.events().all().len() as u32,
+            event_count: env.events().all().len(),
         }
     }
 }
@@ -68,10 +76,18 @@ fn test_e2e_complete_migration_lifecycle() {
 
     // Step 2: Capture pre-migration state
     let pre_migration_snapshot = StateSnapshot::capture(&env, &client);
+    assert_eq!(
+        pre_migration_snapshot.version, 2,
+        "Pre-migration version should be 2"
+    );
+    assert!(
+        pre_migration_snapshot.migration_state.is_none(),
+        "No migration should be recorded before the first migration"
+    );
 
     // Step 3: Run migration to v3
     let migration_hash_v3 = migration_hash(&env, 0x03);
-    client.migrate(&3, &migration_hash_v3);
+    commit_and_migrate(&client, 3, &migration_hash_v3);
 
     // Step 4: Verify final state
     assert_eq!(
@@ -92,7 +108,7 @@ fn test_e2e_complete_migration_lifecycle() {
     // Step 6: Verify events were emitted
     let events = env.events().all();
     assert!(
-        events.len() as u32 > pre_migration_snapshot.event_count,
+        events.len() > pre_migration_snapshot.event_count,
         "Migration should emit events"
     );
 }
@@ -111,7 +127,7 @@ fn test_e2e_migration_with_state_preservation() {
 
     // Perform first migration to establish state
     let migration_hash_v3 = migration_hash(&env, 0x03);
-    client.migrate(&3, &migration_hash_v3);
+    commit_and_migrate(&client, 3, &migration_hash_v3);
 
     let state_before = client.get_migration_state().unwrap();
 
@@ -143,7 +159,7 @@ fn test_e2e_chained_migrations_v1_to_v3() {
 
     // Perform chained migration v1 → v2 → v3
     let migration_hash = migration_hash(&env, 0xFF);
-    client.migrate(&3, &migration_hash);
+    commit_and_migrate(&client, 3, &migration_hash);
 
     // Verify final state
     assert_eq!(client.get_version(), 3);
@@ -166,7 +182,7 @@ fn test_e2e_multiple_sequential_migrations() {
 
     // First migration cycle
     let migration_hash_v3 = migration_hash(&env, 0x03);
-    client.migrate(&3, &migration_hash_v3);
+    commit_and_migrate(&client, 3, &migration_hash_v3);
 
     assert_eq!(client.get_version(), 3);
 
@@ -212,7 +228,7 @@ fn test_e2e_multisig_migration_workflow() {
 
     // Perform migration
     let migration_hash_v3 = migration_hash(&env, 0x03);
-    client2.migrate(&3, &migration_hash_v3);
+    commit_and_migrate(&client2, 3, &migration_hash_v3);
 
     // Verify migration succeeded
     assert_eq!(client2.get_version(), 3);
@@ -240,7 +256,7 @@ fn test_e2e_migration_version_control() {
 
     // Migrate to v3
     let migration_hash_v3 = migration_hash(&env, 0x03);
-    client.migrate(&3, &migration_hash_v3);
+    commit_and_migrate(&client, 3, &migration_hash_v3);
     assert_eq!(client.get_version(), 3);
 
     // Verify migration state
@@ -250,7 +266,7 @@ fn test_e2e_migration_version_control() {
     assert_eq!(state.migration_hash, migration_hash_v3);
 
     // Attempting to migrate to a lower version must panic
-    client.migrate(&2, &migration_hash_v3);
+    commit_and_migrate(&client, 2, &migration_hash_v3);
 }
 
 #[test]
@@ -266,12 +282,12 @@ fn test_e2e_migration_preserves_state_on_retry() {
 
     // Build up state
     let migration_hash_v3 = migration_hash(&env, 0x03);
-    client.migrate(&3, &migration_hash_v3);
+    commit_and_migrate(&client, 3, &migration_hash_v3);
 
     let state_before = client.get_migration_state().unwrap();
 
     // Retry migration — must be a no-op, state unchanged
-    client.migrate(&3, &migration_hash_v3);
+    commit_and_migrate(&client, 3, &migration_hash_v3);
 
     let state_after = client.get_migration_state().unwrap();
     assert_eq!(state_before.from_version, state_after.from_version);
@@ -299,7 +315,7 @@ fn test_e2e_migration_emits_correct_events() {
 
     // Perform migration
     let migration_hash_v3 = migration_hash(&env, 0x03);
-    client.migrate(&3, &migration_hash_v3);
+    commit_and_migrate(&client, 3, &migration_hash_v3);
 
     let events_after_migration = env.events().all().len();
     assert!(
@@ -322,7 +338,7 @@ fn test_e2e_complete_lifecycle_event_sequence() {
     let events_after_init = env.events().all().len();
 
     let migration_hash_v3 = migration_hash(&env, 0x03);
-    client.migrate(&3, &migration_hash_v3);
+    commit_and_migrate(&client, 3, &migration_hash_v3);
     let events_after_migration = env.events().all().len();
 
     // Verify event progression
@@ -355,7 +371,7 @@ fn test_e2e_migration_preserves_configuration() {
 
     // Perform migration
     let migration_hash_v3 = migration_hash(&env, 0x03);
-    client.migrate(&3, &migration_hash_v3);
+    commit_and_migrate(&client, 3, &migration_hash_v3);
 
     // Verify version changed as expected
     let version_after = client.get_version();
@@ -382,9 +398,9 @@ fn test_e2e_repeated_migrations_are_rejected() {
     let migration_hash_v3 = migration_hash(&env, 0x03);
 
     // First migration
-    client.migrate(&3, &migration_hash_v3);
+    commit_and_migrate(&client, 3, &migration_hash_v3);
     // Attempting to migrate to a lower version must panic
-    client.migrate(&2, &migration_hash_v3);
+    commit_and_migrate(&client, 2, &migration_hash_v3);
 }
 
 // ============================================================================
@@ -405,10 +421,10 @@ fn test_e2e_multiple_migration_cycles() {
 
     // Perform migration
     let migration_hash_v3 = migration_hash(&env, 0x03);
-    client.migrate(&3, &migration_hash_v3);
+    commit_and_migrate(&client, 3, &migration_hash_v3);
 
     // Attempting to migrate to a lower version must panic.
-    client.migrate(&2, &migration_hash_v3);
+    commit_and_migrate(&client, 2, &migration_hash_v3);
 }
 
 #[test]
@@ -428,7 +444,7 @@ fn test_e2e_version_management_integration() {
 
     // Perform migration
     let migration_hash_v3 = migration_hash(&env, 0x03);
-    client.migrate(&3, &migration_hash_v3);
+    commit_and_migrate(&client, 3, &migration_hash_v3);
 
     // Verify version updated
     assert_eq!(client.get_version(), 3);

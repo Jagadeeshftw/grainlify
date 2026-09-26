@@ -1,0 +1,41 @@
+name: TypeScript SDK CI
+
+on:
+  push:
+    branches: [main, master, develop]
+    paths:
+      - "contracts/sdk/**"
+      - "contracts/bounty_escrow/contracts/escrow/src/**"
+      - "contracts/grainlify-core/src/governance.rs"
+      - "contracts/program-escrow/src/error_recovery.rs"
+      - ".github/workflows/sdk-ci.yml"
+  pull_request:
+    branches: [main, master, develop]
+    paths:
+      - "contracts/sdk/**"
+      - "contracts/bounty_escrow/contracts/escrow/src/**"
+      - "contracts/grainlify-core/src/governance.rs"
+      - "contracts/program-escrow/src/error_recovery.rs"
+      - ".github/workflows/sdk-ci.yml"
+
+jobs:
+  sdk:
+    name: TypeScript SDK build and tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts/sdk
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: contracts/sdk/package-lock.json
+      - name: Install SDK dependencies
+        run: npm ci
+      - name: Type-check and build SDK
+        run: npm run build
+      - name: Run SDK unit tests
+        run: npm test -- --runInBand

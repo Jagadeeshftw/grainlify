@@ -9,6 +9,9 @@ edition = "2021"
 crate-type = ["rlib", "cdylib"]
 
 [features]
+# Feature flag documentation: see FEATURE_FLAGS.md for complete model and supported combinations.
+# Downstream crates (program-escrow, view-facade, escrow-view-facade) must depend on
+# grainlify-core with `default-features = false` to prevent duplicate contract entrypoints at link time.
 default = ["contract"]
 contract = []
 strict-mode = []

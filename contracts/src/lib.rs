@@ -3,39 +3,45 @@
 //! This crate provides shared utilities and storage key management for Grainlify smart contracts.
 //! It includes namespace protection, collision detection, and common constants.
 
-//! # View-Facade Contract
-//!
-//! Exposes **read-only** queries over `ProgramData` and `FeeConfig` so
-//! that wallets, UIs, and off-chain indexers can inspect live state without
-//! paying gas for a mutating transaction.
-//!
-//! ## Entrypoints
-//!
-//! | Function | Kind | Description |
-//! |----------|------|-------------|
-//! | [`ViewFacade::get_program`] | view | Returns the full `ProgramData` for a program ID |
-//! | [`ViewFacade::get_fee_config`] | view | Returns the active `FeeConfig` |
-//! | [`ViewFacade::is_circuit_open`] | view | Returns the circuit-breaker state |
-//! | [`ViewFacade::simulate_payout`] | **view** | Computes net amounts, fees, and warnings without writing state |
-//!
-//! ## Security model
-//!
-//! All functions in this contract are **read-only**: they never call
-//! `storage.set`, `storage.remove`, or any function that transfers tokens.
-//! The circuit-breaker check inside `simulate_payout` only *reports* the
-//! breaker state as a warning — it does not abort the simulation, because
-//! the purpose is to let the UI show a preview even when payouts are
-//! currently paused.
-//!
-//! No authentication is required. All entrypoints are permissionless.
-
 pub mod storage_key_audit;
+
+// Storage-key collision audit. Declared under `cfg(test)` so it only builds
+// for the test profile; `contracts/scripts/ci-contracts.sh` runs it on every
+// pull request via `cargo test --manifest-path contracts/Cargo.toml --workspace`.
+#[cfg(test)]
+pub mod storage_collision_tests;
+
+// # View-Facade Contract
+//
+// Exposes **read-only** queries over `ProgramData` and `FeeConfig` so
+// that wallets, UIs, and off-chain indexers can inspect live state without
+// paying gas for a mutating transaction.
+//
+// ## Entrypoints
+//
+// | Function | Kind | Description |
+// |----------|------|-------------|
+// | [`ViewFacade::get_program`] | view | Returns the full `ProgramData` for a program ID |
+// | [`ViewFacade::get_fee_config`] | view | Returns the active `FeeConfig` |
+// | [`ViewFacade::is_circuit_open`] | view | Returns the circuit-breaker state |
+// | [`ViewFacade::simulate_payout`] | **view** | Computes net amounts, fees, and warnings without writing state |
+//
+// ## Security model
+//
+// All functions in this contract are **read-only**: they never call
+// `storage.set`, `storage.remove`, or any function that transfers tokens.
+// The circuit-breaker check inside `simulate_payout` only *reports* the
+// breaker state as a warning — it does not abort the simulation, because
+// the purpose is to let the UI show a preview even when payouts are
+// currently paused.
+//
+// No authentication is required. All entrypoints are permissionless.
 
 // ─── Storage key constants ────────────────────────────────────────────────────
 
-pub const KEY_PROGRAM_DATA:  &str = "PROGRAM_DATA";
-pub const KEY_FEE_CONFIG:    &str = "FEE_CONFIG";
-pub const KEY_CIRCUIT_OPEN:  &str = "CIRCUIT_OPEN";
+pub const KEY_PROGRAM_DATA: &str = "PROGRAM_DATA";
+pub const KEY_FEE_CONFIG: &str = "FEE_CONFIG";
+pub const KEY_CIRCUIT_OPEN: &str = "CIRCUIT_OPEN";
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
 
@@ -123,10 +129,7 @@ pub enum Warning {
     /// The program is not active; real payouts would be rejected.
     ProgramInactive { program_id: String },
     /// The total gross payout exceeds the program's remaining balance.
-    InsufficientBalance {
-        required: u128,
-        available: u128,
-    },
+    InsufficientBalance { required: u128, available: u128 },
     /// A recipient's gross amount is zero; they would receive nothing.
     ZeroAmountRecipient { address: Address },
     /// Computed net amount for a recipient rounded down to zero due to fees.
@@ -141,20 +144,35 @@ pub enum Warning {
 impl std::fmt::Display for Warning {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::CircuitBreakerOpen =>
-                write!(f, "CIRCUIT_BREAKER_OPEN: real payouts are currently suspended"),
-            Self::ProgramInactive { program_id } =>
-                write!(f, "PROGRAM_INACTIVE: program '{}' is not active", program_id),
-            Self::InsufficientBalance { required, available } =>
-                write!(f, "INSUFFICIENT_BALANCE: required {} but only {} available", required, available),
-            Self::ZeroAmountRecipient { address } =>
-                write!(f, "ZERO_AMOUNT: recipient '{}' has gross amount of 0", address),
-            Self::NetAmountZero { address } =>
-                write!(f, "NET_ZERO: fee consumed entire payout for '{}'", address),
-            Self::EmptyRecipientList =>
-                write!(f, "EMPTY_RECIPIENTS: no recipients provided"),
-            Self::DuplicateAddress { address } =>
-                write!(f, "DUPLICATE_ADDRESS: '{}' appears more than once", address),
+            Self::CircuitBreakerOpen => write!(
+                f,
+                "CIRCUIT_BREAKER_OPEN: real payouts are currently suspended"
+            ),
+            Self::ProgramInactive { program_id } => write!(
+                f,
+                "PROGRAM_INACTIVE: program '{}' is not active",
+                program_id
+            ),
+            Self::InsufficientBalance {
+                required,
+                available,
+            } => write!(
+                f,
+                "INSUFFICIENT_BALANCE: required {} but only {} available",
+                required, available
+            ),
+            Self::ZeroAmountRecipient { address } => write!(
+                f,
+                "ZERO_AMOUNT: recipient '{}' has gross amount of 0",
+                address
+            ),
+            Self::NetAmountZero { address } => {
+                write!(f, "NET_ZERO: fee consumed entire payout for '{}'", address)
+            }
+            Self::EmptyRecipientList => write!(f, "EMPTY_RECIPIENTS: no recipients provided"),
+            Self::DuplicateAddress { address } => {
+                write!(f, "DUPLICATE_ADDRESS: '{}' appears more than once", address)
+            }
         }
     }
 }
@@ -193,16 +211,16 @@ pub struct SimulationResult {
 /// Minimal in-process key-value store used to simulate ledger storage.
 /// Mirrors the pattern from `program-escrow`'s `Storage` type.
 pub struct Storage {
-    programs:     std::collections::HashMap<String, ProgramData>,
-    fee_config:   Option<FeeConfig>,
+    programs: std::collections::HashMap<String, ProgramData>,
+    fee_config: Option<FeeConfig>,
     circuit_open: bool,
 }
 
 impl Storage {
     pub fn new() -> Self {
         Self {
-            programs:     std::collections::HashMap::new(),
-            fee_config:   None,
+            programs: std::collections::HashMap::new(),
+            fee_config: None,
             circuit_open: false,
         }
     }
@@ -256,7 +274,8 @@ pub fn resolve_fee_rate(config: &FeeConfig, gross_amount: u128) -> u32 {
     let rate = if config.brackets.is_empty() {
         config.default_rate_bp
     } else {
-        config.brackets
+        config
+            .brackets
             .iter()
             .find(|b| b.ceiling.map_or(true, |c| gross_amount <= c))
             .map(|b| b.rate_bp)
@@ -280,7 +299,9 @@ pub fn resolve_fee_rate(config: &FeeConfig, gross_amount: u128) -> u32 {
 /// - `q * rate_bp` ≤ `(u128::MAX / 10_000) * 1_000` = `u128::MAX / 10` ✓
 /// - `r * rate_bp` ≤ `9_999 * 1_000` = `9_999_000` ✓
 pub fn compute_fee(gross_amount: u128, rate_bp: u32) -> u128 {
-    if rate_bp == 0 || gross_amount == 0 { return 0; }
+    if rate_bp == 0 || gross_amount == 0 {
+        return 0;
+    }
     let rate = rate_bp as u128;
     let q = gross_amount / BASIS_POINTS;
     let r = gross_amount % BASIS_POINTS;
@@ -384,7 +405,7 @@ impl<'a> ViewFacade<'a> {
     /// # Example
     ///
     /// ```rust
-    /// use view_facade::{ViewFacade, Storage, ProgramData, FeeConfig, Recipient};
+    /// use grainlify_contracts::{ViewFacade, Storage, ProgramData, FeeConfig, Recipient};
     ///
     /// let mut storage = Storage::new();
     /// storage.set_program(ProgramData {
@@ -495,9 +516,8 @@ impl<'a> ViewFacade<'a> {
 
             // Accumulate for weighted effective rate.
             // Use saturating_add to avoid overflow when amounts approach u128::MAX.
-            total_rate_bp_weighted = total_rate_bp_weighted.saturating_add(
-                (rate_bp as u128).saturating_mul(recipient.gross_amount),
-            );
+            total_rate_bp_weighted = total_rate_bp_weighted
+                .saturating_add((rate_bp as u128).saturating_mul(recipient.gross_amount));
             total_gross += recipient.gross_amount;
             total_fees += fee;
             total_net += net;
@@ -513,7 +533,7 @@ impl<'a> ViewFacade<'a> {
         if let Some(prog) = &program {
             if total_gross > prog.remaining_balance {
                 warnings.push(Warning::InsufficientBalance {
-                    required:  total_gross,
+                    required: total_gross,
                     available: prog.remaining_balance,
                 });
             }

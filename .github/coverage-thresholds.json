@@ -1,0 +1,64 @@
+{
+  "_comment": "Per-contract-crate line-coverage floors. This file is the single source of truth for BOTH scripts/run_contract_coverage.sh (which crates get measured) and scripts/check-coverage-thresholds.sh (which floors are enforced). It mirrors the shape of .github/wasm-budgets.json on purpose so both gates are read the same way.",
+  "_units": "All percentages are LINE coverage (lines hit / instrumentable lines), not region or function coverage. cargo-llvm-cov's `Lines Cover` column is the source of truth.",
+  "_update_process": "To move a floor: run scripts/run_contract_coverage.sh, read the `lines_pct` it recorded in coverage/coverage-summary.json, and set min_lines_pct to that value (rounded DOWN, so a floor is never above what was actually measured). Only ever raise a floor together with the tests that justify it, and say so in the PR description.",
+  "crates": {
+    "grainify-contracts": {
+      "manifest": "contracts/Cargo.toml",
+      "description": "Shared storage-key collision audit crate (own cargo workspace at contracts/)",
+      "status": "measured",
+      "min_lines_pct": 87,
+      "baseline": {
+        "lines_pct": 87.08,
+        "covered_lines": 155,
+        "total_lines": 178
+      }
+    },
+    "bounty-escrow": {
+      "manifest": "contracts/bounty_escrow/Cargo.toml",
+      "description": "Bounty escrow contract (workspace root; 164 contract entry points)",
+      "status": "measured",
+      "min_lines_pct": 83,
+      "baseline": {
+        "lines_pct": 83.92,
+        "covered_lines": 13784,
+        "total_lines": 16425
+      }
+    },
+    "program-escrow": {
+      "manifest": "contracts/program-escrow/Cargo.toml",
+      "description": "Program escrow contract (167 contract entry points)",
+      "status": "measured",
+      "min_lines_pct": 56,
+      "baseline": {
+        "lines_pct": 56.6,
+        "covered_lines": 6150,
+        "total_lines": 10866
+      }
+    },
+    "grainlify-core": {
+      "manifest": "contracts/grainlify-core/Cargo.toml",
+      "description": "Core shared contract library",
+      "status": "blocked",
+      "blocked_reason": "Pre-existing test-compilation failure at HEAD, unrelated to coverage. `cargo test --no-run` reports E0599/E0603/E0061 across tests/test_governance_rbac.rs, tests/test_governance_veto.rs and several src/test/*.rs modules (missing `soroban_sdk::testutils` imports, `governance::ROLE_ADMIN` is pub(crate) while a test reads it, and an arity mismatch). Tracked for a separate fix; this crate cannot be measured until it compiles.",
+      "min_lines_pct": null,
+      "baseline": null
+    },
+    "view-facade": {
+      "manifest": "contracts/view-facade/Cargo.toml",
+      "description": "View facade contract",
+      "status": "blocked",
+      "blocked_reason": "Pre-existing dependency-resolution failure at HEAD, unrelated to coverage. Building any test target fails inside `soroban-env-host 21.2.1` with E0277 (`ChaCha20Rng: ed25519_dalek::rand_core::CryptoRng` unsatisfied) because the committed Cargo.lock pairs it with an incompatible `ed25519-dalek`/`rand_core`. Tracked for a separate fix; this crate cannot be measured until it compiles.",
+      "min_lines_pct": null,
+      "baseline": null
+    },
+    "escrow-view-facade": {
+      "manifest": "contracts/escrow-view-facade/Cargo.toml",
+      "description": "Escrow view facade contract",
+      "status": "blocked",
+      "blocked_reason": "Same pre-existing `soroban-env-host 21.2.1` / `ed25519-dalek` E0277 dependency-resolution failure as view-facade, and this crate has no test targets of its own. Tracked for a separate fix; this crate cannot be measured until it compiles.",
+      "min_lines_pct": null,
+      "baseline": null
+    }
+  }
+}

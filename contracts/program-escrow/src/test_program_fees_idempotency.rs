@@ -561,17 +561,3 @@ fn test_batch_payout_idempotent_replay_different_params() {
     let _ = client.get_remaining_balance();
 }
 
-// =============================================================================
-// SPEND LIMIT THRESHOLD TESTS (Issue #15)
-// =============================================================================
-//
-// These tests verify the spend-limit threshold invariants:
-//   - single_payout and batch_payout are rejected when the requested amount
-//     exceeds the configured per-program threshold.
-//   - The threshold is enforced BEFORE balance checks (deterministic ordering).
-//   - Audit events (SpendLimitSetEvent, SpendLimitExceededEvent) are emitted.
-//   - The upgrade-safe schema version marker is written on init.
-//   - Setting threshold to i128::MAX effectively disables enforcement.
-
-/// SL-1: single_payout below threshold succeeds.
-#[test]

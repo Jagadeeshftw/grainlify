@@ -35,6 +35,37 @@ Below are all storage keys utilized by the contract.
 | `CircuitBreakerKey::ErrorLog` | `ErrorLog` | Persistent | `Vec<ErrorEntry>` | Hot circuit failure log capped at 50 entries |
 | `CircuitBreakerKey::ErrorArchive(String)` | `ErrorArchive(program_id)` | Persistent | `CompactFailureArchive` | Per-program compact archive of pruned failure timestamps, error codes, and failure counts |
 
+## Type-Layout Fixture (CI-enforced)
+
+`contracts/storage-layout/program-escrow.json` carries a `type_layouts` fixture that pins
+the declared encoding (field order, field names and encoding types) of **every**
+`#[contracttype]` type in `contracts/program-escrow/src/types.rs` — the persisted value
+types listed above as well as the `DataKey` storage-key enum.
+
+The Storage Layout Checks workflow runs `python3 scripts/verify-storage-layout-manifest.py`,
+which re-parses `types.rs` and fails when:
+
+- a `#[contracttype]` type is declared but absent from the fixture (for example a newly
+  persisted type or a new storage-key enum);
+- a fixture entry no longer exists in the source;
+- a field is added, removed, reordered or retyped (the recorded encoding no longer matches
+  the source);
+- the recorded `xdr_sha256` no longer matches the serialization golden for a type that has
+  one.
+
+### Changing a persisted type
+
+1. Bump `STORAGE_SCHEMA_VERSION` in `lib.rs` and add a migration note.
+2. Regenerate the serialization goldens: `python3 contracts/scripts/gen_serialization_goldens.py`.
+3. Regenerate the type-layout fixture: `python3 contracts/scripts/gen_storage_layout_types.py`.
+4. Re-run `python3 scripts/verify-storage-layout-manifest.py`.
+
+### Validation
+
+Add an unused field to any persisted struct above (for example `ProgramData`), run
+`python3 scripts/verify-storage-layout-manifest.py`, and confirm it fails with an
+`encoding changed` diagnostic before reverting the field.
+
 ## Migration Rules
 - When a type definition changes, the `STORAGE_SCHEMA_VERSION` constant within `lib.rs` MUST be incremented.
 - Upgrades must provide a migration path that reads the old struct format and writes the new one, or leave old struct variants and add V2 keys.

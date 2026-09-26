@@ -9,8 +9,8 @@ use soroban_sdk::{
 
 use crate::{
     BuildInfoEvent, GovernanceConfig, GrainlifyContract, GrainlifyContractClient,
-    MigrationCommittedEvent, MigrationEvent, ReadOnlyModeEvent, UpgradeEvent,
-    VotingScheme, EVENT_SCHEMA_VERSION,
+    MigrationCommittedEvent, MigrationEvent, ReadOnlyModeEvent, UpgradeEvent, VotingScheme,
+    EVENT_SCHEMA_VERSION,
 };
 
 // ---------------------------------------------------------------------------
@@ -23,7 +23,7 @@ fn default_env() -> Env {
     env
 }
 
-fn register(env: &Env) -> GrainlifyContractClient {
+fn register(env: &Env) -> GrainlifyContractClient<'_> {
     let id = env.register_contract(None, GrainlifyContract);
     GrainlifyContractClient::new(env, &id)
 }
@@ -81,7 +81,9 @@ fn compatible_version_returns_false_for_zero() {
 
 #[test]
 fn compatible_version_returns_false_for_future() {
-    assert!(!crate::is_compatible_event_version(EVENT_SCHEMA_VERSION + 1));
+    assert!(!crate::is_compatible_event_version(
+        EVENT_SCHEMA_VERSION + 1
+    ));
 }
 
 #[test]
@@ -102,7 +104,10 @@ fn build_info_event_has_event_version_field() {
     client.init_admin(&admin);
 
     let payloads = find_events_by_topic(&env, "init", "build");
-    assert!(!payloads.is_empty(), "Expected at least one init/build event");
+    assert!(
+        !payloads.is_empty(),
+        "Expected at least one init/build event"
+    );
 
     let ev = BuildInfoEvent::try_from_val(&env, &payloads[0])
         .expect("Failed to deserialize BuildInfoEvent");
@@ -179,7 +184,7 @@ fn read_only_mode_event_has_event_version_field() {
         .all()
         .iter()
         .filter(|e| {
-            e.1.len() >= 1
+            !e.1.is_empty()
                 && Symbol::try_from_val(&env, &e.1.get(0).unwrap())
                     == Ok(Symbol::new(&env, "ROModeChg"))
         })
@@ -209,7 +214,7 @@ fn read_only_mode_disable_event_has_event_version() {
         .all()
         .iter()
         .filter(|e| {
-            e.1.len() >= 1
+            !e.1.is_empty()
                 && Symbol::try_from_val(&env, &e.1.get(0).unwrap())
                     == Ok(Symbol::new(&env, "ROModeChg"))
         })

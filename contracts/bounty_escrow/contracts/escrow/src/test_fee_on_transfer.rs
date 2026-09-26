@@ -36,11 +36,7 @@
 #![cfg(test)]
 
 use super::*;
-use soroban_sdk::{
-    contract, contractimpl, contracttype,
-    testutils::Address as _,
-    Address, Env,
-};
+use soroban_sdk::{contract, contractimpl, contracttype, testutils::Address as _, Address, Env};
 
 // ============================================================================
 // MaliciousFeeToken — SEP-41 compatible token with configurable fee drain
@@ -291,7 +287,11 @@ fn test_zero_fee_token_completes_full_lifecycle() {
     escrow.lock_funds(&depositor, &10u64, &1_000, &deadline);
 
     let tok = MaliciousFeeTokenClient::new(&env, &token_addr);
-    assert_eq!(tok.balance(&escrow.address), 1_000, "contract must hold full amount");
+    assert_eq!(
+        tok.balance(&escrow.address),
+        1_000,
+        "contract must hold full amount"
+    );
 
     let info = escrow.get_escrow_info(&10u64);
     assert_eq!(info.amount, 1_000);
@@ -301,8 +301,16 @@ fn test_zero_fee_token_completes_full_lifecycle() {
     // Release succeeds; contributor receives 1_000, contract emptied.
     escrow.release_funds(&10u64, &contributor);
 
-    assert_eq!(tok.balance(&contributor), 1_000, "contributor must receive full amount");
-    assert_eq!(tok.balance(&escrow.address), 0, "contract must be empty after release");
+    assert_eq!(
+        tok.balance(&contributor),
+        1_000,
+        "contributor must receive full amount"
+    );
+    assert_eq!(
+        tok.balance(&escrow.address),
+        0,
+        "contract must be empty after release"
+    );
 }
 
 // ============================================================================
@@ -353,9 +361,7 @@ fn test_escrow_data_invariants_remain_valid_with_drained_token() {
             archived: false,
             archived_at: None,
         };
-        env.storage()
-            .persistent()
-            .set(&DataKey::Escrow(bounty_id), &drained);
+        crate::BountyEscrowContract::write_escrow(&env, bounty_id, &drained).unwrap();
     });
 
     let info = escrow.get_escrow_info(&bounty_id);
@@ -415,8 +421,7 @@ fn test_partial_fee_creates_documented_accounting_discrepancy() {
 
     // Simulate a fee-on-transfer lock: depositor declares 2_000 but the
     // token delivers only 1_000 to the escrow address (50% burned as fee).
-    MaliciousFeeTokenClient::new(&env, &token_addr)
-        .transfer(&depositor, &escrow_addr, &2_000);
+    MaliciousFeeTokenClient::new(&env, &token_addr).transfer(&depositor, &escrow_addr, &2_000);
 
     // Inject the escrow record as if the contract trusted the declared 2_000.
     env.as_contract(&escrow_addr, || {
@@ -430,9 +435,7 @@ fn test_partial_fee_creates_documented_accounting_discrepancy() {
             archived: false,
             archived_at: None,
         };
-        env.storage()
-            .persistent()
-            .set(&DataKey::Escrow(bounty_id), &recording);
+        crate::BountyEscrowContract::write_escrow(&env, bounty_id, &recording).unwrap();
     });
 
     let info = escrow.get_escrow_info(&bounty_id);
@@ -445,7 +448,10 @@ fn test_partial_fee_creates_documented_accounting_discrepancy() {
 
     // Shortfall equals the fee the token silently charged.
     let shortfall = info.amount - actual;
-    assert_eq!(shortfall, 1_000, "shortfall must equal the token fee charged");
+    assert_eq!(
+        shortfall, 1_000,
+        "shortfall must equal the token fee charged"
+    );
 
     // INV-1 holds on the injected record.
     assert!(info.amount > 0);
@@ -499,9 +505,7 @@ fn test_release_panics_when_contract_balance_drained_by_fee_token() {
             archived: false,
             archived_at: None,
         };
-        env.storage()
-            .persistent()
-            .set(&DataKey::Escrow(bounty_id), &drained);
+        crate::BountyEscrowContract::write_escrow(&env, bounty_id, &drained).unwrap();
     });
 
     // release_funds → token.transfer(contract, contributor, 1_000)
@@ -605,9 +609,7 @@ fn test_publish_detects_token_balance_shortfall_via_inv2() {
             archived: false,
             archived_at: None,
         };
-        env.storage()
-            .persistent()
-            .set(&DataKey::Escrow(bounty_id), &draft);
+        crate::BountyEscrowContract::write_escrow(&env, bounty_id, &draft).unwrap();
 
         // Register in the global index so sum_active_escrow_balances finds it
         // once it is promoted to Locked by publish().
@@ -617,9 +619,7 @@ fn test_publish_detects_token_balance_shortfall_via_inv2() {
             .get(&DataKey::EscrowIndex)
             .unwrap_or(soroban_sdk::Vec::new(&env));
         idx.push_back(bounty_id);
-        env.storage()
-            .persistent()
-            .set(&DataKey::EscrowIndex, &idx);
+        env.storage().persistent().set(&DataKey::EscrowIndex, &idx);
     });
 
     // publish() will:
@@ -652,8 +652,7 @@ fn test_publish_succeeds_when_token_balance_matches_escrow() {
     let deadline = env.ledger().timestamp() + 1_000;
 
     // Transfer 1_000 tokens directly to the escrow contract (mimicking a lock).
-    MaliciousFeeTokenClient::new(&env, &token_addr)
-        .transfer(&depositor, &escrow_addr, &1_000);
+    MaliciousFeeTokenClient::new(&env, &token_addr).transfer(&depositor, &escrow_addr, &1_000);
 
     // Inject a matching Draft escrow.
     env.as_contract(&escrow_addr, || {
@@ -667,9 +666,7 @@ fn test_publish_succeeds_when_token_balance_matches_escrow() {
             archived: false,
             archived_at: None,
         };
-        env.storage()
-            .persistent()
-            .set(&DataKey::Escrow(bounty_id), &draft);
+        crate::BountyEscrowContract::write_escrow(&env, bounty_id, &draft).unwrap();
 
         let mut idx: soroban_sdk::Vec<u64> = env
             .storage()
@@ -677,16 +674,18 @@ fn test_publish_succeeds_when_token_balance_matches_escrow() {
             .get(&DataKey::EscrowIndex)
             .unwrap_or(soroban_sdk::Vec::new(&env));
         idx.push_back(bounty_id);
-        env.storage()
-            .persistent()
-            .set(&DataKey::EscrowIndex, &idx);
+        env.storage().persistent().set(&DataKey::EscrowIndex, &idx);
     });
 
     // publish() must succeed: INV-2 holds (sum = 1_000 == balance = 1_000).
     escrow.publish(&bounty_id);
 
     let info = escrow.get_escrow_info(&bounty_id);
-    assert_eq!(info.status, EscrowStatus::Locked, "escrow must be Locked after publish");
+    assert_eq!(
+        info.status,
+        EscrowStatus::Locked,
+        "escrow must be Locked after publish"
+    );
     assert_eq!(info.amount, 1_000);
     assert_eq!(info.remaining_amount, 1_000);
 }

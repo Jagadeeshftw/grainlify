@@ -968,14 +968,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "program-escrow"
-version = "0.0.0"
-dependencies = [
- "ethnum",
- "soroban-sdk",
-]
-
-[[package]]
 name = "quote"
 version = "1.0.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1335,6 +1327,14 @@ dependencies = [
  "soroban-env-common",
  "soroban-env-host",
  "thiserror",
+]
+
+[[package]]
+name = "soroban-program-escrow"
+version = "0.0.0"
+dependencies = [
+ "ethnum",
+ "soroban-sdk",
 ]
 
 [[package]]

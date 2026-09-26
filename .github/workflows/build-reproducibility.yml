@@ -1,14 +1,24 @@
 name: "Build Reproducibility — cdylib wasm artifacts"
 
-# Verifies that every deployable cdylib wasm artifact is produced from a
-# *clean* Cargo target directory on every push and PR that touches Rust or
-# CI source.  Fails the job if any expected .wasm file is absent or empty.
+# Verifies that every deployable cdylib wasm artifact is bitwise reproducible
+# by building it twice from a clean target directory and comparing SHA-256
+# hashes. Fails the workflow if any artifact differs or is absent.
 #
-# Authoritative package list (excludes host-only helpers and probes):
+# Authoritative deployable artifact inventory:
+#   1. contracts/bounty_escrow/target/wasm32-unknown-unknown/release/bounty_escrow.wasm
+#   2. contracts/bounty_escrow/target/wasm32-unknown-unknown/release/escrow.wasm
+#   3. contracts/grainlify-core/target/wasm32-unknown-unknown/release/grainlify_core.wasm
+#   4. contracts/program-escrow/target/wasm32-unknown-unknown/release/program_escrow.wasm
+#   5. contracts/view-facade/target/wasm32-unknown-unknown/release/view_facade.wasm
+#   6. contracts/escrow-view-facade/target/wasm32-unknown-unknown/release/escrow_view_facade.wasm
+#   7. soroban/target/wasm32-unknown-unknown/release/escrow.wasm
+#   8. soroban/target/wasm32-unknown-unknown/release/program_escrow.wasm
 #
 #   contracts/bounty_escrow workspace (bounty_escrow/Cargo.toml)
 #     • bounty_escrow.wasm          — main bounty escrow contract
-#     • escrow.wasm                 — internal sub-contract (bounty_escrow WS)
+#     • bounty_escrow.wasm          — sole bounty_escrow workspace package
+#     • bounty_escrow.wasm          — the ONE authoritative escrow contract
+#     • bounty_escrow.wasm          — main bounty escrow contract (package: bounty-escrow)
 #
 #   contracts/ packages (individual manifests)
 #     • grainlify_core.wasm
@@ -18,11 +28,20 @@ name: "Build Reproducibility — cdylib wasm artifacts"
 #
 #   soroban/ workspace (soroban/Cargo.toml)
 #     • escrow.wasm                 — soroban/contracts/escrow
+#     • soroban_program_escrow.wasm — soroban/contracts/program-escrow
 #     • program_escrow.wasm         — soroban/contracts/program-escrow
+#     • escrow.wasm                 — soroban/contracts/escrow (package: escrow)
+#     • soroban_program_escrow.wasm — soroban/contracts/program-escrow (package: soroban-program-escrow)
 #
-#   Excluded (not cdylib / host-only):
+#   Excluded (not part of the deployable artifact inventory):
+#     • escrow                      — soroban/contracts/escrow is SUPERSEDED
+#                                     (reference/parity only, never deployed);
+#                                     see docs/contracts/escrow-implementation-authority.md
 #     • grainlify_stream            — no crate-type; testutils-only, host side
 #     • grainlify_contracts         — [[bin]] + rlib, not cdylib
+# Excluded (host-only helpers / no cdylib):
+#   • grainlify-stream (testutils-only, host side)
+#   • grainlify-contracts (bin + rlib)
 
 on:
   push:
@@ -47,19 +66,20 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # Disable incremental compilation so the build always starts from scratch
   CARGO_INCREMENTAL: "0"
 
 jobs:
   # ────────────────────────────────────────────────────────────────────────────
-  # Record compiler and SDK versions.  Runs independently so the version info
-  # is available even if the build job is cancelled.
+  # Record compiler and SDK versions
   # ────────────────────────────────────────────────────────────────────────────
   record-versions:
     name: Record compiler and SDK versions
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Verify Wasm Inventory
+        run: python3 scripts/check_inventory.py
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -78,26 +98,26 @@ jobs:
             echo "=== installed targets ==="
             rustup target list --installed
             echo
-            echo "=== contracts/ workspace — resolved stellar deps ==="
+            echo "=== contracts/bounty_escrow — resolved stellar deps ==="
             cargo tree \
               --manifest-path contracts/bounty_escrow/Cargo.toml \
               --workspace --locked --prefix none \
               | grep -E '^(soroban-sdk|soroban-env-host|soroban-env-common|stellar-xdr) v' \
-              | sort -u
+              | sort -u || true
             echo
             echo "=== contracts/grainlify-core — resolved stellar deps ==="
             cargo tree \
               --manifest-path contracts/grainlify-core/Cargo.toml \
               --locked --prefix none \
               | grep -E '^(soroban-sdk|soroban-env-host|soroban-env-common|stellar-xdr) v' \
-              | sort -u
+              | sort -u || true
             echo
             echo "=== soroban/ workspace — resolved stellar deps ==="
             cargo tree \
               --manifest-path soroban/Cargo.toml \
               --workspace --locked --prefix none \
               | grep -E '^(soroban-sdk|soroban-env-host|soroban-env-common|stellar-xdr) v' \
-              | sort -u
+              | sort -u || true
           } | tee build-versions.txt
 
       - name: Upload version record
@@ -108,11 +128,11 @@ jobs:
           if-no-files-found: error
 
   # ────────────────────────────────────────────────────────────────────────────
-  # Clean build of the contracts/ bounty_escrow workspace.
-  # Each workspace has its own Cargo.lock and target dir.
+  # Reproducibility build: contracts/bounty_escrow workspace
+  # Builds twice and verifies bitwise equality
   # ────────────────────────────────────────────────────────────────────────────
   build-contracts-bounty-escrow:
-    name: Clean build — contracts/bounty_escrow workspace
+    name: Reproducibility build — contracts/bounty_escrow
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -122,9 +142,6 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      # No Cargo target cache here — we want a fully clean build.
-      # The Cargo *registry* cache is kept to avoid re-downloading crates;
-      # only the compiled artifacts are rebuilt from scratch.
       - name: Cache Cargo registry (download cache only)
         uses: actions/cache@v4
         with:
@@ -136,46 +153,63 @@ jobs:
           restore-keys: |
             cargo-registry-${{ runner.os }}-
 
-      - name: cargo clean — bounty_escrow workspace
+      - name: Pass 1 — Build bounty_escrow workspace
         run: |
           cargo clean --manifest-path contracts/bounty_escrow/Cargo.toml
-          echo "Cargo target cleaned for contracts/bounty_escrow"
-
-      - name: Build — bounty_escrow workspace (wasm32-unknown-unknown, release)
-        run: |
           cargo build \
             --manifest-path contracts/bounty_escrow/Cargo.toml \
             --workspace \
             --target wasm32-unknown-unknown \
             --release
+          mkdir -p /tmp/pass1
+          cp contracts/bounty_escrow/target/wasm32-unknown-unknown/release/bounty_escrow.wasm /tmp/pass1/
+          cp contracts/bounty_escrow/target/wasm32-unknown-unknown/release/escrow.wasm /tmp/pass1/
+          sha256sum /tmp/pass1/*.wasm > /tmp/pass1.sha256
+          echo "Pass 1 checksums:"
+          cat /tmp/pass1.sha256
 
-      - name: Assert wasm artifacts exist and are non-empty
+      - name: Pass 2 — Clean and Rebuild bounty_escrow workspace
         run: |
           bash scripts/verify-wasm-artifacts.sh \
             contracts/bounty_escrow/target/wasm32-unknown-unknown/release \
-            bounty_escrow.wasm \
-            escrow.wasm
+            bounty_escrow.wasm
+          cargo clean --manifest-path contracts/bounty_escrow/Cargo.toml
+          cargo build \
+            --manifest-path contracts/bounty_escrow/Cargo.toml \
+            --workspace \
+            --target wasm32-unknown-unknown \
+            --release
+          mkdir -p /tmp/pass2
+          cp contracts/bounty_escrow/target/wasm32-unknown-unknown/release/bounty_escrow.wasm /tmp/pass2/
+          cp contracts/bounty_escrow/target/wasm32-unknown-unknown/release/escrow.wasm /tmp/pass2/
+          sha256sum /tmp/pass2/*.wasm > /tmp/pass2.sha256
+          echo "Pass 2 checksums:"
+          cat /tmp/pass2.sha256
 
-      - name: List wasm artifacts with sizes
+      - name: Compare Pass 1 and Pass 2 for bitwise reproducibility
         run: |
-          echo "━━━ bounty_escrow workspace artifacts ━━━"
-          find contracts/bounty_escrow/target/wasm32-unknown-unknown/release \
-            -maxdepth 1 -name "*.wasm" \
-            -exec ls -lh {} \;
+          echo "Verifying bitwise reproducibility for bounty_escrow workspace artifacts..."
+          for artifact in bounty_escrow.wasm escrow.wasm; do
+            if ! cmp -s "/tmp/pass1/$artifact" "/tmp/pass2/$artifact"; then
+              echo "::error::Reproducibility check FAILED: $artifact differs between Pass 1 and Pass 2!"
+              exit 1
+            fi
+            echo "✅ $artifact is bitwise reproducible across clean builds."
+          done
 
-      - name: Upload wasm artifacts
+      - name: Upload verified wasm artifacts
         uses: actions/upload-artifact@v4
         with:
           name: wasm-contracts-bounty-escrow
-          path: contracts/bounty_escrow/target/wasm32-unknown-unknown/release/*.wasm
+          path: /tmp/pass1/*.wasm
           if-no-files-found: error
 
   # ────────────────────────────────────────────────────────────────────────────
-  # Clean builds of the remaining stand-alone contracts/ packages.
-  # These have separate Cargo.toml manifests and separate target dirs.
+  # Reproducibility builds: contracts/ standalone packages
+  # Matrix builds each standalone package twice and verifies bitwise equality
   # ────────────────────────────────────────────────────────────────────────────
   build-contracts-standalone:
-    name: Clean build — contracts/ standalone packages
+    name: Reproducibility build — ${{ matrix.name }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -224,43 +258,60 @@ jobs:
           restore-keys: |
             cargo-registry-${{ runner.os }}-
 
-      - name: cargo clean — ${{ matrix.name }}
+      - name: Pass 1 — Build ${{ matrix.name }}
         run: |
           cargo clean --manifest-path ${{ matrix.manifest }}
-          echo "Cargo target cleaned for ${{ matrix.name }}"
-
-      - name: Build — ${{ matrix.name }} (wasm32-unknown-unknown, release)
-        run: |
           cargo build \
             --manifest-path ${{ matrix.manifest }} \
             --target wasm32-unknown-unknown \
             --release
+          mkdir -p /tmp/pass1
+          cp ${{ matrix.target_dir }}/wasm32-unknown-unknown/release/${{ matrix.expected_wasm }} /tmp/pass1/
+          sha256sum /tmp/pass1/${{ matrix.expected_wasm }} > /tmp/pass1.sha256
+          echo "Pass 1 checksum:"
+          cat /tmp/pass1.sha256
 
-      - name: Assert wasm artifact exists and is non-empty
+      - name: Pass 2 — Clean and Rebuild ${{ matrix.name }}
         run: |
-          bash scripts/verify-wasm-artifacts.sh \
-            ${{ matrix.target_dir }}/wasm32-unknown-unknown/release \
-            ${{ matrix.expected_wasm }}
+          cargo clean --manifest-path ${{ matrix.manifest }}
+          cargo build \
+            --manifest-path ${{ matrix.manifest }} \
+            --target wasm32-unknown-unknown \
+            --release
+          mkdir -p /tmp/pass2
+          cp ${{ matrix.target_dir }}/wasm32-unknown-unknown/release/${{ matrix.expected_wasm }} /tmp/pass2/
+          sha256sum /tmp/pass2/${{ matrix.expected_wasm }} > /tmp/pass2.sha256
+          echo "Pass 2 checksum:"
+          cat /tmp/pass2.sha256
 
-      - name: List wasm artifact with size
+      - name: Compare Pass 1 and Pass 2 for bitwise reproducibility
         run: |
-          echo "━━━ ${{ matrix.name }} artifact ━━━"
-          ls -lh ${{ matrix.target_dir }}/wasm32-unknown-unknown/release/${{ matrix.expected_wasm }}
+          echo "Verifying bitwise reproducibility for ${{ matrix.expected_wasm }}..."
+          if ! cmp -s "/tmp/pass1/${{ matrix.expected_wasm }}" "/tmp/pass2/${{ matrix.expected_wasm }}"; then
+            echo "::error::Reproducibility check FAILED: ${{ matrix.expected_wasm }} differs between Pass 1 and Pass 2!"
+            exit 1
+          fi
+          echo "✅ ${{ matrix.expected_wasm }} is bitwise reproducible across clean builds."
 
-      - name: Upload wasm artifact
+      - name: Upload verified wasm artifact
         uses: actions/upload-artifact@v4
         with:
           name: wasm-${{ matrix.name }}
-          path: ${{ matrix.target_dir }}/wasm32-unknown-unknown/release/${{ matrix.expected_wasm }}
+          path: /tmp/pass1/${{ matrix.expected_wasm }}
           if-no-files-found: error
 
   # ────────────────────────────────────────────────────────────────────────────
-  # Clean build of the soroban/ workspace (escrow + program-escrow cdylibs).
+  # Clean build of the soroban/ workspace (program-escrow cdylib).
+  # The soroban escrow crate is superseded (reference/parity only) and is
+  # excluded from the deployable artifact inventory so it cannot be mistaken
+  # for the authoritative contracts/bounty_escrow contract.
   # grainlify-stream is excluded: it has no crate-type in its Cargo.toml and
   # is a testutils-only, host-side helper — it produces no deployable wasm.
+  # Reproducibility build: soroban/ workspace
+  # Builds twice and verifies bitwise equality
   # ────────────────────────────────────────────────────────────────────────────
   build-soroban:
-    name: Clean build — soroban/ workspace
+    name: Reproducibility build — soroban/ workspace
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -281,49 +332,78 @@ jobs:
           restore-keys: |
             cargo-registry-${{ runner.os }}-
 
-      - name: cargo clean — soroban workspace
+      - name: Pass 1 — Build soroban workspace
         run: |
           cargo clean --manifest-path soroban/Cargo.toml
           echo "Cargo target cleaned for soroban/"
 
       - name: Build — soroban workspace (wasm32-unknown-unknown, release)
         run: |
-          # Build only the cdylib packages; exclude grainlify-stream (host-only,
-          # no crate-type = cdylib, produces no deployable wasm).
+          # Build only the deployable cdylib packages; exclude the superseded
+          # soroban escrow crate and grainlify-stream (host-only, no
+          # crate-type = cdylib, produces no deployable wasm).
           cargo build \
             --manifest-path soroban/Cargo.toml \
             --package escrow \
+            --package soroban-program-escrow \
             --package program-escrow \
             --target wasm32-unknown-unknown \
             --release
+          mkdir -p /tmp/pass1
+          cp soroban/target/wasm32-unknown-unknown/release/escrow.wasm /tmp/pass1/
+          cp soroban/target/wasm32-unknown-unknown/release/program_escrow.wasm /tmp/pass1/
+          sha256sum /tmp/pass1/*.wasm > /tmp/pass1.sha256
+          echo "Pass 1 checksums:"
+          cat /tmp/pass1.sha256
 
-      - name: Assert wasm artifacts exist and are non-empty
+      - name: Pass 2 — Clean and Rebuild soroban workspace
         run: |
           bash scripts/verify-wasm-artifacts.sh \
             soroban/target/wasm32-unknown-unknown/release \
             escrow.wasm \
+            soroban_program_escrow.wasm
             program_escrow.wasm
+          cargo clean --manifest-path soroban/Cargo.toml
+          cargo build \
+            --manifest-path soroban/Cargo.toml \
+            --package escrow \
+            --package soroban-program-escrow \
+            --target wasm32-unknown-unknown \
+            --release
+          mkdir -p /tmp/pass2
+          cp soroban/target/wasm32-unknown-unknown/release/escrow.wasm /tmp/pass2/
+          cp soroban/target/wasm32-unknown-unknown/release/program_escrow.wasm /tmp/pass2/
+          sha256sum /tmp/pass2/*.wasm > /tmp/pass2.sha256
+          echo "Pass 2 checksums:"
+          cat /tmp/pass2.sha256
 
-      - name: List wasm artifacts with sizes
+      - name: Compare Pass 1 and Pass 2 for bitwise reproducibility
         run: |
-          echo "━━━ soroban workspace artifacts ━━━"
-          find soroban/target/wasm32-unknown-unknown/release \
-            -maxdepth 1 -name "*.wasm" \
-            -exec ls -lh {} \;
+          echo "Verifying bitwise reproducibility for soroban workspace artifacts..."
+          for artifact in escrow.wasm program_escrow.wasm; do
+            if ! cmp -s "/tmp/pass1/$artifact" "/tmp/pass2/$artifact"; then
+              echo "::error::Reproducibility check FAILED: $artifact in soroban workspace differs between Pass 1 and Pass 2!"
+              exit 1
+            fi
+            echo "✅ soroban/$artifact is bitwise reproducible across clean builds."
+          done
+          bash scripts/verify-wasm-artifacts.sh \
+            soroban/target/wasm32-unknown-unknown/release \
+            escrow.wasm \
+            soroban_program_escrow.wasm
 
-      - name: Upload wasm artifacts
+      - name: Upload verified wasm artifacts
         uses: actions/upload-artifact@v4
         with:
           name: wasm-soroban
-          path: soroban/target/wasm32-unknown-unknown/release/*.wasm
+          path: /tmp/pass1/*.wasm
           if-no-files-found: error
 
   # ────────────────────────────────────────────────────────────────────────────
-  # Summary job: collects all wasm artifacts into one archive and prints a
-  # final report.  Only runs when every build job succeeds.
+  # Summary job: validates full inventory coverage and outputs final report
   # ────────────────────────────────────────────────────────────────────────────
   summarize:
-    name: Build reproducibility summary
+    name: Build reproducibility summary & inventory verification
     runs-on: ubuntu-latest
     needs:
       - record-versions
@@ -345,27 +425,52 @@ jobs:
           name: build-versions
           path: .
 
-      - name: Print final report
+      - name: Verify inventory and print reproducibility report
         run: |
           echo "════════════════════════════════════════════════════════════════"
-          echo "  Build Reproducibility Report"
-          echo "  All cdylib wasm artifacts produced from a clean target dir"
+          echo "  Build Reproducibility & Deployable Artifact Inventory Report"
           echo "════════════════════════════════════════════════════════════════"
           echo ""
-          echo "── Compiler / SDK versions ──────────────────────────────────"
+          echo "── Toolchain & SDK Versions ────────────────────────────────────"
           cat build-versions.txt
           echo ""
-          echo "── Produced wasm artifacts ──────────────────────────────────"
-          find all-wasm -name "*.wasm" | sort | while read -r f; do
-            size=$(stat -c "%s" "$f")
-            printf "  %-70s  %9d bytes\n" "$f" "$size"
-          done
-          echo ""
-          echo "✅ All expected cdylib wasm artifacts verified non-empty."
 
-      - name: Upload combined wasm archive
+          # Required deployable artifact inventory (matching artifact folders)
+          REQUIRED_ARTIFACTS=(
+            "all-wasm/wasm-contracts-bounty-escrow/bounty_escrow.wasm"
+            "all-wasm/wasm-contracts-bounty-escrow/escrow.wasm"
+            "all-wasm/wasm-grainlify-core/grainlify_core.wasm"
+            "all-wasm/wasm-program-escrow/program_escrow.wasm"
+            "all-wasm/wasm-view-facade/view_facade.wasm"
+            "all-wasm/wasm-escrow-view-facade/escrow_view_facade.wasm"
+            "all-wasm/wasm-soroban/escrow.wasm"
+            "all-wasm/wasm-soroban/program_escrow.wasm"
+          )
+
+          echo "── Verifying Deployable Inventory Coverage ─────────────────────"
+          MISSING=0
+          for item in "${REQUIRED_ARTIFACTS[@]}"; do
+            if [ ! -f "$item" ]; then
+              echo "::error::Missing required deployable artifact in verified set: $item"
+              MISSING=1
+            else
+              size=$(stat -c "%s" "$item")
+              checksum=$(sha256sum "$item" | awk '{print $1}')
+              printf "  %-60s %9d bytes  SHA256: %s\n" "$item" "$size" "$checksum"
+            fi
+          done
+
+          if [ "$MISSING" -ne 0 ]; then
+            echo "::error::Inventory verification failed: Not all deployable artifacts were verified!"
+            exit 1
+          fi
+
+          echo ""
+          echo "✅ All 8 deployable wasm artifacts verified bitwise reproducible and accounted for."
+
+      - name: Upload combined verified wasm archive
         uses: actions/upload-artifact@v4
         with:
-          name: all-wasm-artifacts
+          name: all-verified-reproducible-wasms
           path: all-wasm/
           if-no-files-found: error

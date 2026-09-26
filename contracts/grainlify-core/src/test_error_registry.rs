@@ -14,11 +14,10 @@ mod tests {
 
     use crate::{
         error_registry::{
-            has_duplicate_codes, is_registered, lookup_name, registered_count,
-            RegistryEntry, GRAINLIFY_CORE_REGISTRY,
+            has_duplicate_codes, is_registered, lookup_name, registered_count, RegistryEntry,
+            GRAINLIFY_CORE_REGISTRY,
         },
-        errors,
-        ContractError,
+        errors, ContractError,
     };
 
     // ── Registry structure ────────────────────────────────────────────────────
@@ -61,11 +60,11 @@ mod tests {
 
     #[test]
     fn test_registry_entry_count() {
-    assert_eq!(
-        registered_count(),
-        11,
-        "Expected exactly 11 entries in GRAINLIFY_CORE_REGISTRY (3 common + 8 governance)"
-    );
+        assert_eq!(
+            registered_count(),
+            11,
+            "Expected exactly 11 entries in GRAINLIFY_CORE_REGISTRY (3 common + 8 governance)"
+        );
     }
 
     // ── lookup_name ───────────────────────────────────────────────────────────
@@ -122,7 +121,11 @@ mod tests {
 
     #[test]
     fn test_lookup_code_zero_is_none() {
-        assert_eq!(lookup_name(0), None, "code 0 is reserved and must not be registered");
+        assert_eq!(
+            lookup_name(0),
+            None,
+            "code 0 is reserved and must not be registered"
+        );
     }
 
     #[test]
@@ -173,15 +176,30 @@ mod tests {
     #[test]
     fn test_all_contract_error_variants_are_registered() {
         let variants: &[(u32, &str)] = &[
-            (ContractError::AlreadyInitialized as u32, "AlreadyInitialized"),
+            (
+                ContractError::AlreadyInitialized as u32,
+                "AlreadyInitialized",
+            ),
             (ContractError::NotInitialized as u32, "NotInitialized"),
             (ContractError::NotAdmin as u32, "NotAdmin"),
             (ContractError::ThresholdNotMet as u32, "ThresholdNotMet"),
             (ContractError::ProposalNotFound as u32, "ProposalNotFound"),
-            (ContractError::MigrationCommitmentNotFound as u32, "MigrationCommitmentNotFound"),
-            (ContractError::MigrationHashMismatch as u32, "MigrationHashMismatch"),
-            (ContractError::TimelockDelayTooHigh as u32, "TimelockDelayTooHigh"),
-            (ContractError::SnapshotRestoreAdminPending as u32, "SnapshotRestoreAdminPending"),
+            (
+                ContractError::MigrationCommitmentNotFound as u32,
+                "MigrationCommitmentNotFound",
+            ),
+            (
+                ContractError::MigrationHashMismatch as u32,
+                "MigrationHashMismatch",
+            ),
+            (
+                ContractError::TimelockDelayTooHigh as u32,
+                "TimelockDelayTooHigh",
+            ),
+            (
+                ContractError::SnapshotRestoreAdminPending as u32,
+                "SnapshotRestoreAdminPending",
+            ),
             (ContractError::SnapshotPruned as u32, "SnapshotPruned"),
             (ContractError::InvalidPagination as u32, "InvalidPagination"),
         ];
@@ -196,15 +214,30 @@ mod tests {
     #[test]
     fn test_contract_error_variant_names_match_registry() {
         let variants: &[(u32, &str)] = &[
-            (ContractError::AlreadyInitialized as u32, "AlreadyInitialized"),
+            (
+                ContractError::AlreadyInitialized as u32,
+                "AlreadyInitialized",
+            ),
             (ContractError::NotInitialized as u32, "NotInitialized"),
             (ContractError::NotAdmin as u32, "NotAdmin"),
             (ContractError::ThresholdNotMet as u32, "ThresholdNotMet"),
             (ContractError::ProposalNotFound as u32, "ProposalNotFound"),
-            (ContractError::MigrationCommitmentNotFound as u32, "MigrationCommitmentNotFound"),
-            (ContractError::MigrationHashMismatch as u32, "MigrationHashMismatch"),
-            (ContractError::TimelockDelayTooHigh as u32, "TimelockDelayTooHigh"),
-            (ContractError::SnapshotRestoreAdminPending as u32, "SnapshotRestoreAdminPending"),
+            (
+                ContractError::MigrationCommitmentNotFound as u32,
+                "MigrationCommitmentNotFound",
+            ),
+            (
+                ContractError::MigrationHashMismatch as u32,
+                "MigrationHashMismatch",
+            ),
+            (
+                ContractError::TimelockDelayTooHigh as u32,
+                "TimelockDelayTooHigh",
+            ),
+            (
+                ContractError::SnapshotRestoreAdminPending as u32,
+                "SnapshotRestoreAdminPending",
+            ),
             (ContractError::SnapshotPruned as u32, "SnapshotPruned"),
             (ContractError::InvalidPagination as u32, "InvalidPagination"),
         ];
@@ -336,7 +369,10 @@ mod tests {
         .iter()
         .map(|&c| (c, ""))
         .collect();
-        assert!(!has_duplicate_codes(&codes), "Duplicate in shared common constants (1-99)");
+        assert!(
+            !has_duplicate_codes(&codes),
+            "Duplicate in shared common constants (1-99)"
+        );
     }
 
     #[test]
@@ -360,7 +396,10 @@ mod tests {
         .iter()
         .map(|&c| (c, ""))
         .collect();
-        assert!(!has_duplicate_codes(&codes), "Duplicate in shared governance constants (100-199)");
+        assert!(
+            !has_duplicate_codes(&codes),
+            "Duplicate in shared governance constants (100-199)"
+        );
     }
 
     #[test]
@@ -398,7 +437,10 @@ mod tests {
         .iter()
         .map(|&c| (c, ""))
         .collect();
-        assert!(!has_duplicate_codes(&codes), "Duplicate in shared escrow constants (200-299)");
+        assert!(
+            !has_duplicate_codes(&codes),
+            "Duplicate in shared escrow constants (200-299)"
+        );
     }
 
     #[test]
@@ -415,7 +457,10 @@ mod tests {
         .iter()
         .map(|&c| (c, ""))
         .collect();
-        assert!(!has_duplicate_codes(&codes), "Duplicate in shared identity constants (300-399)");
+        assert!(
+            !has_duplicate_codes(&codes),
+            "Duplicate in shared identity constants (300-399)"
+        );
     }
 
     #[test]
@@ -433,7 +478,10 @@ mod tests {
         .iter()
         .map(|&c| (c, ""))
         .collect();
-        assert!(!has_duplicate_codes(&codes), "Duplicate in shared program-escrow constants (400-499)");
+        assert!(
+            !has_duplicate_codes(&codes),
+            "Duplicate in shared program-escrow constants (400-499)"
+        );
     }
 
     #[test]
@@ -441,47 +489,82 @@ mod tests {
         // Every constant across every range — no cross-range collisions.
         let codes: Vec<RegistryEntry> = [
             // Common
-            errors::ALREADY_INITIALIZED, errors::NOT_INITIALIZED,
-            errors::UNAUTHORIZED, errors::INVALID_AMOUNT,
-            errors::INSUFFICIENT_FUNDS, errors::DEADLINE_NOT_PASSED,
-            errors::INVALID_DEADLINE, errors::CONTRACT_DEPRECATED,
-            errors::MAINTENANCE_MODE, errors::PAUSED,
-            errors::OVERFLOW, errors::UNDERFLOW,
-            errors::INVALID_STATE, errors::NOT_PAUSED,
+            errors::ALREADY_INITIALIZED,
+            errors::NOT_INITIALIZED,
+            errors::UNAUTHORIZED,
+            errors::INVALID_AMOUNT,
+            errors::INSUFFICIENT_FUNDS,
+            errors::DEADLINE_NOT_PASSED,
+            errors::INVALID_DEADLINE,
+            errors::CONTRACT_DEPRECATED,
+            errors::MAINTENANCE_MODE,
+            errors::PAUSED,
+            errors::OVERFLOW,
+            errors::UNDERFLOW,
+            errors::INVALID_STATE,
+            errors::NOT_PAUSED,
             errors::INVALID_ASSET_ID,
             // Governance
-            errors::THRESHOLD_NOT_MET, errors::PROPOSAL_NOT_FOUND,
-            errors::INVALID_THRESHOLD, errors::THRESHOLD_TOO_LOW,
-            errors::INSUFFICIENT_STAKE, errors::PROPOSALS_NOT_FOUND,
-            errors::PROPOSAL_NOT_ACTIVE, errors::VOTING_NOT_STARTED,
-            errors::VOTING_ENDED, errors::VOTING_STILL_ACTIVE,
-            errors::ALREADY_VOTED, errors::PROPOSAL_NOT_APPROVED,
-            errors::EXECUTION_DELAY_NOT_MET, errors::PROPOSAL_EXPIRED,
+            errors::THRESHOLD_NOT_MET,
+            errors::PROPOSAL_NOT_FOUND,
+            errors::INVALID_THRESHOLD,
+            errors::THRESHOLD_TOO_LOW,
+            errors::INSUFFICIENT_STAKE,
+            errors::PROPOSALS_NOT_FOUND,
+            errors::PROPOSAL_NOT_ACTIVE,
+            errors::VOTING_NOT_STARTED,
+            errors::VOTING_ENDED,
+            errors::VOTING_STILL_ACTIVE,
+            errors::ALREADY_VOTED,
+            errors::PROPOSAL_NOT_APPROVED,
+            errors::EXECUTION_DELAY_NOT_MET,
+            errors::PROPOSAL_EXPIRED,
             // Escrow
-            errors::BOUNTY_EXISTS, errors::BOUNTY_NOT_FOUND,
-            errors::FUNDS_NOT_LOCKED, errors::INVALID_FEE_RATE,
-            errors::FEE_RECIPIENT_NOT_SET, errors::INVALID_BATCH_SIZE,
-            errors::BATCH_SIZE_MISMATCH, errors::DUPLICATE_BOUNTY_ID,
-            errors::REFUND_NOT_APPROVED, errors::AMOUNT_BELOW_MINIMUM,
-            errors::AMOUNT_ABOVE_MAXIMUM, errors::CLAIM_PENDING,
-            errors::TICKET_NOT_FOUND, errors::TICKET_ALREADY_USED,
-            errors::TICKET_EXPIRED, errors::PARTICIPANT_BLOCKED,
-            errors::PARTICIPANT_NOT_ALLOWED, errors::NOT_ANONYMOUS_ESCROW,
-            errors::INVALID_SELECTION_INPUT, errors::UPGRADE_SAFETY_CHECK_FAILED,
-            errors::BOUNTY_ALREADY_INITIALIZED, errors::ANON_REFUND_REQUIRED,
-            errors::ANON_RESOLVER_NOT_SET, errors::NOT_ANON_VARIANT,
-            errors::USE_INFO_V2_FOR_ANON, errors::INVALID_LABEL,
-            errors::TOO_MANY_LABELS, errors::LABEL_NOT_ALLOWED,
+            errors::BOUNTY_EXISTS,
+            errors::BOUNTY_NOT_FOUND,
+            errors::FUNDS_NOT_LOCKED,
+            errors::INVALID_FEE_RATE,
+            errors::FEE_RECIPIENT_NOT_SET,
+            errors::INVALID_BATCH_SIZE,
+            errors::BATCH_SIZE_MISMATCH,
+            errors::DUPLICATE_BOUNTY_ID,
+            errors::REFUND_NOT_APPROVED,
+            errors::AMOUNT_BELOW_MINIMUM,
+            errors::AMOUNT_ABOVE_MAXIMUM,
+            errors::CLAIM_PENDING,
+            errors::TICKET_NOT_FOUND,
+            errors::TICKET_ALREADY_USED,
+            errors::TICKET_EXPIRED,
+            errors::PARTICIPANT_BLOCKED,
+            errors::PARTICIPANT_NOT_ALLOWED,
+            errors::NOT_ANONYMOUS_ESCROW,
+            errors::INVALID_SELECTION_INPUT,
+            errors::UPGRADE_SAFETY_CHECK_FAILED,
+            errors::BOUNTY_ALREADY_INITIALIZED,
+            errors::ANON_REFUND_REQUIRED,
+            errors::ANON_RESOLVER_NOT_SET,
+            errors::NOT_ANON_VARIANT,
+            errors::USE_INFO_V2_FOR_ANON,
+            errors::INVALID_LABEL,
+            errors::TOO_MANY_LABELS,
+            errors::LABEL_NOT_ALLOWED,
             // Identity
-            errors::INVALID_SIGNATURE, errors::CLAIM_EXPIRED,
-            errors::UNAUTHORIZED_ISSUER, errors::INVALID_CLAIM_FORMAT,
-            errors::TRANSACTION_EXCEEDS_LIMIT, errors::INVALID_RISK_SCORE,
+            errors::INVALID_SIGNATURE,
+            errors::CLAIM_EXPIRED,
+            errors::UNAUTHORIZED_ISSUER,
+            errors::INVALID_CLAIM_FORMAT,
+            errors::TRANSACTION_EXCEEDS_LIMIT,
+            errors::INVALID_RISK_SCORE,
             errors::INVALID_TIER,
             // Program Escrow
-            errors::PROGRAM_ALREADY_EXISTS, errors::DUPLICATE_PROGRAM_ID,
-            errors::INVALID_BATCH_SIZE_PROGRAM, errors::PROGRAM_NOT_FOUND,
-            errors::SCHEDULE_NOT_FOUND, errors::ALREADY_RELEASED,
-            errors::FUNDS_PAUSED, errors::DUPLICATE_SCHEDULE_ID,
+            errors::PROGRAM_ALREADY_EXISTS,
+            errors::DUPLICATE_PROGRAM_ID,
+            errors::INVALID_BATCH_SIZE_PROGRAM,
+            errors::PROGRAM_NOT_FOUND,
+            errors::SCHEDULE_NOT_FOUND,
+            errors::ALREADY_RELEASED,
+            errors::FUNDS_PAUSED,
+            errors::DUPLICATE_SCHEDULE_ID,
             // Circuit Breaker
             errors::CIRCUIT_OPEN,
         ]
@@ -498,12 +581,60 @@ mod tests {
     #[test]
     fn test_shared_constants_respect_range_boundaries() {
         // Spot-check that each constant falls inside its declared range.
-        assert!(errors::ALREADY_INITIALIZED < 100, "common range: must be < 100");
-        assert!(errors::THRESHOLD_NOT_MET >= 100 && errors::THRESHOLD_NOT_MET < 200, "governance range");
-        assert!(errors::BOUNTY_EXISTS >= 200 && errors::BOUNTY_EXISTS < 300, "escrow range");
-        assert!(errors::INVALID_SIGNATURE >= 300 && errors::INVALID_SIGNATURE < 400, "identity range");
-        assert!(errors::PROGRAM_ALREADY_EXISTS >= 400 && errors::PROGRAM_ALREADY_EXISTS < 500, "program range");
+        assert!(
+            errors::ALREADY_INITIALIZED < 100,
+            "common range: must be < 100"
+        );
+        assert!(
+            errors::THRESHOLD_NOT_MET >= 100 && errors::THRESHOLD_NOT_MET < 200,
+            "governance range"
+        );
+        assert!(
+            errors::BOUNTY_EXISTS >= 200 && errors::BOUNTY_EXISTS < 300,
+            "escrow range"
+        );
+        assert!(
+            errors::INVALID_SIGNATURE >= 300 && errors::INVALID_SIGNATURE < 400,
+            "identity range"
+        );
+        assert!(
+            errors::PROGRAM_ALREADY_EXISTS >= 400 && errors::PROGRAM_ALREADY_EXISTS < 500,
+            "program range"
+        );
         assert!(errors::CIRCUIT_OPEN >= 1000, "circuit-breaker range");
+        // Spot-check that each constant falls inside its declared range. These
+        // are compile-time invariants, so they are asserted in const context.
+        const {
+            assert!(
+                errors::ALREADY_INITIALIZED < 100,
+                "common range: must be < 100"
+            )
+        };
+        const {
+            assert!(
+                errors::THRESHOLD_NOT_MET >= 100 && errors::THRESHOLD_NOT_MET < 200,
+                "governance range"
+            )
+        };
+        const {
+            assert!(
+                errors::BOUNTY_EXISTS >= 200 && errors::BOUNTY_EXISTS < 300,
+                "escrow range"
+            )
+        };
+        const {
+            assert!(
+                errors::INVALID_SIGNATURE >= 300 && errors::INVALID_SIGNATURE < 400,
+                "identity range"
+            )
+        };
+        const {
+            assert!(
+                errors::PROGRAM_ALREADY_EXISTS >= 400 && errors::PROGRAM_ALREADY_EXISTS < 500,
+                "program range"
+            )
+        };
+        const { assert!(errors::CIRCUIT_OPEN >= 1000, "circuit-breaker range") };
     }
 
     // ── Enhanced Cross-Contract Validation Tests ───────────────────────────────────
@@ -511,12 +642,10 @@ mod tests {
     #[test]
     fn test_no_cross_contract_conflicts_with_clean_registry() {
         use crate::error_registry::no_cross_contract_conflicts;
-        
-        let other_registry: &[crate::error_registry::RegistryEntry] = &[
-            (1000, "OtherError"),
-            (1001, "AnotherError"),
-        ];
-        
+
+        let other_registry: &[crate::error_registry::RegistryEntry] =
+            &[(1000, "OtherError"), (1001, "AnotherError")];
+
         assert!(
             no_cross_contract_conflicts(other_registry),
             "Should have no conflicts with clean registry"
@@ -526,12 +655,12 @@ mod tests {
     #[test]
     fn test_no_cross_contract_conflicts_detects_conflicts() {
         use crate::error_registry::no_cross_contract_conflicts;
-        
+
         let conflicting_registry: &[crate::error_registry::RegistryEntry] = &[
             (1, "ConflictingError"), // Conflicts with AlreadyInitialized
             (1000, "OtherError"),
         ];
-        
+
         assert!(
             !no_cross_contract_conflicts(conflicting_registry),
             "Should detect conflict with error code 1"
@@ -541,9 +670,9 @@ mod tests {
     #[test]
     fn test_no_cross_contract_conflicts_empty_registry() {
         use crate::error_registry::no_cross_contract_conflicts;
-        
+
         let empty_registry: &[crate::error_registry::RegistryEntry] = &[];
-        
+
         assert!(
             no_cross_contract_conflicts(empty_registry),
             "Empty registry should have no conflicts"
@@ -553,7 +682,7 @@ mod tests {
     #[test]
     fn test_validate_ranges_all_valid() {
         use crate::error_registry::validate_ranges;
-        
+
         assert!(
             validate_ranges(),
             "GRAINLIFY_CORE_REGISTRY should have all valid ranges"
@@ -563,37 +692,37 @@ mod tests {
     #[test]
     fn test_get_range_category_all_codes() {
         use crate::error_registry::get_range_category;
-        
+
         // Test common range
         assert_eq!(get_range_category(1), "common");
         assert_eq!(get_range_category(50), "common");
         assert_eq!(get_range_category(99), "common");
-        
+
         // Test governance range
         assert_eq!(get_range_category(100), "governance");
         assert_eq!(get_range_category(150), "governance");
         assert_eq!(get_range_category(199), "governance");
-        
+
         // Test escrow range
         assert_eq!(get_range_category(200), "escrow");
         assert_eq!(get_range_category(250), "escrow");
         assert_eq!(get_range_category(299), "escrow");
-        
+
         // Test identity range
         assert_eq!(get_range_category(300), "identity");
         assert_eq!(get_range_category(350), "identity");
         assert_eq!(get_range_category(399), "identity");
-        
+
         // Test program escrow range
         assert_eq!(get_range_category(400), "program_escrow");
         assert_eq!(get_range_category(450), "program_escrow");
         assert_eq!(get_range_category(499), "program_escrow");
-        
+
         // Test system range
         assert_eq!(get_range_category(1000), "system");
         assert_eq!(get_range_category(5000), "system");
         assert_eq!(get_range_category(9999), "system");
-        
+
         // Test unknown codes
         assert_eq!(get_range_category(0), "unknown");
         assert_eq!(get_range_category(100), "governance"); // Boundary
@@ -603,14 +732,14 @@ mod tests {
     #[test]
     fn test_registry_entries_have_correct_ranges() {
         use crate::error_registry::get_range_category;
-        
+
         for (code, name) in GRAINLIFY_CORE_REGISTRY {
             let category = get_range_category(*code);
             assert_ne!(
                 category, "unknown",
                 "Error code {code} ({name}) should have a valid range category"
             );
-            
+
             // Verify the category makes sense for the error name
             match *code {
                 1..=99 => assert_eq!(category, "common"),
@@ -640,14 +769,14 @@ mod tests {
             ContractError::SnapshotPruned as u32,
             ContractError::InvalidPagination as u32,
         ];
-        
+
         for code in contract_codes {
             assert!(
                 is_registered(code),
                 "ContractError with code {code} must be in the registry"
             );
         }
-        
+
         // Ensure registry doesn't have extra codes
         assert_eq!(
             registered_count(),
@@ -660,10 +789,10 @@ mod tests {
     fn test_error_code_sequentiality_within_ranges() {
         // While not strictly required, error codes should be reasonably sequential
         // within their ranges to avoid gaps that could cause confusion
-        
+
         let mut common_codes: Vec<u32> = Vec::new();
         let mut governance_codes: Vec<u32> = Vec::new();
-        
+
         for (code, _) in GRAINLIFY_CORE_REGISTRY {
             if *code <= 99 {
                 common_codes.push(*code);
@@ -671,28 +800,30 @@ mod tests {
                 governance_codes.push(*code);
             }
         }
-        
+
         // Sort to check for large gaps
         common_codes.sort();
         governance_codes.sort();
-        
+
         // Check that there are no huge gaps in the common range
         for i in 1..common_codes.len() {
-            let gap = common_codes[i] - common_codes[i-1];
+            let gap = common_codes[i] - common_codes[i - 1];
             assert!(
                 gap <= 10, // Allow some gaps but not huge ones
                 "Large gap of {gap} in common error codes between {} and {}",
-                common_codes[i-1], common_codes[i]
+                common_codes[i - 1],
+                common_codes[i]
             );
         }
-        
+
         // Similar check for governance range
         for i in 1..governance_codes.len() {
-            let gap = governance_codes[i] - governance_codes[i-1];
+            let gap = governance_codes[i] - governance_codes[i - 1];
             assert!(
                 gap <= 10,
                 "Large gap of {gap} in governance error codes between {} and {}",
-                governance_codes[i-1], governance_codes[i]
+                governance_codes[i - 1],
+                governance_codes[i]
             );
         }
     }
@@ -705,13 +836,13 @@ mod tests {
                 name.chars().next().unwrap().is_uppercase(),
                 "Error code {code} name '{name}' should start with uppercase"
             );
-            
+
             // Names should not contain underscores (use PascalCase instead)
             assert!(
                 !name.contains('_'),
                 "Error code {code} name '{name}' should use PascalCase, not underscores"
             );
-            
+
             // Names should be descriptive
             assert!(
                 name.len() >= 5,

@@ -1,5 +1,13 @@
 # Escrow View Facade
 
+## Deployment status and crate relationships
+
+No network deployment or contract ID is recorded for this facade in the repository. It is a read-only query contract and does not custody escrow funds.
+
+- Depends on: [program-escrow](../program-escrow/README.md) through Cargo. At runtime it queries the [bounty-escrow](../bounty_escrow/contracts/escrow/README.md) and program-escrow ABIs through local client bindings; bounty-escrow is not a Cargo path dependency here.
+- Depended on by: no other in-repository Cargo package declares a dependency on escrow-view-facade.
+- Unlike [view-facade](../view-facade/README.md), this facade builds bounty summaries and user portfolios rather than maintaining the general contract registry.
+
 The Escrow View Facade is a read-optimized smart contract for the Grainlify ecosystem. Its goal is to aggregate views over the `BountyEscrow` core module, allowing for single-call queries while avoiding large frontend multi-call round trips.
 
 ## Architecture & Responsibilities

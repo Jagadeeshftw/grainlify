@@ -4,11 +4,11 @@
 //! Extracted from `lib.rs` to keep the root module focused on the
 //! `#[contractimpl]` block while preserving the exact same public API.
 
-use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env, String, Symbol, Vec};
+use soroban_sdk::{contracterror, contracttype, symbol_short, vec, Address, Env, String, Symbol, Vec};
 use grainlify_core::CorrelationId;
 
-
-// Event types
+// Event topics and registry key shared by the contract implementation.
+// These were inadvertently dropped while resolving the split-types merge.
 pub const PROGRAM_INITIALIZED: Symbol = symbol_short!("PrgInit");
 pub const FUNDS_LOCKED: Symbol = symbol_short!("FndsLock");
 pub const BATCH_FUNDS_LOCKED: Symbol = symbol_short!("BatLck");
@@ -37,6 +37,8 @@ pub const CONTROLLER_ACCEPTED: Symbol = symbol_short!("CtrlAcc");
 pub const CONTROLLER_ROTATION_CANCELLED: Symbol = symbol_short!("CtrlCanc");
 pub const PRICE_UPDATED: Symbol = symbol_short!("PriceUpd");
 pub const DYNAMIC_PRICING_CONFIG_UPDATED: Symbol = symbol_short!("DynPricCg");
+
+
 
 // Storage keys
 pub const PROGRAM_DATA: Symbol = symbol_short!("ProgData");
@@ -193,6 +195,22 @@ pub struct FeeConfig {
     ///
     /// Invariant: `reserve_share + recipient_share == total_fee` (no leakage).
     pub insurance_reserve_bps: u32,
+}
+
+/// Event emitted when fee config is updated.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeeConfigUpdatedEvent {
+    pub version: u32,
+    pub admin: Address,
+    pub lock_fee_rate: i128,
+    pub payout_fee_rate: i128,
+    pub lock_fixed_fee: i128,
+    pub payout_fixed_fee: i128,
+    pub fee_recipient: Address,
+    pub fee_enabled: bool,
+    pub insurance_reserve_bps: u32,
+    pub timestamp: u64,
 }
 
 #[contracttype]
@@ -1402,6 +1420,16 @@ pub enum DataKey {
     LifecycleTimeline(String),
     /// Per-program access-signal marker used by RBAC/monitoring subsystems.
     ProgramAccessSignal(String),
+    /// Ordered index of program_ids grouped by one metadata facet.
+    ///
+    /// The first field is the facet kind (see `METADATA_FACET_*`), the second
+    /// is the facet value, e.g. `("tag", "defi")`.
+    ///
+    /// Appended after the original variants so existing discriminants stay
+    /// stable for deployed contracts. `DataKey` sits close to the 50-case
+    /// `ScSpecUdtUnionCaseV0` ceiling, so every facet shares this single
+    /// variant instead of adding one variant per facet.
+    MetadataFacetIndex(Symbol, String),
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1600,6 +1628,13 @@ pub const DELEGATE_META_RATE_LIMIT_WINDOW: u64 = 3_600;
 /// Permits one update every ~6 minutes on average; enough for legitimate use
 /// while making sustained spam economically costly.
 pub const DELEGATE_META_MAX_OPS_PER_WINDOW: u32 = 10;
+
+/// Facet kind for `ProgramMetadata::program_type` in `DataKey::MetadataFacetIndex`.
+pub const METADATA_FACET_TYPE: Symbol = symbol_short!("type");
+/// Facet kind for `ProgramMetadata::ecosystem` in `DataKey::MetadataFacetIndex`.
+pub const METADATA_FACET_ECOSYSTEM: Symbol = symbol_short!("ecosystem");
+/// Facet kind for `ProgramMetadata::tags` in `DataKey::MetadataFacetIndex`.
+pub const METADATA_FACET_TAG: Symbol = symbol_short!("tag");
 
 /// Maximum number of entries in `ProgramMetadata::custom_fields`.
 /// Bounds on-chain storage regardless of who calls the update.
@@ -1892,6 +1927,20 @@ pub enum BatchError {
     BatchTooLarge = 410,
 }
 
+/// Maximum number of elements in a single batch call.
+///
+/// Enforced on every batch entry point: `batch_initialize_programs`,
+/// `batch_lock`, `batch_release`, `batch_payout` and its variants. An empty or
+/// oversized batch is rejected before any element is touched — with
+/// `BatchError::InvalidBatchSizeProgram` on the first three and
+/// `BatchError::BatchTooLarge` (410) on the payout family — so a rejected batch
+/// never partially applies.
+///
+/// 100 is calibrated against Soroban's 100 M instruction per-invocation ceiling.
+/// That margin is real but not large: a full 100-item `batch_initialize_programs`
+/// measures ~69.7 M instructions host-side. See
+/// `docs/batch-failure-semantics.md` and
+/// `docs/program-escrow-batch-init-atomicity.md`.
 pub const MAX_BATCH_SIZE: u32 = 100;
 pub const DEFAULT_MAX_HISTORY_PAGE_LIMIT: u32 = 200;
 
@@ -1962,7 +2011,7 @@ pub fn get_program_dependencies_internal(env: &Env, program_id: &String) -> soro
     env.storage()
         .instance()
         .get(&DataKey::ProgramDependencies(program_id.clone()))
-        .unwrap_or(vec![env])
+        .unwrap_or_else(|| Vec::new(env))
 }
 
 pub fn dependency_status_internal(env: &Env, dependency_id: &String) -> DependencyStatus {

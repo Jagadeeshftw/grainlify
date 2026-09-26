@@ -7,11 +7,33 @@ on:
     branches: [main, develop, master]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  build-test:
-    name: build-test
+  reentrancy:
+    name: program-escrow reentrancy guards
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: CI green
-        run: echo "Contract smoke temporarily scoped to smoke check while build failures are triaged."
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            contracts/program-escrow/target/
+          key: ${{ runner.os }}-program-escrow-reentrancy-${{ hashFiles('contracts/program-escrow/Cargo.lock', 'contracts/program-escrow/Cargo.toml', 'contracts/grainify-core/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-program-escrow-reentrancy-
+
+      - name: Run adversarial-token guard tests
+        run: >
+          cargo test --locked
+          --manifest-path contracts/program-escrow/Cargo.toml
+          reentrancy_tests::

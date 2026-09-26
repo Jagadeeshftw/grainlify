@@ -1,8 +1,4 @@
 #!/usr/bin/env node
-
-// Contract manifest validation. The JSON Schema is the source of truth for
-// required fields, entrypoint sections, versions, and authorization values.
-
 const Ajv = require('ajv/dist/2020');
 const addFormats = require('ajv-formats');
 const fs = require('fs');
@@ -10,6 +6,7 @@ const path = require('path');
 
 const scriptDir = __dirname;
 const contractsDir = path.dirname(scriptDir);
+const projectRoot = path.join(contractsDir, '..');
 const schemaPath = path.join(contractsDir, 'contract-manifest-schema.json');
 
 const colors = {
@@ -44,15 +41,41 @@ function loadValidator() {
 
 function findManifests(dir) {
   const results = [];
+  if (!fs.existsSync(dir)) return results;
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const entryPath = path.join(dir, entry.name);
-    if (entry.isDirectory() && entry.name !== 'node_modules') {
+    if (entry.isDirectory() && !['node_modules', 'target', 'target-final', 'target-fresh', 'target-gov', 'target-t2', '.git', '.github', 'deployments'].includes(entry.name)) {
       results.push(...findManifests(entryPath));
     } else if (entry.isFile() && entry.name.endsWith('-manifest.json') && entry.name !== 'storage-layout-manifest.json') {
       results.push(entryPath);
     }
   }
   return results;
+}
+
+function findDeployableCrates(dir) {
+  const crates = [];
+  if (!fs.existsSync(dir)) return crates;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const entryPath = path.join(dir, entry.name);
+    if (entry.isDirectory() && !['node_modules', 'target', 'target-final', 'target-fresh', 'target-gov', 'target-t2', '.git', '.github', 'deployments'].includes(entry.name)) {
+      crates.push(...findDeployableCrates(entryPath));
+    } else if (entry.isFile() && entry.name === 'Cargo.toml') {
+      const content = fs.readFileSync(entryPath, 'utf8');
+      const hasCdylib = content.includes('crate-type') && content.includes('"cdylib"');
+      const isSorobanContract = entryPath.replace(/\\/g, '/').includes('soroban/contracts/');
+      if (hasCdylib || isSorobanContract) {
+        crates.push(dir);
+      }
+    }
+  }
+  return crates;
+}
+
+function getCrateName(cargoTomlPath) {
+  const content = fs.readFileSync(cargoTomlPath, 'utf8');
+  const match = content.match(/name\s*=\s*"([^"]+)"/);
+  return match ? match[1] : null;
 }
 
 function validateManifest(manifestPath, validate) {
@@ -73,7 +96,8 @@ function validateManifest(manifestPath, validate) {
   };
 }
 
-function run(manifestPaths = findManifests(contractsDir)) {
+function run() {
+  const manifestPaths = findManifests(projectRoot);
   let validCount = 0;
 
   if (manifestPaths.length === 0) {
@@ -109,6 +133,23 @@ function run(manifestPaths = findManifests(contractsDir)) {
   }
 
   const invalidCount = manifestPaths.length - validCount;
+
+  // Ensure every deployable crate has a manifest.
+  const deployableDirs = findDeployableCrates(projectRoot);
+  let missing = 0;
+  for (const dir of deployableDirs) {
+    const crateName = getCrateName(path.join(dir, 'Cargo.toml'));
+    if (!crateName) continue;
+    const hasManifest = manifestPaths.some(m => {
+      const basename = path.basename(m);
+      return path.dirname(m) === dir || basename.includes(crateName) || basename.includes(crateName.replace(/_/g, '-'));
+    });
+    if (!hasManifest) {
+      log('red', `Deployable crate '${crateName}' at ${dir} is missing a manifest.`);
+      missing++;
+    }
+  }
+
   console.log('');
   log('blue', `Total manifests: ${manifestPaths.length}`);
   log('green', `Valid manifests: ${validCount}`);
@@ -116,7 +157,13 @@ function run(manifestPaths = findManifests(contractsDir)) {
     log('red', `Invalid manifests: ${invalidCount}`);
     return 1;
   }
-  log('green', 'All manifests are valid');
+
+  if (missing > 0) {
+    log('red', `Missing manifests for ${missing} deployable crate(s).`);
+    return 1;
+  }
+
+  log('green', 'All manifests are valid and present for all deployable crates.');
   return 0;
 }
 

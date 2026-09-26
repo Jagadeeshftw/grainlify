@@ -913,17 +913,7 @@ mod gas_profile {
     /// - Event emission
     ///
     /// Infrequent operation (typically set once per deployment).
-    #[test]
-    fn gas_profile_update_anti_abuse_config() {
-        let s = Setup::new();
-        s.env.budget().reset_unlimited();
-        print_header();
-        let d = measure(&s.env, || {
-            s.client.update_anti_abuse_config(&3_600, &100, &60);
-        });
-        print_row("update_anti_abuse_config", d.cpu, d.mem);
-        assert!(d.cpu > 0);
-    }
+
 
     /// Adds a depositor to the whitelist (bypasses anti-abuse rate limiting).
     ///

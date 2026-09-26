@@ -22,7 +22,8 @@ use crate::{
         set_split_config, BeneficiarySplit, SplitConfig, SplitConfigSetEvent, SplitPayoutEvent,
         SplitPayoutResult, TOTAL_BASIS_POINTS,
     },
-    DataKey, ProgramData, ProgramMetadata, ProgramStatus, PROGRAM_DATA, STORAGE_SCHEMA_VERSION,
+    DataKey, OptionalFotRouter, ProgramData, ProgramMetadata, ProgramStatus, PROGRAM_DATA,
+    STORAGE_SCHEMA_VERSION,
 };
 
 // ===========================================================================
@@ -155,18 +156,24 @@ mod rounding_properties {
 
             assert_eq!(
                 total, 10_000,
-                "Sum of distributions must equal input: got {}",
-                total
+                "Conservation invariant: sum of payouts must equal funded amount"
             );
             assert_eq!(
                 result.total_distributed, 10_000,
                 "total_distributed must match input"
             );
+            let pd: ProgramData = setup.env.storage().instance().get(&PROGRAM_DATA).unwrap();
+            assert_eq!(
+                pd.total_funds - pd.remaining_balance,
+                total,
+                "Conservation invariant: escrow balance deduction must equal sum of payouts"
+            );
+            assert_eq!(pd.remaining_balance, 0);
         });
     }
 
     /// Property: Total distributed across all beneficiaries must never exceed
-    /// the input amount (no over-distribution attack).
+    /// the input amount (no over-distribution attack) and must conserve total funds.
     #[test]
     fn test_no_over_distribution() {
         let setup = SplitTestEnv::new();
@@ -192,20 +199,26 @@ mod rounding_properties {
 
             let total: i128 = setup.get_balance(&setup.r1) + setup.get_balance(&setup.r2);
 
-            assert!(
-                total <= 1_000_000,
-                "Over-distribution detected: {} > 1_000_000",
-                total
+            assert_eq!(
+                total, 1_000_000,
+                "Conservation invariant: sum of payouts must equal funded amount"
             );
             assert_eq!(
                 result.total_distributed, total,
                 "Result total must match actual distribution"
             );
+            let pd: ProgramData = setup.env.storage().instance().get(&PROGRAM_DATA).unwrap();
+            assert_eq!(
+                pd.total_funds - pd.remaining_balance,
+                total,
+                "Conservation invariant: escrow balance deduction must equal sum of payouts"
+            );
+            assert_eq!(pd.remaining_balance, 0);
         });
     }
 
     /// Property: Floor rounding must never overpay any beneficiary beyond
-    /// their proportional share.
+    /// their proportional share, while conserving the total funded amount.
     #[test]
     fn test_floor_rounding_never_overpays() {
         let setup = SplitTestEnv::new();
@@ -231,7 +244,7 @@ mod rounding_properties {
             ];
             set_split_config(&setup.env, &setup.program_id, bens);
 
-            execute_split_payout(&setup.env, &setup.program_id, 100_000);
+            let result = execute_split_payout(&setup.env, &setup.program_id, 100_000);
 
             let r1_balance = setup.get_balance(&setup.r1);
             let r2_balance = setup.get_balance(&setup.r2);
@@ -258,11 +271,25 @@ mod rounding_properties {
                 r3_balance,
                 r3_max
             );
+
+            let total: i128 = r1_balance + r2_balance + r3_balance;
+            assert_eq!(
+                total, 100_000,
+                "Conservation invariant: sum of payouts must equal funded amount"
+            );
+            assert_eq!(result.total_distributed, 100_000);
+            let pd: ProgramData = setup.env.storage().instance().get(&PROGRAM_DATA).unwrap();
+            assert_eq!(
+                pd.total_funds - pd.remaining_balance,
+                total,
+                "Conservation invariant: escrow balance deduction must equal sum of payouts"
+            );
+            assert_eq!(pd.remaining_balance, 0);
         });
     }
 
     /// Property: For equal splits, all beneficiaries must receive amounts
-    /// that differ by at most 1 unit (due to floor rounding).
+    /// that differ by at most 1 unit (due to floor rounding), conserving total funds.
     #[test]
     fn test_equal_splits_within_one_unit() {
         let setup = SplitTestEnv::new();
@@ -289,7 +316,7 @@ mod rounding_properties {
             ];
             set_split_config(&setup.env, &setup.program_id, bens);
 
-            execute_split_payout(&setup.env, &setup.program_id, amount);
+            let result = execute_split_payout(&setup.env, &setup.program_id, amount);
 
             let b1 = setup.get_balance(&setup.r1);
             let b2 = setup.get_balance(&setup.r2);
@@ -307,6 +334,20 @@ mod rounding_properties {
                 "Diff between r2 and r3 exceeds 1: {}",
                 (b2 - b3).abs()
             );
+
+            let total: i128 = b1 + b2 + b3;
+            assert_eq!(
+                total, amount,
+                "Conservation invariant: sum of payouts must equal funded amount"
+            );
+            assert_eq!(result.total_distributed, amount);
+            let pd: ProgramData = setup.env.storage().instance().get(&PROGRAM_DATA).unwrap();
+            assert_eq!(
+                pd.total_funds - pd.remaining_balance,
+                total,
+                "Conservation invariant: escrow balance deduction must equal sum of payouts"
+            );
+            assert_eq!(pd.remaining_balance, 0);
         });
     }
 }
@@ -318,7 +359,7 @@ mod rounding_properties {
 mod dust_handling {
     use super::*;
 
-    /// Dust from integer division must go to the first beneficiary.
+    /// Dust from integer division must go to the first beneficiary deterministically.
     #[test]
     fn test_dust_goes_to_first_beneficiary() {
         let setup = SplitTestEnv::new();
@@ -345,15 +386,27 @@ mod dust_handling {
             ];
             set_split_config(&setup.env, &setup.program_id, bens);
 
-            execute_split_payout(&setup.env, &setup.program_id, amount);
+            let result = execute_split_payout(&setup.env, &setup.program_id, amount);
 
             let total: i128 = setup.get_balance(&setup.r1)
                 + setup.get_balance(&setup.r2)
                 + setup.get_balance(&setup.r3);
             assert_eq!(
                 total, amount,
-                "All tokens must be distributed (dust absorbed by first beneficiary)"
+                "Conservation invariant: sum of payouts must equal funded amount"
             );
+            assert_eq!(result.total_distributed, amount);
+            // Remainder of 1 is absorbed by index 0 (3 + 1 = 4).
+            assert_eq!(setup.get_balance(&setup.r1), 4);
+            assert_eq!(setup.get_balance(&setup.r2), 3);
+            assert_eq!(setup.get_balance(&setup.r3), 3);
+            let pd: ProgramData = setup.env.storage().instance().get(&PROGRAM_DATA).unwrap();
+            assert_eq!(
+                pd.total_funds - pd.remaining_balance,
+                total,
+                "Conservation invariant: escrow balance deduction must equal sum of payouts"
+            );
+            assert_eq!(pd.remaining_balance, 0);
         });
     }
 
@@ -389,13 +442,19 @@ mod dust_handling {
                 setup.get_balance(&setup.r1) + setup.get_balance(&setup.r2);
             assert_eq!(
                 total_distributed, total,
-                "Sum of all payouts must equal total: {} != {}",
-                total_distributed, total
+                "Conservation invariant: sum of payouts must equal funded amount"
             );
+            let pd: ProgramData = setup.env.storage().instance().get(&PROGRAM_DATA).unwrap();
+            assert_eq!(
+                pd.total_funds - pd.remaining_balance,
+                total,
+                "Conservation invariant: escrow balance deduction must equal sum of payouts"
+            );
+            assert_eq!(pd.remaining_balance, 0);
         });
     }
 
-    /// Test that dust cannot exceed the number of beneficiaries minus 1.
+    /// Test that dust cannot exceed the number of beneficiaries minus 1, conserving total.
     #[test]
     fn test_dust_bounded_by_beneficiary_count() {
         let setup = SplitTestEnv::new();
@@ -426,10 +485,9 @@ mod dust_handling {
                 .map(|i| preview.get(i).unwrap().share_bps)
                 .sum();
 
-            assert!(
-                total_preview <= 100,
-                "Preview sum must not exceed total: {} > 100",
-                total_preview
+            assert_eq!(
+                total_preview, 100,
+                "Conservation invariant: preview sum of payouts must equal funded amount"
             );
         });
     }
@@ -456,18 +514,34 @@ mod edge_cases {
             let mut bens = vec![&setup.env];
             let share_per_ben = TOTAL_BASIS_POINTS / num_beneficiaries as i128;
 
-            for i in 0..num_beneficiaries {
+            for _ in 0..num_beneficiaries {
                 bens.push_back(BeneficiarySplit {
                     recipient: Address::generate(&setup.env),
                     share_bps: share_per_ben,
                 });
             }
 
-            let cfg = set_split_config(&setup.env, &setup.program_id, bens);
+            let cfg = set_split_config(&setup.env, &setup.program_id, bens.clone());
             assert_eq!(cfg.beneficiaries.len(), num_beneficiaries as u32);
 
             let result = execute_split_payout(&setup.env, &setup.program_id, amount);
             assert_eq!(result.recipient_count, num_beneficiaries as u32);
+            assert_eq!(result.total_distributed, amount);
+
+            let total_distributed: i128 = (0..num_beneficiaries)
+                .map(|i| setup.get_balance(&bens.get(i).unwrap().recipient))
+                .sum();
+            assert_eq!(
+                total_distributed, amount,
+                "Conservation invariant: sum of payouts must equal funded amount"
+            );
+            let pd: ProgramData = setup.env.storage().instance().get(&PROGRAM_DATA).unwrap();
+            assert_eq!(
+                pd.total_funds - pd.remaining_balance,
+                total_distributed,
+                "Conservation invariant: escrow balance deduction must equal sum of payouts"
+            );
+            assert_eq!(pd.remaining_balance, 0);
         });
     }
 
@@ -495,6 +569,17 @@ mod edge_cases {
             assert_eq!(result.total_distributed, amount);
             assert_eq!(result.recipient_count, 1);
             assert_eq!(setup.get_balance(&setup.r1), amount);
+            assert_eq!(
+                setup.get_balance(&setup.r1), amount,
+                "Conservation invariant: sum of payouts must equal funded amount"
+            );
+            let pd: ProgramData = setup.env.storage().instance().get(&PROGRAM_DATA).unwrap();
+            assert_eq!(
+                pd.total_funds - pd.remaining_balance,
+                amount,
+                "Conservation invariant: escrow balance deduction must equal sum of payouts"
+            );
+            assert_eq!(pd.remaining_balance, 0);
         });
     }
 
@@ -531,6 +616,18 @@ mod edge_cases {
                 result.remaining_balance, 0,
                 "Remaining balance must be zero"
             );
+            let total = setup.get_balance(&setup.r1) + setup.get_balance(&setup.r2);
+            assert_eq!(
+                total, amount,
+                "Conservation invariant: sum of payouts must equal funded amount"
+            );
+            let pd: ProgramData = setup.env.storage().instance().get(&PROGRAM_DATA).unwrap();
+            assert_eq!(
+                pd.total_funds - pd.remaining_balance,
+                total,
+                "Conservation invariant: escrow balance deduction must equal sum of payouts"
+            );
+            assert_eq!(pd.remaining_balance, 0);
         });
     }
 
@@ -562,6 +659,18 @@ mod edge_cases {
             let total: i128 = setup.get_balance(&setup.r1) + setup.get_balance(&setup.r2);
 
             assert_eq!(total, amount, "Large amount must be fully distributed");
+            assert_eq!(
+                total, amount,
+                "Conservation invariant: sum of payouts must equal funded amount"
+            );
+            assert_eq!(result.total_distributed, amount);
+            let pd: ProgramData = setup.env.storage().instance().get(&PROGRAM_DATA).unwrap();
+            assert_eq!(
+                pd.total_funds - pd.remaining_balance,
+                total,
+                "Conservation invariant: escrow balance deduction must equal sum of payouts"
+            );
+            assert_eq!(pd.remaining_balance, 0);
         });
     }
 
@@ -599,6 +708,19 @@ mod edge_cases {
                 result.remaining_balance, 0,
                 "Remaining must be 0 after full distribution"
             );
+            let total = setup.get_balance(&setup.r1) + setup.get_balance(&setup.r2);
+            assert_eq!(
+                total, amount,
+                "Conservation invariant: sum of payouts must equal funded amount"
+            );
+            assert_eq!(result.total_distributed, amount);
+            let pd: ProgramData = setup.env.storage().instance().get(&PROGRAM_DATA).unwrap();
+            assert_eq!(
+                pd.total_funds - pd.remaining_balance,
+                total,
+                "Conservation invariant: escrow balance deduction must equal sum of payouts"
+            );
+            assert_eq!(pd.remaining_balance, 0);
         });
     }
 }
@@ -764,9 +886,17 @@ mod security {
             let result = execute_split_payout(&setup.env, &setup.program_id, huge);
 
             assert_eq!(result.total_distributed, huge);
+            let total = setup.get_balance(&setup.r1) + setup.get_balance(&setup.r2);
             assert_eq!(
-                setup.get_balance(&setup.r1) + setup.get_balance(&setup.r2),
-                huge
+                total,
+                huge,
+                "Conservation invariant: sum of payouts must equal funded amount"
+            );
+            let pd: ProgramData = setup.env.storage().instance().get(&PROGRAM_DATA).unwrap();
+            assert_eq!(
+                pd.total_funds - pd.remaining_balance,
+                huge,
+                "Conservation invariant: escrow balance deduction must equal sum of payouts"
             );
             assert_eq!(result.remaining_balance, 0);
         });
@@ -963,7 +1093,7 @@ mod fee_enforcement {
     use soroban_sdk::testutils::Address as _;
 
     use crate::{
-        ContractError, FeeConfig, ProgramData, ProgramEscrowContract,
+        ContractError, FeeConfig, OptionalFotRouter, ProgramData, ProgramEscrowContract,
         ProgramEscrowContractClient, ProgramStatus, FEE_CONFIG, MAX_FEE_RATE, PROGRAM_DATA,
     };
 
@@ -1224,7 +1354,7 @@ mod preview_accuracy {
 
             let preview = preview_split(&setup.env, &setup.program_id, amount);
 
-            execute_split_payout(&setup.env, &setup.program_id, amount);
+            let result = execute_split_payout(&setup.env, &setup.program_id, amount);
 
             let b1_preview = preview.get(0).unwrap().share_bps;
             let b2_preview = preview.get(1).unwrap().share_bps;
@@ -1243,6 +1373,24 @@ mod preview_accuracy {
                 setup.get_balance(&setup.r2),
                 b2_preview
             );
+            let total_actual = setup.get_balance(&setup.r1) + setup.get_balance(&setup.r2);
+            assert_eq!(
+                total_actual, amount,
+                "Conservation invariant: sum of actual payouts must equal funded amount"
+            );
+            let total_preview = b1_preview + b2_preview;
+            assert_eq!(
+                total_preview, amount,
+                "Conservation invariant: sum of preview payouts must equal funded amount"
+            );
+            assert_eq!(result.total_distributed, amount);
+            let pd: ProgramData = setup.env.storage().instance().get(&PROGRAM_DATA).unwrap();
+            assert_eq!(
+                pd.total_funds - pd.remaining_balance,
+                total_actual,
+                "Conservation invariant: escrow balance deduction must equal sum of payouts"
+            );
+            assert_eq!(pd.remaining_balance, 0);
         });
     }
 
@@ -1374,10 +1522,22 @@ mod partial_releases {
                 setup.get_balance(&setup.r2),
                 expected_r2
             );
+            let total_paid = setup.get_balance(&setup.r1) + setup.get_balance(&setup.r2);
+            assert_eq!(
+                total_paid, total,
+                "Conservation invariant: sum of partial payouts must equal total funded"
+            );
+            let pd: ProgramData = setup.env.storage().instance().get(&PROGRAM_DATA).unwrap();
+            assert_eq!(
+                pd.total_funds - pd.remaining_balance,
+                total_paid,
+                "Conservation invariant: escrow balance deduction must equal sum of payouts"
+            );
+            assert_eq!(pd.remaining_balance, 0);
         });
     }
 
-    /// Remaining balance must be correctly tracked.
+    /// Remaining balance must be correctly tracked, conserving funds.
     #[test]
     fn test_remaining_balance_tracked() {
         let setup = SplitTestEnv::new();
@@ -1408,6 +1568,19 @@ mod partial_releases {
 
             let r3 = execute_split_payout(&setup.env, &setup.program_id, 2000);
             assert_eq!(r3.remaining_balance, 0);
+
+            let total_paid = setup.get_balance(&setup.r1) + setup.get_balance(&setup.r2);
+            assert_eq!(
+                total_paid, 10_000,
+                "Conservation invariant: sum of payouts must equal total funded"
+            );
+            let pd: ProgramData = setup.env.storage().instance().get(&PROGRAM_DATA).unwrap();
+            assert_eq!(
+                pd.total_funds - pd.remaining_balance,
+                total_paid,
+                "Conservation invariant: escrow balance deduction must equal sum of payouts"
+            );
+            assert_eq!(pd.remaining_balance, 0);
         });
     }
 }
@@ -1535,6 +1708,18 @@ mod invariants {
                 "Remaining balance must match expected: {} != {}",
                 pd.remaining_balance, remaining
             );
+            let total_paid = setup.get_balance(&setup.r1) + setup.get_balance(&setup.r2);
+            assert_eq!(
+                total_paid, total_funded,
+                "Conservation invariant: sum of payouts must equal total funded"
+            );
+            assert_eq!(
+                pd.total_funds - pd.remaining_balance,
+                total_paid,
+                "Conservation invariant: escrow balance deduction must equal sum of payouts"
+            );
+            assert_eq!(remaining, 0);
+            assert_eq!(pd.remaining_balance, 0);
         });
     }
 
@@ -1558,7 +1743,18 @@ mod invariants {
 
             execute_split_payout(&setup.env, &setup.program_id, 500);
 
+            let total_paid = setup.get_balance(&setup.r1);
+            assert_eq!(
+                total_paid, 500,
+                "Conservation invariant: sum of payouts must equal amount paid out"
+            );
             let pd: ProgramData = setup.env.storage().instance().get(&PROGRAM_DATA).unwrap();
+            assert_eq!(
+                pd.total_funds - pd.remaining_balance,
+                total_paid,
+                "Conservation invariant: escrow balance deduction must equal sum of payouts"
+            );
+            assert_eq!(pd.remaining_balance, 500);
             assert!(
                 !pd.payout_history.is_empty(),
                 "Payout history must not be empty"
@@ -1566,3 +1762,261 @@ mod invariants {
         });
     }
 }
+
+// ===========================================================================
+// Acceptance Criteria & Validation Tests (Issue #1875)
+// ===========================================================================
+
+mod validation_tests {
+    use super::*;
+
+    /// Validation: Test split that divides evenly among recipients.
+    ///
+    /// When total_amount is evenly divisible by recipient shares, no dust is generated.
+    /// Conservation assertion ensures total paid equals funded amount.
+    #[test]
+    fn test_validation_split_divides_evenly() {
+        let setup = SplitTestEnv::new();
+        let funded_amount = 10_000i128;
+        setup.mint_tokens(funded_amount);
+
+        setup.env.as_contract(&setup.contract_id, || {
+            setup.setup_program_data(funded_amount);
+
+            let bens = vec![
+                &setup.env,
+                BeneficiarySplit {
+                    recipient: setup.r1.clone(),
+                    share_bps: 5_000,
+                },
+                BeneficiarySplit {
+                    recipient: setup.r2.clone(),
+                    share_bps: 5_000,
+                },
+            ];
+            set_split_config(&setup.env, &setup.program_id, bens);
+
+            let result = execute_split_payout(&setup.env, &setup.program_id, funded_amount);
+            assert_eq!(result.total_distributed, funded_amount);
+            assert_eq!(result.remaining_balance, 0);
+
+            // Each beneficiary receives exactly 50% (5,000)
+            assert_eq!(setup.get_balance(&setup.r1), 5_000);
+            assert_eq!(setup.get_balance(&setup.r2), 5_000);
+
+            // Strict conservation assertion
+            let total_paid = setup.get_balance(&setup.r1) + setup.get_balance(&setup.r2);
+            assert_eq!(
+                total_paid, funded_amount,
+                "Conservation assertion: sum of payouts must equal funded amount"
+            );
+
+            let pd: ProgramData = setup.env.storage().instance().get(&PROGRAM_DATA).unwrap();
+            assert_eq!(
+                pd.total_funds - pd.remaining_balance,
+                total_paid,
+                "Conservation assertion: escrow balance deduction must equal sum of payouts"
+            );
+            assert_eq!(pd.remaining_balance, 0);
+        });
+    }
+
+    /// Validation: Test split that leaves a remainder of one.
+    ///
+    /// When total_amount * share_bps / 10_000 produces rounding dust of exactly 1 unit,
+    /// the remainder must deterministically be awarded to the first beneficiary (index 0).
+    /// Conservation assertion ensures total paid equals funded amount.
+    #[test]
+    fn test_validation_split_remainder_of_one() {
+        let setup = SplitTestEnv::new();
+        // 3 tokens split 50/50:
+        // share 0: 3 * 5000 / 10000 = 1
+        // share 1: 3 * 5000 / 10000 = 1
+        // base sum: 2; dust: 3 - 2 = 1.
+        // Dust (1) is deterministically assigned to index 0.
+        // Final: index 0 receives 2, index 1 receives 1.
+        let funded_amount = 3i128;
+        setup.mint_tokens(funded_amount);
+
+        setup.env.as_contract(&setup.contract_id, || {
+            setup.setup_program_data(funded_amount);
+
+            let bens = vec![
+                &setup.env,
+                BeneficiarySplit {
+                    recipient: setup.r1.clone(),
+                    share_bps: 5_000,
+                },
+                BeneficiarySplit {
+                    recipient: setup.r2.clone(),
+                    share_bps: 5_000,
+                },
+            ];
+            set_split_config(&setup.env, &setup.program_id, bens);
+
+            let result = execute_split_payout(&setup.env, &setup.program_id, funded_amount);
+            assert_eq!(result.total_distributed, funded_amount);
+            assert_eq!(result.remaining_balance, 0);
+
+            // Deterministic rounding recipient: beneficiary 0 absorbs remainder of 1
+            assert_eq!(setup.get_balance(&setup.r1), 2, "Recipient 0 must absorb dust remainder of 1");
+            assert_eq!(setup.get_balance(&setup.r2), 1, "Recipient 1 must receive floor share");
+
+            // Strict conservation assertion
+            let total_paid = setup.get_balance(&setup.r1) + setup.get_balance(&setup.r2);
+            assert_eq!(
+                total_paid, funded_amount,
+                "Conservation assertion: sum of payouts must equal funded amount"
+            );
+
+            let pd: ProgramData = setup.env.storage().instance().get(&PROGRAM_DATA).unwrap();
+            assert_eq!(
+                pd.total_funds - pd.remaining_balance,
+                total_paid,
+                "Conservation assertion: escrow balance deduction must equal sum of payouts"
+            );
+            assert_eq!(pd.remaining_balance, 0);
+        });
+    }
+
+    /// Validation: Test split involving the maximum recipient count (50).
+    ///
+    /// With 50 recipients each holding 200 bps (2%), split 101 tokens:
+    /// base share: 101 * 200 / 10_000 = 2 tokens per recipient.
+    /// base sum: 50 * 2 = 100 tokens.
+    /// dust = 101 - 100 = 1 token, awarded to index 0 -> recipient 0 gets 3 tokens,
+    /// recipients 1..50 each get 2 tokens.
+    /// Conservation assertion ensures total paid equals funded amount (101).
+    #[test]
+    fn test_validation_split_maximum_recipient_count() {
+        let setup = SplitTestEnv::new();
+        let num_recipients = 50usize;
+        let funded_amount = 101i128;
+        setup.mint_tokens(funded_amount);
+
+        setup.env.as_contract(&setup.contract_id, || {
+            setup.setup_program_data(funded_amount);
+
+            let mut bens = vec![&setup.env];
+            let share_per_recipient = TOTAL_BASIS_POINTS / num_recipients as i128; // 200 bps
+
+            for _ in 0..num_recipients {
+                bens.push_back(BeneficiarySplit {
+                    recipient: Address::generate(&setup.env),
+                    share_bps: share_per_recipient,
+                });
+            }
+
+            let cfg = set_split_config(&setup.env, &setup.program_id, bens.clone());
+            assert_eq!(cfg.beneficiaries.len(), num_recipients as u32);
+
+            let result = execute_split_payout(&setup.env, &setup.program_id, funded_amount);
+            assert_eq!(result.recipient_count, num_recipients as u32);
+            assert_eq!(result.total_distributed, funded_amount);
+            assert_eq!(result.remaining_balance, 0);
+
+            // Recipient 0 receives base (2) + dust (1) = 3
+            let r0_address = bens.get(0).unwrap().recipient;
+            assert_eq!(
+                setup.get_balance(&r0_address), 3,
+                "First beneficiary must receive floor share + dust remainder"
+            );
+
+            // All other 49 recipients receive base share of 2
+            for i in 1..num_recipients {
+                let r_address = bens.get(i as u32).unwrap().recipient;
+                assert_eq!(
+                    setup.get_balance(&r_address), 2,
+                    "Beneficiary {} must receive exact floor share of 2", i
+                );
+            }
+
+            // Strict conservation assertion: sum of all 50 recipient balances equals funded_amount
+            let total_paid: i128 = (0..num_recipients)
+                .map(|i| setup.get_balance(&bens.get(i as u32).unwrap().recipient))
+                .sum();
+            assert_eq!(
+                total_paid, funded_amount,
+                "Conservation assertion: sum of payouts must equal funded amount"
+            );
+
+            let pd: ProgramData = setup.env.storage().instance().get(&PROGRAM_DATA).unwrap();
+            assert_eq!(
+                pd.total_funds - pd.remaining_balance,
+                total_paid,
+                "Conservation assertion: escrow balance deduction must equal sum of payouts"
+            );
+            assert_eq!(pd.remaining_balance, 0);
+        });
+    }
+
+    /// Acceptance Criterion: Splits that cannot be represented exactly in basis points
+    /// are rejected rather than silently rounded.
+    ///
+    /// For example, equal three-way split: 10,000 / 3 = 3333.33...
+    /// Attempting [3333, 3333, 3333] sums to 9,999 (under by 1 bps).
+    /// The configuration MUST panic and be rejected rather than silently rounded.
+    #[test]
+    #[should_panic(expected = "SplitConfig: shares must sum to 10000 basis points")]
+    fn test_validation_split_inexact_representation_under_rejected() {
+        let setup = SplitTestEnv::new();
+
+        setup.env.as_contract(&setup.contract_id, || {
+            setup.setup_program_data(10_000);
+
+            // Sums to 9,999 basis points - cannot be represented exactly
+            let bens = vec![
+                &setup.env,
+                BeneficiarySplit {
+                    recipient: setup.r1.clone(),
+                    share_bps: 3_333,
+                },
+                BeneficiarySplit {
+                    recipient: setup.r2.clone(),
+                    share_bps: 3_333,
+                },
+                BeneficiarySplit {
+                    recipient: setup.r3.clone(),
+                    share_bps: 3_333,
+                },
+            ];
+
+            set_split_config(&setup.env, &setup.program_id, bens);
+        });
+    }
+
+    /// Acceptance Criterion: Splits whose sum exceeds 10,000 basis points
+    /// are rejected rather than silently rounded.
+    ///
+    /// For example, [3334, 3333, 3334] sums to 10,001 bps.
+    /// The configuration MUST panic and be rejected.
+    #[test]
+    #[should_panic(expected = "SplitConfig: shares must sum to 10000 basis points")]
+    fn test_validation_split_inexact_representation_over_rejected() {
+        let setup = SplitTestEnv::new();
+
+        setup.env.as_contract(&setup.contract_id, || {
+            setup.setup_program_data(10_000);
+
+            // Sums to 10,001 basis points - cannot be represented exactly
+            let bens = vec![
+                &setup.env,
+                BeneficiarySplit {
+                    recipient: setup.r1.clone(),
+                    share_bps: 3_334,
+                },
+                BeneficiarySplit {
+                    recipient: setup.r2.clone(),
+                    share_bps: 3_333,
+                },
+                BeneficiarySplit {
+                    recipient: setup.r3.clone(),
+                    share_bps: 3_334,
+                },
+            ];
+
+            set_split_config(&setup.env, &setup.program_id, bens);
+        });
+    }
+}
+

@@ -1,8 +1,19 @@
-# Program Escrow Search Notes
+# Soroban Program Escrow Search Notes
+
+> **Crate**: `soroban-program-escrow` (`soroban/contracts/program-escrow`)  
+> **Note on Disambiguation**: This crate is the lightweight Soroban workspace implementation (`soroban-program-escrow`). The authoritative, full-featured deployable program escrow contract is `contracts/program-escrow` (`program-escrow`).
+
+## Crate, deployment, and relationships
+
+This SDK 23 Soroban contract registers programs and provides indexed, cursor-based search, labels, jurisdiction rules, and ownership controls. No network deployment or contract ID is recorded in this repository.
+
+- Depends on: no other in-repository crate. It inherits soroban-sdk 23.4.1 and ethnum from the [Soroban workspace](../../README.md) and uses a token contract at runtime.
+- Depended on by: no in-repository Cargo package declares a dependency on this crate.
+- Same-name distinction: [contracts/program-escrow](../../../contracts/program-escrow/README.md) is the SDK 21 contract focused on holding program funds and paying recipients. These packages are independent despite sharing a name.
 
 ## Search indexing assumptions
 
-`program-escrow` search helpers are implemented with a persisted `ProgramIndex`
+`soroban-program-escrow` search helpers are implemented with a persisted `ProgramIndex`
 vector instead of direct storage scans.
 
 - every successful registration appends its `program_id` to `ProgramIndex`

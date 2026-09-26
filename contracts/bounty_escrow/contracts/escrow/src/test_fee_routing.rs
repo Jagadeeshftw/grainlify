@@ -97,10 +97,7 @@ impl Suite {
         };
         self.token_admin.mint(&self.contract_id, &amount);
         self.env.as_contract(&self.contract_id, || {
-            self.env
-                .storage()
-                .persistent()
-                .set(&DataKey::Escrow(bounty_id), &escrow);
+            crate::BountyEscrowContract::write_escrow(&self.env, bounty_id, &escrow).unwrap();
             let mut index: Vec<u64> = self
                 .env
                 .storage()
@@ -338,14 +335,9 @@ fn test_with_reason_rejects_empty_reason() {
 fn test_with_reason_missing_bounty_rejected() {
     let s = Suite::new();
     let reason = String::from_str(&s.env, "why");
-    let result = s.client.try_set_fee_routing_with_reason(
-        &999,
-        &s.treasury,
-        &10_000,
-        &None,
-        &0,
-        &reason,
-    );
+    let result =
+        s.client
+            .try_set_fee_routing_with_reason(&999, &s.treasury, &10_000, &None, &0, &reason);
     assert_eq!(result.unwrap_err().unwrap(), Error::BountyNotFound);
 }
 
