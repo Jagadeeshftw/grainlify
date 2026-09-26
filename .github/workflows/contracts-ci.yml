@@ -113,6 +113,12 @@ jobs:
   # ──────────────────────────────────────────────────────────────
   facade-conformance:
     name: view facades match the contracts they mirror
+  # Feature-flag matrix & facade default-features assertion gates (issue #1885).
+  # Asserts every supported feature combination builds and facades'
+  # default-features = false requirement is satisfied.
+  # ──────────────────────────────────────────────────────────────
+  feature-flag-matrix:
+    name: feature-flags (grainlify-core combinations matrix)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -121,6 +127,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
+          targets: wasm32v1-none, wasm32-unknown-unknown
 
       - name: Cache Cargo
         uses: actions/cache@v4
@@ -148,3 +155,10 @@ jobs:
             --manifest-path contracts/escrow-view-facade/Cargo.toml \
             --test conformance \
             --test dependency_gating
+            contracts/grainlify-core/target/
+          key: ${{ runner.os }}-contracts-feature-matrix-${{ hashFiles('contracts/grainlify-core/Cargo.toml', 'contracts/grainlify-core/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-contracts-feature-matrix-
+
+      - name: Run feature matrix and facade build assertions
+        run: bash contracts/scripts/check-feature-matrix.sh
