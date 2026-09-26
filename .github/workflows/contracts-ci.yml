@@ -59,12 +59,13 @@ jobs:
 
   # ──────────────────────────────────────────────────────────────
   # Reproducible workspace build & test gates (issue #1700).
+  # Reproducible workspace build, test, and clippy gates (issue #1700, #1857).
   # Runs the exact same commands as ./contracts/scripts/ci-contracts.sh
   # so the gates behave identically locally and in CI.
-  # No continue-on-error: a compile or test regression must fail the job.
+  # No continue-on-error: a compile, lint, or test regression must fail the job.
   # ──────────────────────────────────────────────────────────────
   build-test:
-    name: contracts (workspace tests + wasm release build)
+    name: contracts (workspace clippy + tests + wasm release build)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -73,6 +74,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32v1-none, wasm32-unknown-unknown
+          components: clippy
 
       # Cache only the Cargo registry/git caches and the workspace target dir
       # (keyed on the lockfile). Toolchain binaries in ~/.cargo/bin are NOT

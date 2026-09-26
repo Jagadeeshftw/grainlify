@@ -35,6 +35,15 @@ Every tree is either **on target** or an **owned exception**. A third SDK major 
 **Owner:** `@Jagadeeshftw` (repository maintainer) — responsible for either completing the `contracts/` → 23.4.1 migration or explicitly renewing this exception when the target moves.
 
 **Hard rule:** The two worlds must never meet in one dependency graph. Cross-tree `path` dependencies between `soroban/` and `contracts/` are forbidden (the historical violation was `soroban/contracts/escrow` path-depending on `grainlify-core`, which mixed SDK 21 and 23 in `soroban/Cargo.lock`).
+| Manifest root | soroban-sdk pin | Target protocol |
+|---|---|---|
+| `contracts/` (grainlify-contracts) | `=21.7.7` | 21 |
+| `contracts/bounty_escrow` (workspace) | `=21.7.7` | 21 |
+| `contracts/grainlify-core` | `=21.7.7` | 21 |
+| `contracts/program-escrow` | `=21.7.7` | 21 |
+| `contracts/view-facade` | `=21.7.7` | 21 |
+| `contracts/escrow-view-facade` | `=21.7.7` | 21 |
+| `soroban/` (workspace: escrow, soroban-program-escrow, stream) | `=23.4.1` | 23 |
 
 Notes:
 

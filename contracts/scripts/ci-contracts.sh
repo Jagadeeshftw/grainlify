@@ -42,6 +42,13 @@ cargo test \
   --test dependency_gating
 
 echo "==> [5/5] Deployable wasm release build"
+echo "==> [1/3] Clippy lint check"
+cargo clippy --manifest-path "$MANIFEST" --workspace --all-targets -- -D warnings
+
+echo "==> [2/3] Workspace tests (host target)"
+cargo test --manifest-path "$MANIFEST" --workspace
+
+echo "==> [3/3] Deployable wasm release build"
 cargo build --manifest-path "$MANIFEST" --workspace --target wasm32-unknown-unknown --release
 
 echo "==> All contract CI gates passed."
