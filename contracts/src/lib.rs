@@ -3,8 +3,6 @@
 //! This crate provides shared utilities and storage key management for Grainlify smart contracts.
 //! It includes namespace protection, collision detection, and common constants.
 
-pub mod storage_key_audit;
-
 //! # View-Facade Contract
 //!
 //! Exposes **read-only** queries over `ProgramData` and `FeeConfig` so
@@ -30,6 +28,8 @@ pub mod storage_key_audit;
 //! currently paused.
 //!
 //! No authentication is required. All entrypoints are permissionless.
+
+pub mod storage_key_audit;
 
 // ─── Storage key constants ────────────────────────────────────────────────────
 
