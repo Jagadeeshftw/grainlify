@@ -20,7 +20,7 @@ mod tests {
         Address, Env, String,
     };
 
-    fn setup(env: &Env) -> (GrainlifyContractClient, Address) {
+    fn setup(env: &Env) -> (GrainlifyContractClient<'_>, Address) {
         let id = env.register_contract(None, GrainlifyContract);
         let client = GrainlifyContractClient::new(env, &id);
         let admin = Address::generate(env);

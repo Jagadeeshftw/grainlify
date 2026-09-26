@@ -1,5 +1,4 @@
 use crate::asset;
-use soroban_sdk::xdr::ToXdr;
 use soroban_sdk::{contracttype, symbol_short, Address, BytesN, Env, Map, Symbol};
 
 /// Represents the lifecycle stages of a governance proposal.
@@ -158,12 +157,14 @@ fn storage_key_for_role(role: &Role) -> Symbol {
 }
 
 fn require_not_zero_or_self(env: &Env, candidate: &Address) -> Result<(), Error> {
-    let bytes = candidate.to_xdr(env);
-    let all_zero = bytes.iter().all(|b| b == 0);
-    if all_zero {
-        return Err(Error::InvalidRoleHolder);
-    }
-    if *candidate == env.current_contract_address() {
+    // The canonical all-zero contract address, expressed as a StrKey. The
+    // address is compared by value rather than via its XDR bytes, because the
+    // XDR encoding of a host address object is not portable across builds.
+    let zero = Address::from_string(&soroban_sdk::String::from_str(
+        env,
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+    ));
+    if *candidate == zero || *candidate == env.current_contract_address() {
         return Err(Error::InvalidRoleHolder);
     }
     Ok(())

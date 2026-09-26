@@ -602,6 +602,39 @@ mod tests {
             "program range"
         );
         assert!(errors::CIRCUIT_OPEN >= 1000, "circuit-breaker range");
+        // Spot-check that each constant falls inside its declared range. These
+        // are compile-time invariants, so they are asserted in const context.
+        const {
+            assert!(
+                errors::ALREADY_INITIALIZED < 100,
+                "common range: must be < 100"
+            )
+        };
+        const {
+            assert!(
+                errors::THRESHOLD_NOT_MET >= 100 && errors::THRESHOLD_NOT_MET < 200,
+                "governance range"
+            )
+        };
+        const {
+            assert!(
+                errors::BOUNTY_EXISTS >= 200 && errors::BOUNTY_EXISTS < 300,
+                "escrow range"
+            )
+        };
+        const {
+            assert!(
+                errors::INVALID_SIGNATURE >= 300 && errors::INVALID_SIGNATURE < 400,
+                "identity range"
+            )
+        };
+        const {
+            assert!(
+                errors::PROGRAM_ALREADY_EXISTS >= 400 && errors::PROGRAM_ALREADY_EXISTS < 500,
+                "program range"
+            )
+        };
+        const { assert!(errors::CIRCUIT_OPEN >= 1000, "circuit-breaker range") };
     }
 
     // ── Enhanced Cross-Contract Validation Tests ───────────────────────────────────

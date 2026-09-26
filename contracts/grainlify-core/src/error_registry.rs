@@ -152,7 +152,7 @@ pub const fn no_cross_contract_conflicts(other_registry: &[RegistryEntry]) -> bo
 ///
 /// # Returns
 /// An array of conflicting error codes (empty if no conflicts)
-pub const fn find_conflicts(other_registry: &[RegistryEntry]) -> &[u32] {
+pub const fn find_conflicts(_other_registry: &[RegistryEntry]) -> &[u32] {
     // Note: This is a simplified implementation. In a real implementation,
     // you might want to use a more sophisticated approach to collect conflicts.
     // For now, this serves as a placeholder for the validation logic.

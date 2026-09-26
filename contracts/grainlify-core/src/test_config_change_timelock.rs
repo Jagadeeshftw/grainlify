@@ -9,7 +9,7 @@ use soroban_sdk::{
 
 use crate::{GrainlifyContract, GrainlifyContractClient};
 
-fn setup(env: &Env) -> (GrainlifyContractClient, Address) {
+fn setup(env: &Env) -> (GrainlifyContractClient<'_>, Address) {
     let contract_id = env.register_contract(None, GrainlifyContract);
     let client = GrainlifyContractClient::new(env, &contract_id);
     let admin = Address::generate(env);

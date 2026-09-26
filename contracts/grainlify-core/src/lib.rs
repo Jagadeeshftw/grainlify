@@ -62,7 +62,7 @@ compile_error!(
 );
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, Address, Bytes, BytesN, Env,
+    contract, contracterror, contractimpl, contracttype, symbol_short, Address, BytesN, Env,
     String, Symbol, Vec,
 };
 pub mod asset;
@@ -367,7 +367,7 @@ pub(crate) mod migration_failure_injection {
     use std::cell::Cell;
 
     std::thread_local! {
-        static TRAP_POINT: Cell<Option<MigrationTrapPoint>> = Cell::new(None);
+        static TRAP_POINT: Cell<Option<MigrationTrapPoint>> = const { Cell::new(None) };
     }
 
     pub(crate) fn set_trap_once(point: MigrationTrapPoint) {
@@ -925,6 +925,9 @@ mod monitoring {
         let total: u64 = env.storage().persistent().get(&time_key).unwrap_or(0);
         let last: u64 = env.storage().persistent().get(&last_key).unwrap_or(0);
         let avg = if count > 0 { total / count } else { 0 };
+        // `checked_div` returns `None` for a zero count, which is exactly the
+        // "no calls recorded yet" case.
+        let avg = total.checked_div(count).unwrap_or(0);
         PerformanceStats {
             function_name,
             call_count: count,
@@ -960,7 +963,7 @@ mod monitoring {
         let chain_id: Option<String> = env.storage().instance().get(&DataKey::ChainId);
         let network_id: Option<String> = env.storage().instance().get(&DataKey::NetworkId);
         let network_pair_sane = match (chain_id, network_id) {
-            (Some(chain), Some(network)) => chain.len() > 0 && network.len() > 0,
+            (Some(chain), Some(network)) => !chain.is_empty() && !network.is_empty(),
             (None, None) => true,
             _ => false,
         };
@@ -1109,6 +1112,13 @@ impl GrainlifyContract {
         if elapsed < timelock_delay {
             let remaining = timelock_delay.saturating_sub(elapsed);
             panic!("Timelock delay not met: {} seconds remaining", remaining);
+        }
+
+        // An expired proposal must never be executable, even if it previously
+        // reached the approval threshold. Checked explicitly so the revert is
+        // reported as an expiry (rather than as a generic threshold failure).
+        if MultiSig::is_expired(&env, proposal_id) {
+            panic!("Proposal expired");
         }
 
         if !MultiSig::can_execute(&env, proposal_id) {
@@ -1860,12 +1870,13 @@ impl GrainlifyContract {
 
         // [GUARDRAIL] Prevent no-op restore to save gas
         let current_version: u32 = env.storage().instance().get(&DataKey::Version).unwrap_or(0);
-        let multisig_opt = MultiSig::get_config_opt(&env);
+        let multisig_opt = MultiSig::get_config_opt(env);
         let current_threshold = multisig_opt.as_ref().map(|c| c.threshold).unwrap_or(0);
         let current_signers = multisig_opt
             .as_ref()
             .map(|c| c.signers.clone())
             .unwrap_or(Vec::new(&env));
+            .unwrap_or(Vec::new(env));
 
         if snapshot.version == current_version
             && snapshot.admin == current_admin
@@ -1905,7 +1916,7 @@ impl GrainlifyContract {
         }
 
         // Admin unchanged — apply restore immediately
-        Self::apply_snapshot_restore(&env, &snapshot);
+        Self::apply_snapshot_restore(env, &snapshot);
     }
 
     /// [FIX-C02] The proposed new admin confirms an admin-changing snapshot restore.
@@ -2745,12 +2756,28 @@ impl GrainlifyContract {
         }
 
         if current_version == 1 && target_version == 2 {
+            #[cfg(test)]
+            migration_failure_injection::maybe_trap(MigrationTrapPoint::BeforeV1ToV2);
             migration::migrate_v1_to_v2(&env);
+            #[cfg(test)]
+            migration_failure_injection::maybe_trap(MigrationTrapPoint::AfterV1ToV2);
         } else if current_version == 2 && target_version == 3 {
+            #[cfg(test)]
+            migration_failure_injection::maybe_trap(MigrationTrapPoint::BeforeV2ToV3);
             migration::migrate_v2_to_v3(&env);
+            #[cfg(test)]
+            migration_failure_injection::maybe_trap(MigrationTrapPoint::AfterV2ToV3);
         } else if current_version == 1 && target_version == 3 {
+            #[cfg(test)]
+            migration_failure_injection::maybe_trap(MigrationTrapPoint::BeforeV1ToV2);
             migration::migrate_v1_to_v2(&env);
+            #[cfg(test)]
+            migration_failure_injection::maybe_trap(MigrationTrapPoint::AfterV1ToV2);
+            #[cfg(test)]
+            migration_failure_injection::maybe_trap(MigrationTrapPoint::BeforeV2ToV3);
             migration::migrate_v2_to_v3(&env);
+            #[cfg(test)]
+            migration_failure_injection::maybe_trap(MigrationTrapPoint::AfterV2ToV3);
         } else {
             panic!("No migration path available");
         }
@@ -2868,3 +2895,28 @@ mod test;
 #[cfg(test)]
 #[path = "test/state_snapshot_tests.rs"]
 mod state_snapshot_tests;
+
+// ── Migration / upgrade test suites ────────────────────────────────────────
+// These suites existed as source files but were never wired as modules, so
+// `cargo test` silently skipped them. Declaring them here makes the
+// migration-replay and upgrade-rollback coverage part of every `cargo test`
+// run (and therefore of the contracts CI gate).
+#[cfg(test)]
+#[path = "migration_hook_tests.rs"]
+mod migration_hook_tests;
+
+#[cfg(test)]
+#[path = "test_migration_replay.rs"]
+mod test_migration_replay;
+
+#[cfg(test)]
+#[path = "test/e2e_upgrade_migration_tests.rs"]
+mod e2e_upgrade_migration_tests;
+
+#[cfg(test)]
+#[path = "test/upgrade_rollback_tests.rs"]
+mod upgrade_rollback_tests;
+
+#[cfg(test)]
+#[path = "test/upgrade_rollback_scenarios.rs"]
+mod upgrade_rollback_scenarios;

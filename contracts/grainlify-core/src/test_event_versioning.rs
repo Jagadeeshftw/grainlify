@@ -23,7 +23,7 @@ fn default_env() -> Env {
     env
 }
 
-fn register(env: &Env) -> GrainlifyContractClient {
+fn register(env: &Env) -> GrainlifyContractClient<'_> {
     let id = env.register_contract(None, GrainlifyContract);
     GrainlifyContractClient::new(env, &id)
 }
@@ -184,7 +184,7 @@ fn read_only_mode_event_has_event_version_field() {
         .all()
         .iter()
         .filter(|e| {
-            e.1.len() >= 1
+            !e.1.is_empty()
                 && Symbol::try_from_val(&env, &e.1.get(0).unwrap())
                     == Ok(Symbol::new(&env, "ROModeChg"))
         })
@@ -214,7 +214,7 @@ fn read_only_mode_disable_event_has_event_version() {
         .all()
         .iter()
         .filter(|e| {
-            e.1.len() >= 1
+            !e.1.is_empty()
                 && Symbol::try_from_val(&env, &e.1.get(0).unwrap())
                     == Ok(Symbol::new(&env, "ROModeChg"))
         })

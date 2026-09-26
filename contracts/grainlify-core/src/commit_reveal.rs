@@ -294,7 +294,7 @@ mod test {
         let env = Env::default();
         let contract_id = setup(&env);
         let creator = Address::generate(&env);
-        let value = Bytes::from_array(&env, &[1]);
+        let _value = Bytes::from_array(&env, &[1]);
         let salt = Bytes::from_array(&env, &[2]);
         let hash = hash_value(&env, &[1], &[2]);
 

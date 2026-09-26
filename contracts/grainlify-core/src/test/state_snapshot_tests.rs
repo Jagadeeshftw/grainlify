@@ -41,13 +41,14 @@ use soroban_sdk::{
     testutils::{budget as _, Address as _},
     Address, BytesN, Env, Vec as SorobanVec,
 };
+use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, Vec as SorobanVec};
 
 use crate::{ContractError, GrainlifyContract, GrainlifyContractClient, CONFIG_SNAPSHOT_LIMIT};
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 /// Initializes a contract with a single admin and returns (client, admin).
-fn setup_admin(env: &Env) -> (GrainlifyContractClient, Address) {
+fn setup_admin(env: &Env) -> (GrainlifyContractClient<'_>, Address) {
     let id = env.register_contract(None, GrainlifyContract);
     let client = GrainlifyContractClient::new(env, &id);
     let admin = Address::generate(env);

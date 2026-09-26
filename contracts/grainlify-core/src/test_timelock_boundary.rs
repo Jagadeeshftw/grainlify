@@ -351,7 +351,9 @@ fn test_updated_delay_applies_to_new_proposals() {
 
     let (client, admin) = setup_multisig_with_timelock(&env);
     // Seed the admin key so admin-gated `set_timelock_delay` is callable in this fixture.
-    env.storage().instance().set(&DataKey::Admin, &admin);
+    env.as_contract(&client.address, || {
+        env.storage().instance().set(&DataKey::Admin, &admin);
+    });
     let signer = admin;
 
     env.ledger().with_mut(|li| li.timestamp = 0);
@@ -386,7 +388,9 @@ fn test_updated_delay_affects_pending_proposal_dynamically() {
     env.mock_all_auths();
 
     let (client, admin) = setup_multisig_with_timelock(&env);
-    env.storage().instance().set(&DataKey::Admin, &admin);
+    env.as_contract(&client.address, || {
+        env.storage().instance().set(&DataKey::Admin, &admin);
+    });
     let signer = admin;
 
     // Propose + approve at t=0 under the default 24 h delay.
