@@ -345,7 +345,8 @@ mod test_struct_layout;
 #[cfg(any())] // pre-existing breakage: uses std
 mod test_lifecycle_dwell_time;
 // #[cfg(test)] mod test_serialization_compatibility; // pre-existing breakage
-// #[cfg(test)] mod test_payout_splits; // pre-existing breakage
+#[cfg(test)]
+mod test_payout_splits;
 
 #[cfg(test)]
 mod test_support;

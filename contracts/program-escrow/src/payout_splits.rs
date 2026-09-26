@@ -12,15 +12,15 @@
 //! ```
 //!
 //! **Key Invariants:**
-//! 1. `sum(all_shares) = TOTAL_BASIS_POINTS` (10,000 bps = 100%)
-//! 2. `sum(distribution amounts) + dust = total_amount`
-//! 3. `sum(distribution amounts) ≤ total_amount` (no over-distribution)
-//! 4. Dust always goes to the first beneficiary (index 0)
+//! 1. `sum(all_shares) = TOTAL_BASIS_POINTS` (10,000 bps = 100%).
+//! 2. Exact Conservation: `sum(distribution amounts) = total_amount` (no fund loss, no over-distribution).
+//! 3. Deterministic Remainder: Any rounding remainder (dust) is deterministically allocated to the first beneficiary (index 0).
+//! 4. Exact Representation: Split configurations that cannot be represented exactly in basis points (i.e. shares do not sum to exactly 10,000) are strictly rejected rather than silently rounded.
 //!
 //! **Security Properties:**
-//! - Dust attacks are prevented: each beneficiary gets at most their proportional share
-//! - Total distributed never exceeds the input amount
-//! - No funds are lost: `remaining = total_amount - sum(distributions)`
+//! - Dust attacks are prevented: each beneficiary gets at most their proportional share plus deterministic dust for index 0.
+//! - Total distributed strictly equals the funded amount deducted from escrow (`remaining_balance` decreases by exactly `total_amount`).
+//! - No funds are trapped: all funded tokens are distributed across the configured beneficiaries.
 //!
 //! ## Usage
 //!
