@@ -9064,6 +9064,7 @@ mod escrow_status_transition_tests {
             // Write escrow directly to contract storage
             self.env.as_contract(&self.contract_id, || {
                 BountyEscrowContract::write_escrow(&self.env, bounty_id, &escrow).unwrap();
+                crate::BountyEscrowContract::write_escrow(&self.env, bounty_id, &escrow).unwrap();
             });
         }
     }

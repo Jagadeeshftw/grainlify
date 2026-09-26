@@ -1,4 +1,5 @@
 # Build wasm artifacts from a clean target and generate a sha256 manifest (PowerShell wrapper)
+# See DEPLOYABLE_ARTIFACTS.md for the full inventory of deployable artifacts.
 param(
     [string]$WorkspaceRoot = ".",
     [string]$Out = "artifacts"

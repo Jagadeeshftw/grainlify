@@ -367,6 +367,16 @@ impl Fixture {
 
         client.init(&admin, &token_id);
         client.set_whitelist(&depositor, &true);
+        env.as_contract(&contract_id, || {
+            crate::anti_abuse::set_config(
+                &env,
+                crate::anti_abuse::AntiAbuseConfig {
+                    window_size: 3600,
+                    max_operations: 100,
+                    cooldown_period: 0,
+                },
+            );
+        });
 
         // Wire a router (self) so release paths with swap-routing succeed
         // on the full validation path without tripping RouterNotConfigured.

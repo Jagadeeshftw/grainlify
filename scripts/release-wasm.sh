@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Build wasm artifacts from a clean target and generate a sha256 manifest.
+# See DEPLOYABLE_ARTIFACTS.md for the full inventory of deployable artifacts.
 # Usage: ./scripts/release-wasm.sh [--workspace-root PATH] [--out PATH]
 set -euo pipefail
 
