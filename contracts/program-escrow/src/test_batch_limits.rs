@@ -6,11 +6,9 @@
 #![cfg(test)]
 extern crate std;
 
-use soroban_sdk::{testutils::Address as _, vec, Address, Env, String};
+use soroban_sdk::{testutils::Address as _, vec, Address, Env, Error, String};
 
-use crate::{
-    BatchError, ProgramEscrowContract, ProgramEscrowContractClient, MAX_BATCH_SIZE,
-};
+use crate::{ProgramEscrowContract, ProgramEscrowContractClient, MAX_BATCH_SIZE};
 
 // ── constant sanity ──────────────────────────────────────────────────────────
 
@@ -58,7 +56,9 @@ fn init_funded_program(
         &Some(amount),
         &None,
     );
-    client.publish_program();
+    // `publish_program` gained explicit (program_id, caller) arguments after
+    // this file was written; the caller must be admin or the payout key.
+    client.publish_program(&String::from_str(env, "PROG"), admin);
 }
 
 /// A batch of exactly MAX_BATCH_SIZE recipients must succeed.
@@ -81,7 +81,7 @@ fn test_batch_payout_at_max_size_succeeds() {
             v
         });
 
-    let result = client.try_batch_payout(&recipients, &amounts, &None);
+    let result = client.try_batch_payout(&recipients, &amounts);
     assert!(result.is_ok(), "batch at MAX_BATCH_SIZE should succeed");
 }
 
@@ -104,9 +104,10 @@ fn test_batch_payout_exceeds_max_returns_batch_too_large() {
             v
         });
 
-    let result = client.try_batch_payout(&recipients, &amounts, &None);
+    let result = client.try_batch_payout(&recipients, &amounts);
+    let expected_err = Error::from_contract_error(410);
     assert!(
-        matches!(result, Err(Ok(BatchError::BatchTooLarge))),
+        matches!(result, Err(Ok(e)) if e == expected_err),
         "expected BatchError::BatchTooLarge (410), got: {:?}",
         result
     );
@@ -131,8 +132,13 @@ fn test_batch_payout_double_max_returns_batch_too_large() {
             v
         });
 
-    let result = client.try_batch_payout(&recipients, &amounts, &None);
-    assert!(matches!(result, Err(Ok(BatchError::BatchTooLarge))));
+    let result = client.try_batch_payout(&recipients, &amounts);
+    let expected_err = Error::from_contract_error(410);
+    assert!(
+        matches!(result, Err(Ok(e)) if e == expected_err),
+        "expected BatchError::BatchTooLarge (410), got: {:?}",
+        result
+    );
 }
 
 /// Pre-flight rejection must fire before any token transfer (no partial state).
@@ -155,7 +161,7 @@ fn test_batch_too_large_fires_before_any_transfer() {
             v
         });
 
-    let _ = client.try_batch_payout(&recipients, &amounts, &None);
+    let _ = client.try_batch_payout(&recipients, &amounts);
 
     // Balance must be unchanged — no transfer occurred.
     let prog = client.get_program_info_v2(&String::from_str(&env, "PROG"));

@@ -1179,8 +1179,15 @@ impl ProgramEscrowContract {
     /// # Benchmark note
     /// Pre-validation runs in O(n log n) for deduplication (insertion sort) plus
     /// O(n) for existence checks. At `MAX_BATCH_SIZE=100` the full call path
-    /// (including the registry-update loop) costs ~X CPU instructions; see
-    /// `docs/program-escrow-batch-init-atomicity.md` for the empirical table.
+    /// (including the registry-update loop) costs ~69.7 M CPU instructions
+    /// host-side — about 70 % of Soroban's 100 M per-invocation ceiling. See
+    /// `docs/program-escrow-batch-init-atomicity.md` for the full table; note
+    /// the headroom is ~30 %, not the ~90 % an earlier draft of that document
+    /// claimed.
+    ///
+    /// # Returns
+    /// `Ok(n)` where `n == items.len()` — every program registered.
+    /// `Err(e)` — **no** program registered and `PROGRAM_REGISTRY` is unchanged.
     pub fn batch_initialize_programs(
         env: Env,
         items: Vec<ProgramInitItem>,
@@ -1291,12 +1298,32 @@ impl ProgramEscrowContract {
 
     /// Atomically lock funds for multiple programs.
     ///
+    /// # Failure model
+    ///
+    /// **All-or-nothing.** Size, duplicate-id, pause, amount and per-program
+    /// existence/status checks all run before any funds move, and every failure
+    /// path returns `Err` or panics — never a partial count. Because the Soroban
+    /// host rolls back all storage writes and token transfers on failure, an
+    /// `Err` leaves the contract exactly as it was: no program has its balance
+    /// increased, and the ids in the batch stay free for a later attempt.
+    ///
     /// # Arguments
     /// * `items` - Vector of LockItem containing program_id and amount.
     ///
     /// # Returns
-    /// Number of successfully locked items.
-    /// Atomically lock funds for multiple programs.
+    /// `Ok(n)` where `n == items.len()` — every element locked. `Err(e)` — **no**
+    /// element locked. There is no "3 of 5 locked" outcome, so a caller retries
+    /// by re-submitting the corrected whole batch. The error names the
+    /// condition, not the offending index.
+    ///
+    /// # Errors
+    /// * [`BatchError::InvalidBatchSizeProgram`] — empty, or above `MAX_BATCH_SIZE`
+    /// * [`BatchError::DuplicateProgramId`] — the same `program_id` twice in one batch
+    /// * [`BatchError::ProgramNotFound`] — a `program_id` is not registered
+    /// * [`BatchError::InvalidAmount`] — an element's `amount` is not positive
+    /// * [`BatchError::FundsPaused`] — lock is paused globally or for a program
+    ///
+    /// See `docs/batch-failure-semantics.md` for the full model.
     pub fn batch_lock(env: Env, items: Vec<LockItem>) -> Result<u32, BatchError> {
         Self::require_not_read_only(&env);
         // Reentrancy guard for `batch_lock`; held across its fee-token transfer.
@@ -1430,12 +1457,28 @@ impl ProgramEscrowContract {
 
     /// Atomically release multiple scheduled payouts.
     ///
+    /// # Failure model
+    ///
+    /// **All-or-nothing.** As with [`Self::batch_lock`]: every failure path
+    /// returns `Err` or panics before the batch is considered settled, and host
+    /// rollback undoes any earlier writes in the call. An `Err` releases no
+    /// schedule and pays no recipient.
+    ///
     /// # Arguments
     /// * `items` - Vector of ReleaseItem containing program_id and schedule_id.
     ///
     /// # Returns
-    /// Number of successfully released payouts.
-    /// Atomically release multiple scheduled payouts.
+    /// `Ok(n)` where `n == items.len()` — every element released. `Err(e)` — **no**
+    /// element released. A caller retries by re-submitting the corrected whole
+    /// batch, not the un-processed suffix.
+    ///
+    /// # Errors
+    /// * [`BatchError::InvalidBatchSizeProgram`] — empty, or above `MAX_BATCH_SIZE`
+    /// * [`BatchError::DuplicateProgramId`] — the same `program_id` twice in one batch
+    /// * [`BatchError::ProgramNotFound`] — a `program_id` is not registered
+    /// * [`BatchError::FundsPaused`] — release is paused globally or for a program
+    ///
+    /// See `docs/batch-failure-semantics.md` for the full model.
     pub fn batch_release(env: Env, items: Vec<ReleaseItem>) -> Result<u32, BatchError> {
         Self::require_not_read_only(&env);
         // Reentrancy guard for `batch_release`; held across its payout-token transfer.
@@ -4041,6 +4084,35 @@ impl ProgramEscrowContract {
     /// at their precise call position. Soroban guarantees deterministic,
     /// sequential event emission within a transaction, so off-chain indexers
     /// can safely reconstruct an ordered activity feed from the event log.
+    ///
+    /// # Failure model
+    ///
+    /// **All-or-nothing.** Every check runs before any transfer, and every
+    /// failure path aborts the whole call (a `panic!` or `panic_with_error!`,
+    /// which the Soroban host converts into an error and rolls back with it). No
+    /// recipient is paid unless *every* recipient is paid.
+    ///
+    /// Concretely: length mismatch, an empty batch, a non-positive amount, a
+    /// duplicate recipient, a spend-threshold or balance shortfall, a token that
+    /// is off the allowlist, or any per-recipient transfer failure aborts the
+    /// entire batch. There is no "paid 3 of 5" outcome and no per-recipient
+    /// result vector, so a caller cannot learn *which* element failed from the
+    /// return value — only that nothing settled.
+    ///
+    /// Because nothing settles on failure, a retry is a re-submission of the
+    /// **whole** batch, not a resume of the un-processed remainder. To make that
+    /// safe against a timeout *after* the transfers succeeded, use
+    /// [`Self::batch_payout_idempotent`], which records the outcome against a
+    /// caller-supplied key and returns the original result on replay.
+    ///
+    /// # Size limits
+    ///
+    /// 1..=[`MAX_BATCH_SIZE`] (100) recipients. An oversized batch is rejected
+    /// with [`BatchError::BatchTooLarge`] (code 410) before any transfer. An
+    /// empty batch is rejected. The check is pre-flight, so a rejected batch
+    /// moves no tokens at all.
+    ///
+    /// See `docs/batch-failure-semantics.md` for the full model.
     pub fn batch_payout(env: Env, recipients: soroban_sdk::Vec<Address>, amounts: soroban_sdk::Vec<i128>) -> ProgramData {
         Self::batch_payout_internal(env, None, None, recipients, amounts)
     }
@@ -4158,6 +4230,35 @@ impl ProgramEscrowContract {
     /// - Idempotency keys are stored in persistent storage and never expire.
     /// - A key is only marked consumed **after** all transfers succeed.
     /// - Replay detection runs before any state mutation.
+    ///
+    /// # Failure model
+    ///
+    /// **All-or-nothing.** Every check runs before any transfer, and every
+    /// failure path aborts the whole call (a `panic!` or `panic_with_error!`,
+    /// which the Soroban host converts into an error and rolls back with it). No
+    /// recipient is paid unless *every* recipient is paid.
+    ///
+    /// Concretely: length mismatch, an empty batch, a non-positive amount, a
+    /// duplicate recipient, a spend-threshold or balance shortfall, a token that
+    /// is off the allowlist, or any per-recipient transfer failure aborts the
+    /// entire batch. There is no "paid 3 of 5" outcome and no per-recipient
+    /// result vector, so a caller cannot learn *which* element failed from the
+    /// return value — only that nothing settled.
+    ///
+    /// Because nothing settles on failure, a retry is a re-submission of the
+    /// **whole** batch, not a resume of the un-processed remainder. To make that
+    /// safe against a timeout *after* the transfers succeeded, use
+    /// [`Self::batch_payout_idempotent`], which records the outcome against a
+    /// caller-supplied key and returns the original result on replay.
+    ///
+    /// # Size limits
+    ///
+    /// 1..=[`MAX_BATCH_SIZE`] (100) recipients. An oversized batch is rejected
+    /// with [`BatchError::BatchTooLarge`] (code 410) before any transfer. An
+    /// empty batch is rejected. The check is pre-flight, so a rejected batch
+    /// moves no tokens at all.
+    ///
+    /// See `docs/batch-failure-semantics.md` for the full model.
     pub fn batch_payout_idempotent(
         env: Env,
         idempotency_key: String,
@@ -4168,6 +4269,35 @@ impl ProgramEscrowContract {
     }
 
     /// Delegate variant of [`batch_payout_idempotent`].
+    ///
+    /// # Failure model
+    ///
+    /// **All-or-nothing.** Every check runs before any transfer, and every
+    /// failure path aborts the whole call (a `panic!` or `panic_with_error!`,
+    /// which the Soroban host converts into an error and rolls back with it). No
+    /// recipient is paid unless *every* recipient is paid.
+    ///
+    /// Concretely: length mismatch, an empty batch, a non-positive amount, a
+    /// duplicate recipient, a spend-threshold or balance shortfall, a token that
+    /// is off the allowlist, or any per-recipient transfer failure aborts the
+    /// entire batch. There is no "paid 3 of 5" outcome and no per-recipient
+    /// result vector, so a caller cannot learn *which* element failed from the
+    /// return value — only that nothing settled.
+    ///
+    /// Because nothing settles on failure, a retry is a re-submission of the
+    /// **whole** batch, not a resume of the un-processed remainder. To make that
+    /// safe against a timeout *after* the transfers succeeded, use
+    /// [`Self::batch_payout_idempotent`], which records the outcome against a
+    /// caller-supplied key and returns the original result on replay.
+    ///
+    /// # Size limits
+    ///
+    /// 1..=[`MAX_BATCH_SIZE`] (100) recipients. An oversized batch is rejected
+    /// with [`BatchError::BatchTooLarge`] (code 410) before any transfer. An
+    /// empty batch is rejected. The check is pre-flight, so a rejected batch
+    /// moves no tokens at all.
+    ///
+    /// See `docs/batch-failure-semantics.md` for the full model.
     pub fn batch_payout_idempotent_by(
         env: Env,
         idempotency_key: String,
@@ -4816,6 +4946,35 @@ impl ProgramEscrowContract {
     /// - Respects circuit breaker and threshold limits.
     /// - Idempotency key ensures deterministic behavior on retries.
     /// Execute a batch payout with a specified caller.
+    ///
+    /// # Failure model
+    ///
+    /// **All-or-nothing.** Every check runs before any transfer, and every
+    /// failure path aborts the whole call (a `panic!` or `panic_with_error!`,
+    /// which the Soroban host converts into an error and rolls back with it). No
+    /// recipient is paid unless *every* recipient is paid.
+    ///
+    /// Concretely: length mismatch, an empty batch, a non-positive amount, a
+    /// duplicate recipient, a spend-threshold or balance shortfall, a token that
+    /// is off the allowlist, or any per-recipient transfer failure aborts the
+    /// entire batch. There is no "paid 3 of 5" outcome and no per-recipient
+    /// result vector, so a caller cannot learn *which* element failed from the
+    /// return value — only that nothing settled.
+    ///
+    /// Because nothing settles on failure, a retry is a re-submission of the
+    /// **whole** batch, not a resume of the un-processed remainder. To make that
+    /// safe against a timeout *after* the transfers succeeded, use
+    /// [`Self::batch_payout_idempotent`], which records the outcome against a
+    /// caller-supplied key and returns the original result on replay.
+    ///
+    /// # Size limits
+    ///
+    /// 1..=[`MAX_BATCH_SIZE`] (100) recipients. An oversized batch is rejected
+    /// with [`BatchError::BatchTooLarge`] (code 410) before any transfer. An
+    /// empty batch is rejected. The check is pre-flight, so a rejected batch
+    /// moves no tokens at all.
+    ///
+    /// See `docs/batch-failure-semantics.md` for the full model.
     pub fn batch_payout_by(
         env: Env,
         caller: Address,
@@ -6482,6 +6641,35 @@ impl ProgramEscrowContract {
 
     /// Distributes prizes to multiple recipients and stores a Merkle root receipt
     /// for deterministic batch verification.
+    ///
+    /// # Failure model
+    ///
+    /// **All-or-nothing.** Every check runs before any transfer, and every
+    /// failure path aborts the whole call (a `panic!` or `panic_with_error!`,
+    /// which the Soroban host converts into an error and rolls back with it). No
+    /// recipient is paid unless *every* recipient is paid.
+    ///
+    /// Concretely: length mismatch, an empty batch, a non-positive amount, a
+    /// duplicate recipient, a spend-threshold or balance shortfall, a token that
+    /// is off the allowlist, or any per-recipient transfer failure aborts the
+    /// entire batch. There is no "paid 3 of 5" outcome and no per-recipient
+    /// result vector, so a caller cannot learn *which* element failed from the
+    /// return value — only that nothing settled.
+    ///
+    /// Because nothing settles on failure, a retry is a re-submission of the
+    /// **whole** batch, not a resume of the un-processed remainder. To make that
+    /// safe against a timeout *after* the transfers succeeded, use
+    /// [`Self::batch_payout_idempotent`], which records the outcome against a
+    /// caller-supplied key and returns the original result on replay.
+    ///
+    /// # Size limits
+    ///
+    /// 1..=[`MAX_BATCH_SIZE`] (100) recipients. An oversized batch is rejected
+    /// with [`BatchError::BatchTooLarge`] (code 410) before any transfer. An
+    /// empty batch is rejected. The check is pre-flight, so a rejected batch
+    /// moves no tokens at all.
+    ///
+    /// See `docs/batch-failure-semantics.md` for the full model.
     pub fn batch_payout_with_receipt(
         env: Env,
         recipients: soroban_sdk::Vec<Address>,
@@ -6530,6 +6718,47 @@ impl ProgramEscrowContract {
             .ok_or(BatchError::BatchReceiptNotFound)
     }
 
+    /// Versioned variant of [`Self::batch_payout`].
+    ///
+    /// Takes an explicit `program_id` so the payout target is unambiguous rather
+    /// than resolved from call state. Delegates to the same
+    /// `batch_payout_internal` path as [`Self::batch_payout`], so its failure
+    /// semantics are identical.
+    ///
+    /// # Returns
+    ///
+    /// The updated [`ProgramData`]. Reached only when every recipient was paid;
+    /// any failure aborts the call and the host rolls it back, so a caller that
+    /// sees an error knows no recipient was paid.
+    ///
+    /// # Failure model
+    ///
+    /// **All-or-nothing.** Every check runs before any transfer, and every
+    /// failure path aborts the whole call (a `panic!` or `panic_with_error!`,
+    /// which the Soroban host converts into an error and rolls back with it). No
+    /// recipient is paid unless *every* recipient is paid.
+    ///
+    /// Concretely: length mismatch, an empty batch, a non-positive amount, a
+    /// duplicate recipient, a spend-threshold or balance shortfall, a token that
+    /// is off the allowlist, or any per-recipient transfer failure aborts the
+    /// entire batch. There is no "paid 3 of 5" outcome and no per-recipient
+    /// result vector, so a caller cannot learn *which* element failed from the
+    /// return value — only that nothing settled.
+    ///
+    /// Because nothing settles on failure, a retry is a re-submission of the
+    /// **whole** batch, not a resume of the un-processed remainder. To make that
+    /// safe against a timeout *after* the transfers succeeded, use
+    /// [`Self::batch_payout_idempotent`], which records the outcome against a
+    /// caller-supplied key and returns the original result on replay.
+    ///
+    /// # Size limits
+    ///
+    /// 1..=[`MAX_BATCH_SIZE`] (100) recipients. An oversized batch is rejected
+    /// with [`BatchError::BatchTooLarge`] (code 410) before any transfer. An
+    /// empty batch is rejected. The check is pre-flight, so a rejected batch
+    /// moves no tokens at all.
+    ///
+    /// See `docs/batch-failure-semantics.md` for the full model.
     pub fn batch_payout_v2(
         env: Env,
         _program_id: String,
@@ -7677,9 +7906,15 @@ mod test_dynamic_pricing;
 #[cfg(test)]
 #[cfg(any())] // pre-existing breakage: get_archived_program_payout_history no longer exposed
 mod test_archival;
+// Batch-operations suite enabled for issue #1877. The only blocker was the
+// budget-reading API: soroban-sdk 21.7.7 renamed `Budget::get_cpu_instructions`
+// to `Budget::cpu_instruction_cost`.
 #[cfg(test)]
-#[cfg(any())] // pre-existing breakage: Budget::get_cpu_instructions removed from soroban-sdk
 mod test_batch_operations;
+// Was an orphan: the file existed and was never declared as a module, so none
+// of its MAX_BATCH_SIZE enforcement tests ever ran. Registered for #1877.
+#[cfg(test)]
+mod test_batch_limits;
 // #[cfg(test)] mod test_pause;
 
 #[cfg(test)]

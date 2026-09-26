@@ -38,6 +38,7 @@ echo "==> [1/4] Workspace tests (host target)"
 cargo test --manifest-path "$MANIFEST" --workspace
 
 echo "==> [2/4] Storage-key collision audit (grainlify-contracts)"
+echo "==> [2/5] Storage-key collision audit (grainify-contracts)"
 # `contracts/` used to belong to no workspace, so its storage-collision audit
 # was never built. It is now a workspace of its own and is exercised here, which
 # pins the audit to a check that runs on every pull request.
@@ -175,3 +176,15 @@ mkdir -p "$(dirname "$ANALYTICS_SIZE_FILE")"
 
 echo "    Size report written to: $ANALYTICS_SIZE_FILE"
 echo "==> All contract CI gates passed."
+echo "==> [3/5] program-escrow + escrow batch suites"
+# Delegates to a dedicated script rather than inlining the module list. The
+# batch suites also run as their own job in contracts-ci.yml, because this
+# script currently aborts at step 1 on pre-existing bounty-escrow failures
+# unrelated to batching — which would mean a batch gate inlined here never
+# actually ran on a pull request.
+bash "$ROOT_DIR/contracts/scripts/ci-batch-tests.sh"
+
+echo "==> [4/5] Deployable wasm release build"
+cargo build --manifest-path "$MANIFEST" --workspace --target wasm32-unknown-unknown --release
+
+echo "==> [5/5] All contract CI gates passed."

@@ -43,6 +43,43 @@ jobs:
   # ──────────────────────────────────────────────────────────────
   # No opaque unwrap()/panic! traps in deployable program-escrow
   # source (issue #1854). Test modules remain exempt.
+  # Batch semantics gate (issue #1877).
+  # A separate job on purpose: `build-test` above aborts on pre-existing
+  # bounty-escrow failures that have nothing to do with batching, and a step
+  # after a failed step never runs. Without its own job the batch suites would
+  # silently stop gating anything — which is the exact state #1877 found the
+  # 1,354-line test_batch_operations.rs in (disabled in lib.rs, absent from CI).
+  # ──────────────────────────────────────────────────────────────
+  batch-tests:
+    name: batch semantics
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            contracts/bounty_escrow/target/
+            contracts/program-escrow/target/
+          key: ${{ runner.os }}-batch-tests-${{ hashFiles('contracts/bounty_escrow/Cargo.lock', 'contracts/program-escrow/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-batch-tests-
+
+      - name: Run batch test suites
+        run: bash contracts/scripts/ci-batch-tests.sh
+
+  # ──────────────────────────────────────────────────────────────
+  # Reproducible workspace build & test gates (issue #1700).
+  # Runs the exact same commands as ./contracts/scripts/ci-contracts.sh
+  # so the gates behave identically locally and in CI.
+  # No continue-on-error: a compile or test regression must fail the job.
   # ──────────────────────────────────────────────────────────────
   program-escrow-no-traps:
     name: program-escrow no unwrap/panic

@@ -2,6 +2,11 @@
 
 extern crate std;
 
+// The crate is `no_std` for wasm, so the `format!`/`eprintln!` macros used by
+// the pre-validation benchmark below have to be pulled in explicitly rather
+// than coming from the std prelude.
+use std::{eprintln, format};
+
 use soroban_sdk::testutils::budget::Budget as _;
 use soroban_sdk::testutils::Ledger as _;
 use soroban_sdk::testutils::LedgerInfo as _;
@@ -1307,6 +1312,14 @@ fn test_batch_init_atomicity_registry_unaffected_after_failure() {
 // Pre-validation CPU cost benchmark (issue #1499)
 // ============================================================================
 
+/// Soroban's per-invocation CPU ceiling, in instruction-equivalents. A batch
+/// that exceeds it cannot land on-chain at all, so this is the invariant worth
+/// pinning: a full `MAX_BATCH_SIZE` (100) `batch_initialize_programs` measures
+/// ~69.7 M host-side, i.e. ~70 % of the ceiling and ~30 % headroom — not the
+/// ">90 % margin" previously claimed in
+/// `docs/program-escrow-batch-init-atomicity.md`. See that file for the table.
+const SOROBAN_CPU_INSTRUCTION_LIMIT: u64 = 100_000_000;
+
 /// Measure CPU instructions consumed by `batch_initialize_programs` at various
 /// batch sizes.  Results are printed via `eprintln!` for manual review.
 ///
@@ -1321,7 +1334,12 @@ fn test_batch_init_prevalidation_bench() {
     for &size in &[1u32, 10u32, 50u32, 100u32] {
         let mut items = soroban_sdk::Vec::new(&ctx.env);
         for i in 0..size {
-            let pid = format!("BENCH_{}", i);
+            // The id must be unique per *iteration*, not just per index: every
+            // batch registers its programs into storage, and
+            // `batch_initialize_programs` rejects an id that already exists
+            // (BatchError::ProgramAlreadyExists). Reusing `BENCH_{i}` across
+            // iterations made the second batch fail on the first id.
+            let pid = format!("BENCH_{}_{}", size, i);
             items.push_back(ProgramInitItem {
                 program_id: String::from_str(&ctx.env, &pid),
                 authorized_payout_key: ctx.admin.clone(),
@@ -1330,9 +1348,9 @@ fn test_batch_init_prevalidation_bench() {
             });
         }
 
-        let cpu_before = ctx.env.budget().get_cpu_instructions();
+        let cpu_before = ctx.env.budget().cpu_instruction_cost();
         let res = ctx.client.try_batch_initialize_programs(&items);
-        let cpu_after = ctx.env.budget().get_cpu_instructions();
+        let cpu_after = ctx.env.budget().cpu_instruction_cost();
         let cpu_cost = cpu_after - cpu_before;
 
         assert!(res.is_ok(), "batch size {} should succeed", size);
@@ -1342,13 +1360,22 @@ fn test_batch_init_prevalidation_bench() {
             size, cpu_cost
         );
 
-        // Sanity: each program costs at least some instructions. A batch of
-        // 100 must stay well within the 100 M Soroban budget limit.
+        // The real constraint is Soroban's per-invocation ceiling: a batch over
+        // it cannot land on-chain, so that is what gets asserted. The previous
+        // 10 M bound here was a guess written while the suite was disabled and
+        // never held — a 50-item batch costs ~16.5 M, so the first size past 1
+        // tripped it, which is why the suite was never actually executed.
+        //
+        // These are host-side Rust figures. The SDK documents host CPU cost as
+        // *under*-estimating the WASM equivalent, so real on-chain cost may be
+        // higher; treat the measured headroom as a floor, not a ceiling.
         assert!(
-            cpu_cost < 10_000_000,
-            "batch size {} exceeded 10M CPU instructions ({})",
+            cpu_cost < SOROBAN_CPU_INSTRUCTION_LIMIT,
+            "batch size {} cost {} CPU instructions, at or over the Soroban \
+             per-invocation ceiling of {} — such a batch can never land",
             size,
-            cpu_cost
+            cpu_cost,
+            SOROBAN_CPU_INSTRUCTION_LIMIT
         );
     }
 }

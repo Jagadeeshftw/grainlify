@@ -1927,6 +1927,20 @@ pub enum BatchError {
     BatchTooLarge = 410,
 }
 
+/// Maximum number of elements in a single batch call.
+///
+/// Enforced on every batch entry point: `batch_initialize_programs`,
+/// `batch_lock`, `batch_release`, `batch_payout` and its variants. An empty or
+/// oversized batch is rejected before any element is touched — with
+/// `BatchError::InvalidBatchSizeProgram` on the first three and
+/// `BatchError::BatchTooLarge` (410) on the payout family — so a rejected batch
+/// never partially applies.
+///
+/// 100 is calibrated against Soroban's 100 M instruction per-invocation ceiling.
+/// That margin is real but not large: a full 100-item `batch_initialize_programs`
+/// measures ~69.7 M instructions host-side. See
+/// `docs/batch-failure-semantics.md` and
+/// `docs/program-escrow-batch-init-atomicity.md`.
 pub const MAX_BATCH_SIZE: u32 = 100;
 pub const DEFAULT_MAX_HISTORY_PAGE_LIMIT: u32 = 200;
 
