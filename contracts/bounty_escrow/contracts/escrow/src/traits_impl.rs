@@ -1,12 +1,12 @@
-//! Trait implementations for [`BountyEscrowContract`].
-//!
-//! Implements [`crate::traits::EscrowInterface`], [`crate::traits::UpgradeInterface`],
-//! [`crate::traits::PauseInterface`], and [`crate::traits::FeeInterface`] by delegating
-//! to the corresponding `#[contractimpl]` entry points.
-//!
-//! This module is included in `lib.rs` via `include!(...)` so it shares the parent
-//! namespace without requiring an extra module qualifier.
-//! All types and imports from lib.rs are directly available.
+// Trait implementations for [`BountyEscrowContract`].
+//
+// Implements [`crate::traits::EscrowInterface`], [`crate::traits::UpgradeInterface`],
+// [`crate::traits::PauseInterface`], and [`crate::traits::FeeInterface`] by delegating
+// to the corresponding `#[contractimpl]` entry points.
+//
+// This module is included in `lib.rs` via `include!(...)` so it shares the parent
+// namespace without requiring an extra module qualifier.
+// All types and imports from lib.rs are directly available.
 
 impl traits::EscrowInterface for BountyEscrowContract {
     /// Lock funds for a bounty through the trait interface

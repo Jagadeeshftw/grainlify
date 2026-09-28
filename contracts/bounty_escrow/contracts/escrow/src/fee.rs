@@ -5,7 +5,7 @@
 use soroban_sdk::{token, symbol_short, Address, Env, Vec};
 use crate::{
     events, rbac,
-    DataKey, Error, FeeConfig, PerBountyFeeRouting, TokenFeeConfig, TreasuryDestination,
+    DataKey, Error, Escrow, FeeConfig, PerBountyFeeRouting, TokenFeeConfig, TreasuryDestination,
     EscrowStatus,
     BASIS_POINTS, MAX_FEE_RATE,
     events::{EVENT_VERSION_V2},

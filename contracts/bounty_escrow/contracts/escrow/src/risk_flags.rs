@@ -7,7 +7,7 @@ use crate::{
     events, rbac,
     DataKey, Error, EscrowMetadata,
     NOTIFICATION_PREFS_MASK, RISK_FLAG_MASK_ALL, RISK_FLAGS_VALID_MASK,
-    events::{RiskFlagsUpdated, EVENT_VERSION_V2},
+    events::{emit_risk_flags_updated, RiskFlagsUpdated, EVENT_VERSION_V2},
 };
 
 // ─────────────────────────────────────────────────────────────────

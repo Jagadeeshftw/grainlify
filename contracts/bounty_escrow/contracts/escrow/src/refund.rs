@@ -4,7 +4,7 @@
 
 use soroban_sdk::{symbol_short, token, Address, BytesN, Env};
 use crate::{
-    events, multitoken_invariants, reentrancy_guard,
+    events, gas_budget, invariants, multitoken_invariants, reentrancy_guard,
     Capability, CapabilityAction, DataKey, Error, Escrow, EscrowStatus,
     RefundApproval, RefundEligibilityCode, RefundEligibilityView, RefundMode, RefundRecord,
     SimulationResult,

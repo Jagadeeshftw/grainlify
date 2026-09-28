@@ -29,8 +29,8 @@
 
 mod events;
 pub mod gas_budget;
-mod invariants;
-mod multitoken_invariants;
+pub(crate) mod invariants;
+pub(crate) mod multitoken_invariants;
 mod reentrancy_guard;
 mod validation;
 // Pre-existing broken test modules excluded from compilation until their referenced types/methods are implemented:

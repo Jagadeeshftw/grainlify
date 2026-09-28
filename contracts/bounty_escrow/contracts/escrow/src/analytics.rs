@@ -1,6 +1,6 @@
 //! Contract operation analytics and aggregate statistics.
 
-use soroban_sdk::Env;
+use soroban_sdk::{Env, Vec};
 use crate::{monitoring, AggregateStats, DataKey, Escrow, EscrowStatus};
 
 // ─────────────────────────────────────────────────────────────────

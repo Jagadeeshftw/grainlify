@@ -7,7 +7,8 @@ use crate::{
     anti_abuse, events,
     DataKey, DeprecationState, Error, ParticipantFilterMode, ParticipantListPage,
     PARTICIPANT_LIST_SCHEMA_VERSION_V1, MAX_PARTICIPANT_FILTER_PAGE_SIZE,
-    events::{ParticipantFilterModeChanged, ParticipantFilterQueried, EVENT_VERSION_V2},
+    events::{emit_participant_filter_mode_changed, emit_participant_filter_queried,
+             ParticipantFilterModeChanged, ParticipantFilterQueried, EVENT_VERSION_V2},
 };
 
 // ─────────────────────────────────────────────────────────────────
