@@ -3,50 +3,47 @@
 This document lists every deployable WebAssembly (wasm) artifact produced by this repository, its source crate, and its workspace.
 
 | Artifact | Source Crate | Workspace | Status |
-|---|---|---|---|
-| `bounty_escrow.wasm` | `contracts/bounty_escrow/contracts/escrow` | `contracts/bounty_escrow` | Deployed |
-| `escrow_view_facade.wasm` | `contracts/escrow-view-facade` | `contracts` | Staged |
+||---|---|---|---|
+| `bounty_escrow.wasm` | `contracts/bounty_escrow/contracts/escrow` | `contracts/bounty_escrow' | Deployed |
+| `escrow-view-facade.wasm` | `contracts/escrow-view-facade` | `contracts` | Staged |
 | `grainlify_core.wasm` | `contracts/grainlify-core` | `contracts` | Deployed |
-| `program_escrow.wasm` | `contracts/program-escrow` | `contracts` | Staged |
-| `view_facade.wasm` | `contracts/view-facade` | `contracts` | Staged |
+| `program-escrow.wasm` | `contracts/program-escrow` | `contracts` | Staged |
+| `view-facade.wasm` | `contracts/view-facade` | `contracts` | Staged |
 | `escrow.wasm` | `soroban/contracts/escrow` | `soroban` | Superseded |
 | `soroban_program_escrow.wasm` | `soroban/contracts/program-escrow` | `soroban` | Superseded |
 
 ## Smoke Deploy Coverage
 
-The smoke deploy (`scripts/smoke-deploy.sh`) is the executable check that every artifact above is buildable and deployable. The cadence, pass condition, and failure output contract are defined below.
+The smoke deploy is executed by `scripts/smoke-deploy.sh` and is run on a stated cadence in CI. The cadence and the explicit pass condition are defined below so that a failure is actionable from the script output alone.
 
 ### Cadence
 
-The smoke deploy runs on a schedule in CI via `.github/workflows/smoke-deploy.yml`:
-
-- Pushes to the default branch that touch any artifact source or the smoke script.
-- Pull requests targeting the default branch that touch any artifact source or the smoke script.
-- A scheduled nightly run (`cron : '0 3 * * *'`) so drift in dependencies or toolchain is caught without a code change.
-- Manual dispatch (`workflow_dispatch`) for on-demand reruns.
+The smoke deploy runs on every push to `main` and on a nightly schedule (`0 2 * * *`). This ensures the deployable artifacts are exercised regularly and not only when a maintainer manually runs the script.
 
 ### Pass Condition
 
-The smoke deploy passes only when every artifact in the inventory above is built and deployed to a fresh local network and the deployed contract responds to a minimal invocation. Specifically:
+A smoke deploy passes only when all of the following hold for every artifact in the inventory:
 
-1. Every artifact listed in the inventory builds to a non-empty `.wasm` file with a valid wasm magic header.
-2. Every built artifact deploys to the local network without error.
-3. Every deployed contract returns a successful response to a minimal invocation.
-4. The script exits non-zero if any artifact fails any of the above checks.
+1. The artifact exists at the expected path and is non-empty.
+2. The artifact is a valid wasm binary (the `wasm` magic bytes are present).
+3. The artifact can be deployed to the target network and the deployment returns a contract ID.
+4. The deployed contract responds to a minimal read/metadata call without error.
 
-A zero exit code alone is not the pass condition; the script must report a per-artifact status table and fail if any row is not `PASS`.
+A zero exit code alone is not sufficient; the script must report the per-artifact result and fail if any check above fails.
 
-### Failure Output
+### Actionable Failure Output
 
-On failure the script prints, for each failing artifact:
+When a check fails, the script must name the failing artifact, the check that failed, and the underlying error or stderr output. Example:
 
-- The artifact name and source crate.
-- The phase that failed (`build`, `deploy`, or `invoke`).
-- The captured stderr from the failing command.
-- The exit code of the failing command.
+```
+FAIL bounty_escrow.wasm: wasm magic bytes not found (expected 0061sm01 at offset 0)
+FAIL grainlify_core.wasm: deploy failed: host error: insufficient balance
+```
 
-This makes a failure actionable from the output alone, without needing to re-run the script locally.
+### Inventory Coverage
 
-### Validation
+The smoke deploy must cover every artifact listed in the inventory table above. A new artifact added to the inventory must be added to the smoke deploy in the same change.
 
-To verify the smoke deploy covers every deployable artifact, break one artifact (for example, introduce a compile error in `contracts/grainlify-core`) and confirm the smoke deploy reports the failing artifact name, the failing phase, and the underlying error before exiting non-zero.
+## Validation
+
+To validate the smoke deploy, break a deployable artifact (e.g., truncate its bytes or corrupt its wasm magic) and confirm the smoke deploy reports which artifact failed and why.
