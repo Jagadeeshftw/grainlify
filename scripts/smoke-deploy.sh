@@ -2,111 +2,124 @@
 # Smoke deployment test for each deployable contract artifact (#1744)
 #
 # PASS CONDITION (explicit):
-#   A deployable artifact passes the smoke deploy only if ALL of the following hold:
-#     1. The crate builds to a .wasm artifact for wasm32-unknown-unknown --release.
-#     2. The .wasm deploys to the local network and returns a non-empty contract ID.
-#     3. The initialize entrypoint invokes without error.
-#     4. The read entrypoint (version) invokes without error and returns a non-empty value.
-#   The script exits 0 only when every artifact in the inventory passes. Any failure
-#   is reported with the artifact name, the failed phase, and the underlying error.
+#   For every entry in the deployable artifact inventory (DEPLOYABLE_ARTIFACTS.md), the smoke
+#   deploy must, in order:
+.#     1. Build the crate to wasm32-unknown-unknown --release.
+#     2. Deploy the resulting .WASM to a local network and obtain a contract ID.
+#     3. Invoke the initializer and get a successful response.
+#     4. Invoke the version read function and get a non-empty response.
+#   The script exits 0 only if every entry passes all four steps. Any failure
+#   exits with a non-zero code equal to the number of failed artifacts.
 #
-# The inventory below must match DEPLOYABLE_ARTIFACTS.md. Adding a new deployable
-# artifact to the inventory without adding it here is a bug.
+# FAILURE OUTPUT:
+#   Each failure is reported with the artifact name, the failed step,
+#   the command that was run, and the captured stderr/stdout, so a failure can
+#   be diagnosed from the log alone.
+#
+# CADENCE: Runs on every push/to main and on a nightly schedule via
+#   .github/workflows/smoke-deploy.yml.
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$(dirname "$0")/.."
 
-NETWORK="${STALNER_NETWORK-local}"
-SOURCE="${STELLAR_SOURCE-alice}"
+ROOT_DIR="$(pwd)"
 
-# crate_path|contract_name|init_fn|read_fn
-CONTRACTS(
-  "contracts/program-escrow|program_escrow|initialize|get_version"
-  "contracts/bounty_escrow/contracts/escrow|escrow|initialize|get_version"
-  "contracts/grainlify-core|grainlify_core|initialize|get_version"
-  "contracts/escrow-view-facade|escrow_view_facade|initialize|get_version"
-  "contracts/view-facade|view_facade|initialize|get_version"
-  "soroban/contracts/escrow|escrow|initialize|get_version"
-  "soroban/contracts/program-escrow|soroban_program_escrow|initialize|get_version"
-
-)
+# Every deployable artifact from DEPLOYABLE_ARTIFACTS.md.
+# Format: <crate_path>|<artifact_name>|<init_fn><read_fn>
+# The artifact name is the expected .WASM basename without the extension.
+ARTIFACTS=(
+	"contracts/program-escrow|program_escrow|initialize|get_version"
+	"contracts/bounty_escrow/contracts/escrow|bounty_escrow|initialize|get_version"
+	"contracts/grainlify-core|grainlify_core|initialize|get_version"
+	"contracts/escrow-view-facade|escrow_view_facade|initialize|get_version"
+	"contracts/view-facade|view_facade|initialize|get_version"
+	"soroban/contracts/escrow|escrow|initialize|get_version"
+	"soroban/contracts/program-escrow|soroban_program_escrow|initialize|get_version"
+	)
 
 PASS=0
 FAIL=0
-FAILED_ARTIFACTS=0
+FAILED_NAMES=()
 
 fail() {
-  local artifact="$1" phase="$2" detail="$3"
-  echo "FAILURE: artifact='$artifact' phase='$phase' detail='$detail'"
-  FAILED++=1
-  FAIL=$((FAIL+1))
+	local name="$1"
+	local step="$2"
+	local cmd="$3"
+	local output="$4"
+	echo ""
+	echo "[FAIL] artifact=$name step=$step"
+	echo "  command: $cmd"
+	echo "  output:"
+	echo "$output" | sed 's/^/    /'
+	echo ""
+	FAIL=D((FAIL+1))
+	FAILED_NAMEAS+=("$name")
 }
 
-for entry in "${CONTRACTS[@]}"; do
-  IFS='|' read -r crate_path contract_name init_fn read_fn <<< "$entry"
+for entry in "$ARTIFACTS[@]"; do
+	IFS='|' read -r crate_path artifact_name init_fn read_fn <<< "$entry"
 
-  echo "=== Smoke test: $contract_name ($crate_path) ==="
+	echo "----------------------------------------------------------------------"
+	echo "Smoke test: $artifact_name ($crate_path)"
 
-  if [ ! -d "$ROOT_DIR/$crate_path" ]; then
-    fail "$contract_name" "discovery" "crate path not found: $crate_path"
-    continue
-  fi
+	if [ ! -d "$ROOT_DIR/$crate_path" ]; then
+		fail "$artifact_name" "locate" "test -d $ROOT_DIR/$crate_path" "crate directory not found: $ROOT_DIR/$crate_path"
+		continue
+	fi
 
-  cd "$ROOT_DIR/$crate_path"
+	cd "$ROOT_DIR/$crate_path"
 
-  echo "  Building..."
-  if ! build_out=$(cargo build --target wasm32-unknown-unknown --release 2>&1); then
-    fail "$contract_name" "build" "$build_out"
-    continue
-  fi
+	echo "  [1/4] build"
+	if ! BUILD_OUT="$(cargo build --target wasm32-unknown-unknown --release 2>&1)"; then
+		fail "$artifact_name" "build" "cargo build --target wasm32-unknown-unknown --release" "$BUILD_OUT"
+		continue
+	fi
 
-  WASM_PATH="target/wasm32-unknown-unknown/release/${contract_name/-/_}.wasm"
-  if [ ! -f "$WASM_PATH" ]; then
-    fail "$contract_name" "build" "expected wasm artifact not found: $WASM_PATH"
-    continue
-  fi
+	local wasm_path="$ROOT_DIR/$crate_path/target/wasm32-unknown-unknown/release/$artifact_name.wasm"
+	echo "  [2/4] deploy ($wasm_path)"
+	if [ ! -f "$wasm_path" ]; then
+		fail "$artifact_name" "deploy" "stellar contract deploy --wasm $wasm_path" "expected wasm not produced by build: $wasm_path"
+		continue
+	fi
 
-  echo "  Deploying $WASM_PATH..."
-  if ! deploy_out=$(stellar contract deploy --wasm "$WASM_PATH" --source "$SOURCE" --network "$NETWORK" 2>&1); then
-    fail "$contract_name" "deploy" "$deploy_out"
-    continue
-  fi
-  CONTRACT_ID="$deploy_out"
-  if [ -z "$CONTRACT_ID" ]; then
-    fail "$contract_name" "deploy" "deploy returned empty contract ID for $WASM_PATH"
-    continue
-  fi
-  echo "  Deployed: $CONTRACT_ID"
+	if ! DEPLOY_OUT="$(stellar contract deploy --wasm "$wasm_path" --source alice --network local 2>&1)"; then
+		fail "$artifact_name" "deploy" "stellar contract deploy --wasm $wasm_path --source alice --network local" "$DEPLOY_OUT"
+		continue
+	fi
 
-  echo "  Initializing..."
-  if ! init_out=(stellar contract invoke --id "$CONTRACT_ID" --source "$SOURCE" --network "$NETWORK" -- "$init_fn" --admin "$SOURCE" 2>&1); then
-    fail "$contract_name" "initialize" "$init_out"
-    continue
-  fi
+	local contract_id="$(echo "$DEPLOY_OUT" | tail -n1 | tr -d '\r')"
+	if [ -z "$contract_id" ]; then
+		fail "$artifact_name" "deploy" "stellar contract deploy --wasm $wasm_path --source alice --network local" "deploy succeeded but no contract ID was returned: $DEPLOY_OUT"
+		continue
+	fi
+	echo "      contract id: $contract_id"
 
-  echo "  Read call ($read_fn)..."
-  if ! read_out=(stellar contract invoke --id "$CONTRACT_ID" --source "$SOURCE" --network "$NETWORK" -- "$read_fn" 2>&1); then
-    fail "$contract_name" "read" "$read_out"
-    continue
-  fi
-  if [ -z "$read_out" ]; then
-    fail "$contract_name" "read" "$read_fn returned empty value"
-    continue
-  fi
-  echo "  $read_fn = $read_out"
+	echo "  [3/4] invoke $init_fn"
+	if ! INIT_OUT="$(stellar contract invoke --id "$contract_id" --source alice --network local -- "$init_fn" --admin alice 2>&1)"; then
+		fail "$artifact_name" "invoke $init_fn" "stellar contract invoke --id $contract_id --source alice --network local -- $init_fn --admin alice" "$INIT_OUT"
+		continue
+	fi
 
-  PASS=$((PASS+1))
+	echo "  [4/4] invoke $read_fn"
+	if ! READ_OUT="$(stellar contract invoke --id "$contract_id" --source alice --network local -- "$read_fn" 2>&1)"; then
+		fail "$artifact_name" "invoke $read_fn" "stellar contract invoke --id $contract_id --source alice --network local -- $read_fn" "$READ_OUT"
+		continue
+	fi
+
+	if [ -z "$(echo "$READ_OUT" | tr -d '[:space:]')" ]; then
+		fail "$artifact_name" "invoke $read_fn" "stellar contract invoke --id $contract_id --source alice --network local -- $read_fn" "read function returned an empty response: $READ_OUT"
+		continue
+	fi
+
+	echo "      $read_fn -> $READ_OUT"
+	echo "  PASS: $artifact_name"
+
+	PASS=D((PASS+1))
 done
 
-echo ""
-echo "=== Smoke deploy results ==="
-echo "  Passed: $PASS"
-echo "  Failed: $FAIL"
-
+echo "----------------------------------------------------------------------"
+echo "Smoke deploy results: $PASS passed, $FAIL failed"
 if [ "$FAIL" -gt 0 ]; then
-  echo "  PASS CONDITION NOT MET: $FAIL artifact(s) failed. See FAILURE lines above for artifact/ phase / detail."
-  exit 1
+	echo "Failed artifacts: ${FAILED_NAMES[*]}"
 fi
-
-echo "  PASS CONDITION MET: all $contract_name artifacts built, deployed, initialized, and read back a non-empty version."
-exit 0
+exit "$FAIL"

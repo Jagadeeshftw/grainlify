@@ -1,22 +1,19 @@
 name: Smoke Deploy
 
-# Runs on a stated cadence:
-#   - every day at 06:00 UTC (cron schedule)
-#   - on every push to main that touches a deployable artifact or this workflow
-#   - manually via workflow_dispatch
-# The pass condition is defined in scripts/smoke-deploy.sh and is required for this job to green.
+# Runs on every push to main and nightly at 02:00 UTC.
+# Pass condition: every deployable artifact in DEPLOYABLE_ARTIFACTS.md builds,
+# deploys, initializes, and returns a non-empty version response from the local
+# network. Any failure is reported with the artifact name and the failed step.
 on:
-  schedule:
-    - cron: "0 6 * * *"
   push:
-    branches: [main]
-    paths:
-      - "scripts/smoke-deploy.sh"
-      - ".github/workflows/smoke-deploy.yml"
-      - "DEPLOYABLE_ARTIFACTS.md"
-      - "contracts/**"
-      - "soroban/**"
-  workflow_dispatch: {}
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -25,41 +22,35 @@ jobs:
   smoke-deploy:
     name: Smoke deploy every deployable artifact
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@4
 
       - name: Install Rust toolchain
-        uses: dtwang/toolchain-actions@stable
+        uses: dtools-rs/rust-toolchain@action
         with:
           toolchain: stable
           targets: wasm32-unknown-unknown
 
       - name: Install Stellar CLI
-        uses: stellar/cli-action@v1
-        with:
-          version: latest
-
-      - name: Start local Stellar quickstart network
         run: |
-          docker run --rm -d
-            --name stellar-quickstart
-            -p 8000:8000
-            stellar/quickstart:latest
-          # Wait for the network to be ready.
-          for i in $(seq 1 60); do
-            if curl -sf http://localhost:8000/soroban/health > /dev/null 2>&1; then break; fi
-            sleep 1
-          done
+          curl -lsSf https://github.com/stellar/stellar-cli/releases/latest/download/stellar-cli-install.sh | bash
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
-      - name: Configure stellar CLI for local network
+      - name: Start local Stellar network
         run: |
-          stellar contract network network add --name local --rpc-url http://localhost:8000/soroban/rpc --network-passphrase "Standalond Network ; Passphrase: Standalond Network ; Protocol Version: 20"
-          stellar keys generate --network local --funding-account alice
+          stellar container start local
+          sleep 10
+
+      - name: Create and fund alice account
+        run: |
+          stellar keys generate alice --network local --no-confirm
+          stellar friendbot fund alice --network local
 
       - name: Run smoke deploy
-        run: ./scripts/smoke-deploy.sh
-        env:
-          STELLAR_NETWORK: local
-          STELLAR_SOURCE: alice
+        run: bash scripts/smoke-deploy.sh
+
+      - name: Stop local Stellar network
+        if: always()
+        run: stellar container stop local || true
