@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# update-wasm-budgets.sh — Rebuild all contracts and update the budget file
-# with the current sizes (+ 5 % headroom).  Intended to be run locally before
-# committing an intentional size increase.
+# update-wasm-budgets.sh — Refresh baseline_bytes in .github/wasm-budgets.json
+# from the currently built artifacts. Run this after an intentional size change,
+# then review and commit the diff.
+#
+# The tolerance and the absolute ceiling are global policy (tolerance_percent /
+# absolute_ceiling_bytes) and are not touched here, so growth is still gated
+# relative to the refreshed baseline.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-BUDGET_FILE="${REPO_ROOT}/.github/wasm-budgets.json"
+REPO_ROOT="${WASM_BUDGETS_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+BUDGET_FILE="${WASM_BUDGETS_FILE:-${REPO_ROOT}/.github/wasm-budgets.json}"
 
 if [[ ! -f "$BUDGET_FILE" ]]; then
   echo "::error::Budget file not found: $BUDGET_FILE"
@@ -20,23 +24,29 @@ if ! command -v jq &>/dev/null; then
 fi
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  Updating wasm size budgets from current build outputs"
+echo "  Updating wasm size baselines from current build outputs"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-# Create a temp file for the updated budgets
 tmp_file=$(mktemp)
 cp "$BUDGET_FILE" "$tmp_file"
 
 contracts=$(jq -r '.budgets | keys[]' "$BUDGET_FILE")
 
 for contract in $contracts; do
-  package=$(jq -r ".budgets.\"$contract\".package" "$BUDGET_FILE")
-  target_dir=$(jq -r ".budgets.\"$contract\".target_dir" "$BUDGET_FILE")
-  old_budget=$(jq -r ".budgets.\"$contract\".budget_bytes" "$BUDGET_FILE")
+  base=".budgets.\"$contract\""
+  package=$(jq -r "${base}.package" "$BUDGET_FILE")
+  target_dir=$(jq -r "${base}.target_dir" "$BUDGET_FILE")
+  target=$(jq -r "${base}.target // \"wasm32-unknown-unknown\"" "$BUDGET_FILE")
+  artifact=$(jq -r "${base}.artifact // empty" "$BUDGET_FILE")
+  old_baseline=$(jq -r "${base}.baseline_bytes" "$BUDGET_FILE")
 
-  wasm_name="${package//-/_}"
-  wasm_path="${REPO_ROOT}/${target_dir}/target/wasm32-unknown-unknown/release/${wasm_name}.wasm"
+  if [[ -n "$artifact" ]]; then
+    wasm_name="$artifact"
+  else
+    wasm_name="${package//-/_}.wasm"
+  fi
+  wasm_path="${REPO_ROOT}/${target_dir}/target/${target}/release/${wasm_name}"
 
   if [[ ! -f "$wasm_path" ]]; then
     echo "⚠  $contract: wasm not found at $wasm_path — skipping"
@@ -44,18 +54,15 @@ for contract in $contracts; do
   fi
 
   actual_bytes=$(stat --printf="%s" "$wasm_path" 2>/dev/null || stat -f%z "$wasm_path" 2>/dev/null)
-  # Add 5 % headroom, minimum 1 KB
-  new_budget=$(( actual_bytes + actual_bytes / 20 + 1024 ))
-  # Round up to nearest 1 KB
-  new_budget=$(( (new_budget + 1023) / 1024 * 1024 ))
+  # Record the measured size rounded up to the nearest 1 KB. Tolerance and the
+  # absolute ceiling are applied on top by check-wasm-budgets.sh.
+  new_baseline=$(( (actual_bytes + 1023) / 1024 * 1024 ))
 
-  delta=$((new_budget - old_budget))
-
-  if [[ $new_budget -ne $old_budget ]]; then
-    echo "  $contract: ${old_budget} → ${new_budget} bytes (actual: ${actual_bytes}, delta: +${delta})"
-    jq ".budgets.\"$contract\".budget_bytes = $new_budget" "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
+  if [[ "$new_baseline" -ne "$old_baseline" ]]; then
+    echo "  $contract: ${old_baseline} → ${new_baseline} bytes (actual: ${actual_bytes})"
+    jq "${base}.baseline_bytes = $new_baseline" "$tmp_file" > "${tmp_file}.new" && mv "${tmp_file}.new" "$tmp_file"
   else
-    echo "  $contract: unchanged (${old_budget} bytes, actual: ${actual_bytes})"
+    echo "  $contract: unchanged (${old_baseline} bytes, actual: ${actual_bytes})"
   fi
 done
 
@@ -65,5 +72,5 @@ rm -f "$tmp_file"
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  Budget file updated: $BUDGET_FILE"
-echo "  Review the diff and commit."
+echo "  Review the diff and commit it with the rationale in your PR."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

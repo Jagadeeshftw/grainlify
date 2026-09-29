@@ -1,41 +1,67 @@
 {
-  "_comment": "Per-contract wasm size budgets in bytes. Update via scripts/update-wasm-budgets.sh after intentional size changes.",
-  "_update_process": "To update budgets: 1) Run 'cargo build --target wasm32-unknown-unknown --release' for each contract, 2) Record new sizes, 3) Run 'scripts/update-wasm-budgets.sh' or manually update this file, 4) Commit the change for review.",
+  "_comment": "Per-deployable wasm size budgets in bytes. The gate fails when an artifact grows past baseline_bytes + tolerance_percent, or crosses absolute_ceiling_bytes (Stellar's on-chain contractMaxSizeBytes, 131072 = 128 KiB, read from the network config setting CONFIG_SETTING_CONTRACT_MAX_SIZE_BYTES on both testnet and mainnet). Update via scripts/update-wasm-budgets.sh after intentional size changes.",
+  "_update_process": "To update budgets: 1) Build every deployable (see DEPLOYABLE_ARTIFACTS.md), 2) Run 'bash scripts/update-wasm-budgets.sh' to refresh baseline_bytes from the built artifacts, 3) Review the diff and commit with the rationale in your PR description.",
+  "_inventory": "Every deployable wasm in DEPLOYABLE_ARTIFACTS.md must have an entry here. scripts/check-wasm-budgets.sh reads this file and the report in .github/workflows/wasm-size-budget.yml covers all entries.",
+  "absolute_ceiling_bytes": 131072,
+  "tolerance_percent": 5,
   "budgets": {
     "bounty_escrow": {
       "manifest": "contracts/bounty_escrow/Cargo.toml",
       "package": "bounty-escrow",
       "target_dir": "contracts/bounty_escrow",
-      "budget_bytes": 352256,
-      "description": "Bounty escrow contract. Budget raised from 319488 → 352256 (+32768 B) in issue #1882 to accommodate the analytics/monitoring surface: get_escrow_count, query_escrows_by_status, query_escrows_by_depositor, get_escrow_ids_by_status, updated query_escrows_by_amount, updated query_escrows_by_deadline (now return Vec<EscrowWithId>) and their paginate_escrows_with_id helper."
+      "workspace": "contracts/bounty_escrow",
+      "baseline_bytes": 352256,
+      "description": "Bounty escrow contract (DEPLOYABLE_ARTIFACTS.md: Deployed). Budget raised from 319488 -> 352256 (+32768 B) in issue #1882 to accommodate the analytics/monitoring surface: get_escrow_count, query_escrows_by_status, query_escrows_by_depositor, get_escrow_ids_by_status, updated query_escrows_by_amount, updated query_escrows_by_deadline (now return Vec<EscrowWithId>) and their paginate_escrows_with_id helper."
     },
     "grainlify_core": {
       "manifest": "contracts/grainlify-core/Cargo.toml",
       "package": "grainlify-core",
       "target_dir": "contracts/grainlify-core",
-      "budget_bytes": 188416,
-      "description": "Grainlify core library contract"
+      "workspace": "contracts",
+      "baseline_bytes": 188416,
+      "description": "Grainlify core library contract (DEPLOYABLE_ARTIFACTS.md: Deployed)."
     },
     "program_escrow": {
       "manifest": "contracts/program-escrow/Cargo.toml",
       "package": "program-escrow",
       "target_dir": "contracts/program-escrow",
-      "budget_bytes": 381952,
-      "description": "Program escrow contract"
+      "workspace": "contracts",
+      "baseline_bytes": 381952,
+      "description": "Program escrow contract (DEPLOYABLE_ARTIFACTS.md: Staged)."
     },
     "escrow_view_facade": {
       "manifest": "contracts/escrow-view-facade/Cargo.toml",
       "package": "escrow-view-facade",
       "target_dir": "contracts/escrow-view-facade",
-      "budget_bytes": 400000,
-      "description": "Escrow view facade contract"
+      "workspace": "contracts",
+      "baseline_bytes": 400000,
+      "description": "Escrow view facade contract (DEPLOYABLE_ARTIFACTS.md: Staged)."
     },
     "view_facade": {
       "manifest": "contracts/view-facade/Cargo.toml",
       "package": "view-facade",
       "target_dir": "contracts/view-facade",
-      "budget_bytes": 400000,
-      "description": "View facade contract"
+      "workspace": "contracts",
+      "baseline_bytes": 400000,
+      "description": "View facade contract (DEPLOYABLE_ARTIFACTS.md: Staged)."
+    },
+    "soroban_escrow": {
+      "manifest": "soroban/contracts/escrow/Cargo.toml",
+      "package": "escrow",
+      "target_dir": "soroban",
+      "workspace": "soroban",
+      "target": "wasm32v1-none",
+      "baseline_bytes": 64735,
+      "description": "Legacy Soroban escrow contract (DEPLOYABLE_ARTIFACTS.md: Superseded). Built from the soroban/ workspace with `cargo build -p escrow --target wasm32v1-none --release`; baseline measured at 64735 bytes."
+    },
+    "soroban_program_escrow": {
+      "manifest": "soroban/contracts/program-escrow/Cargo.toml",
+      "package": "soroban-program-escrow",
+      "target_dir": "soroban",
+      "workspace": "soroban",
+      "target": "wasm32v1-none",
+      "baseline_bytes": 61412,
+      "description": "Legacy Soroban program-escrow contract (DEPLOYABLE_ARTIFACTS.md: Superseded). Built from the soroban/ workspace with `cargo build -p soroban-program-escrow --target wasm32v1-none --release`; baseline measured at 61412 bytes."
     }
   }
 }
