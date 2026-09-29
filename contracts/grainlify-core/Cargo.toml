@@ -9,6 +9,9 @@ edition = "2021"
 crate-type = ["rlib", "cdylib"]
 
 [features]
+# Feature flag documentation: see FEATURE_FLAGS.md for complete model and supported combinations.
+# Downstream crates (program-escrow, view-facade, escrow-view-facade) must depend on
+# grainlify-core with `default-features = false` to prevent duplicate contract entrypoints at link time.
 default = ["contract"]
 contract = []
 strict-mode = []
@@ -18,19 +21,8 @@ governance_contract_tests = []
 wasm_tests = []
 
 [dependencies]
-soroban-sdk = "=21.7.7"
-ethnum = "1.5"
+soroban-sdk = { workspace = true }
+ethnum = { workspace = true }
 
 [dev-dependencies]
-soroban-sdk = { version = "=21.7.7", features = ["testutils"] }
-
-[profile.release]
-overflow-checks = true
-opt-level = "z"
-lto = true
-codegen-units = 1
-panic = "abort"
-
-[profile.test]
-overflow-checks = true
-debug = 0
+soroban-sdk = { workspace = true, features = ["testutils"] }

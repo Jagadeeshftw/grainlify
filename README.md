@@ -5,9 +5,37 @@ This repository contains Grainlify's Stellar Soroban smart contracts and their s
 ## Contract workspaces
 
 - `contracts/` contains the primary contract packages, SDK, manifests, and contract-focused documentation.
-- `soroban/` contains the Soroban workspace and its escrow, program-escrow, and stream contracts.
+- `soroban/` contains the Soroban workspace and its program-escrow and stream contracts; its `escrow` crate is superseded (reference/parity only).
 - `benchmarks/` contains contract performance baselines and thresholds.
 - `scripts/` and `fix/` contain contract validation, testing, upgrade, and maintenance utilities.
+
+## Contract crate guide
+
+The deployment status in each README reflects evidence recorded in this repository. Missing network IDs mean a live deployment is unverified here, not that one has never existed.
+
+| Manifest directory | Purpose |
+| --- | --- |
+| [contracts](contracts/README.md) | Rust utility library and CLI |
+| [contracts/bounty_escrow](contracts/bounty_escrow/README.md) | SDK 21 workspace for the bounty contract |
+| [contracts/bounty_escrow/contracts/escrow](contracts/bounty_escrow/contracts/escrow/README.md) | SDK 21 bounty fund escrow |
+| [contracts/escrow-view-facade](contracts/escrow-view-facade/README.md) | Bounty and program read facade |
+| [contracts/grainlify-core](contracts/grainlify-core/README.md) | Governance, upgrades, and shared types |
+| [contracts/program-escrow](contracts/program-escrow/README.md) | SDK 21 program funds and payouts |
+| [contracts/view-facade](contracts/view-facade/README.md) | Registry and program read facade |
+| [soroban](soroban/README.md) | SDK 23 workspace |
+| [soroban/contracts/escrow](soroban/contracts/escrow/README.md) | Separate SDK 23 bounty-style escrow |
+| [soroban/contracts/program-escrow](soroban/contracts/program-escrow/README.md) | Separate SDK 23 program registry and search |
+| [soroban/contracts/stream](soroban/contracts/stream/README.md) | Gas regression test fixtures |
+> **Escrow authority:** the deployed escrow contract is
+> `contracts/bounty_escrow/contracts/escrow` (`bounty_escrow.wasm`). The
+> `soroban/contracts/escrow` crate is superseded and is never deployed. See
+> [`docs/contracts/escrow-implementation-authority.md`](docs/contracts/escrow-implementation-authority.md).
+## System Documentation
+
+The following documents describe the current architecture and behavior of the system:
+- [Deployable Artifacts](DEPLOYABLE_ARTIFACTS.md) - Lists every deployable WebAssembly artifact produced by this repository.
+- [Release Schedules Usage](RELEASE_SCHEDULES_USAGE.md) - Details the time-based release schedules (vesting) feature for escrow contracts.
+- [Upgrade and Migration Policy](UPGRADE_AND_MIGRATION_POLICY.md) - Defines the rules and requirements for authorizing, executing, and reverting contract upgrades.
 
 ## Local validation
 

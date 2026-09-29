@@ -860,8 +860,3 @@ fn test_pause_reason_cleared_on_full_unpause() {
     );
 }
 
-// ========================================================================
-// Idempotency Key Tests
-// ========================================================================
-
-/// Test idempotency key validation for successful batch payout

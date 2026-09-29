@@ -1,0 +1,98 @@
+name: Soroban Workspace CI
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Issue #1860 — `soroban/contracts/stream` had no CI coverage of any kind.
+#
+# The `soroban/` Cargo workspace declares members `contracts/*` (escrow,
+# program-escrow, grainlify-stream). None of them were compiled, linted or
+# tested by CI: `contracts-ci.yml` only builds `contracts/bounty_escrow`, and
+# every other workflow filters on `contracts/**`. This workflow brings the
+# workspace — in particular the `grainlify-stream` fixture crate — under the
+# same rustfmt / clippy / `cargo test` gates as the rest of the repository and
+# builds + size-checks its deployable wasm. There is no `continue-on-error`:
+# a failing test fails the job.
+#
+# Note on the wasm gate: `grainlify-stream` is a `testutils`-only, host-side
+# helper crate with no `crate-type`, so it cannot produce a deployable wasm
+# (see the artifact inventory comment in build-reproducibility.yml). The
+# deployable member of this workspace, `soroban-program-escrow`, is therefore
+# what is built and size-checked below.
+# ─────────────────────────────────────────────────────────────────────────────
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - "soroban/**"
+      - ".github/workflows/soroban-ci.yml"
+  pull_request:
+    branches: [master, main]
+    paths:
+      - "soroban/**"
+      - ".github/workflows/soroban-ci.yml"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  soroban-workspace:
+    name: soroban (tests + fmt + clippy + wasm)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: soroban
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            soroban/target/
+          key: ${{ runner.os }}-soroban-cargo-${{ hashFiles('soroban/Cargo.lock', 'soroban/**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-soroban-cargo-
+
+      - name: Formatting gate (grainlify-stream)
+        run: cargo fmt -p grainlify-stream -- --check
+
+      - name: Clippy gate (grainlify-stream)
+        run: cargo clippy -p grainlify-stream --all-targets --locked -- -D warnings
+
+      - name: Compile and run stream crate tests
+        run: cargo test -p grainlify-stream --locked
+
+      - name: Build deployable wasm (soroban-program-escrow)
+        run: cargo build -p soroban-program-escrow --target wasm32-unknown-unknown --release --locked
+
+      - name: Check deployable wasm size
+        run: |
+          set -euo pipefail
+          file="target/wasm32-unknown-unknown/release/soroban_program_escrow.wasm"
+          budget=131072
+          if [ ! -f "$file" ]; then
+            echo "::error::expected wasm artifact was not produced: $file"
+            exit 1
+          fi
+          size=$(stat -c%s "$file")
+          echo "soroban_program_escrow.wasm: ${size} bytes (budget ${budget})"
+          if [ "$size" -gt "$budget" ]; then
+            echo "::error::soroban_program_escrow.wasm (${size} B) exceeds its budget (${budget} B)"
+            exit 1
+          fi
+
+      - name: Upload deployable wasm
+        uses: actions/upload-artifact@v4
+        with:
+          name: soroban-wasm
+          path: soroban/target/wasm32-unknown-unknown/release/soroban_program_escrow.wasm
+          if-no-files-found: error

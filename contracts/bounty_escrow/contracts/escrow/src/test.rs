@@ -794,7 +794,10 @@ fn test_claim_after_partial_release_never_exceeds_remaining_liability() {
     assert_eq!(escrow_after.status, EscrowStatus::Released);
     assert_eq!(escrow_after.remaining_amount, 0);
     // INV-2: sum of remaining (0) == contract balance (0).
-    assert_eq!(setup.token.balance(&setup.escrow.address), escrow_after.remaining_amount);
+    assert_eq!(
+        setup.token.balance(&setup.escrow.address),
+        escrow_after.remaining_amount
+    );
 }
 
 /// If the remaining liability is drawn down *below* the authorized claim amount
@@ -835,7 +838,10 @@ fn test_claim_rejects_overdraw_after_remaining_reduced_below_claim() {
     assert_eq!(escrow_after.remaining_amount, 0);
     assert_eq!(setup.token.balance(&setup.escrow.address), 0);
     // INV-2 preserved: contract balance (0) == sum of remaining (0).
-    assert_eq!(setup.token.balance(&setup.escrow.address), escrow_after.remaining_amount);
+    assert_eq!(
+        setup.token.balance(&setup.escrow.address),
+        escrow_after.remaining_amount
+    );
 }
 
 /// After a partial withdrawal, cancelling the (expired/unneeded) claim must be
@@ -885,14 +891,20 @@ fn test_idempotent_cancel_after_partial_withdrawal_then_refund_only_remaining() 
     let depositor_before = setup.token.balance(&setup.depositor);
     setup.escrow.refund(&bounty_id);
 
-    assert_eq!(setup.token.balance(&setup.depositor), depositor_before + 700);
+    assert_eq!(
+        setup.token.balance(&setup.depositor),
+        depositor_before + 700
+    );
     assert_eq!(setup.token.balance(&setup.escrow.address), 0);
 
     let escrow_refunded = setup.escrow.get_escrow_info(&bounty_id);
     assert_eq!(escrow_refunded.status, EscrowStatus::Refunded);
     assert_eq!(escrow_refunded.remaining_amount, 0);
     // INV-2 preserved: contract balance (0) == sum of remaining (0).
-    assert_eq!(setup.token.balance(&setup.escrow.address), escrow_refunded.remaining_amount);
+    assert_eq!(
+        setup.token.balance(&setup.escrow.address),
+        escrow_refunded.remaining_amount
+    );
 }
 
 /// Full multi-step flow: partial withdrawal → claim → partial release of the
@@ -931,7 +943,10 @@ fn test_partial_claims_preserve_liability_invariant_end_to_end() {
     assert_eq!(escrow_after.status, EscrowStatus::Released);
     assert_eq!(escrow_after.remaining_amount, 0);
     // INV-2: sum of remaining == contract balance.
-    assert_eq!(setup.token.balance(&setup.escrow.address), escrow_after.remaining_amount);
+    assert_eq!(
+        setup.token.balance(&setup.escrow.address),
+        escrow_after.remaining_amount
+    );
 }
 
 #[test]
@@ -2038,4 +2053,85 @@ fn test_lock_and_release_fixed_fee_collection() {
         escrow.amount - release_fee
     );
     assert_eq!(setup.token.balance(&fee_recipient), lock_fee + release_fee);
+}
+
+#[test]
+#[should_panic(expected = "Rate limit exceeded")]
+fn test_batch_lock_rejects_batch_over_rate_limit() {
+    let setup = TestSetup::new();
+    setup.env.as_contract(&setup.escrow.address, || {
+        crate::anti_abuse::set_config(
+            &setup.env,
+            crate::anti_abuse::AntiAbuseConfig {
+                window_size: 3600,
+                max_operations: 1,
+                cooldown_period: 0,
+            },
+        );
+    });
+
+    let deadline = setup.env.ledger().timestamp() + 1_000;
+
+    // Exhaust the depositor's 1-operation quota with a single lock_funds call.
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &100, &1_000, &deadline);
+
+    // The next operation (batch) from the same depositor should exceed
+    // max_operations=1 and panic with "Rate limit exceeded".
+    let mut items = Vec::new(&setup.env);
+    items.push_back(LockFundsItem {
+        bounty_id: 1,
+        depositor: setup.depositor.clone(),
+        amount: 1_000,
+        deadline,
+    });
+
+    setup.escrow.batch_lock_funds(&items);
+}
+
+#[test]
+#[should_panic(expected = "Rate limit exceeded")]
+fn test_batch_release_rejects_batch_over_rate_limit() {
+    let setup = TestSetup::new();
+    setup.escrow.set_whitelist_entry(&setup.depositor, &true);
+    let deadline = setup.env.ledger().timestamp() + 1_000;
+    for bounty_id in 1..=3 {
+        setup
+            .escrow
+            .lock_funds(&setup.depositor, &bounty_id, &1_000, &deadline);
+    }
+
+    setup.env.as_contract(&setup.escrow.address, || {
+        crate::anti_abuse::set_config(
+            &setup.env,
+            crate::anti_abuse::AntiAbuseConfig {
+                window_size: 3600,
+                max_operations: 1,
+                cooldown_period: 0,
+            },
+        );
+    });
+
+    // Exhaust the contributor's 1-operation quota with a single-item batch
+    // release (batch_release_funds is what rate-limits the contributor).
+    setup.escrow.batch_release_funds(&vec![
+        &setup.env,
+        ReleaseFundsItem {
+            bounty_id: 1,
+            contributor: setup.contributor.clone(),
+        },
+    ]);
+
+    // The next batch from the same contributor should exceed max_operations=1
+    // and panic with "Rate limit exceeded".
+    let mut items = Vec::new(&setup.env);
+    for bounty_id in 2..=3 {
+        items.push_back(ReleaseFundsItem {
+            bounty_id,
+            contributor: setup.contributor.clone(),
+        });
+    }
+
+    setup.escrow.batch_release_funds(&items);
 }

@@ -1,0 +1,31 @@
+name: No committed build output
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  no-target-build-output:
+    name: Forbid tracked target* build dirs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Fail if target* build output is tracked
+        run: |
+          set -euo pipefail
+          # Match Cargo/Soroban build dirs: target/, target-*/, target_*/
+          mapfile -t tracked < <(git ls-files | grep -E '(^|/)target(-[^/]*|_([^/]*))?/' || true)
+          if [ "${#tracked[@]}" -eq 0 ] || [ -z "${tracked[0]:-}" ]; then
+            echo "OK: no target* build output is tracked."
+            exit 0
+          fi
+          echo "Found ${#tracked[@]} tracked path(s) under target* build directories:" >&2
+          printf '%s\n' "${tracked[@]}" | head -n 50 >&2
+          if [ "${#tracked[@]}" -gt 50 ]; then
+            echo "... and $(( ${#tracked[@]} - 50 )) more" >&2
+          fi
+          echo "::error::Rust/Cargo build output must not be committed. Remove target* dirs and keep them gitignored."
+          exit 1

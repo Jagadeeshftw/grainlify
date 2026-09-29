@@ -14,6 +14,7 @@
 4. [Public Interface](#public-interface)
    - [`batch_lock_funds`](#batch_lock_funds)
    - [`batch_release_funds`](#batch_release_funds)
+   - [Structure-of-arrays variants (removed)](#structure-of-arrays-variants-removed)
 5. [Ordering Guarantee](#ordering-guarantee)
 6. [Fee Handling in Batch Operations](#fee-handling-in-batch-operations)
 7. [CEI Pattern (Checks–Effects–Interactions)](#cei-pattern-checkseffectsinteractions)
@@ -222,6 +223,42 @@ const items = [
 const releasedCount = await contract.batch_release_funds({ items });
 // releasedCount === 2
 ```
+
+---
+
+### Structure-of-arrays variants (removed)
+
+Historically the contract also exposed `batch_lock_funds_soa` and
+`batch_release_funds_soa`, which accepted parallel arrays (`bounty_ids`,
+`depositors`, `amounts`, `deadlines` / `contributors`) instead of a `Vec` of
+structs. Both wrappers validated that the arrays had equal length and then
+zipped them back into the `LockFundsItem` / `ReleaseFundsItem` shape before
+delegating to the array-of-structs entry points.
+
+Because nothing recorded why those variants existed or which callers should
+prefer them, both shapes were benchmarked on the same host across
+representative batch sizes (1, 5, 10, 15 and the `MAX_BATCH_SIZE = 20` cap),
+measuring `cpu_instruction_cost` and `memory_bytes_cost` per call:
+
+| Batch size | AoS CPU | SoA CPU | Δ CPU | AoS memory | SoA memory | Δ memory |
+|-----------:|--------:|--------:|------:|-----------:|-----------:|---------:|
+| 1 | 698,913 | 703,985 | +0.73% | 95,710 | 96,114 | +0.42% |
+| 5 | 2,553,953 | 2,573,109 | +0.75% | 337,674 | 339,214 | +0.46% |
+| 10 | 5,183,826 | 5,220,632 | +0.71% | 712,684 | 715,824 | +0.44% |
+| 15 | 8,129,423 | 8,183,929 | +0.67% | 1,169,244 | 1,174,184 | +0.42% |
+| 20 | 11,390,823 | 11,463,079 | +0.63% | 1,708,354 | 1,715,294 | +0.41% |
+
+The SoA shape is **slower and larger at every size** (worst case: +0.75% CPU).
+The wrappers rebuild an array-of-structs vector before delegating, so the
+intended host-to-guest deserialization saving never materializes — it is
+traded for an extra guest-side zip pass. Because the benefit is not
+measurable, both variants were removed (issue #1878) and the benchmark
+`benchmark_lock_soa_vs_aos` retired with them.
+
+**Integrator guidance:** use `batch_lock_funds` / `batch_release_funds` with
+`LockFundsItem` / `ReleaseFundsItem` vectors — the single supported batch
+shape. `Error::BatchSizeMismatch` (code 11) is retained for wire
+compatibility with older clients but is no longer emitted by the contract.
 
 ---
 
@@ -440,7 +477,9 @@ The participant filter is checked per-item during the validation pass. An attack
 
 ### 7. Rate Limiting
 
-Note: `batch_lock_funds` does **not** call `anti_abuse::check_rate_limit` per item (unlike single `lock_funds`). This is by design — rate limiting is applied at the single-item level. High-throughput batch users should be placed on the whitelist via `set_whitelist_entry` to bypass rate limiting.
+Rate limiting applies per element across every batch entry point. Both `batch_lock_funds` and `batch_release_funds` call `anti_abuse::check_rate_limit` for each item's designated address (depositor for lock, contributor for release). The check respects whitelist bypass — addresses on the whitelist skip the limit. A batch where any individual element would exceed the per-element rate limit is rejected by the existing `panic!("Rate limit exceeded")` from `check_rate_limit`.
+
+High-throughput batch users should be placed on the whitelist via `set_whitelist_entry` to bypass rate limiting.
 
 ### 8. MAX_BATCH_SIZE Constant
 

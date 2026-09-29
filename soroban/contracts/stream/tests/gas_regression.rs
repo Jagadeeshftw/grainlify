@@ -137,7 +137,11 @@ fn fixture_default_equals_new() {
     // Both environments are in identical initial states
     assert_eq!(
         fix_new.env.cost_estimate().budget().cpu_instruction_cost(),
-        fix_default.env.cost_estimate().budget().cpu_instruction_cost(),
+        fix_default
+            .env
+            .cost_estimate()
+            .budget()
+            .cpu_instruction_cost(),
         "CPU counters must match between new() and default()"
     );
     assert_eq!(
@@ -361,11 +365,11 @@ fn edge_case_budget_delta_extremes() {
     };
 
     // Boundary assertions
-    assert!(!zero.has_positive_cost(), "zero-cost delta must report false");
     assert!(
-        max.has_positive_cost(),
-        "max-cost delta must report true"
+        !zero.has_positive_cost(),
+        "zero-cost delta must report false"
     );
+    assert!(max.has_positive_cost(), "max-cost delta must report true");
     assert_eq!(zero, zero, "zero must equal itself");
     assert_eq!(max, max, "max must equal itself");
     assert_ne!(zero, max, "zero must not equal max");
@@ -460,7 +464,7 @@ fn fixture_mass_create_and_drop() {
             let _: u64 = i;
         });
         let _ = d; // use the measurement
-                    // fixture is dropped here
+                   // fixture is dropped here
     }
     // Reaching here without panic proves no resource leak
 }
@@ -810,10 +814,7 @@ fn regression_baseline_noop_measurement() {
     // Document the expected behavior:
     // - A minimal operation (single let binding) may consume zero or trivial CPU
     // - The memory delta must be zero (no allocations)
-    assert_eq!(
-        d.mem, 0,
-        "canonical no-op must not allocate memory"
-    );
+    assert_eq!(d.mem, 0, "canonical no-op must not allocate memory");
 
     // This assertion is intentionally permissive: CPU = 0 is acceptable for a
     // true no-op. If the SDK changes such that even trivial let bindings consume
@@ -969,7 +970,11 @@ fn edge_case_nested_operation_cost() {
 fn regression_baseline_reset_matches_fresh_fixture() {
     // Fresh fixture
     let fix_fresh = GasRegressionFixture::new();
-    let cpu_fresh = fix_fresh.env.cost_estimate().budget().cpu_instruction_cost();
+    let cpu_fresh = fix_fresh
+        .env
+        .cost_estimate()
+        .budget()
+        .cpu_instruction_cost();
     let mem_fresh = fix_fresh.env.cost_estimate().budget().memory_bytes_cost();
 
     // Used fixture, then reset
@@ -1027,6 +1032,8 @@ fn edge_case_under_specified_config_fallback_determinism() {
     let mem_initial = fix.env.cost_estimate().budget().memory_bytes_cost();
 
     assert_eq!(cpu_initial, 0, "default fixture must initialize CPU to 0");
-    assert_eq!(mem_initial, 0, "default fixture must initialize memory to 0");
+    assert_eq!(
+        mem_initial, 0,
+        "default fixture must initialize memory to 0"
+    );
 }
-

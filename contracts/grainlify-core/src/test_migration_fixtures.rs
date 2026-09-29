@@ -111,16 +111,25 @@ fn migration_legacy_v1_layout_to_v2_deterministic() {
 
     // Verify pre-migration state
     assert_eq!(client.get_version(), 1);
-    assert!(client.get_migration_state().is_none(), "no migration state before first migrate");
+    assert!(
+        client.get_migration_state().is_none(),
+        "no migration state before first migrate"
+    );
 
     // Run v1 → v2
     commit_and_migrate(&client, &env, 2, 0x12);
 
     // ── Version marker must be 2 ──
-    assert_eq!(client.get_version(), 2, "version must be 2 after v1→v2 migration");
+    assert_eq!(
+        client.get_version(),
+        2,
+        "version must be 2 after v1→v2 migration"
+    );
 
     // ── MigrationState must record correct from/to ──
-    let state = client.get_migration_state().expect("MigrationState must exist after migration");
+    let state = client
+        .get_migration_state()
+        .expect("MigrationState must exist after migration");
     assert_eq!(state.from_version, 1, "from_version must be 1");
     assert_eq!(state.to_version, 2, "to_version must be 2");
 
@@ -131,14 +140,20 @@ fn migration_legacy_v1_layout_to_v2_deterministic() {
             .instance()
             .get(&DataKey::Admin)
             .expect("Admin key must survive migration");
-        assert_eq!(stored_admin, admin, "Admin address must not change after migration");
+        assert_eq!(
+            stored_admin, admin,
+            "Admin address must not change after migration"
+        );
     });
 
     // ── ReadOnlyMode must still be set ──
     assert!(!client.is_read_only(), "ReadOnlyMode must remain false");
 
     // ── verify_storage_layout must pass ──
-    assert!(client.verify_storage_layout(), "storage layout must be valid post-migration");
+    assert!(
+        client.verify_storage_layout(),
+        "storage layout must be valid post-migration"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -158,11 +173,20 @@ fn migration_legacy_v1_layout_to_v3_chained_deterministic() {
     commit_and_migrate(&client, &env, 3, 0x13);
 
     // ── Version marker must be 3 ──
-    assert_eq!(client.get_version(), 3, "version must be 3 after chained v1→v3");
+    assert_eq!(
+        client.get_version(),
+        3,
+        "version must be 3 after chained v1→v3"
+    );
 
     // ── MigrationState ──
-    let state = client.get_migration_state().expect("MigrationState must exist");
-    assert_eq!(state.from_version, 1, "from_version must be 1 for chained path");
+    let state = client
+        .get_migration_state()
+        .expect("MigrationState must exist");
+    assert_eq!(
+        state.from_version, 1,
+        "from_version must be 1 for chained path"
+    );
     assert_eq!(state.to_version, 3, "to_version must be 3 for chained path");
 
     // ── Admin still intact ──
@@ -175,7 +199,10 @@ fn migration_legacy_v1_layout_to_v3_chained_deterministic() {
         assert_eq!(stored, admin);
     });
 
-    assert!(client.verify_storage_layout(), "storage layout must be valid post-chained-migration");
+    assert!(
+        client.verify_storage_layout(),
+        "storage layout must be valid post-chained-migration"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -246,7 +273,10 @@ fn migration_unknown_key_preserved_across_v2_to_v3() {
             .instance()
             .get(&future_key)
             .expect("unknown key must be preserved after v2→v3 migration");
-        assert_eq!(actual, future_value, "value must not change after migration");
+        assert_eq!(
+            actual, future_value,
+            "value must not change after migration"
+        );
     });
 }
 
@@ -363,8 +393,13 @@ fn migration_legacy_keys_survive_subsequent_v2_to_v3() {
     });
 
     // MigrationState must record the most recent migration
-    let state = client.get_migration_state().expect("MigrationState must be present");
-    assert_eq!(state.from_version, 2, "second migration from_version must be 2");
+    let state = client
+        .get_migration_state()
+        .expect("MigrationState must be present");
+    assert_eq!(
+        state.from_version, 2,
+        "second migration from_version must be 2"
+    );
     assert_eq!(state.to_version, 3, "second migration to_version must be 3");
 }
 
@@ -402,7 +437,11 @@ fn migration_version_marker_correct_after_each_path() {
         let client = GrainlifyContractClient::new(&env, &id);
         seed_v1_layout(&client, &env);
         commit_and_migrate(&client, &env, 3, 0x03);
-        assert_eq!(client.get_version(), 3, "path v1→v3 chained: version must be 3");
+        assert_eq!(
+            client.get_version(),
+            3,
+            "path v1→v3 chained: version must be 3"
+        );
     }
 }
 
@@ -425,7 +464,10 @@ fn migration_state_records_correct_from_and_to_for_each_path() {
         let s = client.get_migration_state().unwrap();
         assert_eq!(s.from_version, 1);
         assert_eq!(s.to_version, 2);
-        assert_eq!(s.migration_hash, h, "migration_hash must match committed hash");
+        assert_eq!(
+            s.migration_hash, h,
+            "migration_hash must match committed hash"
+        );
     }
 
     // v2 → v3
@@ -515,8 +557,14 @@ fn migration_no_unrelated_storage_deleted_v1_to_v2() {
 
     // Verify all expected v1 keys are set before migration
     env.as_contract(&client.address, || {
-        assert!(env.storage().instance().has(&DataKey::Admin), "Admin must be set");
-        assert!(env.storage().instance().has(&DataKey::Version), "Version must be set");
+        assert!(
+            env.storage().instance().has(&DataKey::Admin),
+            "Admin must be set"
+        );
+        assert!(
+            env.storage().instance().has(&DataKey::Version),
+            "Version must be set"
+        );
         assert!(
             env.storage().instance().has(&DataKey::ReadOnlyMode),
             "ReadOnlyMode must be set"
@@ -618,7 +666,9 @@ fn migration_state_records_ledger_timestamp() {
 
     commit_and_migrate(&client, &env, 3, 0x99);
 
-    let state = client.get_migration_state().expect("MigrationState must be present");
+    let state = client
+        .get_migration_state()
+        .expect("MigrationState must be present");
     assert_eq!(
         state.migrated_at, 5_000_000,
         "migrated_at must equal the ledger timestamp at time of migration"
@@ -641,11 +691,11 @@ fn migration_unknown_structured_value_preserved_end_to_end() {
 
     // We store as two separate sentinel keys to avoid needing a new contracttype
     let key_addr = Symbol::new(&env, "fut_addr_k");
-    let key_ts   = Symbol::new(&env, "fut_ts_k");
+    let key_ts = Symbol::new(&env, "fut_ts_k");
 
     env.as_contract(&client.address, || {
         env.storage().instance().set(&key_addr, &future_addr);
-        env.storage().instance().set(&key_ts,   &future_ts);
+        env.storage().instance().set(&key_ts, &future_ts);
     });
 
     // Run v2 → v3
@@ -663,7 +713,13 @@ fn migration_unknown_structured_value_preserved_end_to_end() {
             .instance()
             .get(&key_ts)
             .expect("future timestamp key must survive migration");
-        assert_eq!(actual_addr, future_addr, "Address value must not change after migration");
-        assert_eq!(actual_ts,   future_ts,   "timestamp value must not change after migration");
+        assert_eq!(
+            actual_addr, future_addr,
+            "Address value must not change after migration"
+        );
+        assert_eq!(
+            actual_ts, future_ts,
+            "timestamp value must not change after migration"
+        );
     });
 }

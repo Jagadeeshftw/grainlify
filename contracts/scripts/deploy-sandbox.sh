@@ -22,8 +22,11 @@
 #      stellar keys generate --global sandbox-deployer
 #      stellar keys fund sandbox-deployer --network testnet
 #
-#   2. Build contracts first:
-#      cd contracts && cargo build --release --target wasm32-unknown-unknown
+#   2. Build the authoritative escrow / program escrow first:
+#      cargo build --manifest-path contracts/bounty_escrow/Cargo.toml \
+#        --workspace --target wasm32-unknown-unknown --release
+#      cargo build --manifest-path contracts/program-escrow/Cargo.toml \
+#        --target wasm32-unknown-unknown --release
 #
 # OUTPUT:
 #   Prints environment variables to add to your .env:
@@ -51,8 +54,12 @@ PROGRAM_WASM=""
 DRY_RUN="false"
 VERBOSE="false"
 
-# Auto-detect WASM paths
-WASM_DIR="$PROJECT_ROOT/../soroban/target/wasm32-unknown-unknown/release"
+# Auto-detect WASM paths. The authoritative escrow lives in the
+# contracts/bounty_escrow workspace; the soroban/ escrow is superseded and is
+# never used for sandbox deployments. See
+# docs/contracts/escrow-implementation-authority.md.
+BOUNTY_ESCROW_WASM_DIR="$PROJECT_ROOT/bounty_escrow/target/wasm32-unknown-unknown/release"
+PROGRAM_ESCROW_WASM_DIR="$PROJECT_ROOT/program-escrow/target/wasm32-unknown-unknown/release"
 
 # ------------------------------------------------------------------------------
 # Usage
@@ -86,10 +93,10 @@ done
 
 # Auto-detect WASM files if not provided
 if [[ -z "$ESCROW_WASM" ]]; then
-    ESCROW_WASM="$WASM_DIR/escrow.wasm"
+    ESCROW_WASM="$BOUNTY_ESCROW_WASM_DIR/bounty_escrow.wasm"
 fi
 if [[ -z "$PROGRAM_WASM" ]]; then
-    PROGRAM_WASM="$WASM_DIR/program_escrow.wasm"
+    PROGRAM_WASM="$PROGRAM_ESCROW_WASM_DIR/program_escrow.wasm"
 fi
 
 # ------------------------------------------------------------------------------
@@ -102,7 +109,7 @@ log_info "Identity: $IDENTITY"
 
 if [[ ! -f "$ESCROW_WASM" ]]; then
     log_error "Escrow WASM not found: $ESCROW_WASM"
-    log_error "Build contracts first: cargo build --release --target wasm32-unknown-unknown"
+    log_error "Build the authoritative escrow first: cargo build --manifest-path contracts/bounty_escrow/Cargo.toml --workspace --target wasm32-unknown-unknown --release"
     exit 1
 fi
 

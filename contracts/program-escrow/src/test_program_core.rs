@@ -865,8 +865,3 @@ fn test_anti_abuse_whitelist_bypass() {
     assert_eq!(info.payout_history.len() as u32, max_ops + 5);
 }
 
-// =============================================================================
-// Admin rotation and config updates (Issue #465)
-// =============================================================================
-
-/// Admin can be set and rotated; new admin is persisted.

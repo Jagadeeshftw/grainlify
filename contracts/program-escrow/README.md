@@ -1,5 +1,13 @@
 # Program Escrow Contract
 
+## Crate, deployment, and relationships
+
+This is the authoritative, deployable SDK 21 program fund and payout contract. It locks program prize pools and executes single, batch, and scheduled payouts. Its [manifest](../program-escrow-manifest.json) records no deployed network address, so deployment is not verified in this repository.
+
+- Depends on: [grainlify-core](../grainlify-core/README.md) through Cargo, plus soroban-sdk 21.7.7 and ethnum; it calls a configured token contract at runtime.
+- Depended on by: [view-facade](../view-facade/README.md) and [escrow-view-facade](../escrow-view-facade/README.md) both declare Cargo path dependencies and query its ABI.
+- Same-name distinction: [soroban/contracts/program-escrow](../../soroban/contracts/program-escrow/README.md) is the separate SDK 23 program registry and search implementation. The two crates are not Cargo dependencies of each other.
+
 A Soroban smart contract for managing program-level escrow funds for hackathons and grant programs. This contract handles prize pools, tracks balances, and enables automated batch payouts to multiple contributors.
 
 ## Features
@@ -269,6 +277,22 @@ This design allows off-chain systems to:
 - **Token Math Safety**: All token arithmetic (addition, subtraction, multiplication) is centralized in `token_math.rs` and utilizes checked mathematical operations arrayed with explicit panic messages to securely prevent overflow and underflow vulnerabilities.
 - `token_address` must be a contract address (not an account address)
 - Shared asset id rules are documented in `contracts/ASSET_ID_STRATEGY.md`
+
+## Supported Token Policy
+
+| Token behaviour | Support | Rule |
+|---|---|---|
+| Standard SEP-41 / SAC (1:1 transfers) | Supported | Default. When the allowlist is empty, enforcement is off and any standard token is accepted; when non-empty, the token must be listed. |
+| Fee-on-transfer (deflationary) | Supported only via FoT router | Configure with `set_fot_router()` (clear with `clear_fot_router()`). Deposits credit only the amount actually received, and payouts/refunds gross up via `router.quote()` so the beneficiary nets the intended amount (`apply_fot_router`). Disable routing and FoT tokens are not safe to use. |
+| Rebasing, reflect, or other balance-mutating tokens; FoT without a router; fee >= 100% | Not supported | Must not be allowlisted. A fee >= 100% cannot be quoted and aborts with `ContractError::FotRoutingFailed`; an inflated quote aborts with `ContractError::FotRouterQuoteExceeded`. |
+
+Enforcement is at the boundary only: `init_program()` / `initialize_program()` (including batch init) reject unlisted tokens with the named error `ContractError::TokenNotAllowed` (1100) and emit `TokenRejectedEvent`. Programs initialized while listed keep working after a later de-listing (grandfathered); enforcement never strands locked funds.
+
+Covered by `src/test_token_allowlist.rs` (standard token accepted, unlisted token rejected with `TokenNotAllowed`) and `src/test_fot_routing.rs` (FoT accounting asserts the received amount, not the sent amount). Both run in CI on every pull request:
+
+```bash
+cargo test --manifest-path contracts/program-escrow/Cargo.toml -- test_token_allowlist test_fot_routing
+```
 
 ## Testing
 

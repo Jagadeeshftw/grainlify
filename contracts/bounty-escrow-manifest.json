@@ -744,6 +744,175 @@
         "authorization": "any",
         "pausable": false,
         "gas_estimate": "low"
+      },
+      {
+        "name": "get_escrow_count",
+        "description": "Return total number of escrows ever created (never decrements). O(1) read from EscrowIndex length.",
+        "parameters": [],
+        "returns": {
+          "type": "u32",
+          "description": "Total escrow count"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low",
+        "consumers": ["test_analytics_monitoring", "test_query_filters", "escrow-view-facade (off-chain dashboards)"]
+      },
+      {
+        "name": "get_aggregate_stats",
+        "description": "Return aggregate locked/released/refunded totals and counts across all escrows. O(n) scan over EscrowIndex.",
+        "parameters": [],
+        "returns": {
+          "type": "AggregateStats",
+          "description": "Aggregate stats struct with total_locked, total_released, total_refunded, count_locked, count_released, count_refunded"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "medium",
+        "consumers": ["test_analytics_monitoring", "escrow-view-facade"]
+      },
+      {
+        "name": "query_escrows_by_status",
+        "description": "Return paginated escrows filtered by status. Each element is an EscrowWithId. O(n) scan over EscrowIndex.",
+        "parameters": [
+          { "name": "status", "type": "EscrowStatus", "description": "Status to filter on" },
+          { "name": "offset", "type": "u32", "description": "Number of matching records to skip (pagination)" },
+          { "name": "limit", "type": "u32", "description": "Maximum records to return" }
+        ],
+        "returns": {
+          "type": "Vec<EscrowWithId>",
+          "description": "Paginated list of escrows matching the given status"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "medium",
+        "consumers": ["test_analytics_monitoring", "test_query_filters", "escrow-view-facade"]
+      },
+      {
+        "name": "query_escrows_by_depositor",
+        "description": "Return paginated escrows created by a specific depositor. Uses DepositorIndex (O(k)) with linear-scan fallback for pre-index deployments (O(n)).",
+        "parameters": [
+          { "name": "depositor", "type": "Address", "description": "Depositor address to filter on" },
+          { "name": "offset", "type": "u32", "description": "Pagination offset" },
+          { "name": "limit", "type": "u32", "description": "Maximum records to return" }
+        ],
+        "returns": {
+          "type": "Vec<EscrowWithId>",
+          "description": "Paginated list of escrows for the given depositor"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "medium",
+        "consumers": ["test_analytics_monitoring", "test_query_filters"]
+      },
+      {
+        "name": "get_escrow_ids_by_status",
+        "description": "Return paginated bounty IDs filtered by status (ID-only, lighter than query_escrows_by_status). O(n) scan over EscrowIndex.",
+        "parameters": [
+          { "name": "status", "type": "EscrowStatus", "description": "Status to filter on" },
+          { "name": "offset", "type": "u32", "description": "Pagination offset" },
+          { "name": "limit", "type": "u32", "description": "Maximum IDs to return" }
+        ],
+        "returns": {
+          "type": "Vec<u64>",
+          "description": "Paginated list of bounty IDs with the given status"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "medium",
+        "consumers": ["test_analytics_monitoring", "test_query_filters"]
+      },
+      {
+        "name": "query_escrows_by_amount",
+        "description": "Return paginated escrows whose locked amount falls in [min_amount, max_amount] (inclusive). O(n) scan over EscrowIndex. Returns Vec<EscrowWithId> since issue #1882.",
+        "parameters": [
+          { "name": "min_amount", "type": "i128", "description": "Inclusive lower bound on escrow amount" },
+          { "name": "max_amount", "type": "i128", "description": "Inclusive upper bound on escrow amount" },
+          { "name": "offset", "type": "u32", "description": "Pagination offset" },
+          { "name": "limit", "type": "u32", "description": "Maximum records to return" }
+        ],
+        "returns": {
+          "type": "Vec<EscrowWithId>",
+          "description": "Paginated list of escrows within the amount range"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "medium",
+        "consumers": ["test_analytics_monitoring", "test_query_filters"]
+      },
+      {
+        "name": "query_escrows_by_deadline",
+        "description": "Return paginated escrows whose deadline falls in [min_deadline, max_deadline] (inclusive). O(n) scan over EscrowIndex. Returns Vec<EscrowWithId> since issue #1882.",
+        "parameters": [
+          { "name": "min_deadline", "type": "u64", "description": "Inclusive lower bound on escrow deadline (unix timestamp)" },
+          { "name": "max_deadline", "type": "u64", "description": "Inclusive upper bound on escrow deadline (unix timestamp)" },
+          { "name": "offset", "type": "u32", "description": "Pagination offset" },
+          { "name": "limit", "type": "u32", "description": "Maximum records to return" }
+        ],
+        "returns": {
+          "type": "Vec<EscrowWithId>",
+          "description": "Paginated list of escrows within the deadline range"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "medium",
+        "consumers": ["test_analytics_monitoring", "test_query_filters"]
+      },
+      {
+        "name": "get_refund_eligibility",
+        "description": "Return refund eligibility state for a bounty: can_refund flag, deadline_passed flag, remaining amount, and any pending RefundApproval. O(1) escrow lookup.",
+        "parameters": [
+          { "name": "bounty_id", "type": "u64", "description": "Bounty identifier" }
+        ],
+        "returns": {
+          "type": "(bool, bool, i128, Option<RefundApproval>)",
+          "description": "Tuple: (can_refund, deadline_passed, remaining_amount, approval)"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low",
+        "consumers": ["test_analytics_monitoring", "off-chain indexers"]
+      },
+      {
+        "name": "get_refund_history",
+        "description": "Return all refund records for a bounty in chronological order. O(k) where k is the number of refund entries.",
+        "parameters": [
+          { "name": "bounty_id", "type": "u64", "description": "Bounty identifier" }
+        ],
+        "returns": {
+          "type": "Vec<RefundRecord>",
+          "description": "List of refund records for the bounty"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low",
+        "consumers": ["test_analytics_monitoring", "off-chain indexers"]
+      },
+      {
+        "name": "get_balance",
+        "description": "Return current token balance held by the escrow contract. O(1) token balance query.",
+        "parameters": [],
+        "returns": {
+          "type": "i128",
+          "description": "Current token balance of the contract"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low",
+        "consumers": ["test_analytics_monitoring", "escrow-view-facade"]
+      },
+      {
+        "name": "get_state_snapshot",
+        "description": "Return a point-in-time metrics snapshot (total_operations, timestamp). O(1) storage read.",
+        "parameters": [],
+        "returns": {
+          "type": "StateSnapshot",
+          "description": "Current state snapshot with operation count and timestamp"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low",
+        "consumers": ["test_analytics_monitoring", "ops dashboards"]
       }
     ],
     "admin": [

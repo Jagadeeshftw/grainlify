@@ -5,6 +5,8 @@ on:
     branches: [master, main]
   pull_request:
     branches: [master, main]
+  schedule:
+    - cron: '0 4 * * *' # Nightly scheduled run defaults to strict
   workflow_dispatch:
     inputs:
       gas_mode:
@@ -42,13 +44,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-bounty-escrow-gate-
 
-      - name: Set GAS_MODE env var
+      - name: Set GAS_MODE env var (defaults to strict on PRs, pushes, and schedules)
         run: |
           MODE="${{ github.event.inputs.gas_mode || 'strict' }}"
           echo "ESCROW_GAS_MODE=$MODE" >> $GITHUB_ENV
           echo "Using ESCROW_GAS_MODE=$MODE"
 
-      - name: cargo test gas_ci (strict gate on PR/push)
+      - name: cargo test gas_ci (strict gate against recorded baseline)
         working-directory: contracts/bounty_escrow/contracts/escrow
         run: >
           cargo test
@@ -57,3 +59,19 @@ jobs:
           --
           --nocapture
           --test-threads=1
+
+      - name: Upload gas benchmark report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gas-benchmark-report
+          path: |
+            contracts/bounty_escrow/contracts/escrow/gas_benchmark_report.md
+            contracts/bounty_escrow/contracts/escrow/gas_baseline.json
+
+      - name: Publish gas report to Step Summary
+        if: always()
+        run: |
+          if [ -f contracts/bounty_escrow/contracts/escrow/gas_benchmark_report.md ]; then
+            cat contracts/bounty_escrow/contracts/escrow/gas_benchmark_report.md >> $GITHUB_STEP_SUMMARY
+          fi

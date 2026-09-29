@@ -39,6 +39,10 @@ mod validation;
 // #[cfg(test)] mod test_deterministic_randomness;
 // #[cfg(test)] mod test_multi_region_treasury;
 // #[cfg(test)] mod test_rbac;
+// Analytics & monitoring suite – enabled by issue #1882 (all referenced
+// functions are now implemented).
+#[cfg(test)]
+mod test_analytics_monitoring;
 // #[cfg(test)] mod test_renew_rollover;
 // #[cfg(test)] mod test_risk_flags;
 mod traits;
@@ -73,11 +77,15 @@ mod test_reentrancy_malicious_token;
 #[cfg(test)]
 mod test_archival_ttl;
 #[cfg(test)]
-mod test_batch_soa_benchmark;
-#[cfg(test)]
 mod test_bounded_pagination;
 #[cfg(test)]
 mod test_deterministic_event_ordering;
+#[cfg(test)]
+mod event_payload_fixtures;
+#[cfg(test)]
+mod test_event_payload_fixtures;
+#[cfg(test)]
+mod test_event_schema;
 
 // Dispatcher only needs the contract macros and basic SDK types;
 // all event/type imports are in the individual feature modules.
@@ -85,13 +93,11 @@ mod test_deterministic_event_ordering;
 use crate::events::{
     emit_admin_rotation_accepted, emit_admin_rotation_cancelled, emit_admin_rotation_proposed,
     emit_admin_rotation_timelock_updated, emit_batch_funds_locked, emit_batch_funds_released,
-    emit_deprecation_state_changed,
-    emit_funds_locked, emit_funds_locked_anon, emit_funds_refunded, emit_funds_released,
-    emit_participant_filter_mode_changed, emit_participant_filter_queried,
+    emit_deprecation_state_changed, emit_funds_locked, emit_funds_locked_anon, emit_funds_refunded,
+    emit_funds_released, emit_participant_filter_mode_changed, emit_participant_filter_queried,
     emit_refund_approval_consumed, emit_refund_approval_set, emit_risk_flags_updated,
-    BatchFundsLocked, BatchFundsReleased,
-    ClaimCancelled, ClaimCreated, ClaimExecuted, CriticalOperationOutcome,
-    DeprecationStateChanged, EscrowPublished, FundsLocked,
+    BatchFundsLocked, BatchFundsReleased, ClaimCancelled, ClaimCreated, ClaimExecuted,
+    CriticalOperationOutcome, DeprecationStateChanged, EscrowPublished, FundsLocked,
     FundsLockedAnon, FundsRefunded, FundsReleased, ParticipantFilterModeChanged,
     ParticipantFilterQueried, RefundApprovalConsumed, RefundApprovalSet, RefundTriggerType,
     RiskFlagsUpdated, EVENT_VERSION_V2,
@@ -260,6 +266,8 @@ pub enum Error {
     /// Per-bounty fee routing is immutable once the bounty is Locked (or any
     /// later status); use `set_fee_routing_with_reason` for audited overrides.
     FeeRoutingLocked = 60,
+    /// Returned when attempting to mutate an archived escrow
+    EscrowArchived = 61,
 }
 
 /// Minimum persistent-storage TTLs, measured in ledgers.
@@ -333,6 +341,28 @@ pub struct EscrowMetadata {
     pub risk_flags: u32,
     pub notification_prefs: u32,
     pub reference_hash: Option<soroban_sdk::Bytes>,
+}
+
+/// Discovery metadata attached to a bounty escrow so off-chain indexers can
+/// group and filter escrows by their originating repository, issue, type and
+/// free-form tags.
+///
+/// This is intentionally distinct from [`EscrowMetadata`], which carries
+/// on-chain risk flags and notification preferences.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BountyTaggingMetadata {
+    /// Slug of the repository the bounty belongs to, e.g. `stellar/rs-soroban-sdk`.
+    pub repo_id: Option<String>,
+    /// Identifier of the originating issue or ticket.
+    pub issue_id: Option<String>,
+    /// Bounty classification, e.g. `bug_fix`, `feature`, `documentation`.
+    pub bounty_type: Option<String>,
+    /// Free-form tags used for faceted filtering.
+    pub tags: Vec<String>,
+    /// Extensible key/value pairs for consumers that need fields beyond the
+    /// first-class ones above.
+    pub custom_fields: Vec<(String, String)>,
 }
 
 #[contracttype]
@@ -598,6 +628,18 @@ pub enum DataKey {
     EscrowIndexTtl,
     /// Last guaranteed live-until ledger for a depositor index.
     DepositorIndexTtl(Address),
+    /// Discovery metadata for a bounty, stored separately from the risk-flag
+    /// [`EscrowMetadata`]. See [`BountyTaggingMetadata`].
+    ///
+    /// Tagging keys are appended so existing DataKey discriminants remain
+    /// stable for deployed contracts.
+    TaggingMetadata(u64),
+    /// Ordered index of bounty_ids that carry a given `repo_id`.
+    TaggingRepoIndex(String),
+    /// Ordered index of bounty_ids that carry a given `bounty_type`.
+    TaggingTypeIndex(String),
+    /// Ordered index of bounty_ids that carry a given tag.
+    TaggingTagIndex(String),
 }
 
 #[contracttype]
@@ -1785,7 +1827,7 @@ include!("traits_impl.rs");
 #[cfg(test)]
 mod test;
 // Pre-existing broken test modules — excluded until their referenced types/methods are implemented:
-// #[cfg(test)] mod test_analytics_monitoring;
+// (test_analytics_monitoring and test_query_filters enabled by issue #1882 — see top of file)
 // #[cfg(test)] mod test_auto_refund_permissions;
 // #[cfg(test)] mod test_blacklist_and_whitelist;
 // #[cfg(test)] mod test_bounty_escrow;
@@ -1798,7 +1840,8 @@ mod test;
 // #[cfg(test)] mod test_invariants;
 #[cfg(test)]
 mod test_lifecycle;
-// #[cfg(test)] mod test_metadata_tagging;
+#[cfg(test)]
+mod test_metadata_tagging;
 // #[cfg(test)] mod test_partial_payout_rounding;
 // #[cfg(test)] mod test_participant_filter_mode;
 // #[cfg(test)] mod test_pause;
@@ -1816,7 +1859,11 @@ mod test_deadline_variants;
 mod test_e2e_upgrade_with_pause;
 // #[cfg(test)] mod test_escrow_expiry;
 // #[cfg(test)] mod test_max_counts;
-// #[cfg(test)] mod test_query_filters;
+// Query-filter suite – enabled by issue #1882 (all referenced functions now
+// implemented: query_escrows_by_status, query_escrows_by_depositor,
+// get_escrow_ids_by_status, query_escrows_by_amount, query_escrows_by_deadline).
+#[cfg(test)]
+mod test_query_filters;
 // #[cfg(test)] mod test_receipts;
 // test_recurring_locks references unimplemented RecurringLock feature types
 // #[cfg(test)] mod test_recurring_locks;

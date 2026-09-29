@@ -1,14 +1,15 @@
 // Tests for metadata tagging functionality.
 //
-// Most tests in this module are gated behind `cfg(feature = "metadata_tagging")`
-// because the contract does not yet expose the relevant types (`EscrowMetadata`,
-// `SdkVec`, `lock_funds_with_metadata`, etc.).  The feature gate compiles them
-// out until the feature is implemented (tracked in Issue #63).
+// The tagging API (`BountyTaggingMetadata`, `lock_funds_with_metadata`, the
+// `query_escrows_by_*` filters) is implemented on `BountyEscrowContract`, so
+// these tests compile and run as part of the normal unit-test target.
 
 #[cfg(test)]
-#[cfg(feature = "metadata_tagging")]
 mod metadata_tagging_tests {
-    use super::super::*;
+    extern crate alloc;
+
+    use crate::*;
+    use alloc::format;
     use soroban_sdk::{testutils::Address as _, token, Address, Env, String, Vec as SdkVec};
 
     fn create_token(
@@ -62,7 +63,6 @@ mod metadata_tagging_tests {
     // ============================================================================
 
     #[test]
-    #[ignore = "Metadata functionality to be implemented - Issue #63"]
     fn test_metadata_set_on_creation() {
         let s = Setup::new();
         let bounty_id = 100u64;
@@ -76,7 +76,7 @@ mod metadata_tagging_tests {
         tags.push_back(String::from_str(&s.env, "rust"));
         tags.push_back(String::from_str(&s.env, "smart-contract"));
 
-        let metadata = EscrowMetadata {
+        let metadata = BountyTaggingMetadata {
             repo_id: Some(repo_id.clone()),
             issue_id: Some(issue_id.clone()),
             bounty_type: Some(bounty_type.clone()),
@@ -95,14 +95,13 @@ mod metadata_tagging_tests {
     }
 
     #[test]
-    #[ignore = "Metadata functionality to be implemented - Issue #63"]
     fn test_metadata_update() {
         let s = Setup::new();
         let bounty_id = 101u64;
         let amount = 3000i128;
         let deadline = s.env.ledger().timestamp() + 7200;
 
-        let initial_metadata = EscrowMetadata {
+        let initial_metadata = BountyTaggingMetadata {
             repo_id: Some(String::from_str(&s.env, "stellar/rs-soroban-sdk")),
             issue_id: Some(String::from_str(&s.env, "456")),
             bounty_type: Some(String::from_str(&s.env, "feature")),
@@ -121,7 +120,7 @@ mod metadata_tagging_tests {
         let mut updated_tags = SdkVec::new(&s.env);
         updated_tags.push_back(String::from_str(&s.env, "documentation"));
 
-        let updated_metadata = EscrowMetadata {
+        let updated_metadata = BountyTaggingMetadata {
             repo_id: Some(String::from_str(&s.env, "stellar/rs-soroban-sdk")),
             issue_id: Some(String::from_str(&s.env, "456")),
             bounty_type: Some(String::from_str(&s.env, "documentation")),
@@ -162,7 +161,6 @@ mod metadata_tagging_tests {
     // ============================================================================
 
     #[test]
-    #[ignore = "Metadata query functionality to be implemented - Issue #63"]
     fn test_query_by_repo_id() {
         let s = Setup::new();
         let deadline = s.env.ledger().timestamp() + 3600;
@@ -174,9 +172,9 @@ mod metadata_tagging_tests {
                 String::from_str(&s.env, "stellar/rs-soroban-sdk")
             };
 
-            let metadata = EscrowMetadata {
+            let metadata = BountyTaggingMetadata {
                 repo_id: Some(repo_id),
-                issue_id: Some(String::from_str(&s.env, &i.to_string())),
+                issue_id: Some(String::from_str(&s.env, &format!("{}", i))),
                 bounty_type: Some(String::from_str(&s.env, "feature")),
                 tags: SdkVec::new(&s.env),
                 custom_fields: SdkVec::new(&s.env),
@@ -201,12 +199,11 @@ mod metadata_tagging_tests {
     }
 
     #[test]
-    #[ignore = "Metadata query functionality to be implemented - Issue #63"]
     fn test_query_by_bounty_type() {
         let s = Setup::new();
         let deadline = s.env.ledger().timestamp() + 3600;
 
-        let types = vec![
+        let types: [&str; 6] = [
             "bug_fix",
             "feature",
             "bug_fix",
@@ -216,9 +213,9 @@ mod metadata_tagging_tests {
         ];
 
         for (i, bounty_type) in types.iter().enumerate() {
-            let metadata = EscrowMetadata {
+            let metadata = BountyTaggingMetadata {
                 repo_id: Some(String::from_str(&s.env, "stellar/test")),
-                issue_id: Some(String::from_str(&s.env, &(i + 1).to_string())),
+                issue_id: Some(String::from_str(&s.env, &format!("{}", i + 1))),
                 bounty_type: Some(String::from_str(&s.env, bounty_type)),
                 tags: SdkVec::new(&s.env),
                 custom_fields: SdkVec::new(&s.env),
@@ -240,7 +237,6 @@ mod metadata_tagging_tests {
     }
 
     #[test]
-    #[ignore = "Metadata query functionality to be implemented - Issue #63"]
     fn test_query_by_tags() {
         let s = Setup::new();
         let deadline = s.env.ledger().timestamp() + 3600;
@@ -255,9 +251,9 @@ mod metadata_tagging_tests {
                 tags.push_back(String::from_str(&s.env, "beginner-friendly"));
             }
 
-            let metadata = EscrowMetadata {
+            let metadata = BountyTaggingMetadata {
                 repo_id: Some(String::from_str(&s.env, "stellar/test")),
-                issue_id: Some(String::from_str(&s.env, &i.to_string())),
+                issue_id: Some(String::from_str(&s.env, &format!("{}", i))),
                 bounty_type: Some(String::from_str(&s.env, "feature")),
                 tags,
                 custom_fields: SdkVec::new(&s.env),
@@ -302,7 +298,6 @@ mod metadata_tagging_tests {
     // ============================================================================
 
     #[test]
-    #[ignore = "Metadata functionality to be implemented - Issue #63"]
     fn test_metadata_serialization_format() {
         let s = Setup::new();
         let bounty_id = 300u64;
@@ -319,7 +314,7 @@ mod metadata_tagging_tests {
             String::from_str(&s.env, "high"),
         ));
 
-        let metadata = EscrowMetadata {
+        let metadata = BountyTaggingMetadata {
             repo_id: Some(String::from_str(&s.env, "stellar/soroban-examples")),
             issue_id: Some(String::from_str(&s.env, "42")),
             bounty_type: Some(String::from_str(&s.env, "bug_fix")),
@@ -344,14 +339,13 @@ mod metadata_tagging_tests {
     // ============================================================================
 
     #[test]
-    #[ignore = "Metadata functionality to be implemented - Issue #63"]
     fn test_empty_metadata() {
         let s = Setup::new();
         let bounty_id = 400u64;
         let amount = 1000i128;
         let deadline = s.env.ledger().timestamp() + 3600;
 
-        let metadata = EscrowMetadata {
+        let metadata = BountyTaggingMetadata {
             repo_id: None,
             issue_id: None,
             bounty_type: None,
@@ -370,9 +364,95 @@ mod metadata_tagging_tests {
     }
 
     #[test]
-    #[ignore = "Tagging functionality not yet implemented in contract"]
     fn test_tagging_logic_verification() {
-        // This test is for future metadata tagging functionality
-        // Currently the contract doesn't support metadata/tagging
+        // Updating metadata must move the escrow between facets: the old
+        // `repo_id`, `bounty_type` and tag must stop matching, and the new
+        // ones must match exactly once.
+        let s = Setup::new();
+        let bounty_id = 500u64;
+        let amount = 2500i128;
+        let deadline = s.env.ledger().timestamp() + 3600;
+
+        let mut initial_tags = SdkVec::new(&s.env);
+        initial_tags.push_back(String::from_str(&s.env, "rust"));
+
+        let initial = BountyTaggingMetadata {
+            repo_id: Some(String::from_str(&s.env, "stellar/old-repo")),
+            issue_id: Some(String::from_str(&s.env, "7")),
+            bounty_type: Some(String::from_str(&s.env, "bug_fix")),
+            tags: initial_tags,
+            custom_fields: SdkVec::new(&s.env),
+        };
+
+        s.escrow
+            .lock_funds_with_metadata(&s.depositor, &bounty_id, &amount, &deadline, &initial);
+
+        let mut updated_tags = SdkVec::new(&s.env);
+        updated_tags.push_back(String::from_str(&s.env, "documentation"));
+
+        let updated = BountyTaggingMetadata {
+            repo_id: Some(String::from_str(&s.env, "stellar/new-repo")),
+            issue_id: Some(String::from_str(&s.env, "7")),
+            bounty_type: Some(String::from_str(&s.env, "feature")),
+            tags: updated_tags,
+            custom_fields: SdkVec::new(&s.env),
+        };
+
+        s.escrow.update_escrow_metadata(&bounty_id, &updated);
+
+        // New facets resolve to the bounty.
+        assert_eq!(
+            s.escrow
+                .query_escrows_by_repo_id(&String::from_str(&s.env, "stellar/new-repo"), &0, &20)
+                .len(),
+            1
+        );
+        assert_eq!(
+            s.escrow
+                .query_escrows_by_bounty_type(&String::from_str(&s.env, "feature"), &0, &20)
+                .len(),
+            1
+        );
+        assert_eq!(
+            s.escrow
+                .query_escrows_by_tag(&String::from_str(&s.env, "documentation"), &0, &20)
+                .len(),
+            1
+        );
+
+        // Stale facets no longer match.
+        assert_eq!(
+            s.escrow
+                .query_escrows_by_repo_id(&String::from_str(&s.env, "stellar/old-repo"), &0, &20)
+                .len(),
+            0
+        );
+        assert_eq!(
+            s.escrow
+                .query_escrows_by_bounty_type(&String::from_str(&s.env, "bug_fix"), &0, &20)
+                .len(),
+            0
+        );
+        assert_eq!(
+            s.escrow
+                .query_escrows_by_tag(&String::from_str(&s.env, "rust"), &0, &20)
+                .len(),
+            0
+        );
+
+        // Re-applying the same metadata must not duplicate the index entries.
+        s.escrow.update_escrow_metadata(&bounty_id, &updated);
+        assert_eq!(
+            s.escrow
+                .query_escrows_by_tag(&String::from_str(&s.env, "documentation"), &0, &20)
+                .len(),
+            1
+        );
+
+        // `issue_id` is descriptive only: it is stored but is not an index facet.
+        assert_eq!(
+            s.escrow.get_escrow_metadata(&bounty_id).issue_id,
+            Some(String::from_str(&s.env, "7"))
+        );
     }
 } // end of metadata_tagging_tests module

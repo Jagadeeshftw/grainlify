@@ -5042,7 +5042,12 @@
                       "symbol": "EscrowTtl"
                     },
                     {
-                      "u64": 20
+                      "key": {
+                        "symbol": "window_start_timestamp"
+                      },
+                      "val": {
+                        "u64": 0
+                      }
                     }
                   ]
                 },

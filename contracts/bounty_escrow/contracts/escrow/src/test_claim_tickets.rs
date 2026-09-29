@@ -110,9 +110,7 @@ mod test_claim_tickets {
         {
             escrow.remaining_amount = 0;
             escrow.status = EscrowStatus::Released;
-            env.storage()
-                .persistent()
-                .set(&DataKey::Escrow(ticket.bounty_id), &escrow);
+            crate::BountyEscrowContract::write_escrow(&env, ticket.bounty_id, &escrow).unwrap();
         }
 
         Ok(())

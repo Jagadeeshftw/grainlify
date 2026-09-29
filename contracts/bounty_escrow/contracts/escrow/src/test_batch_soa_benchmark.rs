@@ -2,10 +2,7 @@
 
 extern crate std;
 
-use soroban_sdk::{
-    testutils::Address as _,
-    token, Address, Env, Vec,
-};
+use soroban_sdk::{testutils::Address as _, token, Address, Env, Vec};
 
 use crate::{BountyEscrowContract, BountyEscrowContractClient, LockFundsItem};
 
@@ -73,7 +70,8 @@ fn run_benchmark_lock(ctx: &Ctx, use_soa: bool, batch_size: u32) -> (u64, u64) {
         }
 
         ctx.env.budget().reset_default();
-        ctx.client.batch_lock_funds_soa(&bounty_ids, &depositors, &amounts, &deadlines);
+        ctx.client
+            .batch_lock_funds_soa(&bounty_ids, &depositors, &amounts, &deadlines);
     } else {
         let mut items = Vec::new(&ctx.env);
         for i in 1..=batch_size as u64 {
@@ -89,7 +87,10 @@ fn run_benchmark_lock(ctx: &Ctx, use_soa: bool, batch_size: u32) -> (u64, u64) {
         ctx.client.batch_lock_funds(&items);
     }
 
-    (ctx.env.budget().cpu_instruction_cost(), ctx.env.budget().memory_bytes_cost())
+    (
+        ctx.env.budget().cpu_instruction_cost(),
+        ctx.env.budget().memory_bytes_cost(),
+    )
 }
 
 #[test]

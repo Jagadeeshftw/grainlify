@@ -84,7 +84,16 @@ fn last_filter_mode_event(env: &Env) -> ParticipantFilterModeChanged {
 fn test_non_whitelisted_address_is_rate_limited_by_cooldown() {
     let setup = Setup::new();
 
-    setup.client.update_anti_abuse_config(&3600, &100, &100);
+    setup.env.as_contract(&setup.client.address, || {
+        crate::anti_abuse::set_config(
+            &setup.env,
+            crate::anti_abuse::AntiAbuseConfig {
+                window_size: 3600,
+                max_operations: 100,
+                cooldown_period: 100,
+            },
+        );
+    });
 
     let deadline = setup.deadline();
     setup
@@ -101,7 +110,16 @@ fn test_non_whitelisted_address_is_rate_limited_by_cooldown() {
 fn test_whitelisted_address_bypasses_cooldown_check() {
     let setup = Setup::new();
 
-    setup.client.update_anti_abuse_config(&3600, &100, &100);
+    setup.env.as_contract(&setup.client.address, || {
+        crate::anti_abuse::set_config(
+            &setup.env,
+            crate::anti_abuse::AntiAbuseConfig {
+                window_size: 3600,
+                max_operations: 100,
+                cooldown_period: 100,
+            },
+        );
+    });
     setup.client.set_whitelist_entry(&setup.depositor, &true);
 
     let deadline = setup.deadline();
@@ -119,7 +137,16 @@ fn test_whitelisted_address_bypasses_cooldown_check() {
 fn test_removed_from_whitelist_reenables_rate_limit_checks() {
     let setup = Setup::new();
 
-    setup.client.update_anti_abuse_config(&3600, &100, &100);
+    setup.env.as_contract(&setup.client.address, || {
+        crate::anti_abuse::set_config(
+            &setup.env,
+            crate::anti_abuse::AntiAbuseConfig {
+                window_size: 3600,
+                max_operations: 100,
+                cooldown_period: 100,
+            },
+        );
+    });
     setup.client.set_whitelist_entry(&setup.depositor, &true);
     setup.client.set_whitelist_entry(&setup.depositor, &false);
 

@@ -29,39 +29,54 @@
 //! ```
 
 use crate::{
-    compute_fee, resolve_fee_rate, FeeConfig, FeeBracket, ProgramData,
-    Recipient, Storage, ViewFacade, Warning, MAX_FEE_RATE_BP,
+    compute_fee, resolve_fee_rate, FeeBracket, FeeConfig, ProgramData, Recipient, Storage,
+    ViewFacade, Warning, MAX_FEE_RATE_BP,
 };
 
 // ─── Test fixtures ────────────────────────────────────────────────────────────
 
 fn default_program() -> ProgramData {
     ProgramData {
-        program_id:        "prog-1".into(),
-        total_locked:      100_000,
+        program_id: "prog-1".into(),
+        total_locked: 100_000,
         remaining_balance: 100_000,
-        is_active:         true,
-        metadata:          "Stellar Q1 OSS Program".into(),
+        is_active: true,
+        metadata: "Stellar Q1 OSS Program".into(),
     }
 }
 
 fn flat_fee_config(rate_bp: u32) -> FeeConfig {
-    FeeConfig { default_rate_bp: rate_bp, brackets: vec![] }
+    FeeConfig {
+        default_rate_bp: rate_bp,
+        brackets: vec![],
+    }
 }
 
 fn bracketed_fee_config() -> FeeConfig {
     FeeConfig {
         default_rate_bp: 300,
         brackets: vec![
-            FeeBracket { ceiling: Some(10_000),  rate_bp: 100 }, // ≤ 10k → 1 %
-            FeeBracket { ceiling: Some(50_000),  rate_bp: 200 }, // ≤ 50k → 2 %
-            FeeBracket { ceiling: None,           rate_bp: 300 }, // > 50k → 3 %
+            FeeBracket {
+                ceiling: Some(10_000),
+                rate_bp: 100,
+            }, // ≤ 10k → 1 %
+            FeeBracket {
+                ceiling: Some(50_000),
+                rate_bp: 200,
+            }, // ≤ 50k → 2 %
+            FeeBracket {
+                ceiling: None,
+                rate_bp: 300,
+            }, // > 50k → 3 %
         ],
     }
 }
 
 fn recipient(addr: &str, amount: u128) -> Recipient {
-    Recipient { address: addr.into(), gross_amount: amount }
+    Recipient {
+        address: addr.into(),
+        gross_amount: amount,
+    }
 }
 
 fn setup_storage(fee_rate_bp: u32) -> Storage {
@@ -78,21 +93,21 @@ fn setup_storage(fee_rate_bp: u32) -> Storage {
 #[test]
 fn test_single_recipient_correct_net() {
     let storage = setup_storage(500); // 5 %
-    let facade  = ViewFacade::new(&storage);
-    let result  = facade.simulate_payout("prog-1", vec![recipient("GABC", 10_000)]);
+    let facade = ViewFacade::new(&storage);
+    let result = facade.simulate_payout("prog-1", vec![recipient("GABC", 10_000)]);
 
     assert_eq!(result.net_amounts.len(), 1);
     assert_eq!(result.net_amounts[0].net_amount, 9_500);
-    assert_eq!(result.net_amounts[0].fee,        500);
-    assert_eq!(result.total_fees,                500);
-    assert_eq!(result.total_net,                 9_500);
+    assert_eq!(result.net_amounts[0].fee, 500);
+    assert_eq!(result.total_fees, 500);
+    assert_eq!(result.total_net, 9_500);
 }
 
 #[test]
 fn test_single_recipient_zero_fee_config() {
     let storage = setup_storage(0);
-    let facade  = ViewFacade::new(&storage);
-    let result  = facade.simulate_payout("prog-1", vec![recipient("GABC", 10_000)]);
+    let facade = ViewFacade::new(&storage);
+    let result = facade.simulate_payout("prog-1", vec![recipient("GABC", 10_000)]);
 
     assert_eq!(result.net_amounts[0].net_amount, 10_000);
     assert_eq!(result.total_fees, 0);
@@ -102,8 +117,8 @@ fn test_single_recipient_zero_fee_config() {
 #[test]
 fn test_single_recipient_no_warnings_for_healthy_state() {
     let storage = setup_storage(250);
-    let facade  = ViewFacade::new(&storage);
-    let result  = facade.simulate_payout("prog-1", vec![recipient("GABC", 20_000)]);
+    let facade = ViewFacade::new(&storage);
+    let result = facade.simulate_payout("prog-1", vec![recipient("GABC", 20_000)]);
     assert!(result.warnings.is_empty());
 }
 
@@ -114,12 +129,15 @@ fn test_single_recipient_no_warnings_for_healthy_state() {
 #[test]
 fn test_multiple_recipients_totals() {
     let storage = setup_storage(500); // 5 %
-    let facade  = ViewFacade::new(&storage);
-    let result  = facade.simulate_payout("prog-1", vec![
-        recipient("A", 10_000),
-        recipient("B", 20_000),
-        recipient("C", 30_000),
-    ]);
+    let facade = ViewFacade::new(&storage);
+    let result = facade.simulate_payout(
+        "prog-1",
+        vec![
+            recipient("A", 10_000),
+            recipient("B", 20_000),
+            recipient("C", 30_000),
+        ],
+    );
 
     // Fees: 500 + 1000 + 1500 = 3000
     assert_eq!(result.total_fees, 3_000);
@@ -131,11 +149,11 @@ fn test_multiple_recipients_totals() {
 #[test]
 fn test_multiple_recipients_individual_entries() {
     let storage = setup_storage(500);
-    let facade  = ViewFacade::new(&storage);
-    let result  = facade.simulate_payout("prog-1", vec![
-        recipient("A", 10_000),
-        recipient("B", 20_000),
-    ]);
+    let facade = ViewFacade::new(&storage);
+    let result = facade.simulate_payout(
+        "prog-1",
+        vec![recipient("A", 10_000), recipient("B", 20_000)],
+    );
 
     assert_eq!(result.net_amounts[0].address, "A");
     assert_eq!(result.net_amounts[0].net_amount, 9_500);
@@ -146,9 +164,10 @@ fn test_multiple_recipients_individual_entries() {
 #[test]
 fn test_result_order_matches_input_order() {
     let storage = setup_storage(100);
-    let facade  = ViewFacade::new(&storage);
-    let addrs   = vec!["Z", "A", "M", "B"];
-    let result  = facade.simulate_payout("prog-1",
+    let facade = ViewFacade::new(&storage);
+    let addrs = vec!["Z", "A", "M", "B"];
+    let result = facade.simulate_payout(
+        "prog-1",
         addrs.iter().map(|a| recipient(a, 1_000)).collect(),
     );
 
@@ -166,8 +185,8 @@ fn test_fee_floors_for_dust_amount() {
     // 1 * 500 / 10000 = 0.05 → floor → 0
     assert_eq!(compute_fee(1, 500), 0);
     let storage = setup_storage(500);
-    let facade  = ViewFacade::new(&storage);
-    let result  = facade.simulate_payout("prog-1", vec![recipient("A", 1)]);
+    let facade = ViewFacade::new(&storage);
+    let result = facade.simulate_payout("prog-1", vec![recipient("A", 1)]);
     assert_eq!(result.net_amounts[0].net_amount, 1);
     assert_eq!(result.net_amounts[0].fee, 0);
 }
@@ -176,8 +195,8 @@ fn test_fee_floors_for_dust_amount() {
 fn test_fee_exact_10_percent_at_max_rate() {
     // 10,000 * 1000 / 10,000 = 1000
     let storage = setup_storage(MAX_FEE_RATE_BP);
-    let facade  = ViewFacade::new(&storage);
-    let result  = facade.simulate_payout("prog-1", vec![recipient("A", 10_000)]);
+    let facade = ViewFacade::new(&storage);
+    let result = facade.simulate_payout("prog-1", vec![recipient("A", 10_000)]);
     assert_eq!(result.net_amounts[0].fee, 1_000);
     assert_eq!(result.net_amounts[0].net_amount, 9_000);
 }
@@ -199,7 +218,10 @@ fn test_stored_rate_above_max_is_capped() {
     let mut storage = Storage::new();
     storage.set_program(default_program());
     // Manually create a config with excessive rate
-    storage.set_fee_config(FeeConfig { default_rate_bp: 2_000, brackets: vec![] });
+    storage.set_fee_config(FeeConfig {
+        default_rate_bp: 2_000,
+        brackets: vec![],
+    });
     let facade = ViewFacade::new(&storage);
     let result = facade.simulate_payout("prog-1", vec![recipient("A", 10_000)]);
     // Should be capped to 10 %: fee = 1000
@@ -218,7 +240,7 @@ fn test_bracket_tier_1_applied_for_small_amount() {
     s.set_fee_config(bracketed_fee_config());
     let facade = ViewFacade::new(&s);
     let result = facade.simulate_payout("prog-1", vec![recipient("A", 10_000)]);
-    assert_eq!(result.net_amounts[0].fee, 100);  // 1 % of 10,000
+    assert_eq!(result.net_amounts[0].fee, 100); // 1 % of 10,000
 }
 
 #[test]
@@ -247,19 +269,22 @@ fn test_bracket_tier_3_open_ceiling_applied() {
 fn test_bracket_different_tiers_per_recipient() {
     let mut s = Storage::new();
     s.set_program(ProgramData {
-        program_id:        "prog-1".into(),
-        total_locked:      200_000,
+        program_id: "prog-1".into(),
+        total_locked: 200_000,
         remaining_balance: 200_000,
-        is_active:         true,
-        metadata:          String::new(),
+        is_active: true,
+        metadata: String::new(),
     });
     s.set_fee_config(bracketed_fee_config());
     let facade = ViewFacade::new(&s);
-    let result = facade.simulate_payout("prog-1", vec![
-        recipient("A", 10_000),  // tier 1: 100 bp
-        recipient("B", 50_000),  // tier 2: 200 bp
-        recipient("C", 100_000), // tier 3: 300 bp
-    ]);
+    let result = facade.simulate_payout(
+        "prog-1",
+        vec![
+            recipient("A", 10_000),  // tier 1: 100 bp
+            recipient("B", 50_000),  // tier 2: 200 bp
+            recipient("C", 100_000), // tier 3: 300 bp
+        ],
+    );
     assert_eq!(result.net_amounts[0].fee, 100);
     assert_eq!(result.net_amounts[1].fee, 1_000);
     assert_eq!(result.net_amounts[2].fee, 3_000);
@@ -271,9 +296,10 @@ fn test_bracket_fallback_to_default_when_no_match() {
     // Brackets only cover up to 1,000 — amount 5,000 should fall through to default
     let config = FeeConfig {
         default_rate_bp: 999,
-        brackets: vec![
-            FeeBracket { ceiling: Some(1_000), rate_bp: 50 },
-        ],
+        brackets: vec![FeeBracket {
+            ceiling: Some(1_000),
+            rate_bp: 50,
+        }],
     };
     let rate = resolve_fee_rate(&config, 5_000);
     assert_eq!(rate, 999);
@@ -295,11 +321,11 @@ fn test_compute_fee_at_u128_max_does_not_overflow() {
 fn test_simulate_payout_u128_max_amount_conserves() {
     let mut s = Storage::new();
     s.set_program(ProgramData {
-        program_id:        "prog-1".into(),
-        total_locked:      u128::MAX,
+        program_id: "prog-1".into(),
+        total_locked: u128::MAX,
         remaining_balance: u128::MAX,
-        is_active:         true,
-        metadata:          String::new(),
+        is_active: true,
+        metadata: String::new(),
     });
     s.set_fee_config(flat_fee_config(MAX_FEE_RATE_BP));
     let facade = ViewFacade::new(&s);
@@ -314,7 +340,12 @@ fn test_fee_net_conservation_for_many_amounts() {
     let _facade = ViewFacade::new(&s);
     for amount in [0u128, 1, 9, 10, 9_999, 10_000, 1_000_000, u128::MAX / 2] {
         let fee = compute_fee(amount, 500);
-        assert_eq!(fee + (amount - fee), amount, "conservation failed for amount={}", amount);
+        assert_eq!(
+            fee + (amount - fee),
+            amount,
+            "conservation failed for amount={}",
+            amount
+        );
     }
 }
 
@@ -349,17 +380,26 @@ fn test_circuit_breaker_open_does_not_abort_simulation() {
 #[test]
 fn test_inactive_program_emits_warning() {
     let mut s = Storage::new();
-    s.set_program(ProgramData { is_active: false, ..default_program() });
+    s.set_program(ProgramData {
+        is_active: false,
+        ..default_program()
+    });
     s.set_fee_config(flat_fee_config(500));
     let facade = ViewFacade::new(&s);
     let result = facade.simulate_payout("prog-1", vec![recipient("A", 10_000)]);
-    assert!(result.warnings.iter().any(|w| matches!(w, Warning::ProgramInactive { .. })));
+    assert!(result
+        .warnings
+        .iter()
+        .any(|w| matches!(w, Warning::ProgramInactive { .. })));
 }
 
 #[test]
 fn test_inactive_program_still_returns_net_amounts() {
     let mut s = Storage::new();
-    s.set_program(ProgramData { is_active: false, ..default_program() });
+    s.set_program(ProgramData {
+        is_active: false,
+        ..default_program()
+    });
     s.set_fee_config(flat_fee_config(500));
     let facade = ViewFacade::new(&s);
     let result = facade.simulate_payout("prog-1", vec![recipient("A", 10_000)]);
@@ -383,7 +423,10 @@ fn test_insufficient_balance_emits_warning() {
     let result = facade.simulate_payout("prog-1", vec![recipient("A", 10_000)]);
     assert!(result.warnings.iter().any(|w| matches!(
         w,
-        Warning::InsufficientBalance { required: 10_000, available: 5_000 }
+        Warning::InsufficientBalance {
+            required: 10_000,
+            available: 5_000
+        }
     )));
 }
 
@@ -391,11 +434,14 @@ fn test_insufficient_balance_emits_warning() {
 fn test_exact_balance_match_no_insufficient_warning() {
     let s = setup_storage(0); // remaining_balance = 100,000
     let facade = ViewFacade::new(&s);
-    let result = facade.simulate_payout("prog-1", vec![
-        recipient("A", 50_000),
-        recipient("B", 50_000),
-    ]);
-    assert!(!result.warnings.iter().any(|w| matches!(w, Warning::InsufficientBalance { .. })));
+    let result = facade.simulate_payout(
+        "prog-1",
+        vec![recipient("A", 50_000), recipient("B", 50_000)],
+    );
+    assert!(!result
+        .warnings
+        .iter()
+        .any(|w| matches!(w, Warning::InsufficientBalance { .. })));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -407,7 +453,9 @@ fn test_zero_amount_emits_warning() {
     let s = setup_storage(500);
     let facade = ViewFacade::new(&s);
     let result = facade.simulate_payout("prog-1", vec![recipient("A", 0)]);
-    assert!(result.warnings.contains(&Warning::ZeroAmountRecipient { address: "A".into() }));
+    assert!(result.warnings.contains(&Warning::ZeroAmountRecipient {
+        address: "A".into()
+    }));
 }
 
 #[test]
@@ -439,7 +487,10 @@ fn test_net_zero_warning_when_fee_consumes_entire_amount() {
     let s = setup_storage(MAX_FEE_RATE_BP);
     let facade = ViewFacade::new(&s);
     let result = facade.simulate_payout("prog-1", vec![recipient("A", 10)]);
-    assert!(!result.warnings.iter().any(|w| matches!(w, Warning::NetAmountZero { .. })));
+    assert!(!result
+        .warnings
+        .iter()
+        .any(|w| matches!(w, Warning::NetAmountZero { .. })));
 }
 
 #[test]
@@ -452,8 +503,13 @@ fn test_net_zero_fires_for_zero_gross() {
     let facade = ViewFacade::new(&s);
     let result = facade.simulate_payout("prog-1", vec![recipient("A", 0)]);
     // Should emit ZeroAmountRecipient, not NetAmountZero
-    assert!(result.warnings.contains(&Warning::ZeroAmountRecipient { address: "A".into() }));
-    assert!(!result.warnings.iter().any(|w| matches!(w, Warning::NetAmountZero { .. })));
+    assert!(result.warnings.contains(&Warning::ZeroAmountRecipient {
+        address: "A".into()
+    }));
+    assert!(!result
+        .warnings
+        .iter()
+        .any(|w| matches!(w, Warning::NetAmountZero { .. })));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -486,21 +542,26 @@ fn test_empty_recipients_returns_zero_totals() {
 fn test_duplicate_address_emits_warning() {
     let s = setup_storage(500);
     let facade = ViewFacade::new(&s);
-    let result = facade.simulate_payout("prog-1", vec![
-        recipient("A", 10_000),
-        recipient("A", 20_000), // duplicate
-    ]);
-    assert!(result.warnings.contains(&Warning::DuplicateAddress { address: "A".into() }));
+    let result = facade.simulate_payout(
+        "prog-1",
+        vec![
+            recipient("A", 10_000),
+            recipient("A", 20_000), // duplicate
+        ],
+    );
+    assert!(result.warnings.contains(&Warning::DuplicateAddress {
+        address: "A".into()
+    }));
 }
 
 #[test]
 fn test_duplicate_both_entries_still_processed() {
     let s = setup_storage(0); // zero fee so we can check totals easily
     let facade = ViewFacade::new(&s);
-    let result = facade.simulate_payout("prog-1", vec![
-        recipient("A", 10_000),
-        recipient("A", 20_000),
-    ]);
+    let result = facade.simulate_payout(
+        "prog-1",
+        vec![recipient("A", 10_000), recipient("A", 20_000)],
+    );
     // Both entries are in net_amounts (simulation does not deduplicate)
     assert_eq!(result.net_amounts.len(), 2);
     assert_eq!(result.total_net, 30_000);
@@ -510,16 +571,21 @@ fn test_duplicate_both_entries_still_processed() {
 fn test_triple_duplicate_single_warning_per_address() {
     let s = setup_storage(0);
     let facade = ViewFacade::new(&s);
-    let result = facade.simulate_payout("prog-1", vec![
-        recipient("A", 1_000),
-        recipient("A", 1_000),
-        recipient("A", 1_000),
-    ]);
+    let result = facade.simulate_payout(
+        "prog-1",
+        vec![
+            recipient("A", 1_000),
+            recipient("A", 1_000),
+            recipient("A", 1_000),
+        ],
+    );
     // Two DuplicateAddress warnings for "A":
     // - 2nd occurrence detected when processing index 1
     // - 3rd occurrence detected when processing index 2
     // The HashSet.insert() returns false for both the 2nd and 3rd duplicates.
-    let dup_count = result.warnings.iter()
+    let dup_count = result
+        .warnings
+        .iter()
         .filter(|w| matches!(w, Warning::DuplicateAddress { address } if address == "A"))
         .count();
     assert_eq!(dup_count, 2);
@@ -534,10 +600,10 @@ fn test_simulate_does_not_change_remaining_balance() {
     let s = setup_storage(500);
     let initial_balance = s.get_program("prog-1").unwrap().remaining_balance;
     let facade = ViewFacade::new(&s);
-    facade.simulate_payout("prog-1", vec![
-        recipient("A", 10_000),
-        recipient("B", 20_000),
-    ]);
+    facade.simulate_payout(
+        "prog-1",
+        vec![recipient("A", 10_000), recipient("B", 20_000)],
+    );
     // Storage was passed as immutable reference — balance must be unchanged
     let final_balance = s.get_program("prog-1").unwrap().remaining_balance;
     assert_eq!(initial_balance, final_balance);
@@ -557,10 +623,7 @@ fn test_simulate_does_not_change_circuit_breaker_state() {
 fn test_simulate_twice_gives_identical_results() {
     let s = setup_storage(500);
     let facade = ViewFacade::new(&s);
-    let recipients = vec![
-        recipient("A", 10_000),
-        recipient("B", 20_000),
-    ];
+    let recipients = vec![recipient("A", 10_000), recipient("B", 20_000)];
     let r1 = facade.simulate_payout("prog-1", recipients.clone());
     let r2 = facade.simulate_payout("prog-1", recipients);
     assert_eq!(r1, r2);
@@ -638,7 +701,10 @@ fn test_resolve_fee_rate_open_ceiling_bracket() {
 
 #[test]
 fn test_resolve_fee_rate_capped_at_max() {
-    let cfg = FeeConfig { default_rate_bp: 9_999, brackets: vec![] };
+    let cfg = FeeConfig {
+        default_rate_bp: 9_999,
+        brackets: vec![],
+    };
     assert_eq!(resolve_fee_rate(&cfg, 1_000), MAX_FEE_RATE_BP);
 }
 
@@ -646,7 +712,10 @@ fn test_resolve_fee_rate_capped_at_max() {
 fn test_resolve_fee_rate_bracket_capped_at_max() {
     let cfg = FeeConfig {
         default_rate_bp: 100,
-        brackets: vec![FeeBracket { ceiling: None, rate_bp: 5_000 }],
+        brackets: vec![FeeBracket {
+            ceiling: None,
+            rate_bp: 5_000,
+        }],
     };
     assert_eq!(resolve_fee_rate(&cfg, 1_000_000), MAX_FEE_RATE_BP);
 }
@@ -669,8 +738,8 @@ fn test_compute_fee_zero_amount_returns_zero() {
 
 #[test]
 fn test_compute_fee_exact_values() {
-    assert_eq!(compute_fee(10_000, 500), 500);   // 5 %
-    assert_eq!(compute_fee(10_000, 250), 250);   // 2.5 %
+    assert_eq!(compute_fee(10_000, 500), 500); // 5 %
+    assert_eq!(compute_fee(10_000, 250), 250); // 2.5 %
     assert_eq!(compute_fee(10_000, 1_000), 1_000); // 10 %
 }
 
@@ -702,8 +771,10 @@ fn test_per_recipient_conservation() {
         let result = facade.simulate_payout("prog-1", vec![recipient("A", amount)]);
         let entry = &result.net_amounts[0];
         assert_eq!(
-            entry.fee + entry.net_amount, amount,
-            "conservation failed for amount={}", amount
+            entry.fee + entry.net_amount,
+            amount,
+            "conservation failed for amount={}",
+            amount
         );
     }
 }

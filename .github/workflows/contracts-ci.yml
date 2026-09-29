@@ -6,12 +6,16 @@ on:
     paths:
       - "soroban/**"
       - "contracts/**"
+      - "scripts/check-program-escrow-no-traps.py"
+      - "scripts/tests/fixtures/program_escrow_unwrap_trap.rs"
       - ".github/workflows/contracts-ci.yml"
   pull_request:
     branches: [master, main]
     paths:
       - "soroban/**"
       - "contracts/**"
+      - "scripts/check-program-escrow-no-traps.py"
+      - "scripts/tests/fixtures/program_escrow_unwrap_trap.rs"
       - ".github/workflows/contracts-ci.yml"
 
 env:
@@ -37,21 +41,80 @@ jobs:
         run: npm test --prefix contracts
 
   # ──────────────────────────────────────────────────────────────
-  # Reproducible workspace build & test gates (issue #1700).
-  # Runs the exact same commands as ./contracts/scripts/ci-contracts.sh
-  # so the gates behave identically locally and in CI.
-  # No continue-on-error: a compile or test regression must fail the job.
+  # No opaque unwrap()/panic! traps in deployable program-escrow
+  # source (issue #1854). Test modules remain exempt.
+  # Batch semantics gate (issue #1877).
+  # A separate job on purpose: `build-test` above aborts on pre-existing
+  # bounty-escrow failures that have nothing to do with batching, and a step
+  # after a failed step never runs. Without its own job the batch suites would
+  # silently stop gating anything — which is the exact state #1877 found the
+  # 1,354-line test_batch_operations.rs in (disabled in lib.rs, absent from CI).
   # ──────────────────────────────────────────────────────────────
-  build-test:
-    name: contracts (workspace tests + wasm release build)
+  batch-tests:
+    name: batch semantics
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            contracts/bounty_escrow/target/
+            contracts/program-escrow/target/
+          key: ${{ runner.os }}-batch-tests-${{ hashFiles('contracts/bounty_escrow/Cargo.lock', 'contracts/program-escrow/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-batch-tests-
+
+      - name: Run batch test suites
+        run: bash contracts/scripts/ci-batch-tests.sh
+
+  # ──────────────────────────────────────────────────────────────
+  # Reproducible workspace build & test gates (issue #1700).
+  # Runs the exact same commands as ./contracts/scripts/ci-contracts.sh
+  # so the gates behave identically locally and in CI.
+  # No continue-on-error: a compile or test regression must fail the job.
+  # ──────────────────────────────────────────────────────────────
+  program-escrow-no-traps:
+    name: program-escrow no unwrap/panic
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Forbid unwrap()/panic! in deployable lib.rs
+        run: python3 scripts/check-program-escrow-no-traps.py
+      - name: Fixture proves the check fails on a planted unwrap()
+        run: >
+          python3 scripts/check-program-escrow-no-traps.py
+          --fixture scripts/tests/fixtures/program_escrow_unwrap_trap.rs
+          --expect-fail
+
+  # ──────────────────────────────────────────────────────────────
+  # Reproducible workspace build & test gates (issue #1700).
+  # Reproducible workspace build, test, and clippy gates (issue #1700, #1857).
+  # Runs the exact same commands as ./contracts/scripts/ci-contracts.sh
+  # so the gates behave identically locally and in CI.
+  # No continue-on-error: a compile, lint, or test regression must fail the job.
+  # ──────────────────────────────────────────────────────────────
+  build-test:
+    name: contracts (workspace clippy + tests + wasm release build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify Wasm Inventory
+        run: python3 scripts/check_inventory.py
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32v1-none, wasm32-unknown-unknown
+          components: clippy
 
       # Cache only the Cargo registry/git caches and the workspace target dir
       # (keyed on the lockfile). Toolchain binaries in ~/.cargo/bin are NOT
@@ -64,16 +127,178 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             contracts/bounty_escrow/target/
-          key: ${{ runner.os }}-contracts-cargo-${{ hashFiles('contracts/bounty_escrow/Cargo.lock', 'contracts/bounty_escrow/Cargo.toml', 'contracts/grainlify-core/Cargo.toml') }}
+            contracts/program-escrow/target/
+          key: ${{ runner.os }}-contracts-cargo-${{ hashFiles('contracts/bounty_escrow/Cargo.lock', 'contracts/bounty_escrow/Cargo.toml', 'contracts/program-escrow/Cargo.lock', 'contracts/program-escrow/Cargo.toml', 'contracts/grainlify-core/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-contracts-cargo-
 
       - name: Run contract CI gates
         run: bash contracts/scripts/ci-contracts.sh
+        # ci-contracts.sh runs (in order):
+        #   [1] cargo test on the bounty_escrow workspace – includes:
+        #       • test_analytics_monitoring  (issue #1882: analytics & monitoring suite)
+        #       • test_query_filters         (issue #1882: query-filter suite)
+        #       • all other enabled test modules
+        #   [2] cargo test on the grainlify-contracts workspace (storage-key audit)
+        #   [3] wasm release build + size recording
+
+      - name: Run token allowlist + FoT routing suites
+        run: cargo test --manifest-path contracts/program-escrow/Cargo.toml -- test_token_allowlist test_fot_routing
 
       - name: Upload deployable wasm
         uses: actions/upload-artifact@v4
         with:
           name: bounty-escrow-wasm
           path: contracts/bounty_escrow/target/wasm32-unknown-unknown/release/*.wasm
+          if-no-files-found: error
+
+  # ──────────────────────────────────────────────────────────────
+  # View-facade drift gate (issue #1870).
+  # Each facade mirrors types and feature flags from program-escrow.
+  # This job is deliberately standalone rather than folded into the
+  # `build-test` job above: that job currently stops at its first step on
+  # a pre-existing failure in the bounty-escrow workspace suite, and a gate
+  # that never runs cannot catch drift. The exhaustive struct literals in
+  # tests/conformance.rs turn a contract-only field addition into a compile
+  # error here.
+  # ──────────────────────────────────────────────────────────────
+  facade-conformance:
+    name: view facades match the contracts they mirror
+  # Feature-flag matrix & facade default-features assertion gates (issue #1885).
+  # Asserts every supported feature combination builds and facades'
+  # default-features = false requirement is satisfied.
+  # ──────────────────────────────────────────────────────────────
+  feature-flag-matrix:
+    name: feature-flags (grainlify-core combinations matrix)
+  # grainlify-core gates (issue #1869).
+  # grainlify-core is depended on by program-escrow, view-facade and
+  # escrow-view-facade, so it gets the same build/test gates as the escrow
+  # crates plus the crate's formatting and lint gates. Runs the exact same
+  # commands as ./contracts/scripts/ci-grainlify-core.sh.
+  # No continue-on-error: a failing test (including a migration-replay or
+  # upgrade-rollback test) must fail the job.
+  # ──────────────────────────────────────────────────────────────
+  grainlify-core:
+    name: grainlify-core (fmt + clippy + tests + wasm)
+    runs-on: ubuntu-latest
+  # Soroban workspace gates (issue #1860).
+  #
+  # The `soroban/` workspace declares members `contracts/*` (escrow,
+  # program-escrow, stream) but was previously covered by nothing: the
+  # build-test job above builds only `contracts/bounty_escrow`, and every
+  # other workflow filters on `contracts/**`. This job brings the workspace
+  # — and in particular the `grainlify-stream` fixture crate — under the
+  # same build, test, formatting and clippy gates, and produces + size-checks
+  # the workspace's deployable wasm. There is no continue-on-error: a failing
+  # test fails the job.
+  #
+  # fmt/clippy are scoped to `grainlify-stream` (the crate called out in the
+  # issue). The two contract crates predate these gates and currently carry
+  # pre-existing fmt/clippy drift that is out of scope here.
+  # ──────────────────────────────────────────────────────────────
+  soroban-workspace:
+    name: soroban (tests + fmt + clippy + wasm)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: soroban
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          targets: wasm32v1-none, wasm32-unknown-unknown
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+          targets: wasm32v1-none, wasm32-unknown-unknown
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            contracts/view-facade/target/
+            contracts/escrow-view-facade/target/
+          key: ${{ runner.os }}-facade-conformance-${{ hashFiles('contracts/view-facade/Cargo.lock', 'contracts/escrow-view-facade/Cargo.lock', 'contracts/program-escrow/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-facade-conformance-
+
+      - name: view-facade conformance
+        run: |
+          cargo test \
+            --manifest-path contracts/view-facade/Cargo.toml \
+            --test conformance \
+            --test dependency_gating
+
+      - name: escrow-view-facade conformance
+        run: |
+          cargo test \
+            --manifest-path contracts/escrow-view-facade/Cargo.toml \
+            --test conformance \
+            --test dependency_gating
+            contracts/grainlify-core/target/
+          key: ${{ runner.os }}-contracts-feature-matrix-${{ hashFiles('contracts/grainlify-core/Cargo.toml', 'contracts/grainlify-core/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-contracts-feature-matrix-
+
+      - name: Run feature matrix and facade build assertions
+        run: bash contracts/scripts/check-feature-matrix.sh
+            contracts/grainlify-core/target/
+          key: ${{ runner.os }}-grainlify-core-cargo-${{ hashFiles('contracts/grainlify-core/Cargo.lock', 'contracts/grainlify-core/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-grainlify-core-cargo-
+
+      - name: Run grainlify-core CI gates
+        run: bash contracts/scripts/ci-grainlify-core.sh
+            soroban/target/
+          key: ${{ runner.os }}-soroban-cargo-${{ hashFiles('soroban/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-soroban-cargo-
+
+      - name: Formatting gate (grainlify-stream)
+        run: cargo fmt -p grainlify-stream --check
+
+      - name: Clippy gate (grainlify-stream)
+        run: cargo clippy -p grainlify-stream --all-targets -- -D warnings
+
+      - name: Compile and run stream crate tests
+        run: cargo test -p grainlify-stream
+
+      - name: Build deployable wasm (soroban workspace)
+        run: |
+          cargo build -p escrow --target wasm32v1-none --release
+          cargo build -p soroban-program-escrow --target wasm32v1-none --release
+
+      - name: Check deployable wasm sizes
+        run: |
+          set -euo pipefail
+          check() {
+            name="$1"; budget="$2"
+            file="target/wasm32v1-none/release/${name}.wasm"
+            if [ ! -f "$file" ]; then
+              echo "::error::expected wasm artifact was not produced: $file"
+              exit 1
+            fi
+            size=$(stat -c%s "$file")
+            echo "$name.wasm: ${size} bytes (budget ${budget})"
+            if [ "$size" -gt "$budget" ]; then
+              echo "::error::$name.wasm (${size} B) exceeds its budget (${budget} B)"
+              exit 1
+            fi
+          }
+          check escrow 120000
+          check soroban_program_escrow 120000
+
+      - name: Upload deployable wasm
+        uses: actions/upload-artifact@v4
+        with:
+          name: grainlify-core-wasm
+          path: contracts/grainlify-core/target/wasm32-unknown-unknown/release/*.wasm
+          name: soroban-wasm
+          path: soroban/target/wasm32v1-none/release/*.wasm
           if-no-files-found: error
