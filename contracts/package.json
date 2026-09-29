@@ -7,7 +7,7 @@
     "validate-manifests": "node scripts/validate-manifests.js",
     "test:manifests": "node --test scripts/test/validate-manifests.test.js",
     "generate-docs": "node scripts/generate-docs.js",
-    "build": "npm run validate-manifests && npm run generate-docs",
+    "build": "node init && npm run validate-manifests && npm run generate-docs",
     "test": "npm run validate-manifests && npm run test:manifests && npm run check-error-codes && npm run test:error-codes",
     "check-error-codes": "node scripts/check-error-codes.mjs",
     "test:error-codes": "node --test scripts/test/error-codes.test.js"

@@ -5,16 +5,22 @@ on:
     branches: [master, main]
     paths:
       - "contracts/**"
+      - "soroban/**"
       - ".github/wasm-budgets.json"
       - ".github/workflows/wasm-size-budget.yml"
       - "scripts/check-wasm-budgets.sh"
+      - "scripts/update-wasm-budgets.sh"
+      - "scripts/tests/test_check_wasm_budgets.sh"
   pull_request:
     branches: [master, main]
     paths:
       - "contracts/**"
+      - "soroban/**"
       - ".github/wasm-budgets.json"
       - ".github/workflows/wasm-size-budget.yml"
       - "scripts/check-wasm-budgets.sh"
+      - "scripts/update-wasm-budgets.sh"
+      - "scripts/tests/test_check_wasm_budgets.sh"
 
 env:
   CARGO_TERM_COLOR: always
@@ -33,7 +39,7 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.88.0
-          targets: wasm32-unknown-unknown
+          targets: wasm32-unknown-unknown, wasm32v1-none
 
       - name: Cache cargo registry & build
         uses: actions/cache@v4
@@ -42,9 +48,15 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             contracts/**/target
+            soroban/target
           key: wasm-budget-${{ runner.os }}-${{ hashFiles('**/Cargo.lock', '.github/wasm-budgets.json') }}
           restore-keys: |
             wasm-budget-${{ runner.os }}-
+
+      # The gate script is pure bash + jq and is exercised without a Rust
+      # toolchain, so a regression in the budget logic fails fast.
+      - name: Check wasm budget script (regression tests)
+        run: bash scripts/tests/test_check_wasm_budgets.sh
 
       - name: Build contracts (wasm32-unknown-unknown, release)
         run: |
@@ -88,10 +100,20 @@ jobs:
             --release \
             --locked
 
+      - name: Build soroban workspace deployables (wasm32v1-none, release)
+        working-directory: soroban
+        run: |
+          echo "━━━ Building soroban escrow ━━━"
+          cargo build -p escrow --target wasm32v1-none --release --locked
+
+          echo ""
+          echo "━━━ Building soroban program-escrow ━━━"
+          cargo build -p soroban-program-escrow --target wasm32v1-none --release --locked
+
       - name: List generated wasm files
         run: |
           echo "━━━ Generated .wasm artifacts ━━━"
-          find contracts -path "*/target/wasm32-unknown-unknown/release/*.wasm" -type f -exec ls -lh {} \;
+          find contracts soroban -path "*/target/*/release/*.wasm" -type f -exec ls -lh {} \;
 
       - name: Check wasm sizes against budgets
         run: bash scripts/check-wasm-budgets.sh
@@ -112,36 +134,54 @@ jobs:
             const budgetRaw = fs.readFileSync('.github/wasm-budgets.json', 'utf8');
             const budget = JSON.parse(budgetRaw);
 
+            const ceiling = budget.absolute_ceiling_bytes;
+            const tolerance = budget.tolerance_percent || 0;
+            const ceilingLabel = ceiling ? ceiling.toLocaleString('en-US') + ' B' : '—';
+
             let report = '## 🔍 Wasm Size Budget Report\n\n';
-            report += '| Contract | Actual | Budget | Delta | Status |\n';
-            report += '|----------|--------|--------|-------|--------|\n';
+            report += `Stellar deployment ceiling: **${ceilingLabel}** · growth tolerance: **${tolerance}%** over each baseline.\n\n`;
+            report += '| Artifact | Workspace | Actual | Baseline | Growth limit | Status |\n';
+            report += '|----------|-----------|--------|----------|--------------|--------|\n';
 
             const contracts = Object.keys(budget.budgets);
             let allPass = true;
+            let built = 0;
 
             for (const name of contracts) {
               const cfg = budget.budgets[name];
-              const wasmName = cfg.package.replace(/-/g, '_');
-              const wasmPath = `${cfg.target_dir}/target/wasm32-unknown-unknown/release/${wasmName}.wasm`;
+              const wasmName = cfg.artifact || `${cfg.package.replace(/-/g, '_')}.wasm`;
+              const target = cfg.target || 'wasm32-unknown-unknown';
+              const wasmPath = `${cfg.target_dir}/target/${target}/release/${wasmName}`;
+              const baseline = cfg.baseline_bytes;
+              const growthLimit = baseline + Math.floor(baseline * tolerance / 100);
+              const fmt = (n) => n.toLocaleString('en-US');
 
+              let actual;
               try {
-                const stats = fs.statSync(wasmPath);
-                const actual = stats.size;
-                const budgetBytes = cfg.budget_bytes;
-                const delta = actual - budgetBytes;
-                const status = actual <= budgetBytes ? '✅ PASS' : '❌ FAIL';
-
-                if (actual > budgetBytes) allPass = false;
-
-                const fmt = (n) => n.toLocaleString('en-US');
-                report += `| ${name} | ${fmt(actual)} B | ${fmt(budgetBytes)} B | ${delta >= 0 ? '+' : ''}${fmt(delta)} B | ${status} |\n`;
+                actual = fs.statSync(wasmPath).size;
               } catch {
-                report += `| ${name} | ⚠️ not built | ${cfg.budget_bytes.toLocaleString('en-US')} B | — | SKIP |\n`;
+                report += `| ${name} | ${cfg.workspace || '—'} | ⚠️ not built | ${fmt(baseline)} B | ${fmt(growthLimit)} B | SKIP |\n`;
+                continue;
               }
+              built += 1;
+
+              let status;
+              if (ceiling && actual > ceiling) {
+                status = '❌ FAIL (ceiling)';
+                allPass = false;
+              } else if (actual > growthLimit) {
+                status = '❌ FAIL (growth)';
+                allPass = false;
+              } else {
+                status = '✅ PASS';
+              }
+
+              report += `| ${name} | ${cfg.workspace || '—'} | ${fmt(actual)} B | ${fmt(baseline)} B | ${fmt(growthLimit)} B | ${status} |\n`;
             }
 
-            report += `\n${allPass ? '✅ All contracts within budget.' : '❌ One or more contracts exceeded their budget.'}\n`;
-            report += '\n> To update budgets intentionally, run `scripts/update-wasm-budgets.sh` and commit the result.';
+            report += `\n${allPass ? '✅ All built artifacts within budget.' : '❌ One or more artifacts are over budget.'}`;
+            report += ` (${built}/${contracts.length} artifacts built)\n`;
+            report += '\n> To update baselines intentionally, run `scripts/update-wasm-budgets.sh` and commit the result. Crossing the absolute deployment ceiling requires shrinking the contract, not raising the budget.';
 
             fs.writeFileSync('wasm-budget-report.md', report);
             console.log(report);
