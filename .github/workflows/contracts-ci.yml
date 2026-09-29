@@ -93,6 +93,13 @@ jobs:
           python3 scripts/check-program-escrow-no-traps.py
           --fixture scripts/tests/fixtures/program_escrow_unwrap_trap.rs
           --expect-fail
+      - name: Forbid unwrap()/panic! in soroban deployable program-escrow
+        run: python3 scripts/check-program-escrow-no-traps.py
+      - name: Soroban fixture proves the check fails on a planted unwrap()
+        run: >
+          python3 scripts/check-program-escrow-no-traps.py
+          --fixture scripts/tests/fixtures/soroban_program_escrow_unwrap_trap.rs
+          --expect-fail
 
   # ──────────────────────────────────────────────────────────────
   # Reproducible workspace build & test gates (issue #1700).
