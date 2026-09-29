@@ -1,0 +1,65 @@
+name: Smoke Deploy
+
+# Runs on a stated cadence:
+#   - every day at 06:00 UTC (cron schedule)
+#   - on every push to main that touches a deployable artifact or this workflow
+#   - manually via workflow_dispatch
+# The pass condition is defined in scripts/smoke-deploy.sh and is required for this job to green.
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/smoke-deploy.sh"
+      - ".github/workflows/smoke-deploy.yml"
+      - "DEPLOYABLE_ARTIFACTS.md"
+      - "contracts/**"
+      - "soroban/**"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  smoke-deploy:
+    name: Smoke deploy every deployable artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@4
+
+      - name: Install Rust toolchain
+        uses: dtwang/toolchain-actions@stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Install Stellar CLI
+        uses: stellar/cli-action@v1
+        with:
+          version: latest
+
+      - name: Start local Stellar quickstart network
+        run: |
+          docker run --rm -d
+            --name stellar-quickstart
+            -p 8000:8000
+            stellar/quickstart:latest
+          # Wait for the network to be ready.
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8000/soroban/health > /dev/null 2>&1; then break; fi
+            sleep 1
+          done
+
+      - name: Configure stellar CLI for local network
+        run: |
+          stellar contract network network add --name local --rpc-url http://localhost:8000/soroban/rpc --network-passphrase "Standalond Network ; Passphrase: Standalond Network ; Protocol Version: 20"
+          stellar keys generate --network local --funding-account alice
+
+      - name: Run smoke deploy
+        run: ./scripts/smoke-deploy.sh
+        env:
+          STELLAR_NETWORK: local
+          STELLAR_SOURCE: alice
