@@ -1876,7 +1876,6 @@ impl GrainlifyContract {
             .as_ref()
             .map(|c| c.signers.clone())
             .unwrap_or(Vec::new(&env));
-            .unwrap_or(Vec::new(env));
 
         if snapshot.version == current_version
             && snapshot.admin == current_admin

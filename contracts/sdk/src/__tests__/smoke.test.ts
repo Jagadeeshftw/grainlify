@@ -1,5 +1,5 @@
 import { ProgramEscrowClient } from '../program-escrow-client';
-import { Keypair } from '@stellar/stellar-sdk';
+import { Keypair, StrKey } from '@stellar/stellar-sdk';
 import { lockFundsExample } from '../../examples/lock-funds';
 import { releaseFundsExample } from '../../examples/release-funds';
 import { fullLifecycleExample } from '../../examples/full-lifecycle';
@@ -15,11 +15,12 @@ describe('SDK Example Smoke Tests', () => {
     let mockKeypair: Keypair;
     const mockProgramId = 'test-program-123';
     const mockAuthorizedKey = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
-    const mockTokenAddress = 'GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB';
+    const mockTokenAddress = StrKey.encodeContract(Buffer.alloc(32));
+    const mockContractId = StrKey.encodeContract(Buffer.alloc(32, 1));
 
     beforeEach(() => {
         client = new ProgramEscrowClient({
-            contractId: 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC',
+            contractId: mockContractId,
             rpcUrl: 'https://soroban-testnet.stellar.org',
             networkPassphrase: 'Test SDF Network ; September 2015'
         });
@@ -54,7 +55,11 @@ describe('SDK Example Smoke Tests', () => {
         const result = await lockFundsExample(client, mockKeypair);
         expect(result).toBeDefined();
         //@ts-ignore - accessing private field
-        expect(client.invokeContract).toHaveBeenCalledTimes(1);
+        expect(client.invokeContract).toHaveBeenCalledTimes(3);
+        //@ts-ignore - accessing private field
+        expect(client.invokeContract).toHaveBeenNthCalledWith(1, 'get_program_info', []);
+        //@ts-ignore - accessing private field
+        expect(client.invokeContract).toHaveBeenNthCalledWith(2, 'transfer', [mockKeypair.publicKey(), mockContractId, 10000000n], mockKeypair, expect.any(Object));
         //@ts-ignore - accessing private field
         expect(client.invokeContract).toHaveBeenCalledWith('lock_program_funds', [10000000n], mockKeypair);
     });
@@ -65,7 +70,7 @@ describe('SDK Example Smoke Tests', () => {
         //@ts-ignore - accessing private field
         expect(client.invokeContract).toHaveBeenCalledTimes(1);
         //@ts-ignore - accessing private field
-        expect(client.invokeContract).toHaveBeenCalledWith('trigger_program_releases', [], mockKeypair);
+        expect(client.invokeContract).toHaveBeenCalledWith('trigger_program_releases', [null], mockKeypair);
     });
 
     it('should run full-lifecycle example successfully', async () => {
@@ -78,11 +83,11 @@ describe('SDK Example Smoke Tests', () => {
         );
         expect(result).toBeDefined();
         //@ts-ignore - accessing private field
-        expect(client.invokeContract).toHaveBeenCalledTimes(4); // init, lock, batch_payout, get_info
+        expect(client.invokeContract).toHaveBeenCalledTimes(4); // init, publish, batch_payout, get_info
         //@ts-ignore - accessing private field
-        expect(client.invokeContract).toHaveBeenNthCalledWith(1, 'init_program', [mockProgramId, mockAuthorizedKey, mockTokenAddress], mockKeypair);
+        expect(client.invokeContract).toHaveBeenNthCalledWith(1, 'init_program', [mockProgramId, mockAuthorizedKey, mockTokenAddress, 50000000n], mockKeypair);
         //@ts-ignore - accessing private field
-        expect(client.invokeContract).toHaveBeenNthCalledWith(2, 'lock_program_funds', [50000000n], mockKeypair);
+        expect(client.invokeContract).toHaveBeenNthCalledWith(2, 'publish_program', [mockProgramId, mockKeypair.publicKey()], mockKeypair);
         //@ts-ignore - accessing private field
         expect(client.invokeContract).toHaveBeenNthCalledWith(3, 'batch_payout', [expect.any(Array), expect.any(Array)], mockKeypair);
         //@ts-ignore - accessing private field
@@ -93,7 +98,7 @@ describe('SDK Example Smoke Tests', () => {
         const result = await batchLockExample(client, mockKeypair);
         expect(result).toBeDefined();
         //@ts-ignore - accessing private field
-        expect(client.invokeContract).toHaveBeenCalledTimes(4); // 3 locks + 1 get_info
+        expect(client.invokeContract).toHaveBeenCalledTimes(10); // initial and per-lock funding, 3 locks, final read
         //@ts-ignore - accessing private field
         expect(client.invokeContract).toHaveBeenCalledWith('lock_program_funds', [10000000n], mockKeypair);
         //@ts-ignore - accessing private field

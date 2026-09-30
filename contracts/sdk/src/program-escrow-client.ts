@@ -1,11 +1,13 @@
 import {
+  Address,
+  BASE_FEE,
   Contract,
+  nativeToScVal,
+  scValToNative,
   SorobanRpc,
   TransactionBuilder,
-  Networks,
-  Account,
   Keypair,
-  Operation,
+  xdr,
 } from "@stellar/stellar-sdk";
 import {
   NetworkError,
@@ -18,6 +20,8 @@ export interface ProgramEscrowConfig {
   contractId: string;
   rpcUrl: string;
   networkPassphrase: string;
+  /** Signer used for simulation-only reads when a method has no signer argument. */
+  sourceKeypair?: Keypair;
 }
 
 export interface ProgramData {
@@ -140,18 +144,19 @@ export class ProgramEscrowClient {
     authorizedPayoutKey: string,
     tokenAddress: string,
     sourceKeypair: Keypair,
+    initialLiquidity: bigint = 0n,
   ): Promise<ProgramData> {
     if (!programId || programId.trim().length === 0) {
       throw new ValidationError("Program ID cannot be empty", "programId");
     }
 
     this.validateAddress(authorizedPayoutKey, "authorizedPayoutKey");
-    this.validateAddress(tokenAddress, "tokenAddress");
+    this.validateContractAddress(tokenAddress, "tokenAddress");
 
     try {
       const result = await this.invokeContract(
         "init_program",
-        [programId, authorizedPayoutKey, tokenAddress],
+        [programId, authorizedPayoutKey, tokenAddress, initialLiquidity],
         sourceKeypair,
       );
       return this.parseProgramData(result);
@@ -178,6 +183,43 @@ export class ProgramEscrowClient {
         sourceKeypair,
       );
       return this.parseProgramData(result);
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /** Publish a newly initialized program so payouts and releases are enabled. */
+  async publishProgram(
+    programId: string,
+    caller: string,
+    sourceKeypair: Keypair,
+  ): Promise<ProgramData> {
+    this.validateAddress(caller, "caller");
+    try {
+      const result = await this.invokeContract(
+        "publish_program",
+        [programId, caller],
+        sourceKeypair,
+      );
+      return this.parseProgramData(result);
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /** Transfer tokens to the escrow before calling lockProgramFunds. */
+  async fundContract(amount: bigint, sourceKeypair: Keypair): Promise<void> {
+    if (amount <= 0n) {
+      throw new ValidationError("Amount must be greater than zero", "amount");
+    }
+    const program = await this.getProgramInfo();
+    try {
+      await this.invokeContract(
+        "transfer",
+        [sourceKeypair.publicKey(), this.config.contractId, amount],
+        sourceKeypair,
+        new Contract(program.token_address),
+      );
     } catch (error) {
       throw this.handleError(error);
     }
@@ -314,7 +356,7 @@ export class ProgramEscrowClient {
     try {
       const result = await this.invokeContract(
         "trigger_program_releases",
-        [],
+        [null],
         sourceKeypair,
       );
       return Number(result);
@@ -380,23 +422,76 @@ export class ProgramEscrowClient {
     }
   }
 
+  private validateContractAddress(address: string, fieldName: string): void {
+    if (!address || !/^C[A-Z0-9]{55}$/.test(address)) {
+      throw new ValidationError(
+        `${fieldName} is not a valid Stellar contract address`,
+        fieldName,
+      );
+    }
+  }
+
   private async invokeContract(
     method: string,
     args: any[],
     sourceKeypair?: Keypair,
+    contract: Contract = this.contract,
   ): Promise<any> {
     try {
-      // This is a simplified implementation
-      // In a real implementation, you would:
-      // 1. Build the transaction with proper parameters
-      // 2. Simulate the transaction
-      // 3. Sign and submit if sourceKeypair is provided
-      // 4. Parse and return the result
+      const signer = sourceKeypair ?? this.config.sourceKeypair;
+      if (!signer) {
+        throw new ValidationError(
+          "A sourceKeypair is required to simulate a Soroban invocation",
+          "sourceKeypair",
+        );
+      }
 
-      // For now, this throws to simulate contract behavior
-      throw new Error(
-        "Contract invocation not implemented - this is a mock for testing",
-      );
+      const account = await this.server.getAccount(signer.publicKey());
+      const transaction = new TransactionBuilder(account, {
+        fee: BASE_FEE,
+        networkPassphrase: this.config.networkPassphrase,
+      })
+        .addOperation(
+          contract.call(method, ...this.encodeArguments(method, args, signer)),
+        )
+        .setTimeout(30)
+        .build();
+
+      const simulation = await this.server.simulateTransaction(transaction);
+      if (SorobanRpc.Api.isSimulationError(simulation)) {
+        throw new Error(`Soroban simulation failed for ${method}: ${simulation.error}`);
+      }
+
+      const readOnlyMethods = new Set([
+        "get_program_info",
+        "get_remaining_balance",
+      ]);
+      if (readOnlyMethods.has(method)) {
+        if (!simulation.result) {
+          throw new Error(`Soroban simulation returned no result for ${method}`);
+        }
+        return scValToNative(simulation.result.retval);
+      }
+
+      const prepared = SorobanRpc.assembleTransaction(transaction, simulation).build();
+      prepared.sign(signer);
+      const submitted = await this.server.sendTransaction(prepared);
+      if (submitted.status === "ERROR") {
+        throw new Error(`Soroban submission failed for ${method}`);
+      }
+
+      const deadline = Date.now() + 30_000;
+      while (Date.now() < deadline) {
+        const result = await this.server.getTransaction(submitted.hash);
+        if (result.status === SorobanRpc.Api.GetTransactionStatus.SUCCESS) {
+          return result.returnValue ? scValToNative(result.returnValue) : undefined;
+        }
+        if (result.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
+          throw new Error(`Soroban transaction failed for ${method}`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+      throw new NetworkError(`Timed out waiting for Soroban transaction ${method}`);
     } catch (error: any) {
       // Check for network errors
       if (error.code === "ECONNREFUSED" || error.code === "ETIMEDOUT") {
@@ -416,6 +511,51 @@ export class ProgramEscrowClient {
       }
 
       throw error;
+    }
+  }
+
+  private encodeArguments(method: string, args: any[], signer: Keypair): xdr.ScVal[] {
+    const address = (value: string) => Address.fromString(value).toScVal();
+    const i128 = (value: bigint) => nativeToScVal(value, { type: "i128" });
+    const string = (value: string) => nativeToScVal(value, { type: "string" });
+    const vector = (values: xdr.ScVal[]) => xdr.ScVal.scvVec(values);
+
+    switch (method) {
+      case "init_program":
+        return [
+          string(args[0]),
+          address(args[1]),
+          address(args[2]),
+          address(signer.publicKey()),
+          args[3] > 0n ? i128(args[3]) : xdr.ScVal.scvVoid(),
+          xdr.ScVal.scvVoid(),
+        ];
+      case "lock_program_funds":
+        return [i128(args[0])];
+      case "batch_payout":
+        return [
+          vector(args[0].map((value: string) => address(value))),
+          vector(args[1].map((value: bigint) => i128(value))),
+        ];
+      case "single_payout":
+        return [address(args[0]), i128(args[1])];
+      case "publish_program":
+        return [string(args[0]), address(args[1])];
+      case "transfer":
+        return [address(args[0]), address(args[1]), i128(args[2])];
+      case "get_program_info":
+      case "get_remaining_balance":
+        return [];
+      case "trigger_program_releases":
+        return [xdr.ScVal.scvVoid()];
+      case "create_program_release_schedule":
+        return [
+          address(args[0]),
+          i128(args[1]),
+          nativeToScVal(BigInt(args[2]), { type: "u64" }),
+        ];
+      default:
+        throw new Error(`No Soroban argument encoder is defined for ${method}`);
     }
   }
 
@@ -454,12 +594,20 @@ export class ProgramEscrowClient {
   }
 
   private parseProgramData(result: any): ProgramData {
-    // Simplified parser - in real implementation would parse XDR
-    return result as ProgramData;
+    return this.toPlainObject(result) as ProgramData;
   }
 
   private parseReleaseSchedule(result: any): ProgramReleaseSchedule {
-    // Simplified parser - in real implementation would parse XDR
-    return result as ProgramReleaseSchedule;
+    return this.toPlainObject(result) as ProgramReleaseSchedule;
+  }
+
+  private toPlainObject(value: any): any {
+    if (value instanceof Map) {
+      return Object.fromEntries(
+        [...value.entries()].map(([key, item]) => [String(key), this.toPlainObject(item)]),
+      );
+    }
+    if (Array.isArray(value)) return value.map((item) => this.toPlainObject(item));
+    return value;
   }
 }

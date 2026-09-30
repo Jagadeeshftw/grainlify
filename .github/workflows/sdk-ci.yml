@@ -39,3 +39,62 @@ jobs:
         run: npm run build
       - name: Run SDK unit tests
         run: npm test -- --runInBand
+
+  examples-e2e:
+    name: SDK examples against local Soroban deployment
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: contracts/sdk/package-lock.json
+      - name: Install SDK dependencies
+        working-directory: contracts/sdk
+        run: npm ci
+      - uses: dtolnay/rust-toolchain@1.85.1
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Start ephemeral Stellar network
+        uses: stellar/quickstart@main
+        with:
+          network: local
+          enable: core,horizon,rpc
+      - name: Install Stellar CLI
+        uses: stellar/stellar-cli@v23.0.1
+      - name: Configure local network and deploy ProgramEscrow
+        shell: bash
+        run: |
+          set -euo pipefail
+          stellar network add local \
+            --rpc-url http://localhost:8000/rpc \
+            --network-passphrase 'Standalone Network ; February 2017'
+          cargo build \
+            --manifest-path contracts/program-escrow/Cargo.toml \
+            --target wasm32-unknown-unknown \
+            --release
+          secret="$(stellar keys generate --as-secret e2e | grep -Eo 'S[A-Z2-7]{55}' | tail -n 1)"
+          test -n "$secret"
+          echo "::add-mask::$secret"
+          public_key="$(node -e "process.stdout.write(require('./contracts/sdk/node_modules/@stellar/stellar-sdk').Keypair.fromSecret(process.argv[1]).publicKey())" "$secret")"
+          curl -fsS "http://localhost:8000/friendbot?addr=$public_key" >/dev/null
+          deployment_output="$(stellar contract deploy \
+            --wasm contracts/program-escrow/target/wasm32-unknown-unknown/release/program_escrow.wasm \
+            --source-account e2e \
+            --network local 2>&1)"
+          printf '%s\n' "$deployment_output"
+          contract_id="$(printf '%s\n' "$deployment_output" | grep -Eo 'C[A-Z2-7]{55}' | tail -n 1)"
+          test -n "$contract_id"
+          token_address="$(stellar contract id asset --asset native --network local)"
+          {
+            echo "GRAINLIFY_SDK_E2E_CONTRACT_ID=$contract_id"
+            echo "GRAINLIFY_SDK_E2E_TOKEN_ADDRESS=$token_address"
+            echo 'GRAINLIFY_SDK_E2E_RPC_URL=http://localhost:8000/rpc'
+            echo 'GRAINLIFY_SDK_E2E_NETWORK_PASSPHRASE=Standalone Network ; February 2017'
+            echo "GRAINLIFY_SDK_E2E_SECRET=$secret"
+            echo 'GRAINLIFY_SDK_E2E_REQUIRED=1'
+          } >> "$GITHUB_ENV"
+      - name: Run SDK against the deployed contract
+        working-directory: contracts/sdk
+        run: npm test -- --runInBand src/__tests__/examples.e2e.test.ts

@@ -7179,7 +7179,7 @@ impl ProgramEscrowContract {
     }
 
     pub fn get_program_release_schedule(env: Env, schedule_id: u64) -> ProgramReleaseSchedule {
-        let schedules = Self::get_release_schedules(env);
+        let schedules = Self::get_release_schedules(env.clone());
         for s in schedules.iter() {
             if s.schedule_id == schedule_id {
                 return s;

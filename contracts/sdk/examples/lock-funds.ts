@@ -8,6 +8,7 @@ export async function lockFundsExample(client: ProgramEscrowClient, sourceKeypai
     const amount = 10000000n; // 10 XLM in stroops
     
     console.log(`Locking ${amount} stroops...`);
+    await client.fundContract(amount, sourceKeypair);
     const programData = await client.lockProgramFunds(amount, sourceKeypair);
     console.log('Funds locked successfully.');
     console.log('Remaining balance:', programData.remaining_balance);
