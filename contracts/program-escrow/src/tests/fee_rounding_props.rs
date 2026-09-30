@@ -489,7 +489,8 @@ fn boundary_amount_zero_charges_no_fee() {
         assert_eq!(
             compute_fee(0, rate) + net_payout(0, rate),
             0,
-            "rate={}", rate
+            "rate={}",
+            rate
         );
     }
 }
@@ -513,8 +514,7 @@ fn boundary_one_amount_at_max_rate_rounds_to_zero() {
     assert_eq!(compute_fee(1, CONTRACT_MAX_FEE_RATE), 0);
     assert_eq!(net_payout(1, CONTRACT_MAX_FEE_RATE), 1);
     assert_eq!(
-        compute_fee(1, CONTRACT_MAX_FEE_RATE)
-            + net_payout(1, CONTRACT_MAX_FEE_RATE),
+        compute_fee(1, CONTRACT_MAX_FEE_RATE) + net_payout(1, CONTRACT_MAX_FEE_RATE),
         1
     );
 }
@@ -524,14 +524,19 @@ fn boundary_one_amount_at_max_rate_rounds_to_zero() {
 #[test]
 fn boundary_safe_envelope_top_holds_invariant() {
     let amount = SAFE_AMOUNT_MAX;
-    let rate   = CONTRACT_MAX_FEE_RATE;
-    let fee    = compute_fee(amount, rate);
+    let rate = CONTRACT_MAX_FEE_RATE;
+    let fee = compute_fee(amount, rate);
     let (fee_split, net_split) = token_math::split_amount(amount, rate);
     assert!(fee > 0, "fee at the envelope top must be positive: {}", fee);
-    assert!(fee <= amount,
-        "fee never exceeds amount: fee={} amount={}", fee, amount);
-    assert_eq!(fee, fee_split,
-        "fee-from-calculate_fee matches fee-from-split_amount at envelope top");
-    assert_eq!(fee + net_split, amount,
-        "no-dust-loss at envelope top");
+    assert!(
+        fee <= amount,
+        "fee never exceeds amount: fee={} amount={}",
+        fee,
+        amount
+    );
+    assert_eq!(
+        fee, fee_split,
+        "fee-from-calculate_fee matches fee-from-split_amount at envelope top"
+    );
+    assert_eq!(fee + net_split, amount, "no-dust-loss at envelope top");
 }

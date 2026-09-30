@@ -1,25 +1,27 @@
 //! Fund release: single, conversion, capability-based, partial, batch, and high-value timelock queue.
 
-
-
-use soroban_sdk::{symbol_short, token, Address, BytesN, Env, Vec};
 use crate::{
-    events, gas_budget, invariants, monitoring, multitoken_invariants, rbac, reentrancy_guard,
-    Capability, CapabilityAction, DataKey, Error, Escrow, EscrowStatus,
-    HighValueConfig, MultisigConfig, QueuedRelease, RefundMode, RefundRecord,
-    ReleaseFundsItem, RouterClient, SimulationResult,
+    events,
+    events::{
+        emit_batch_funds_released, emit_funds_released, BatchFundsReleased,
+        CriticalOperationOutcome, FundsReleased, RefundTriggerType, EVENT_VERSION_V2,
+    },
+    gas_budget, invariants, monitoring, multitoken_invariants, rbac, reentrancy_guard, Capability,
+    CapabilityAction, DataKey, Error, Escrow, EscrowStatus, HighValueConfig, MultisigConfig,
+    QueuedRelease, RefundMode, RefundRecord, ReleaseFundsItem, RouterClient, SimulationResult,
     MAX_BATCH_SIZE,
-    events::{emit_batch_funds_released, emit_funds_released,
-             BatchFundsReleased, FundsReleased, CriticalOperationOutcome,
-             RefundTriggerType, EVENT_VERSION_V2},
 };
+use soroban_sdk::{symbol_short, token, Address, BytesN, Env, Vec};
 
 // ─────────────────────────────────────────────────────────────────
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────
 
-
-pub(crate) fn release_funds_logic(env: Env, bounty_id: u64, contributor: Address) -> Result<(), Error> {
+pub(crate) fn release_funds_logic(
+    env: Env,
+    bounty_id: u64,
+    contributor: Address,
+) -> Result<(), Error> {
     // Validation precedence (deterministic ordering):
     // 1. Reentrancy guard
     // 2. Contract initialized
@@ -185,7 +187,6 @@ pub(crate) fn release_funds_logic(env: Env, bounty_id: u64, contributor: Address
     reentrancy_guard::release(&env);
     Ok(())
 }
-
 
 pub(crate) fn release_with_conversion_logic(
     env: Env,
@@ -414,7 +415,6 @@ pub(crate) fn release_with_conversion_logic(
     Ok(())
 }
 
-
 pub(crate) fn dry_run_release_impl(
     env: &Env,
     bounty_id: u64,
@@ -466,7 +466,6 @@ pub(crate) fn dry_run_release_impl(
 // ─────────────────────────────────────────────────────────────────
 // Public entry points (dispatcher targets)
 // ─────────────────────────────────────────────────────────────────
-
 
 /// Releases escrowed funds to a contributor.
 ///
@@ -522,7 +521,6 @@ pub fn release_funds(env: Env, bounty_id: u64, contributor: Address) -> Result<(
     res
 }
 
-
 pub fn set_router(env: Env, router: Address) -> Result<(), Error> {
     let admin: Address = env
         .storage()
@@ -534,11 +532,9 @@ pub fn set_router(env: Env, router: Address) -> Result<(), Error> {
     Ok(())
 }
 
-
 pub fn get_router(env: Env) -> Option<Address> {
     env.storage().instance().get(&DataKey::Router)
 }
-
 
 pub fn release_with_conversion(
     env: Env,
@@ -565,7 +561,6 @@ pub fn release_with_conversion(
     monitoring::track_operation(&env, symbol_short!("rel_conv"), caller, res.is_ok());
     res
 }
-
 
 /// Simulate release operation without state changes or token transfers.
 ///
@@ -600,7 +595,6 @@ pub fn dry_run_release(env: Env, bounty_id: u64, contributor: Address) -> Simula
         Err(e) => err_result(e),
     }
 }
-
 
 /// Delegated release flow using a capability instead of admin auth.
 /// The capability amount limit is consumed by `payout_amount`.
@@ -661,11 +655,7 @@ pub fn release_with_capability(
     env.storage()
         .persistent()
         .set(&DataKey::Escrow(bounty_id), &escrow);
-    crate::lock::renew_escrow_record(
-        &env,
-        bounty_id,
-        escrow.status == EscrowStatus::Released,
-    );
+    crate::lock::renew_escrow_record(&env, bounty_id, escrow.status == EscrowStatus::Released);
 
     // INTERACTION: external token transfer is last
     let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
@@ -692,7 +682,6 @@ pub fn release_with_capability(
     reentrancy_guard::release(&env);
     Ok(())
 }
-
 
 /// Releases a partial amount of locked funds.
 ///
@@ -770,11 +759,7 @@ pub fn partial_release(
     env.storage()
         .persistent()
         .set(&DataKey::Escrow(bounty_id), &escrow);
-    crate::lock::renew_escrow_record(
-        &env,
-        bounty_id,
-        escrow.status == EscrowStatus::Released,
-    );
+    crate::lock::renew_escrow_record(&env, bounty_id, escrow.status == EscrowStatus::Released);
 
     // INTERACTION: external token transfer is last
     let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
@@ -802,7 +787,6 @@ pub fn partial_release(
     multitoken_invariants::assert_after_disbursement(&env);
     Ok(())
 }
-
 
 /// Batch release funds to multiple contributors in a single atomic transaction.
 ///
@@ -1008,7 +992,6 @@ pub fn batch_release_funds(env: Env, items: Vec<ReleaseFundsItem>) -> Result<u32
     Ok(count)
 }
 
-
 /// Structure-of-Arrays (SoA) variant of `batch_release_funds`.
 /// Reduces host-to-guest deserialization overhead by accepting parallel arrays
 /// of primitives instead of an array of structs.
@@ -1030,7 +1013,6 @@ pub fn batch_release_funds_soa(
     }
     batch_release_funds(env, items)
 }
-
 
 // ============================================================================
 // HIGH-VALUE RELEASE TIMELOCK QUEUE
@@ -1076,12 +1058,10 @@ pub fn set_high_value_config(env: Env, threshold: i128, duration: u64) -> Result
     Ok(())
 }
 
-
 /// View: Gets the current high-value release configuration.
 pub fn get_high_value_config(env: Env) -> Option<HighValueConfig> {
     env.storage().instance().get(&DataKey::HighValueConfig)
 }
-
 
 /// View: Gets a currently queued release for a specific bounty.
 pub fn get_queued_release(env: Env, bounty_id: u64) -> Option<QueuedRelease> {
@@ -1090,7 +1070,6 @@ pub fn get_queued_release(env: Env, bounty_id: u64) -> Option<QueuedRelease> {
         .get(&DataKey::QueuedRelease(bounty_id))
 }
 
-
 /// View: Gets the stored high-value config schema version (upgrade safety check).
 pub fn get_hv_config_schema_version(env: Env) -> u32 {
     env.storage()
@@ -1098,7 +1077,6 @@ pub fn get_hv_config_schema_version(env: Env) -> u32 {
         .get(&DataKey::HighValueConfigSchemaVersion)
         .unwrap_or(0)
 }
-
 
 /// Executes a queued high-value release once its timelock has elapsed.
 ///
@@ -1220,7 +1198,6 @@ pub fn execute_queued_release(env: Env, bounty_id: u64) -> Result<(), Error> {
     result
 }
 
-
 /// Cancels a pending queued release (admin only).
 ///
 /// The escrow remains in `Locked` status so the admin can re-release
@@ -1253,4 +1230,3 @@ pub fn cancel_queued_release(env: Env, bounty_id: u64) -> Result<(), Error> {
 
     Ok(())
 }
-

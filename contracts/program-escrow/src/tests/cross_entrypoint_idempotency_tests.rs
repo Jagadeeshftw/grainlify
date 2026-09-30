@@ -45,9 +45,7 @@ use soroban_sdk::{
     token, vec, Address, Env, IntoVal, String, TryIntoVal,
 };
 
-use crate::{
-    BatchPayoutReplayedEvent, ProgramEscrowContract, ProgramEscrowContractClient,
-};
+use crate::{BatchPayoutReplayedEvent, ProgramEscrowContract, ProgramEscrowContractClient};
 
 // =============================================================================
 // Helpers
@@ -152,8 +150,7 @@ fn test_single_then_batch_replay_rejected() {
     // ── Step 2: Replay via batch_payout_idempotent ──
     let batch_recipients = vec![&env, recipient.clone()];
     let batch_amounts = vec![&env, 1000_i128];
-    let data2 = client
-        .batch_payout_idempotent(&idem_key, &batch_recipients, &batch_amounts);
+    let data2 = client.batch_payout_idempotent(&idem_key, &batch_recipients, &batch_amounts);
 
     // Balance must NOT change (no double payment).
     assert_eq!(
@@ -196,8 +193,7 @@ fn test_batch_then_single_replay_rejected() {
     let batch_amounts = vec![&env, 2000_i128];
 
     // ── Step 1: Consume via batch_payout_idempotent ──
-    let data1 = client
-        .batch_payout_idempotent(&idem_key, &batch_recipients, &batch_amounts);
+    let data1 = client.batch_payout_idempotent(&idem_key, &batch_recipients, &batch_amounts);
     assert_eq!(data1.remaining_balance, 8000);
     assert_eq!(data1.payout_history.len(), 1);
     let balance_after_batch = token_client.balance(&client.address);

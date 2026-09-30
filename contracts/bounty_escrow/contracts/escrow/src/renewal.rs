@@ -1,19 +1,16 @@
 //! Escrow renewal (deadline extension + top-up) and cycle-chain management.
 
-
-
-use soroban_sdk::{symbol_short, token, Address, Env, Vec};
 use crate::{
-    events, reentrancy_guard, multitoken_invariants,
-    CycleLink, DataKey, Error, Escrow, EscrowStatus, FeeConfig, RefundMode, RefundRecord,
-    RenewalRecord,
+    events,
     events::{CriticalOperationOutcome, EVENT_VERSION_V2},
+    multitoken_invariants, reentrancy_guard, CycleLink, DataKey, Error, Escrow, EscrowStatus,
+    FeeConfig, RefundMode, RefundRecord, RenewalRecord,
 };
+use soroban_sdk::{symbol_short, token, Address, Env, Vec};
 
 // ─────────────────────────────────────────────────────────────────
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────
-
 
 pub(crate) fn default_cycle_link() -> CycleLink {
     CycleLink {
@@ -26,7 +23,6 @@ pub(crate) fn default_cycle_link() -> CycleLink {
 // ─────────────────────────────────────────────────────────────────
 // Public entry points (dispatcher targets)
 // ─────────────────────────────────────────────────────────────────
-
 
 /// Extends the deadline of an active escrow and optionally tops up locked funds.
 ///
@@ -119,7 +115,6 @@ pub fn renew_escrow(
     multitoken_invariants::assert_after_disbursement(&env);
     Ok(())
 }
-
 
 /// Starts a new bounty cycle from a completed prior cycle without mutating prior records.
 ///
@@ -241,7 +236,6 @@ pub fn create_next_cycle(
     Ok(())
 }
 
-
 /// Returns the immutable renewal history for `bounty_id`.
 pub fn get_renewal_history(env: Env, bounty_id: u64) -> Result<Vec<RenewalRecord>, Error> {
     if !env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
@@ -254,7 +248,6 @@ pub fn get_renewal_history(env: Env, bounty_id: u64) -> Result<Vec<RenewalRecord
         .get(&DataKey::RenewalHistory(bounty_id))
         .unwrap_or(Vec::new(&env)))
 }
-
 
 /// Returns the rollover link metadata for `bounty_id`.
 ///
@@ -280,4 +273,3 @@ pub fn get_cycle_info(env: Env, bounty_id: u64) -> Result<CycleLink, Error> {
 
     Ok(link)
 }
-

@@ -128,7 +128,9 @@ pub mod fot_mocks {
             pub fn quote(_env: Env, _token: Address, amount: i128) -> i128 {
                 // Return 100x the intended net amount; this should be rejected by
                 // the upper-bound check before any tokens are transferred.
-                amount.checked_mul(100).expect("Mock inflated amount overflow")
+                amount
+                    .checked_mul(100)
+                    .expect("Mock inflated amount overflow")
             }
         }
     }
@@ -176,7 +178,12 @@ fn setup_with_router(
     client.publish_program(&program_id, &admin);
     client.set_fot_router(&router_id, &slippage_bps, &50_000);
 
-    FotRoutingSetup { client, token, router, admin }
+    FotRoutingSetup {
+        client,
+        token,
+        router,
+        admin,
+    }
 }
 
 struct NoRouterSetup<'a> {
@@ -246,17 +253,17 @@ fn assert_liability_invariant(
 }
 
 fn event_data(env: &Env, topic: Symbol) -> Option<Val> {
-    env.events()
-        .all()
-        .iter()
-        .find_map(|(_, topics, data)| {
-            let first = topics.get(0)?;
-            if Symbol::try_from_val(env, &first).map(|t| t == topic).unwrap_or(false) {
-                Some(data.clone())
-            } else {
-                None
-            }
-        })
+    env.events().all().iter().find_map(|(_, topics, data)| {
+        let first = topics.get(0)?;
+        if Symbol::try_from_val(env, &first)
+            .map(|t| t == topic)
+            .unwrap_or(false)
+        {
+            Some(data.clone())
+        } else {
+            None
+        }
+    })
 }
 
 fn payout_events(env: &Env) -> Vec<PayoutEvent> {
@@ -264,7 +271,10 @@ fn payout_events(env: &Env) -> Vec<PayoutEvent> {
     let mut out: Vec<PayoutEvent> = Vec::new(env);
     for (_, topics, data) in env.events().all() {
         let first = topics.get(0).unwrap_or_default();
-        if Symbol::try_from_val(env, &first).map(|t| t == topic).unwrap_or(false) {
+        if Symbol::try_from_val(env, &first)
+            .map(|t| t == topic)
+            .unwrap_or(false)
+        {
             out.push_back(PayoutEvent::try_from_val(env, &data).expect("valid PayoutEvent"));
         }
     }
@@ -306,10 +316,16 @@ fn test_single_payout_router_preserves_net() {
     // Contract sends 1000, FoT takes 10%, recipient gets 900.
     setup.client.single_payout(&recipient, &900, &None);
 
-    assert_eq!(setup.token.balance(&recipient), 900,
-        "Recipient must receive the intended net amount despite FoT fee");
-    assert_eq!(setup.client.get_program_info().remaining_balance, 9_000,
-        "remaining_balance debited by actual outflow (1000), not net (900)");
+    assert_eq!(
+        setup.token.balance(&recipient),
+        900,
+        "Recipient must receive the intended net amount despite FoT fee"
+    );
+    assert_eq!(
+        setup.client.get_program_info().remaining_balance,
+        9_000,
+        "remaining_balance debited by actual outflow (1000), not net (900)"
+    );
 }
 
 // ===========================================================================
@@ -374,8 +390,11 @@ fn test_single_payout_zero_slippage_high_fot() {
     // net=800, router: ceil(800*10000/8000) = 1000
     setup.client.single_payout(&recipient, &800, &None);
 
-    assert_eq!(setup.token.balance(&recipient), 800,
-        "20% FoT: recipient gets intended 800");
+    assert_eq!(
+        setup.token.balance(&recipient),
+        800,
+        "20% FoT: recipient gets intended 800"
+    );
     assert_eq!(setup.client.get_program_info().remaining_balance, 9_000);
 }
 
@@ -440,8 +459,10 @@ fn test_router_fot_differs_from_token() {
     // Token takes 10%: recipient gets 948 - 94 = 854
     setup.client.single_payout(&recipient, &900, &None);
 
-    assert!(setup.token.balance(&recipient) < 900,
-        "Under-routing: recipient gets less than intended");
+    assert!(
+        setup.token.balance(&recipient) < 900,
+        "Under-routing: recipient gets less than intended"
+    );
 }
 
 // ===========================================================================
@@ -479,8 +500,11 @@ fn test_clear_router_restores_no_routing() {
     // Without routing, sends net=900 directly. FoT takes 10% → recipient gets 810.
     setup.client.single_payout(&recipient, &900, &None);
 
-    assert_eq!(setup.token.balance(&recipient), 810,
-        "After clearing router, FoT fee is not compensated");
+    assert_eq!(
+        setup.token.balance(&recipient),
+        810,
+        "After clearing router, FoT fee is not compensated"
+    );
     assert_eq!(setup.client.get_program_info().remaining_balance, 9_100);
 }
 
@@ -520,8 +544,11 @@ fn test_single_payout_fee_waived_with_routing() {
     let recipient = Address::generate(&env);
     setup.client.single_payout(&recipient, &900, &None);
 
-    assert_eq!(setup.token.balance(&recipient), 900,
-        "Fee waived: recipient gets intended net with FoT routing");
+    assert_eq!(
+        setup.token.balance(&recipient),
+        900,
+        "Fee waived: recipient gets intended net with FoT routing"
+    );
     assert_eq!(setup.client.get_program_info().remaining_balance, 9_000);
 }
 
@@ -550,7 +577,10 @@ fn test_set_fot_router_emits_event() {
     client.set_fot_router(&router_id, &100, &15_000);
 
     let events_after = env.events().all().len();
-    assert!(events_after > events_before, "set_fot_router must emit an event");
+    assert!(
+        events_after > events_before,
+        "set_fot_router must emit an event"
+    );
 }
 
 #[test]
@@ -575,7 +605,10 @@ fn test_clear_fot_router_emits_event() {
     client.clear_fot_router();
 
     let events_after = env.events().all().len();
-    assert!(events_after > events_before, "clear_fot_router must emit an event");
+    assert!(
+        events_after > events_before,
+        "clear_fot_router must emit an event"
+    );
 }
 
 // ===========================================================================
@@ -623,11 +656,22 @@ fn test_batch_payout_fee_waived_with_routing() {
     // 5% FoT: router ceil(5000*10000/9500)=5264, ceil(4000*10000/9500)=4211
     // Token takes 5%: r1 net = 5264 - floor(5264*5%) = 5264 - 263 = 5001
     //                 r2 net = 4211 - floor(4211*5%) = 4211 - 210 = 4001
-    assert_eq!(setup.token.balance(&r1), 5_001, "r1 receives intended (~5000) net");
-    assert_eq!(setup.token.balance(&r2), 4_001, "r2 receives intended (~4000) net");
+    assert_eq!(
+        setup.token.balance(&r1),
+        5_001,
+        "r1 receives intended (~5000) net"
+    );
+    assert_eq!(
+        setup.token.balance(&r2),
+        4_001,
+        "r2 receives intended (~4000) net"
+    );
 
     // Outflow: 5264 + 4211 = 9475
-    assert_eq!(setup.client.get_program_info().remaining_balance, 15_000 - 5_264 - 4_211);
+    assert_eq!(
+        setup.client.get_program_info().remaining_balance,
+        15_000 - 5_264 - 4_211
+    );
 }
 
 // ===========================================================================
@@ -665,8 +709,10 @@ fn test_fot_router_in_program_data() {
     };
     assert_eq!(fot_router.router_contract, setup.router.address);
     assert_eq!(fot_router.slippage_bps, 100);
-    assert_eq!(fot_router.max_fot_multiplier_bps, 50_000,
-        "max_fot_multiplier_bps default used by the helper must be persisted");
+    assert_eq!(
+        fot_router.max_fot_multiplier_bps, 50_000,
+        "max_fot_multiplier_bps default used by the helper must be persisted"
+    );
 }
 
 // ===========================================================================
@@ -701,8 +747,10 @@ fn test_single_payout_record_reflects_transfer_amount() {
 
     let info = setup.client.get_program_info();
     let record = info.payout_history.get(0).unwrap();
-    assert_eq!(record.amount, 1_000,
-        "PayoutRecord.amount must reflect the routed transfer amount (1000), not the net (900)");
+    assert_eq!(
+        record.amount, 1_000,
+        "PayoutRecord.amount must reflect the routed transfer amount (1000), not the net (900)"
+    );
 }
 
 // ===========================================================================
@@ -726,8 +774,14 @@ fn test_batch_payout_records_reflect_transfer_amounts() {
     let info = setup.client.get_program_info();
     let record0 = info.payout_history.get(0).unwrap();
     let record1 = info.payout_history.get(1).unwrap();
-    assert_eq!(record0.amount, 2_106, "PayoutRecord[0] reflects routed amount");
-    assert_eq!(record1.amount, 3_158, "PayoutRecord[1] reflects routed amount");
+    assert_eq!(
+        record0.amount, 2_106,
+        "PayoutRecord[0] reflects routed amount"
+    );
+    assert_eq!(
+        record1.amount, 3_158,
+        "PayoutRecord[1] reflects routed amount"
+    );
 }
 
 // ===========================================================================
@@ -756,7 +810,15 @@ fn test_single_payout_with_protocol_fee_and_routing() {
     client.init_program(&program_id, &admin, &token_id, &admin, &None, &None);
 
     // Enable a 5% protocol payout fee
-    client.update_fee_config(&Some(0), &Some(500), &None, &None, &Some(admin.clone()), &Some(true), &Some(0));
+    client.update_fee_config(
+        &Some(0),
+        &Some(500),
+        &None,
+        &None,
+        &Some(admin.clone()),
+        &Some(true),
+        &Some(0),
+    );
     client.publish_program(&program_id, &admin);
     client.set_fot_router(&router_id, &0, &15_000);
 
@@ -802,7 +864,15 @@ fn test_batch_payout_with_protocol_fee_and_routing() {
     let program_id = String::from_str(&env, "batch-fee-routing");
 
     client.init_program(&program_id, &admin, &token_id, &admin, &None, &None);
-    client.update_fee_config(&Some(0), &Some(500), &None, &None, &Some(admin.clone()), &Some(true), &Some(0));
+    client.update_fee_config(
+        &Some(0),
+        &Some(500),
+        &None,
+        &None,
+        &Some(admin.clone()),
+        &Some(true),
+        &Some(0),
+    );
     client.publish_program(&program_id, &admin);
     client.set_fot_router(&router_id, &0, &15_000);
 
@@ -900,7 +970,11 @@ fn test_end_to_end_liability_invariant_deposit_payout_refund() {
         .transfer(&funder, &setup.client.address, &minted);
 
     setup.client.lock_program_funds(&1_125);
-    assert_eq!(setup.token.balance(&setup.client.address), 1_125, "contract balance after deposit");
+    assert_eq!(
+        setup.token.balance(&setup.client.address),
+        1_125,
+        "contract balance after deposit"
+    );
     assert_eq!(setup.client.get_program_info().remaining_balance, 1_125);
     assert_liability_invariant(&setup.client, &setup.token, 0);
 
@@ -908,35 +982,62 @@ fn test_end_to_end_liability_invariant_deposit_payout_refund() {
     let funds_locked: FundsLockedEvent = event_data(&env, Symbol::new(&env, "FndsLock"))
         .map(|data| FundsLockedEvent::try_from_val(&env, &data).expect("valid FundsLockedEvent"))
         .expect("FundsLocked event must be emitted");
-    assert_eq!(funds_locked.amount, 1_125, "FundsLocked.amount must be the received value");
+    assert_eq!(
+        funds_locked.amount, 1_125,
+        "FundsLocked.amount must be the received value"
+    );
     assert_eq!(funds_locked.remaining_balance, 1_125);
 
     // ── PAYOUT leg ─────────────────────────────────────────────────────
     // net 450 → router gross 500 → escrow transfers 500, recipient nets 450.
     setup.client.single_payout(&recipient, &450, &None);
-    assert_eq!(setup.token.balance(&recipient), 450, "beneficiary receives intended net");
-    assert_eq!(setup.token.balance(&setup.client.address), 625, "contract balance after payout");
+    assert_eq!(
+        setup.token.balance(&recipient),
+        450,
+        "beneficiary receives intended net"
+    );
+    assert_eq!(
+        setup.token.balance(&setup.client.address),
+        625,
+        "contract balance after payout"
+    );
     assert_eq!(setup.client.get_program_info().remaining_balance, 625);
     assert_liability_invariant(&setup.client, &setup.token, 0);
 
     // Payout event (payout leg) reflects the routed transfer amount.
     let payouts = payout_events(&env);
     assert_eq!(payouts.len(), 1);
-    assert_eq!(payouts.get(0).unwrap().amount, 500, "Payout.amount must be the routed gross (500)");
+    assert_eq!(
+        payouts.get(0).unwrap().amount,
+        500,
+        "Payout.amount must be the routed gross (500)"
+    );
     assert_eq!(payouts.get(0).unwrap().remaining_balance, 625);
 
     // ── REFUND leg ─────────────────────────────────────────────────────
     // The outstanding liability (625) is (partially) returned to the funder as
     // a payout-type transfer. net 450 → gross 500, funder nets 450.
     setup.client.single_payout(&funder, &450, &None);
-    assert_eq!(setup.token.balance(&funder), 450, "funder refund nets the intended amount");
-    assert_eq!(setup.token.balance(&setup.client.address), 125, "contract balance after refund");
+    assert_eq!(
+        setup.token.balance(&funder),
+        450,
+        "funder refund nets the intended amount"
+    );
+    assert_eq!(
+        setup.token.balance(&setup.client.address),
+        125,
+        "contract balance after refund"
+    );
     assert_eq!(setup.client.get_program_info().remaining_balance, 125);
     assert_liability_invariant(&setup.client, &setup.token, 0);
 
     let payouts = payout_events(&env);
     assert_eq!(payouts.len(), 2);
-    assert_eq!(payouts.get(1).unwrap().amount, 500, "refund Payout.amount must be the routed gross (500)");
+    assert_eq!(
+        payouts.get(1).unwrap().amount,
+        500,
+        "refund Payout.amount must be the routed gross (500)"
+    );
     assert_eq!(payouts.get(1).unwrap().remaining_balance, 125);
 
     // ── Conservation ───────────────────────────────────────────────────
@@ -946,7 +1047,10 @@ fn test_end_to_end_liability_invariant_deposit_payout_refund() {
         - setup.token.balance(&recipient)
         - setup.token.balance(&funder)
         - setup.token.balance(&setup.client.address);
-    assert_eq!(burns, 225, "FoT burns: deposit 125 + payout 50 + refund 50 = 225");
+    assert_eq!(
+        burns, 225,
+        "FoT burns: deposit 125 + payout 50 + refund 50 = 225"
+    );
 }
 
 // ===========================================================================
@@ -1013,9 +1117,21 @@ fn test_end_to_end_liability_invariant_with_insurance_reserve() {
     // net 86 (9 burned is outside liability). total_debit = 2112+100 = 2212.
     client.single_payout(&recipient, &2_000, &None);
 
-    assert_eq!(token.balance(&recipient), 1_901, "beneficiary nets intended ~1900");
-    assert_eq!(token.balance(&fee_recipient), 86, "fee recipient nets 86 after FoT on the 95 transfer");
-    assert_eq!(client.get_insurance_reserve_balance(), 5, "reserve booked 5");
+    assert_eq!(
+        token.balance(&recipient),
+        1_901,
+        "beneficiary nets intended ~1900"
+    );
+    assert_eq!(
+        token.balance(&fee_recipient),
+        86,
+        "fee recipient nets 86 after FoT on the 95 transfer"
+    );
+    assert_eq!(
+        client.get_insurance_reserve_balance(),
+        5,
+        "reserve booked 5"
+    );
     assert_eq!(client.get_program_info().remaining_balance, 11_250 - 2_212);
     // on_chain = 11_250 - 2112 (transfer) - 95 (recipient share gross) = 9_043
     assert_eq!(token.balance(&client.address), 9_043);
@@ -1025,7 +1141,10 @@ fn test_end_to_end_liability_invariant_with_insurance_reserve() {
     let fee_event: FeeCollectedEvent = event_data(&env, Symbol::new(&env, "FeeCol"))
         .map(|data| FeeCollectedEvent::try_from_val(&env, &data).expect("valid FeeCollectedEvent"))
         .expect("FeeCollected event must be emitted");
-    assert_eq!(fee_event.fee_amount, 100, "FeeCollected.fee_amount must be 100");
+    assert_eq!(
+        fee_event.fee_amount, 100,
+        "FeeCollected.fee_amount must be 100"
+    );
 
     // ── REFUND leg ─────────────────────────────────────────────────────
     // amount=400 → protocol fee=20 (ceil), net=380, router gross=423.
@@ -1035,7 +1154,11 @@ fn test_end_to_end_liability_invariant_with_insurance_reserve() {
     client.single_payout(&funder, &400, &None);
 
     assert_eq!(token.balance(&funder), 381, "funder refund nets ~380");
-    assert_eq!(token.balance(&fee_recipient), 104, "fee recipient total 86+18 = 104");
+    assert_eq!(
+        token.balance(&fee_recipient),
+        104,
+        "fee recipient total 86+18 = 104"
+    );
     assert_eq!(client.get_insurance_reserve_balance(), 6, "reserve total 6");
     assert_eq!(client.get_program_info().remaining_balance, 9_038 - 443);
     // on_chain = 9_043 - 423 (transfer) - 19 (recipient share gross) = 8_601
@@ -1045,8 +1168,16 @@ fn test_end_to_end_liability_invariant_with_insurance_reserve() {
     // Both payouts (payout + refund) carry the routed transfer amounts.
     let payouts = payout_events(&env);
     assert_eq!(payouts.len(), 2);
-    assert_eq!(payouts.get(0).unwrap().amount, 2_112, "payout leg Payout.amount = routed gross");
-    assert_eq!(payouts.get(1).unwrap().amount, 423, "refund leg Payout.amount = routed gross");
+    assert_eq!(
+        payouts.get(0).unwrap().amount,
+        2_112,
+        "payout leg Payout.amount = routed gross"
+    );
+    assert_eq!(
+        payouts.get(1).unwrap().amount,
+        423,
+        "refund leg Payout.amount = routed gross"
+    );
 }
 
 // ===========================================================================

@@ -529,14 +529,16 @@ fn test_non_admin_cannot_deregister() {
 #[test]
 fn test_register_up_to_max_capacity() {
     use crate::MAX_REGISTRY_SIZE;
-    
+
     let (env, facade, admin) = setup();
     facade.init(&admin);
 
     // Register exactly MAX_REGISTRY_SIZE contracts
     for i in 0..MAX_REGISTRY_SIZE {
         let contract = Address::generate(&env);
-        facade.register(&contract, &ContractKind::BountyEscrow, &i).unwrap();
+        facade
+            .register(&contract, &ContractKind::BountyEscrow, &i)
+            .unwrap();
     }
 
     assert_eq!(facade.contract_count(), MAX_REGISTRY_SIZE);
@@ -546,19 +548,25 @@ fn test_register_up_to_max_capacity() {
 #[test]
 fn test_register_beyond_max_capacity_fails() {
     use crate::MAX_REGISTRY_SIZE;
-    
+
     let (env, facade, admin) = setup();
     facade.init(&admin);
 
     // Fill the registry to capacity
     for i in 0..MAX_REGISTRY_SIZE {
         let contract = Address::generate(&env);
-        facade.register(&contract, &ContractKind::BountyEscrow, &i).unwrap();
+        facade
+            .register(&contract, &ContractKind::BountyEscrow, &i)
+            .unwrap();
     }
 
     // Try to register one more - should fail
     let extra_contract = Address::generate(&env);
-    let result = facade.try_register(&extra_contract, &ContractKind::BountyEscrow, &MAX_REGISTRY_SIZE);
+    let result = facade.try_register(
+        &extra_contract,
+        &ContractKind::BountyEscrow,
+        &MAX_REGISTRY_SIZE,
+    );
     assert_eq!(result, Err(Ok(crate::FacadeError::RegistryFull)));
 
     // Registry size should remain at max capacity
@@ -569,7 +577,7 @@ fn test_register_beyond_max_capacity_fails() {
 #[test]
 fn test_deregister_frees_slots_for_new_registrations() {
     use crate::MAX_REGISTRY_SIZE;
-    
+
     let (env, facade, admin) = setup();
     facade.init(&admin);
 
@@ -578,7 +586,9 @@ fn test_deregister_frees_slots_for_new_registrations() {
     for i in 0..MAX_REGISTRY_SIZE {
         let contract = Address::generate(&env);
         contracts.push_back(contract.clone());
-        facade.register(&contract, &ContractKind::BountyEscrow, &i).unwrap();
+        facade
+            .register(&contract, &ContractKind::BountyEscrow, &i)
+            .unwrap();
     }
 
     assert_eq!(facade.contract_count(), MAX_REGISTRY_SIZE);
@@ -591,7 +601,9 @@ fn test_deregister_frees_slots_for_new_registrations() {
 
     // Should be able to register a new contract now
     let new_contract = Address::generate(&env);
-    facade.register(&new_contract, &ContractKind::ProgramEscrow, &999).unwrap();
+    facade
+        .register(&new_contract, &ContractKind::ProgramEscrow, &999)
+        .unwrap();
 
     assert_eq!(facade.contract_count(), MAX_REGISTRY_SIZE);
 }
@@ -600,7 +612,7 @@ fn test_deregister_frees_slots_for_new_registrations() {
 #[test]
 fn test_registry_full_error_for_admin() {
     use crate::MAX_REGISTRY_SIZE;
-    
+
     let (env, facade, admin) = setup_without_auth_mocks();
     let facade_id = facade.address.clone();
     facade.init(&admin);
@@ -608,7 +620,7 @@ fn test_registry_full_error_for_admin() {
     // Fill the registry to capacity with explicit auth for each registration
     for i in 0..MAX_REGISTRY_SIZE {
         let contract = Address::generate(&env);
-        
+
         env.mock_auths(&[MockAuth {
             address: &admin,
             invoke: &MockAuthInvoke {
@@ -618,8 +630,10 @@ fn test_registry_full_error_for_admin() {
                 sub_invokes: &[],
             },
         }]);
-        
-        facade.register(&contract, &ContractKind::BountyEscrow, &i).unwrap();
+
+        facade
+            .register(&contract, &ContractKind::BountyEscrow, &i)
+            .unwrap();
     }
 
     // Try to register one more with admin auth - should still fail
@@ -629,12 +643,21 @@ fn test_registry_full_error_for_admin() {
         invoke: &MockAuthInvoke {
             contract: &facade_id,
             fn_name: "register",
-            args: (extra_contract.clone(), ContractKind::BountyEscrow, MAX_REGISTRY_SIZE).into_val(&env),
+            args: (
+                extra_contract.clone(),
+                ContractKind::BountyEscrow,
+                MAX_REGISTRY_SIZE,
+            )
+                .into_val(&env),
             sub_invokes: &[],
         },
     }]);
-    
-    let result = facade.try_register(&extra_contract, &ContractKind::BountyEscrow, &MAX_REGISTRY_SIZE);
+
+    let result = facade.try_register(
+        &extra_contract,
+        &ContractKind::BountyEscrow,
+        &MAX_REGISTRY_SIZE,
+    );
     assert_eq!(result, Err(Ok(crate::FacadeError::RegistryFull)));
 }
 
@@ -790,7 +813,7 @@ fn test_list_contracts_all_compatibility() {
 
     let all = facade.list_contracts_all();
     assert_eq!(all.len(), 5);
-    
+
     for (i, entry) in all.iter().enumerate() {
         assert_eq!(entry.address, contracts.get(i).unwrap());
     }
@@ -848,14 +871,16 @@ fn test_full_pagination_workflow() {
     let mut offset = 0u32;
 
     loop {
-        let page = facade.list_contracts(Some(offset), Some(page_size)).unwrap();
+        let page = facade
+            .list_contracts(Some(offset), Some(page_size))
+            .unwrap();
         all_collected.extend_from_slice(&page);
-        
+
         // If we got fewer than page_size, we're done
         if page.len() < page_size as usize {
             break;
         }
-        
+
         offset += page_size;
     }
 
@@ -904,7 +929,7 @@ fn test_pagination_after_deregistration() {
 
     // Should have 12 unique addresses
     assert_eq!(all_addresses.len(), 12);
-    
+
     // Check uniqueness (simple approach - no duplicates in positions)
     for i in 0..all_addresses.len() {
         for j in (i + 1)..all_addresses.len() {

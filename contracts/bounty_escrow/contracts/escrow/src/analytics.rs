@@ -1,30 +1,23 @@
 //! Contract operation analytics and aggregate statistics.
 
-use soroban_sdk::{Env, Vec};
 use crate::{monitoring, AggregateStats, DataKey, Escrow, EscrowStatus};
+use soroban_sdk::{Env, Vec};
 
 // ─────────────────────────────────────────────────────────────────
 // Public entry points (dispatcher targets)
 // ─────────────────────────────────────────────────────────────────
 
-
 pub fn health_check(env: Env) -> monitoring::HealthStatus {
     monitoring::health_check(&env)
 }
-
-
 
 pub fn get_analytics(env: Env) -> monitoring::Analytics {
     monitoring::get_analytics(&env)
 }
 
-
-
 pub fn get_state_snapshot(env: Env) -> monitoring::StateSnapshot {
     monitoring::get_state_snapshot(&env)
 }
-
-
 
 /// Aggregate totals across all escrows grouped by status.
 ///
@@ -100,4 +93,3 @@ pub fn get_aggregate_stats(env: Env) -> AggregateStats {
         count_refunded,
     }
 }
-

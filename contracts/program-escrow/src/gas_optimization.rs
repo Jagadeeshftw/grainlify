@@ -103,7 +103,9 @@ pub mod storage_efficiency {
 
     /// Extend TTL for the contract instance.
     pub fn extend_instance_ttl(env: &Env, ttl_threshold: u32, extend_to: u32) {
-        env.storage().instance().extend_ttl(ttl_threshold, extend_to);
+        env.storage()
+            .instance()
+            .extend_ttl(ttl_threshold, extend_to);
     }
 
     /// Check if storage key exists without retrieving value.
@@ -267,7 +269,11 @@ pub mod efficient_math {
     /// i128::MIN - 1), not when the result is merely negative. This function
     /// clamps the result to 0 for any case where b > a.
     pub fn safe_sub_zero(a: i128, b: i128) -> i128 {
-        if b > a { 0 } else { a - b }
+        if b > a {
+            0
+        } else {
+            a - b
+        }
     }
 
     /// Clamp value between min and max.
@@ -404,7 +410,11 @@ mod packed_flag_coverage_tests {
         set_packed_flags(&env, &TEST_KEY, flag_bit | other_bit);
         clear_packed_flags(&env, &TEST_KEY, flag_bit);
         let stored = get_packed_flags(&env, &TEST_KEY);
-        assert_eq!(stored, other_bit, "{} clear corrupted other flags", flag_name);
+        assert_eq!(
+            stored, other_bit,
+            "{} clear corrupted other flags",
+            flag_name
+        );
     }
 
     /// Verify that setting flag A does not affect flag B.
@@ -417,8 +427,11 @@ mod packed_flag_coverage_tests {
         clear_packed_flags(&env, &TEST_KEY, clear_bit);
         let stored = get_packed_flags(&env, &TEST_KEY);
         assert_eq!(
-            stored, set_bit & !clear_bit,
-            "{} set corrupted {} clear", set_name, clear_name
+            stored,
+            set_bit & !clear_bit,
+            "{} set corrupted {} clear",
+            set_name,
+            clear_name
         );
     }
 
@@ -549,7 +562,11 @@ mod packed_flag_coverage_tests {
             // For each combination, verify round-trip integrity
             set_packed_flags(&env, &TEST_KEY, combo);
             let stored = get_packed_flags(&env, &TEST_KEY);
-            assert_eq!(stored, combo, "Combination {:08b} round-trip mismatch", combo);
+            assert_eq!(
+                stored, combo,
+                "Combination {:08b} round-trip mismatch",
+                combo
+            );
 
             // Verify each individual bit can be independently checked
             let lock_set = stored & PAUSE_LOCK != 0;
@@ -563,13 +580,31 @@ mod packed_flag_coverage_tests {
 
             // Verify has_packed_flags works correctly
             assert_eq!(has_packed_flags(&env, &TEST_KEY, PAUSE_LOCK), lock_set);
-            assert_eq!(has_packed_flags(&env, &TEST_KEY, PAUSE_RELEASE), release_set);
+            assert_eq!(
+                has_packed_flags(&env, &TEST_KEY, PAUSE_RELEASE),
+                release_set
+            );
             assert_eq!(has_packed_flags(&env, &TEST_KEY, PAUSE_REFUND), refund_set);
-            assert_eq!(has_packed_flags(&env, &TEST_KEY, PAUSE_ARCHIVE), archive_set);
-            assert_eq!(has_packed_flags(&env, &TEST_KEY, PAUSE_BATCH_LOCK), batch_lock_set);
-            assert_eq!(has_packed_flags(&env, &TEST_KEY, PAUSE_BATCH_RELEASE), batch_release_set);
-            assert_eq!(has_packed_flags(&env, &TEST_KEY, PAUSE_BATCH_REFUND), batch_refund_set);
-            assert_eq!(has_packed_flags(&env, &TEST_KEY, PAUSE_EMERGENCY), emergency_set);
+            assert_eq!(
+                has_packed_flags(&env, &TEST_KEY, PAUSE_ARCHIVE),
+                archive_set
+            );
+            assert_eq!(
+                has_packed_flags(&env, &TEST_KEY, PAUSE_BATCH_LOCK),
+                batch_lock_set
+            );
+            assert_eq!(
+                has_packed_flags(&env, &TEST_KEY, PAUSE_BATCH_RELEASE),
+                batch_release_set
+            );
+            assert_eq!(
+                has_packed_flags(&env, &TEST_KEY, PAUSE_BATCH_REFUND),
+                batch_refund_set
+            );
+            assert_eq!(
+                has_packed_flags(&env, &TEST_KEY, PAUSE_EMERGENCY),
+                emergency_set
+            );
 
             // Verify has_any_packed_flags works correctly
             let any_single = has_any_packed_flags(&env, &TEST_KEY, PAUSE_LOCK);
@@ -622,7 +657,11 @@ mod packed_flag_coverage_tests {
 
         // Clear all flags
         clear_packed_flags(&env, &TEST_KEY, FLAG_MASK_8BITS);
-        assert_eq!(get_packed_flags(&env, &TEST_KEY), 0, "Flags not fully cleared");
+        assert_eq!(
+            get_packed_flags(&env, &TEST_KEY),
+            0,
+            "Flags not fully cleared"
+        );
     }
 
     /// Verify selective flag operations don't corrupt storage.
@@ -634,7 +673,11 @@ mod packed_flag_coverage_tests {
         env.storage().instance().set(&TEST_KEY, &0u32);
 
         // Set flags 0, 2, 4, 6 (even positions)
-        set_packed_flags(&env, &TEST_KEY, PAUSE_LOCK | PAUSE_REFUND | PAUSE_BATCH_LOCK | PAUSE_BATCH_REFUND);
+        set_packed_flags(
+            &env,
+            &TEST_KEY,
+            PAUSE_LOCK | PAUSE_REFUND | PAUSE_BATCH_LOCK | PAUSE_BATCH_REFUND,
+        );
         let stored = get_packed_flags(&env, &TEST_KEY);
         assert_eq!(
             stored,

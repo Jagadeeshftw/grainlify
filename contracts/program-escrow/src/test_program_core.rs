@@ -4,7 +4,10 @@ extern crate std;
 
 use super::*;
 use crate::test_support::*;
-use soroban_sdk::{testutils::{Address as _, Events, Ledger, MockAuth, MockAuthInvoke}, token, vec, Address, Env, IntoVal, Map, String, Symbol, TryFromVal, Val};
+use soroban_sdk::{
+    testutils::{Address as _, Events, Ledger, MockAuth, MockAuthInvoke},
+    token, vec, Address, Env, IntoVal, Map, String, Symbol, TryFromVal, Val,
+};
 
 #[test]
 #[should_panic(expected = "107")]
@@ -87,7 +90,8 @@ fn test_program_published_event_contains_required_fields() {
     let (_, topics, data) = events.get(before).expect("publish event should be emitted");
     assert_eq!(topics, (PROGRAM_PUBLISHED,).into_val(&env));
 
-    let event = ProgramPublishedEvent::try_from_val(&env, &data).expect("event payload should decode");
+    let event =
+        ProgramPublishedEvent::try_from_val(&env, &data).expect("event payload should decode");
     assert_eq!(event.program_id, program_id);
     assert_eq!(event.publisher, admin);
     assert_eq!(event.timestamp, 12345);
@@ -100,12 +104,22 @@ fn test_fee_ceiling_division_avoids_dust_for_odd_amount() {
     let fee_recipient = Address::generate(&env);
     let recipient = Address::generate(&env);
 
-    client.update_fee_config(&None, &Some(100), &None, &None, &Some(fee_recipient.clone()), &Some(true));
+    client.update_fee_config(
+        &None,
+        &Some(100),
+        &None,
+        &None,
+        &Some(fee_recipient.clone()),
+        &Some(true),
+    );
     client.single_payout(&recipient, &1001, &None);
 
     assert_eq!(token_client.balance(&fee_recipient), 11);
     assert_eq!(token_client.balance(&recipient), 990);
-    assert_eq!(token_client.balance(&fee_recipient) + token_client.balance(&recipient), 1001);
+    assert_eq!(
+        token_client.balance(&fee_recipient) + token_client.balance(&recipient),
+        1001
+    );
 }
 
 #[test]
@@ -115,12 +129,22 @@ fn test_fee_ceiling_division_boundary_max_rate() {
     let fee_recipient = Address::generate(&env);
     let recipient = Address::generate(&env);
 
-    client.update_fee_config(&None, &Some(1000), &None, &None, &Some(fee_recipient.clone()), &Some(true));
+    client.update_fee_config(
+        &None,
+        &Some(1000),
+        &None,
+        &None,
+        &Some(fee_recipient.clone()),
+        &Some(true),
+    );
     client.single_payout(&recipient, &1001, &None);
 
     assert_eq!(token_client.balance(&fee_recipient), 101);
     assert_eq!(token_client.balance(&recipient), 900);
-    assert_eq!(token_client.balance(&fee_recipient) + token_client.balance(&recipient), 1001);
+    assert_eq!(
+        token_client.balance(&fee_recipient) + token_client.balance(&recipient),
+        1001
+    );
 }
 
 #[test]
@@ -172,9 +196,7 @@ fn test_edge_max_safe_lock_and_payout() {
     let (client, _admin, token_client, _token_admin) = setup_program(&env, safe_max);
 
     let recipient = Address::generate(&env);
-    client.single_payout(&recipient, &safe_max,
-    &None
-);
+    client.single_payout(&recipient, &safe_max, &None);
 
     assert_eq!(client.get_remaining_balance(), 0);
     assert_eq!(token_client.balance(&recipient), safe_max);
@@ -187,9 +209,7 @@ fn test_single_payout_token_transfer_integration() {
     let (client, _admin, token_client, _token_admin) = setup_program(&env, 100_000);
 
     let recipient = Address::generate(&env);
-    let data = client.single_payout(&recipient, &30_000,
-    &None
-);
+    let data = client.single_payout(&recipient, &30_000, &None);
 
     assert_eq!(data.remaining_balance, 70_000);
     assert_eq!(token_client.balance(&recipient), 30_000);
@@ -208,9 +228,7 @@ fn test_batch_payout_token_transfer_integration() {
     let recipients = vec![&env, r1.clone(), r2.clone(), r3.clone()];
     let amounts = vec![&env, 10_000, 20_000, 30_000];
 
-    let data = client.batch_payout(&recipients, &amounts,
-    &None
-);
+    let data = client.batch_payout(&recipients, &amounts, &None);
     assert_eq!(data.remaining_balance, 90_000);
     assert_eq!(data.payout_history.len(), 3);
 
@@ -231,14 +249,10 @@ fn test_complete_lifecycle_integration() {
     let r2 = Address::generate(&env);
     let r3 = Address::generate(&env);
 
-    client.single_payout(&r1, &50_000,
-    &None
-);
+    client.single_payout(&r1, &50_000, &None);
     let recipients = vec![&env, r2.clone(), r3.clone()];
     let amounts = vec![&env, 70_000, 30_000];
-    client.batch_payout(&recipients, &amounts,
-    &None
-);
+    client.batch_payout(&recipients, &amounts, &None);
 
     let info = client.get_program_info();
     assert_eq!(info.total_funds, 300_000);
@@ -263,9 +277,7 @@ fn test_property_fuzz_balance_invariants() {
 
         if next_seed(&mut seed) % 2 == 0 {
             let recipient = Address::generate(&env);
-            client.single_payout(&recipient, &amount,
-    &None
-);
+            client.single_payout(&recipient, &amount, &None);
         } else {
             let recipient1 = Address::generate(&env);
             let recipient2 = Address::generate(&env);
@@ -276,9 +288,7 @@ fn test_property_fuzz_balance_invariants() {
             }
             let recipients = vec![&env, recipient1, recipient2];
             let amounts = vec![&env, first, second];
-            client.batch_payout(&recipients, &amounts,
-    &None
-);
+            client.batch_payout(&recipients, &amounts, &None);
         }
 
         expected_remaining -= amount;
@@ -305,9 +315,7 @@ fn test_stress_high_load_many_payouts() {
             amounts.push_back(3_000);
         }
 
-        client.batch_payout(&recipients, &amounts,
-    &None
-);
+        client.batch_payout(&recipients, &amounts, &None);
     }
 
     let info = client.get_program_info();
@@ -325,9 +333,7 @@ fn test_gas_proxy_batch_vs_single_event_efficiency() {
     let single_before = env_single.events().all().len();
     for _ in 0..10 {
         let recipient = Address::generate(&env_single);
-        single_client.single_payout(&recipient, &1_000,
-    &None
-);
+        single_client.single_payout(&recipient, &1_000, &None);
     }
     let single_events = env_single.events().all().len() - single_before;
 
@@ -343,9 +349,7 @@ fn test_gas_proxy_batch_vs_single_event_efficiency() {
     }
 
     let batch_before = env_batch.events().all().len();
-    batch_client.batch_payout(&recipients, &amounts,
-    &None
-);
+    batch_client.batch_payout(&recipients, &amounts, &None);
     let batch_events = env_batch.events().all().len() - batch_before;
 
     assert!(batch_events <= single_events);
@@ -358,14 +362,10 @@ fn test_events_emit_v2_version_tags_for_all_program_emitters() {
     let r1 = Address::generate(&env);
     let r2 = Address::generate(&env);
 
-    client.single_payout(&r1, &10_000,
-    &None
-);
+    client.single_payout(&r1, &10_000, &None);
     let recipients = vec![&env, r2];
     let amounts = vec![&env, 5_000];
-    client.batch_payout(&recipients, &amounts,
-    &None
-);
+    client.batch_payout(&recipients, &amounts, &None);
 
     let events = env.events().all();
     let mut program_events_checked = 0_u32;
@@ -537,7 +537,8 @@ fn test_threat_model_fee_drain_prevention() {
                 None::<i128>,
                 None::<Address>,
                 None::<bool>,
-            ).into_val(&env),
+            )
+                .into_val(&env),
             sub_invokes: &[],
         },
     }]);
@@ -640,8 +641,8 @@ fn test_full_lifecycle_multi_program_batch_payouts() {
             winner_a3.clone(),
         ],
         &vec![&env, 100_000, 75_000, 50_000],
-        &None
-);
+        &None,
+    );
     assert_eq!(data_a1.remaining_balance, 275_000);
     assert_eq!(data_a1.payout_history.len(), 3);
     assert_eq!(token_client.balance(&winner_a1), 100_000);
@@ -655,8 +656,8 @@ fn test_full_lifecycle_multi_program_batch_payouts() {
     let data_b1 = client_b.batch_payout(
         &vec![&env, winner_b1.clone(), winner_b2.clone()],
         &vec![&env, 120_000, 80_000],
-        &None
-);
+        &None,
+    );
     assert_eq!(data_b1.remaining_balance, 200_000);
     assert_eq!(data_b1.payout_history.len(), 2);
     assert_eq!(token_client.balance(&winner_b1), 120_000);
@@ -670,8 +671,8 @@ fn test_full_lifecycle_multi_program_batch_payouts() {
     let data_a2 = client_a.batch_payout(
         &vec![&env, winner_a4.clone(), winner_a5.clone()],
         &vec![&env, 125_000, 50_000],
-        &None
-);
+        &None,
+    );
     assert_eq!(data_a2.remaining_balance, 100_000);
     assert_eq!(data_a2.payout_history.len(), 5);
     assert_eq!(token_client.balance(&winner_a4), 125_000);
@@ -690,8 +691,8 @@ fn test_full_lifecycle_multi_program_batch_payouts() {
             winner_b5.clone(),
         ],
         &vec![&env, 60_000, 40_000, 30_000],
-        &None
-);
+        &None,
+    );
     assert_eq!(data_b2.remaining_balance, 70_000);
     assert_eq!(data_b2.payout_history.len(), 5);
     assert_eq!(token_client.balance(&winner_b3), 60_000);
@@ -808,9 +809,7 @@ fn test_multi_token_balance_accounting_isolated_across_program_instances() {
     assert_eq!(token_client_b.balance(&client_b.address), 300_000);
 
     let recipient = Address::generate(&env);
-    client_a.single_payout(&recipient, &120_000,
-    &None
-);
+    client_a.single_payout(&recipient, &120_000, &None);
 
     // Payout in token A should not affect token B program balances.
     assert_eq!(client_a.get_remaining_balance(), 380_000);
@@ -825,8 +824,8 @@ fn test_multi_token_balance_accounting_isolated_across_program_instances() {
     client_b.batch_payout(
         &vec![&env, r_b1.clone(), r_b2.clone()],
         &vec![&env, 50_000, 25_000],
-        &None
-);
+        &None,
+    );
 
     // Payout in token B should not affect token A accounting.
     assert_eq!(client_a.get_remaining_balance(), 380_000);
@@ -856,12 +855,9 @@ fn test_anti_abuse_whitelist_bypass() {
         .set_timestamp(start_time + config.cooldown_period + 1);
 
     for _ in 0..(max_ops + 5) {
-        client.single_payout(&recipient, &100,
-    &None
-);
+        client.single_payout(&recipient, &100, &None);
     }
 
     let info = client.get_program_info();
     assert_eq!(info.payout_history.len() as u32, max_ops + 5);
 }
-

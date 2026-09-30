@@ -1,19 +1,18 @@
 //! Claim ticket lifecycle: authorise, execute, capability-based claim, cancellation, and window config.
 
-
-
-use soroban_sdk::{symbol_short, token, Address, BytesN, Env};
 use crate::{
-    events, multitoken_invariants, reentrancy_guard,
-    Capability, CapabilityAction, ClaimRecord, DataKey, DisputeOutcome, Error, Escrow, EscrowStatus,
-    events::{ClaimCancelled, ClaimCreated, ClaimExecuted, CriticalOperationOutcome, EVENT_VERSION_V2},
-    DisputeReason,
+    events,
+    events::{
+        ClaimCancelled, ClaimCreated, ClaimExecuted, CriticalOperationOutcome, EVENT_VERSION_V2,
+    },
+    multitoken_invariants, reentrancy_guard, Capability, CapabilityAction, ClaimRecord, DataKey,
+    DisputeOutcome, DisputeReason, Error, Escrow, EscrowStatus,
 };
+use soroban_sdk::{symbol_short, token, Address, BytesN, Env};
 
 // ─────────────────────────────────────────────────────────────────
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────
-
 
 /// Validates that the current time is within the active claim window for `bounty_id`.
 ///
@@ -77,7 +76,6 @@ pub(crate) fn validate_claim_window(env: Env, bounty_id: u64) -> Result<(), Erro
 // Public entry points (dispatcher targets)
 // ─────────────────────────────────────────────────────────────────
 
-
 /// Set the claim window duration (admin only).
 /// `claim_window`: seconds a beneficiary has to claim after release is authorized.
 /// Set to `0` to disable claim-window enforcement.
@@ -101,7 +99,6 @@ pub fn set_claim_window(env: Env, claim_window: u64) -> Result<(), Error> {
     );
     Ok(())
 }
-
 
 /// Authorizes a pending claim instead of immediate transfer.
 ///
@@ -185,7 +182,6 @@ pub fn authorize_claim(
     Ok(())
 }
 
-
 /// Claims an existing pending authorization.
 ///
 /// # Access Control
@@ -252,11 +248,7 @@ pub fn claim(env: Env, bounty_id: u64) -> Result<(), Error> {
     env.storage()
         .persistent()
         .set(&DataKey::Escrow(bounty_id), &escrow);
-    crate::lock::renew_escrow_record(
-        &env,
-        bounty_id,
-        escrow.remaining_amount == 0,
-    );
+    crate::lock::renew_escrow_record(&env, bounty_id, escrow.remaining_amount == 0);
 
     claim.claimed = true;
     env.storage()
@@ -290,7 +282,6 @@ pub fn claim(env: Env, bounty_id: u64) -> Result<(), Error> {
     reentrancy_guard::release(&env);
     Ok(())
 }
-
 
 /// Delegated claim execution using a capability.
 /// Funds are still transferred to the pending claim recipient.
@@ -362,11 +353,7 @@ pub fn claim_with_capability(
     env.storage()
         .persistent()
         .set(&DataKey::Escrow(bounty_id), &escrow);
-    crate::lock::renew_escrow_record(
-        &env,
-        bounty_id,
-        escrow.remaining_amount == 0,
-    );
+    crate::lock::renew_escrow_record(&env, bounty_id, escrow.remaining_amount == 0);
 
     claim.claimed = true;
     env.storage()
@@ -401,7 +388,6 @@ pub fn claim_with_capability(
     Ok(())
 }
 
-
 /// Admin can cancel an expired or unwanted pending claim, returning escrow to Locked.
 pub fn cancel_pending_claim(
     env: Env,
@@ -418,7 +404,10 @@ pub fn cancel_pending_claim(
     // already cancelled/consumed — as long as the bounty itself still exists.
     // A missing escrow means the bounty never existed, which is a real error.
     let escrow_exists = env.storage().persistent().has(&DataKey::Escrow(bounty_id))
-        || env.storage().persistent().has(&DataKey::EscrowAnon(bounty_id));
+        || env
+            .storage()
+            .persistent()
+            .has(&DataKey::EscrowAnon(bounty_id));
     if !env
         .storage()
         .persistent()
@@ -459,7 +448,6 @@ pub fn cancel_pending_claim(
     Ok(())
 }
 
-
 /// View: get pending claim for a bounty.
 pub fn get_pending_claim(env: Env, bounty_id: u64) -> Result<ClaimRecord, Error> {
     let claim: ClaimRecord = env
@@ -471,4 +459,3 @@ pub fn get_pending_claim(env: Env, bounty_id: u64) -> Result<ClaimRecord, Error>
     crate::lock::renew_claim_record(&env, bounty_id, archival);
     Ok(claim)
 }
-

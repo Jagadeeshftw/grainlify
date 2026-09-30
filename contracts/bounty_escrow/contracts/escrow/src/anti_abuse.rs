@@ -98,15 +98,15 @@ pub fn check_rate_limit(env: &Env, address: Address) {
     let now = env.ledger().timestamp();
     let key = AntiAbuseKey::State(address.clone());
 
-    let mut state: AddressState =
-        env.storage()
-            .persistent()
-            .get(&key)
-            .unwrap_or(AddressState {
-                last_operation_timestamp: 0,
-                window_start_timestamp: now,
-                operation_count: 0,
-            });
+    let mut state: AddressState = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or(AddressState {
+            last_operation_timestamp: 0,
+            window_start_timestamp: now,
+            operation_count: 0,
+        });
 
     // 1. Cooldown check
     if state.last_operation_timestamp > 0

@@ -61,7 +61,9 @@ impl TestEnv {
         let depositor = Address::generate(&env);
         let contributor = Address::generate(&env);
 
-        let token_id = env.register_stellar_asset_contract_v2(admin.clone()).address();
+        let token_id = env
+            .register_stellar_asset_contract_v2(admin.clone())
+            .address();
         let token_admin = token::StellarAssetClient::new(&env, &token_id);
 
         let contract_id = env.register_contract(None, BountyEscrowContract);
@@ -83,13 +85,8 @@ impl TestEnv {
     /// Write escrow directly to persistent storage, bypassing lock_funds business logic.
     fn setup_escrow_in_state(&self, status: EscrowStatus, bounty_id: u64, amount: i128) {
         let deadline = self.env.ledger().timestamp() + 1000;
-        let escrow = create_escrow_with_status(
-            &self.env,
-            self.depositor.clone(),
-            amount,
-            status,
-            deadline,
-        );
+        let escrow =
+            create_escrow_with_status(&self.env, self.depositor.clone(), amount, status, deadline);
 
         // Mint tokens directly to the contract so that valid release/refund transfers succeed.
         self.token_admin.mint(&self.contract_id, &amount);
@@ -193,12 +190,10 @@ fn test_all_status_transitions() {
         match case.action {
             TransitionAction::Lock => {
                 let deadline = setup.env.ledger().timestamp() + 1000;
-                let result = setup.client.try_lock_funds(
-                    &setup.depositor,
-                    &bounty_id,
-                    &amount,
-                    &deadline,
-                );
+                let result =
+                    setup
+                        .client
+                        .try_lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
                 match case.expected_result {
                     Ok(_) => assert!(
                         result.is_ok(),
@@ -322,7 +317,10 @@ fn test_released_to_locked_fails() {
     let result = setup
         .client
         .try_lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
-    assert!(result.is_err(), "Expected locking an already released bounty to fail");
+    assert!(
+        result.is_err(),
+        "Expected locking an already released bounty to fail"
+    );
     assert_eq!(
         result.unwrap_err().unwrap(),
         Error::BountyExists,
@@ -346,7 +344,10 @@ fn test_refunded_to_released_fails() {
     let result = setup
         .client
         .try_release_funds(&bounty_id, &setup.contributor);
-    assert!(result.is_err(), "Expected releasing a refunded bounty to fail");
+    assert!(
+        result.is_err(),
+        "Expected releasing a refunded bounty to fail"
+    );
     assert_eq!(
         result.unwrap_err().unwrap(),
         Error::FundsNotLocked,
@@ -368,7 +369,10 @@ fn test_transition_from_uninitialized_state() {
     let result = setup
         .client
         .try_release_funds(&bounty_id, &setup.contributor);
-    assert!(result.is_err(), "Expected release_funds on nonexistent to fail");
+    assert!(
+        result.is_err(),
+        "Expected release_funds on nonexistent to fail"
+    );
     assert_eq!(
         result.unwrap_err().unwrap(),
         Error::BountyNotFound,
@@ -387,7 +391,10 @@ fn test_idempotent_transition_attempt() {
     let result = setup
         .client
         .try_release_funds(&bounty_id, &setup.contributor);
-    assert!(result.is_err(), "Expected idempotent transition attempt to fail");
+    assert!(
+        result.is_err(),
+        "Expected idempotent transition attempt to fail"
+    );
     assert_eq!(
         result.unwrap_err().unwrap(),
         Error::FundsNotLocked,

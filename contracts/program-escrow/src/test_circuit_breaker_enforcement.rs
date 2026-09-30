@@ -169,7 +169,10 @@ fn test_halfopen_probe_failure_reopens_circuit_and_resets_timer() {
 
     let status_after = error_recovery::get_status(&env);
     assert_eq!(status_after.state, CircuitState::Open);
-    assert!(status_after.opened_at > opened_at_before, "OpenedAt should reset on failed probe");
+    assert!(
+        status_after.opened_at > opened_at_before,
+        "OpenedAt should reset on failed probe"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -372,10 +375,7 @@ fn test_unpause_reveals_open_circuit() {
 #[test]
 fn test_circuit_reset_closes_after_open() {
     let TestSetup {
-        env,
-        client,
-        admin,
-        ..
+        env, client, admin, ..
     } = setup();
 
     open_circuit(&env);
@@ -400,10 +400,7 @@ fn test_circuit_reset_closes_after_open() {
 #[should_panic(expected = "Funds Paused")]
 fn test_maintenance_mode_wins_over_open_circuit_on_lock() {
     let TestSetup {
-        env,
-        client,
-        admin,
-        ..
+        env, client, admin, ..
     } = setup();
 
     open_circuit(&env);

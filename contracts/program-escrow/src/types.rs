@@ -4,8 +4,10 @@
 //! Extracted from `lib.rs` to keep the root module focused on the
 //! `#[contractimpl]` block while preserving the exact same public API.
 
-use soroban_sdk::{contracterror, contracttype, symbol_short, vec, Address, Env, String, Symbol, Vec};
 use grainlify_core::CorrelationId;
+use soroban_sdk::{
+    contracterror, contracttype, symbol_short, vec, Address, Env, String, Symbol, Vec,
+};
 
 // Event topics and registry key shared by the contract implementation.
 // These were inadvertently dropped while resolving the split-types merge.
@@ -38,8 +40,6 @@ pub const CONTROLLER_ROTATION_CANCELLED: Symbol = symbol_short!("CtrlCanc");
 pub const PRICE_UPDATED: Symbol = symbol_short!("PriceUpd");
 pub const DYNAMIC_PRICING_CONFIG_UPDATED: Symbol = symbol_short!("DynPricCg");
 
-
-
 // Storage keys
 pub const PROGRAM_DATA: Symbol = symbol_short!("ProgData");
 pub const RECEIPT_ID: Symbol = symbol_short!("RcptID");
@@ -51,7 +51,8 @@ pub const AUTH_KEY_INDEX: Symbol = symbol_short!("AuthIdx");
 pub const FEE_CONFIG: Symbol = symbol_short!("FeeCfg");
 pub const FEE_COLLECTED: Symbol = symbol_short!("FeeCol");
 /// Event symbol for insurance-reserve withdrawal audit events.
-pub const INSURANCE_RESERVE_WITHDRAWN: Symbol = crate::insurance_reserve::INSURANCE_RESERVE_WITHDRAWN;
+pub const INSURANCE_RESERVE_WITHDRAWN: Symbol =
+    crate::insurance_reserve::INSURANCE_RESERVE_WITHDRAWN;
 /// Storage key for the set of consumed idempotency keys (batch payout).
 pub const PAYOUT_IDEM_KEYS: Symbol = symbol_short!("PayIdem");
 /// Event symbol emitted when a batch_payout replay is detected.
@@ -290,7 +291,7 @@ mod monitoring {
     /// **WARNING: Naming Collision**
     /// This `Analytics` struct tracks operational metrics (`operation_count`, `unique_users`, etc.)
     /// and is completely incompatible with the top-level `Analytics` struct (which tracks
-    /// financial totals like `total_locked`). 
+    /// financial totals like `total_locked`).
     /// SDK authors and indexers must not conflate the two.
     #[contracttype]
     #[derive(Clone, Debug)]
@@ -1050,7 +1051,11 @@ pub struct MultisigThresholdConfig {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum AdminOpKind { UpdateFeeConfig, UpdateMultisigConfig, EmergencyWithdraw }
+pub enum AdminOpKind {
+    UpdateFeeConfig,
+    UpdateMultisigConfig,
+    EmergencyWithdraw,
+}
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1067,17 +1072,33 @@ pub struct PendingAdminOp {
 pub const ADMIN_OP_PROPOSED: Symbol = symbol_short!("AdmProp");
 pub const ADMIN_OP_APPROVED: Symbol = symbol_short!("AdmAppr");
 pub const ADMIN_OP_EXECUTED: Symbol = symbol_short!("AdmExec");
-pub const ADMIN_OP_EXPIRED:  Symbol = symbol_short!("AdmExp");
+pub const ADMIN_OP_EXPIRED: Symbol = symbol_short!("AdmExp");
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AdminOpProposedEvent { pub version: u32, pub kind: AdminOpKind, pub proposed_by: Address, pub expires_at: u32, pub required_approvals: u32 }
+pub struct AdminOpProposedEvent {
+    pub version: u32,
+    pub kind: AdminOpKind,
+    pub proposed_by: Address,
+    pub expires_at: u32,
+    pub required_approvals: u32,
+}
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AdminOpApprovedEvent { pub version: u32, pub kind: AdminOpKind, pub approved_by: Address, pub approvals_so_far: u32, pub required_approvals: u32 }
+pub struct AdminOpApprovedEvent {
+    pub version: u32,
+    pub kind: AdminOpKind,
+    pub approved_by: Address,
+    pub approvals_so_far: u32,
+    pub required_approvals: u32,
+}
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AdminOpExecutedEvent { pub version: u32, pub kind: AdminOpKind, pub executed_by: Address }
+pub struct AdminOpExecutedEvent {
+    pub version: u32,
+    pub kind: AdminOpKind,
+    pub executed_by: Address,
+}
 
 pub const IDEMPOTENCY_SCHEMA_VERSION_V1: u32 = 1;
 
@@ -1100,7 +1121,9 @@ pub const IDEMPOTENCY_KEY_USED: Symbol = symbol_short!("IdempUsed");
 /// Keys must be between 1 and 256 bytes long.
 pub fn validate_idempotency_key(key: &str) -> Result<(), BatchError> {
     let key_len = key.len();
-    if key_len < MIN_IDEMPOTENCY_KEY_LENGTH as usize || key_len > MAX_IDEMPOTENCY_KEY_LENGTH as usize {
+    if key_len < MIN_IDEMPOTENCY_KEY_LENGTH as usize
+        || key_len > MAX_IDEMPOTENCY_KEY_LENGTH as usize
+    {
         return Err(BatchError::IdempotencyKeyInvalid);
     }
 
@@ -1343,21 +1366,21 @@ pub const MAX_TOKEN_DECIMALS: u32 = 18;
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
-    Program(String),                 // program_id -> ProgramData
-    Admin,                           // Contract Admin
-    MultisigConfig(String),          // program_id -> MultisigConfig
-    SplitConfig(String),             // program_id -> SplitConfig (payout splits)
-    PendingClaim(String, u64),       // (program_id, schedule_id) -> ClaimRecord
-    ClaimWindow,                     // u64 seconds (global config)
-    PauseFlags,                      // PauseFlags struct
-    ProgramPauseFlags(String),       // program_id -> PauseFlags
-    RateLimitConfig,                 // RateLimitConfig struct
-    MaintenanceMode,                 // bool flag
-    ProgramDependencies(String),     // program_id -> Vec<String>
-    DependencyStatus(String),        // program_id -> DependencyStatus
-    Dispute,                         // DisputeRecord (single active dispute per contract)
-    PayoutIdempotency(String),       // idempotency_key -> PayoutIdempotencyKey
-    HistoryPaginationConfig,         // HistoryPaginationConfig
+    Program(String),             // program_id -> ProgramData
+    Admin,                       // Contract Admin
+    MultisigConfig(String),      // program_id -> MultisigConfig
+    SplitConfig(String),         // program_id -> SplitConfig (payout splits)
+    PendingClaim(String, u64),   // (program_id, schedule_id) -> ClaimRecord
+    ClaimWindow,                 // u64 seconds (global config)
+    PauseFlags,                  // PauseFlags struct
+    ProgramPauseFlags(String),   // program_id -> PauseFlags
+    RateLimitConfig,             // RateLimitConfig struct
+    MaintenanceMode,             // bool flag
+    ProgramDependencies(String), // program_id -> Vec<String>
+    DependencyStatus(String),    // program_id -> DependencyStatus
+    Dispute,                     // DisputeRecord (single active dispute per contract)
+    PayoutIdempotency(String),   // idempotency_key -> PayoutIdempotencyKey
+    HistoryPaginationConfig,     // HistoryPaginationConfig
     SpendLimitSchemaVersion,
     PauseSchemaVersion,
     TokenAllowlist,
@@ -1667,11 +1690,11 @@ pub struct HistoryPaginationConfig {
 pub const PAGINATION_SCHEMA_VERSION_V1: u32 = 1;
 
 /// Top-level analytics for the program escrow.
-/// 
+///
 /// **WARNING: Naming Collision**
-/// This `Analytics` struct tracks financial metrics (`total_locked`, `total_released`, etc.) 
-/// and is completely incompatible with the `Analytics` struct defined in the internal 
-/// `monitoring` module (which tracks `operation_count`, `unique_users`, etc.). 
+/// This `Analytics` struct tracks financial metrics (`total_locked`, `total_released`, etc.)
+/// and is completely incompatible with the `Analytics` struct defined in the internal
+/// `monitoring` module (which tracks `operation_count`, `unique_users`, etc.).
 /// SDK authors and indexers must not conflate the two.
 /// (Consider using an alias like `EscrowAnalytics` in off-chain code to avoid confusion).
 #[contracttype]
@@ -2007,7 +2030,10 @@ pub fn vec_contains(values: &Vec<String>, target: &String) -> bool {
     false
 }
 
-pub fn get_program_dependencies_internal(env: &Env, program_id: &String) -> soroban_sdk::Vec<String> {
+pub fn get_program_dependencies_internal(
+    env: &Env,
+    program_id: &String,
+) -> soroban_sdk::Vec<String> {
     env.storage()
         .instance()
         .get(&DataKey::ProgramDependencies(program_id.clone()))

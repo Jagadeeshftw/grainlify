@@ -75,13 +75,13 @@ mod test_reentrancy_malicious_token;
 // module's owner to fix and re-enable.
 // #[cfg(test)] mod test_timelock;
 #[cfg(test)]
+mod event_payload_fixtures;
+#[cfg(test)]
 mod test_archival_ttl;
 #[cfg(test)]
 mod test_bounded_pagination;
 #[cfg(test)]
 mod test_deterministic_event_ordering;
-#[cfg(test)]
-mod event_payload_fixtures;
 #[cfg(test)]
 mod test_event_payload_fixtures;
 #[cfg(test)]
@@ -107,13 +107,8 @@ use soroban_sdk::{
     Address, BytesN, Env, String, Symbol, Vec,
 };
 
-
-
-
-
-
-pub(crate) mod monitoring;
 pub(crate) mod anti_abuse;
+pub(crate) mod monitoring;
 pub mod rbac;
 
 /// Feature modules (internal implementation split)
@@ -130,7 +125,6 @@ pub(crate) mod refund;
 pub(crate) mod release;
 pub(crate) mod renewal;
 pub(crate) mod risk_flags;
-
 
 pub(crate) const BASIS_POINTS: i128 = 10_000;
 pub(crate) const MAX_FEE_RATE: i128 = 5_000; // 50% max fee
@@ -1079,10 +1073,7 @@ impl BountyEscrowContract {
         crate::admin::probe_index_archival(env)
     }
 
-    pub fn probe_depositor_index_archival(
-        env: Env,
-        depositor: Address,
-    ) -> PersistentRecordStatus {
+    pub fn probe_depositor_index_archival(env: Env, depositor: Address) -> PersistentRecordStatus {
         crate::admin::probe_depositor_index_archival(env, depositor)
     }
 
@@ -1183,7 +1174,15 @@ impl BountyEscrowContract {
         fee_recipient: Option<Address>,
         fee_enabled: Option<bool>,
     ) -> Result<(), Error> {
-        crate::fee::update_fee_config(env, lock_fee_rate, release_fee_rate, lock_fixed_fee, release_fixed_fee, fee_recipient, fee_enabled)
+        crate::fee::update_fee_config(
+            env,
+            lock_fee_rate,
+            release_fee_rate,
+            lock_fixed_fee,
+            release_fixed_fee,
+            fee_recipient,
+            fee_enabled,
+        )
     }
 
     pub fn set_treasury_distributions(
@@ -1206,7 +1205,14 @@ impl BountyEscrowContract {
         partner_recipient: Option<Address>,
         partner_bps: i128,
     ) -> Result<(), Error> {
-        crate::fee::set_fee_routing(env, bounty_id, treasury_recipient, treasury_bps, partner_recipient, partner_bps)
+        crate::fee::set_fee_routing(
+            env,
+            bounty_id,
+            treasury_recipient,
+            treasury_bps,
+            partner_recipient,
+            partner_bps,
+        )
     }
 
     pub fn set_fee_routing_with_reason(
@@ -1218,7 +1224,15 @@ impl BountyEscrowContract {
         partner_bps: i128,
         reason: soroban_sdk::String,
     ) -> Result<(), Error> {
-        crate::fee::set_fee_routing_with_reason(env, bounty_id, treasury_recipient, treasury_bps, partner_recipient, partner_bps, reason)
+        crate::fee::set_fee_routing_with_reason(
+            env,
+            bounty_id,
+            treasury_recipient,
+            treasury_bps,
+            partner_recipient,
+            partner_bps,
+            reason,
+        )
     }
 
     pub fn get_fee_routing(env: Env, bounty_id: u64) -> Option<PerBountyFeeRouting> {
@@ -1413,7 +1427,16 @@ impl BountyEscrowContract {
         expiry: u64,
         max_uses: u32,
     ) -> Result<BytesN<32>, Error> {
-        crate::capability::issue_capability(env, owner, holder, action, bounty_id, amount_limit, expiry, max_uses)
+        crate::capability::issue_capability(
+            env,
+            owner,
+            holder,
+            action,
+            bounty_id,
+            amount_limit,
+            expiry,
+            max_uses,
+        )
     }
 
     pub fn revoke_capability(
@@ -1442,7 +1465,16 @@ impl BountyEscrowContract {
         fee_recipient: Address,
         fee_enabled: bool,
     ) -> Result<(), Error> {
-        crate::fee::set_token_fee_config(env, token, lock_fee_rate, release_fee_rate, lock_fixed_fee, release_fixed_fee, fee_recipient, fee_enabled)
+        crate::fee::set_token_fee_config(
+            env,
+            token,
+            lock_fee_rate,
+            release_fee_rate,
+            lock_fixed_fee,
+            release_fixed_fee,
+            fee_recipient,
+            fee_enabled,
+        )
     }
 
     pub fn get_token_fee_config(env: Env, token: Address) -> Option<TokenFeeConfig> {
@@ -1511,7 +1543,14 @@ impl BountyEscrowContract {
         amount: i128,
         deadline: u64,
     ) -> Result<(), Error> {
-        crate::lock::lock_funds_anonymous(env, depositor, depositor_commitment, bounty_id, amount, deadline)
+        crate::lock::lock_funds_anonymous(
+            env,
+            depositor,
+            depositor_commitment,
+            bounty_id,
+            amount,
+            deadline,
+        )
     }
 
     pub fn publish(env: Env, bounty_id: u64) -> Result<(), Error> {
@@ -1538,7 +1577,14 @@ impl BountyEscrowContract {
         path: Vec<Address>,
         max_slippage_bps: u32,
     ) -> Result<(), Error> {
-        crate::release::release_with_conversion(env, bounty_id, contributor, dest_asset, path, max_slippage_bps)
+        crate::release::release_with_conversion(
+            env,
+            bounty_id,
+            contributor,
+            dest_asset,
+            path,
+            max_slippage_bps,
+        )
     }
 
     pub fn dry_run_release(env: Env, bounty_id: u64, contributor: Address) -> SimulationResult {
@@ -1553,7 +1599,14 @@ impl BountyEscrowContract {
         holder: Address,
         capability_id: BytesN<32>,
     ) -> Result<(), Error> {
-        crate::release::release_with_capability(env, bounty_id, contributor, payout_amount, holder, capability_id)
+        crate::release::release_with_capability(
+            env,
+            bounty_id,
+            contributor,
+            payout_amount,
+            holder,
+            capability_id,
+        )
     }
 
     pub fn set_claim_window(env: Env, claim_window: u64) -> Result<(), Error> {
@@ -1638,7 +1691,15 @@ impl BountyEscrowContract {
         bounty_type: soroban_sdk::String,
         reference_hash: Option<soroban_sdk::Bytes>,
     ) -> Result<EscrowMetadata, Error> {
-        crate::risk_flags::update_metadata(env, _admin, bounty_id, repo_id, issue_id, bounty_type, reference_hash)
+        crate::risk_flags::update_metadata(
+            env,
+            _admin,
+            bounty_id,
+            repo_id,
+            issue_id,
+            bounty_type,
+            reference_hash,
+        )
     }
 
     pub fn get_risk_flags_schema_version(env: Env) -> u32 {
@@ -1727,7 +1788,16 @@ impl BountyEscrowContract {
         batch_release: gas_budget::OperationBudget,
         enforce: bool,
     ) -> Result<(), Error> {
-        crate::gas::set_gas_budget(env, lock, release, refund, partial_release, batch_lock, batch_release, enforce)
+        crate::gas::set_gas_budget(
+            env,
+            lock,
+            release,
+            refund,
+            partial_release,
+            batch_lock,
+            batch_release,
+            enforce,
+        )
     }
 
     pub fn get_gas_budget(env: Env) -> gas_budget::GasBudgetConfig {
@@ -1803,9 +1873,7 @@ impl BountyEscrowContract {
     pub fn cancel_queued_release(env: Env, bounty_id: u64) -> Result<(), Error> {
         crate::release::cancel_queued_release(env, bounty_id)
     }
-
 }
-
 
 // Test-only shims moved out of #[contractimpl] to avoid macro expansion issues.
 #[cfg(test)]

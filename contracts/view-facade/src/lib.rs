@@ -64,8 +64,8 @@ pub mod query;
 
 pub use query::{EscrowClient, EscrowQueryClient, PayoutRecord, QueryCache, QueryCacheKey};
 pub use registry::{
-    contract_count, deregister, get_admin, get_contract, init, list_contracts,
-    list_contracts_all, register,
+    contract_count, deregister, get_admin, get_contract, init, list_contracts, list_contracts_all,
+    register,
 };
 pub use types::{
     ContractKind, DataKey, FacadeError, InitializedEvent, RegisteredContract, MAX_REGISTRY_SIZE,

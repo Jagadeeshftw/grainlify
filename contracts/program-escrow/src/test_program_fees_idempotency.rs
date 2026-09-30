@@ -4,16 +4,17 @@ extern crate std;
 
 use super::*;
 use crate::test_support::*;
-use soroban_sdk::{testutils::{Address as _, Events, Ledger, MockAuth, MockAuthInvoke}, token, vec, Address, Env, IntoVal, Map, String, Symbol, TryFromVal, Val};
+use soroban_sdk::{
+    testutils::{Address as _, Events, Ledger, MockAuth, MockAuthInvoke},
+    token, vec, Address, Env, IntoVal, Map, String, Symbol, TryFromVal, Val,
+};
 
 #[test]
 fn test_program_fee_zero_by_default_matches_prior_payouts() {
     let env = Env::default();
     let (client, _admin, token_client, _token_admin) = setup_program(&env, 100_000);
     let recipient = Address::generate(&env);
-    let data = client.single_payout(&recipient, &30_000,
-    &None
-);
+    let data = client.single_payout(&recipient, &30_000, &None);
     assert_eq!(data.remaining_balance, 70_000);
     assert_eq!(token_client.balance(&recipient), 30_000);
 }
@@ -35,9 +36,7 @@ fn test_program_payout_fee_percentage_and_fixed() {
     );
     let recipient = Address::generate(&env);
     // Gross 10_000: 10% ceil = 1_000 + 500 fixed = 1_500 fee, net 8_500
-    client.single_payout(&recipient, &10_000,
-    &None
-);
+    client.single_payout(&recipient, &10_000, &None);
     assert_eq!(token_client.balance(&recipient), 8_500);
     assert_eq!(token_client.balance(&fee_bucket), 1_500);
     assert_eq!(client.get_remaining_balance(), 90_000);
@@ -102,7 +101,10 @@ fn test_single_payout_idempotent_first_time() {
     let data = client.single_payout_idempotent(&recipient, &1000, &Some(idempotency_key.clone()));
 
     assert_eq!(data.remaining_balance, 9000);
-    assert_eq!(token_client.balance(&client.address), initial_balance - 1000);
+    assert_eq!(
+        token_client.balance(&client.address),
+        initial_balance - 1000
+    );
     assert_eq!(data.payout_history.len(), 1);
 }
 
@@ -176,10 +178,14 @@ fn test_batch_payout_idempotent_first_time() {
     let idempotency_key = String::from_str(&env, "batch-payout-001");
 
     let initial_balance = token_client.balance(&client.address);
-    let data = client.batch_payout_idempotent(&recipients, &amounts, &Some(idempotency_key.clone()));
+    let data =
+        client.batch_payout_idempotent(&recipients, &amounts, &Some(idempotency_key.clone()));
 
     assert_eq!(data.remaining_balance, 7000);
-    assert_eq!(token_client.balance(&client.address), initial_balance - 3000);
+    assert_eq!(
+        token_client.balance(&client.address),
+        initial_balance - 3000
+    );
     assert_eq!(data.payout_history.len(), 2);
 }
 
@@ -195,13 +201,15 @@ fn test_batch_payout_idempotent_replay() {
     let idempotency_key = String::from_str(&env, "batch-payout-001");
 
     // First batch payout
-    let data1 = client.batch_payout_idempotent(&recipients, &amounts, &Some(idempotency_key.clone()));
+    let data1 =
+        client.batch_payout_idempotent(&recipients, &amounts, &Some(idempotency_key.clone()));
     let balance_after_first = token_client.balance(&client.address);
     assert_eq!(data1.remaining_balance, 7000);
     assert_eq!(data1.payout_history.len(), 2);
 
     // Replay with same key - should not execute again
-    let data2 = client.batch_payout_idempotent(&recipients, &amounts, &Some(idempotency_key.clone()));
+    let data2 =
+        client.batch_payout_idempotent(&recipients, &amounts, &Some(idempotency_key.clone()));
     let balance_after_replay = token_client.balance(&client.address);
 
     // Balance should be the same (no double payout)
@@ -295,16 +303,16 @@ fn test_idempotency_key_security_no_unauthorized_replay() {
     let idempotency_key = String::from_str(&env, "payout-001");
 
     // Execute payout with authorized key
-    env.mock_auths(&[
-        soroban_sdk::testutils::MockAuth {
-            address: &payout_key,
-            invoke: &soroban_sdk::testutils::MockAuthInvoke {
-                contract: &contract_id,
-                fn_name: "single_payout_idempotent",
-                args: (recipient.clone(), 1000i128, Some(idempotency_key.clone())).into_val(&env),
-                sub_invokes: &[],
-            },
-        }.into()]);
+    env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &payout_key,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "single_payout_idempotent",
+            args: (recipient.clone(), 1000i128, Some(idempotency_key.clone())).into_val(&env),
+            sub_invokes: &[],
+        },
+    }
+    .into()]);
 
     let data1 = client.single_payout_idempotent(&recipient, &1000, &Some(idempotency_key.clone()));
     assert_eq!(data1.remaining_balance, 9000);
@@ -337,14 +345,26 @@ fn test_idempotency_key_invalid_characters() {
     let result = std::panic::catch_unwind(|| {
         client.single_payout_idempotent(&recipient, &1000, &Some(invalid_key.clone()));
     });
-    assert!(result.is_err(), "Should reject idempotency keys with invalid characters");
+    assert!(
+        result.is_err(),
+        "Should reject idempotency keys with invalid characters"
+    );
 }
 
 #[test]
 fn test_validate_idempotency_key_helper_invalid_characters() {
-    assert!(matches!(crate::validate_idempotency_key("ok-123_A"), Ok(())));
-    assert!(matches!(crate::validate_idempotency_key("space not allowed"), Err(BatchError::IdempotencyKeyInvalid)));
-    assert!(matches!(crate::validate_idempotency_key("invalid$key"), Err(BatchError::IdempotencyKeyInvalid)));
+    assert!(matches!(
+        crate::validate_idempotency_key("ok-123_A"),
+        Ok(())
+    ));
+    assert!(matches!(
+        crate::validate_idempotency_key("space not allowed"),
+        Err(BatchError::IdempotencyKeyInvalid)
+    ));
+    assert!(matches!(
+        crate::validate_idempotency_key("invalid$key"),
+        Err(BatchError::IdempotencyKeyInvalid)
+    ));
 }
 
 #[test]
@@ -435,7 +455,12 @@ fn test_batch_idempotency_stores_all_recipients() {
     let recipient1 = Address::generate(&env);
     let recipient2 = Address::generate(&env);
     let recipient3 = Address::generate(&env);
-    let recipients = vec![&env, recipient1.clone(), recipient2.clone(), recipient3.clone()];
+    let recipients = vec![
+        &env,
+        recipient1.clone(),
+        recipient2.clone(),
+        recipient3.clone(),
+    ];
     let amounts = vec![&env, 1000, 2000, 3000];
     let idempotency_key = String::from_str(&env, "batch-all-recipients");
 
@@ -560,4 +585,3 @@ fn test_batch_payout_idempotent_replay_different_params() {
     // Function body was truncated in a merge conflict; stub with no-op assertion.
     let _ = client.get_remaining_balance();
 }
-

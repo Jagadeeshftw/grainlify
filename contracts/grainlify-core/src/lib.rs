@@ -924,7 +924,6 @@ mod monitoring {
         let count: u64 = env.storage().persistent().get(&count_key).unwrap_or(0);
         let total: u64 = env.storage().persistent().get(&time_key).unwrap_or(0);
         let last: u64 = env.storage().persistent().get(&last_key).unwrap_or(0);
-        let avg = if count > 0 { total / count } else { 0 };
         // `checked_div` returns `None` for a zero count, which is exactly the
         // "no calls recorded yet" case.
         let avg = total.checked_div(count).unwrap_or(0);
@@ -1875,7 +1874,6 @@ impl GrainlifyContract {
         let current_signers = multisig_opt
             .as_ref()
             .map(|c| c.signers.clone())
-            .unwrap_or(Vec::new(&env));
             .unwrap_or(Vec::new(env));
 
         if snapshot.version == current_version

@@ -4,7 +4,10 @@ extern crate std;
 
 use super::*;
 use crate::test_support::*;
-use soroban_sdk::{testutils::{Address as _, Events, Ledger, MockAuth, MockAuthInvoke}, token, vec, Address, Env, IntoVal, Map, String, Symbol, TryFromVal, Val};
+use soroban_sdk::{
+    testutils::{Address as _, Events, Ledger, MockAuth, MockAuthInvoke},
+    token, vec, Address, Env, IntoVal, Map, String, Symbol, TryFromVal, Val,
+};
 
 #[test]
 fn test_analytics_initial_state() {
@@ -46,9 +49,7 @@ fn test_analytics_after_single_payout() {
     let (client, _admin, _token, _token_admin) = setup_program(&env, initial_funds);
 
     let recipient = Address::generate(&env);
-    client.single_payout(&recipient, &payout_amount,
-    &None
-);
+    client.single_payout(&recipient, &payout_amount, &None);
 
     let stats = client.get_program_aggregate_stats();
 
@@ -72,9 +73,7 @@ fn test_analytics_after_batch_payout() {
     let recipients = vec![&env, r1.clone(), r2.clone(), r3.clone()];
     let amounts = vec![&env, 10_000_0000000, 20_000_0000000, 30_000_0000000];
 
-    client.batch_payout(&recipients, &amounts,
-    &None
-);
+    client.batch_payout(&recipients, &amounts, &None);
 
     let stats = client.get_program_aggregate_stats();
 
@@ -99,15 +98,11 @@ fn test_analytics_multiple_operations() {
     // Perform payouts
     let r1 = Address::generate(&env);
     let r2 = Address::generate(&env);
-    client.single_payout(&r1, &5_000_0000000,
-    &None
-);
+    client.single_payout(&r1, &5_000_0000000, &None);
 
     let recipients = vec![&env, r2.clone()];
     let amounts = vec![&env, 3_000_0000000];
-    client.batch_payout(&recipients, &amounts,
-    &None
-);
+    client.batch_payout(&recipients, &amounts, &None);
 
     let stats = client.get_program_aggregate_stats();
 
@@ -172,9 +167,7 @@ fn test_health_remaining_balance() {
     assert_eq!(balance1, initial_funds);
 
     let recipient = Address::generate(&env);
-    client.single_payout(&recipient, &25_000_0000000,
-    &None
-);
+    client.single_payout(&recipient, &25_000_0000000, &None);
 
     let balance2 = client.get_remaining_balance();
     assert_eq!(balance2, 75_000_0000000i128);
@@ -231,17 +224,13 @@ fn test_comprehensive_analytics_workflow() {
     client.lock_program_funds(&50_000_0000000);
 
     let r1 = Address::generate(&env);
-    client.single_payout(&r1, &10_000_0000000,
-    &None
-);
+    client.single_payout(&r1, &10_000_0000000, &None);
 
     let r2 = Address::generate(&env);
     let r3 = Address::generate(&env);
     let recipients = vec![&env, r2.clone(), r3.clone()];
     let amounts = vec![&env, 15_000_0000000, 20_000_0000000];
-    client.batch_payout(&recipients, &amounts,
-    &None
-);
+    client.batch_payout(&recipients, &amounts, &None);
 
     let future_timestamp = env.ledger().timestamp() + 100;
     let r4 = Address::generate(&env);
@@ -311,15 +300,9 @@ fn test_analytics_query_functions() {
     let r2 = Address::generate(&env);
     let r3 = Address::generate(&env);
 
-    client.single_payout(&r1, &10_000_0000000,
-    &None
-);
-    client.single_payout(&r2, &20_000_0000000,
-    &None
-);
-    client.single_payout(&r3, &15_000_0000000,
-    &None
-);
+    client.single_payout(&r1, &10_000_0000000, &None);
+    client.single_payout(&r2, &20_000_0000000, &None);
+    client.single_payout(&r3, &15_000_0000000, &None);
 
     // Query by recipient
     let payouts_r1 = client.get_payouts_by_recipient(&r1, &0, &10);

@@ -4,7 +4,10 @@ extern crate std;
 
 use super::*;
 use crate::test_support::*;
-use soroban_sdk::{testutils::{Address as _, Events, Ledger, MockAuth, MockAuthInvoke}, token, vec, Address, Env, IntoVal, Map, String, Symbol, TryFromVal, Val};
+use soroban_sdk::{
+    testutils::{Address as _, Events, Ledger, MockAuth, MockAuthInvoke},
+    token, vec, Address, Env, IntoVal, Map, String, Symbol, TryFromVal, Val,
+};
 
 #[test]
 fn test_analytics_metrics_match_operation_counts() {
@@ -14,18 +17,12 @@ fn test_analytics_metrics_match_operation_counts() {
 
     let r1 = Address::generate(&env);
     let r2 = Address::generate(&env);
-    client.single_payout(&r1, &10_000_0000000,
-    &None
-);
-    client.single_payout(&r2, &20_000_0000000,
-    &None
-);
+    client.single_payout(&r1, &10_000_0000000, &None);
+    client.single_payout(&r2, &20_000_0000000, &None);
 
     let recipients = vec![&env, Address::generate(&env)];
     let amounts = vec![&env, 5_000_0000000i128];
-    client.batch_payout(&recipients, &amounts,
-    &None
-);
+    client.batch_payout(&recipients, &amounts, &None);
 
     let stats = client.get_program_aggregate_stats();
     assert_eq!(stats.payout_count, 3);
@@ -56,9 +53,7 @@ fn test_batch_payout_happy_path_multiple_recipients() {
     let recipients = vec![&env, r1.clone(), r2.clone(), r3.clone()];
     let amounts = vec![&env, 1_000_000, 2_000_000, 3_000_000];
 
-    let data = client.batch_payout(&recipients, &amounts,
-    &None
-);
+    let data = client.batch_payout(&recipients, &amounts, &None);
 
     // Verify balance updated correctly (all-or-nothing)
     assert_eq!(data.remaining_balance, 0);
@@ -99,9 +94,7 @@ fn test_batch_payout_with_duplicate_recipient_addresses() {
     let recipients = vec![&env, r1.clone(), r2.clone(), r1.clone()];
     let amounts = vec![&env, 1_000_000, 2_000_000, 1_500_000];
 
-    let data = client.batch_payout(&recipients, &amounts,
-    &None
-);
+    let data = client.batch_payout(&recipients, &amounts, &None);
 
     // Balance should be fully consumed
     assert_eq!(data.remaining_balance, 0);
@@ -149,9 +142,7 @@ fn test_batch_payout_maximum_batch_size() {
     }
 
     // Execute large batch payout
-    let data = client.batch_payout(&recipients, &amounts,
-    &None
-);
+    let data = client.batch_payout(&recipients, &amounts, &None);
 
     // Balance should be fully consumed
     assert_eq!(data.remaining_balance, 0);
@@ -179,9 +170,7 @@ fn test_batch_payout_empty_batch_panic() {
     let amounts = vec![&env];
 
     // Should panic
-    client.batch_payout(&recipients, &amounts,
-    &None
-);
+    client.batch_payout(&recipients, &amounts, &None);
 }
 
 #[test]
@@ -195,9 +184,7 @@ fn test_batch_payout_mismatched_arrays_panic() {
     let amounts = vec![&env, 1_000_000]; // Only 1 amount for 2 recipients
 
     // Should panic
-    client.batch_payout(&recipients, &amounts,
-    &None
-);
+    client.batch_payout(&recipients, &amounts, &None);
 }
 
 #[test]
@@ -211,9 +198,7 @@ fn test_batch_payout_invalid_amount_zero_panic() {
     let amounts = vec![&env, 0i128]; // Zero amount - invalid
 
     // Should panic
-    client.batch_payout(&recipients, &amounts,
-    &None
-);
+    client.batch_payout(&recipients, &amounts, &None);
 }
 
 #[test]
@@ -227,9 +212,7 @@ fn test_batch_payout_invalid_amount_negative_panic() {
     let amounts = vec![&env, -1_000_000]; // Negative amount - invalid
 
     // Should panic
-    client.batch_payout(&recipients, &amounts,
-    &None
-);
+    client.batch_payout(&recipients, &amounts, &None);
 }
 
 #[test]
@@ -243,9 +226,7 @@ fn test_batch_payout_insufficient_balance_panic() {
     let amounts = vec![&env, 10_000_000]; // More than available
 
     // Should panic
-    client.batch_payout(&recipients, &amounts,
-    &None
-);
+    client.batch_payout(&recipients, &amounts, &None);
 }
 
 #[test]
@@ -261,9 +242,7 @@ fn test_batch_payout_partial_spend() {
     let recipients = vec![&env, r1, r2];
     let amounts = vec![&env, 3_000_000, 3_000_000];
 
-    let data = client.batch_payout(&recipients, &amounts,
-    &None
-);
+    let data = client.batch_payout(&recipients, &amounts, &None);
 
     // Remaining balance should be correct
     assert_eq!(data.remaining_balance, 4_000_000);
@@ -291,9 +270,7 @@ fn test_batch_payout_atomicity_all_or_nothing() {
     let recipients = vec![&env, r1, r2];
     let amounts = vec![&env, 1_000_000, 2_000_000];
 
-    let data = client.batch_payout(&recipients, &amounts,
-    &None
-);
+    let data = client.batch_payout(&recipients, &amounts, &None);
 
     // All records must be written
     assert_eq!(data.payout_history.len(), history_len_before + 2);
@@ -315,9 +292,7 @@ fn test_spend_threshold_single_payout_at_boundary_allowed() {
     client.set_program_spend_threshold(&program_id, &10_000);
 
     let recipient = Address::generate(&env);
-    let data = client.single_payout(&recipient, &10_000,
-    &None
-);
+    let data = client.single_payout(&recipient, &10_000, &None);
 
     assert_eq!(data.remaining_balance, 40_000);
     assert_eq!(token_client.balance(&recipient), 10_000);
@@ -333,9 +308,7 @@ fn test_spend_threshold_single_payout_above_limit_rejected() {
     client.set_program_spend_threshold(&program_id, &10_000);
 
     let recipient = Address::generate(&env);
-    client.single_payout(&recipient, &10_001,
-    &None
-);
+    client.single_payout(&recipient, &10_001, &None);
 }
 
 #[test]
@@ -349,9 +322,7 @@ fn test_spend_threshold_batch_total_above_limit_rejected() {
 
     let recipients = vec![&env, Address::generate(&env), Address::generate(&env)];
     let amounts = vec![&env, 6_000, 5_000];
-    client.batch_payout(&recipients, &amounts,
-    &None
-);
+    client.batch_payout(&recipients, &amounts, &None);
 }
 
 #[test]
@@ -374,9 +345,7 @@ fn test_batch_payout_sequential_batches() {
     let r1 = Address::generate(&env);
     let recipients1 = vec![&env, r1];
     let amounts1 = vec![&env, 3_000_000];
-    let data1 = client.batch_payout(&recipients1, &amounts1,
-    &None
-);
+    let data1 = client.batch_payout(&recipients1, &amounts1, &None);
 
     // Verify after first batch
     assert_eq!(data1.payout_history.len(), 1);
@@ -387,9 +356,7 @@ fn test_batch_payout_sequential_batches() {
     let r3 = Address::generate(&env);
     let recipients2 = vec![&env, r2, r3];
     let amounts2 = vec![&env, 2_000_000, 4_000_000];
-    let data2 = client.batch_payout(&recipients2, &amounts2,
-    &None
-);
+    let data2 = client.batch_payout(&recipients2, &amounts2, &None);
 
     // Verify after second batch
     assert_eq!(data2.payout_history.len(), 3);

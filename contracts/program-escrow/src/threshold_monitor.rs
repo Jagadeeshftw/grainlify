@@ -1,4 +1,3 @@
-
 // Module-level allow: the threshold monitor is a circuit-breaker subsystem whose
 // public helpers will be consumed by upcoming guard-rail integration. Per-item
 // annotations would duplicate the same rationale across many items.
@@ -62,7 +61,8 @@ impl ThresholdConfig {
     }
 
     pub fn set_time_window_secs(&mut self, val: u64) {
-        self.packed_config = (self.packed_config & !(0xFFFFFF << 16)) | (((val as u64) & 0xFFFFFF) << 16);
+        self.packed_config =
+            (self.packed_config & !(0xFFFFFF << 16)) | (((val as u64) & 0xFFFFFF) << 16);
     }
 
     pub fn cooldown_period_secs(&self) -> u64 {
@@ -70,7 +70,8 @@ impl ThresholdConfig {
     }
 
     pub fn set_cooldown_period_secs(&mut self, val: u64) {
-        self.packed_config = (self.packed_config & !(0xFFFF << 40)) | (((val as u64) & 0xFFFF) << 40);
+        self.packed_config =
+            (self.packed_config & !(0xFFFF << 40)) | (((val as u64) & 0xFFFF) << 40);
     }
 
     pub fn cooldown_multiplier(&self) -> u32 {
@@ -418,9 +419,10 @@ pub fn apply_cooldown(env: &Env) {
     let cooldown_duration = config.cooldown_period_secs() * (multiplier as u64);
     let cooldown_end = now + cooldown_duration;
 
-    env.storage()
-        .persistent()
-        .set(&persistent_key(ThresholdKey::LastCooldownEnd), &cooldown_end);
+    env.storage().persistent().set(
+        &persistent_key(ThresholdKey::LastCooldownEnd),
+        &cooldown_end,
+    );
 }
 
 /// Increase cooldown multiplier for repeated breaches
@@ -430,9 +432,10 @@ pub fn increase_cooldown_multiplier(env: &Env) {
     let current_multiplier = get_cooldown_multiplier(env);
     let new_multiplier = current_multiplier * config.cooldown_multiplier();
 
-    env.storage()
-        .persistent()
-        .set(&persistent_key(ThresholdKey::CooldownMultiplier), &new_multiplier);
+    env.storage().persistent().set(
+        &persistent_key(ThresholdKey::CooldownMultiplier),
+        &new_multiplier,
+    );
 }
 
 /// Reset cooldown multiplier after stability period

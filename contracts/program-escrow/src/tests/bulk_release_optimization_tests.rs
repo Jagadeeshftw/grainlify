@@ -166,7 +166,10 @@ fn test_storage_not_written_when_no_entries_are_due() {
     assert_eq!(result.entries_released, 0);
     // Persisted history must still show entry as unreleased
     let persisted = storage.get_entries(RELEASE_HISTORY);
-    assert!(!persisted[0].released, "future entry must remain unreleased");
+    assert!(
+        !persisted[0].released,
+        "future entry must remain unreleased"
+    );
     // Balance untouched
     assert_eq!(storage.get_balance(), 1_000);
 }
@@ -257,9 +260,7 @@ fn test_amount_overflow_returns_error() {
 
 #[test]
 fn test_already_released_entry_is_not_double_paid() {
-    let entries = vec![
-        ReleaseEntry::new(1, LEDGER, 500, "alice").already_released(),
-    ];
+    let entries = vec![ReleaseEntry::new(1, LEDGER, 500, "alice").already_released()];
     let mut storage = setup(entries, 1_000);
 
     let result = release_schedule(&mut storage, LEDGER, CALLER).unwrap();
@@ -295,8 +296,8 @@ fn test_second_call_does_not_double_release() {
 #[test]
 fn test_dependent_entry_skipped_when_dependency_not_yet_released() {
     let entries = vec![
-        ReleaseEntry::new(1, LEDGER, 100, "alice"),                       // dependency
-        ReleaseEntry::new(2, LEDGER, 200, "bob").with_dependency(1),      // depends on 1
+        ReleaseEntry::new(1, LEDGER, 100, "alice"), // dependency
+        ReleaseEntry::new(2, LEDGER, 200, "bob").with_dependency(1), // depends on 1
     ];
     // Entry 1 is NOT released yet; entry 2 depends on it.
     // Both become due at LEDGER, but in this call entry 1's release is
@@ -356,9 +357,9 @@ fn test_chain_dependency_requires_two_separate_calls() {
 #[test]
 fn test_independent_entries_released_despite_unmet_dependency_on_others() {
     let entries = vec![
-        ReleaseEntry::new(1, LEDGER, 100, "alice"),                       // no dep
-        ReleaseEntry::new(2, LEDGER, 200, "bob").with_dependency(99),     // dep on non-existent
-        ReleaseEntry::new(3, LEDGER, 300, "carol"),                       // no dep
+        ReleaseEntry::new(1, LEDGER, 100, "alice"), // no dep
+        ReleaseEntry::new(2, LEDGER, 200, "bob").with_dependency(99), // dep on non-existent
+        ReleaseEntry::new(3, LEDGER, 300, "carol"), // no dep
     ];
     let mut storage = setup(entries, 10_000);
 
@@ -404,9 +405,9 @@ fn test_future_entries_are_not_released() {
 #[test]
 fn test_mixed_due_and_future_entries_only_due_released() {
     let entries = vec![
-        ReleaseEntry::new(1, LEDGER - 5, 100, "alice"),   // past due
-        ReleaseEntry::new(2, LEDGER, 200, "bob"),          // exactly due
-        ReleaseEntry::new(3, LEDGER + 10, 300, "carol"),   // future
+        ReleaseEntry::new(1, LEDGER - 5, 100, "alice"), // past due
+        ReleaseEntry::new(2, LEDGER, 200, "bob"),       // exactly due
+        ReleaseEntry::new(3, LEDGER + 10, 300, "carol"), // future
     ];
     let mut storage = setup(entries, 10_000);
 
@@ -474,5 +475,9 @@ fn test_error_before_balance_write_leaves_balance_unchanged() {
 
     release_schedule(&mut storage, LEDGER, CALLER).unwrap_err();
 
-    assert_eq!(storage.get_balance(), 100, "balance must be unchanged after error");
+    assert_eq!(
+        storage.get_balance(),
+        100,
+        "balance must be unchanged after error"
+    );
 }

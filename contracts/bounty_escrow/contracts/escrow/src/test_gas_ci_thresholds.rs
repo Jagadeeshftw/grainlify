@@ -203,9 +203,8 @@ pub fn record_and_enforce(
 ) {
     let tolerance_bps = get_tolerance_bps();
     let baseline = get_baseline(label, dimension).unwrap_or(legacy_limit);
-    let allowed_ceiling = baseline.saturating_add(
-        ((baseline as u128 * tolerance_bps as u128) / 10_000) as u64,
-    );
+    let allowed_ceiling =
+        baseline.saturating_add(((baseline as u128 * tolerance_bps as u128) / 10_000) as u64);
 
     let bps_delta = if actual >= baseline {
         ((actual.saturating_sub(baseline) as u128 * 10_000) / baseline.max(1) as u128) as i64
@@ -216,7 +215,10 @@ pub fn record_and_enforce(
     let passed = actual <= allowed_ceiling;
 
     if let Ok(mut lock) = RECORDS.lock() {
-        if let Some(existing) = lock.iter_mut().find(|r| r.op == label && r.dim == dimension) {
+        if let Some(existing) = lock
+            .iter_mut()
+            .find(|r| r.op == label && r.dim == dimension)
+        {
             *existing = MeasurementRecord {
                 op: label,
                 dim: dimension,
@@ -292,16 +294,27 @@ pub fn write_gas_benchmark_report() {
     };
 
     let all_passed = records.iter().all(|r| r.passed);
-    let status_str = if all_passed { "✅ PASSED" } else { "❌ FAILED (REGRESSION)" };
+    let status_str = if all_passed {
+        "✅ PASSED"
+    } else {
+        "❌ FAILED (REGRESSION)"
+    };
     let tolerance_bps = get_tolerance_bps();
 
     let mut content = std::string::String::new();
     content.push_str("# Gas & Resource Benchmark Gate Report — bounty-escrow\n\n");
     content.push_str(&std::format!("- **Overall Gate Status**: {}\n", status_str));
     content.push_str(&std::format!("- **Execution Mode**: `{}`\n", mode_name));
-    content.push_str(&std::format!("- **Stated Tolerance**: {} bps ({:.1}%)\n", tolerance_bps, tolerance_bps as f64 / 100.0));
+    content.push_str(&std::format!(
+        "- **Stated Tolerance**: {} bps ({:.1}%)\n",
+        tolerance_bps,
+        tolerance_bps as f64 / 100.0
+    ));
     content.push_str("- **Committed Baseline File**: `gas_baseline.json`\n");
-    content.push_str(&std::format!("- **WASM Size Budget Ceiling**: {} bytes\n\n", budgets::WASM_SIZE_BUDGET_BYTES));
+    content.push_str(&std::format!(
+        "- **WASM Size Budget Ceiling**: {} bytes\n\n",
+        budgets::WASM_SIZE_BUDGET_BYTES
+    ));
 
     content.push_str("| Operation | Dimension | Actual Cost | Recorded Baseline | Delta | Allowed Ceiling (+tolerance) | Gate Status |\n");
     content.push_str("|:---|:---:|---:|---:|---:|---:|:---:|\n");
@@ -312,10 +325,20 @@ pub fn write_gas_benchmark_report() {
         } else {
             std::format!("{:.2}% ({} bps)", r.bps_delta as f64 / 100.0, r.bps_delta)
         };
-        let status_badge = if r.passed { "PASS" } else { "**FAIL (REGRESSION)**" };
+        let status_badge = if r.passed {
+            "PASS"
+        } else {
+            "**FAIL (REGRESSION)**"
+        };
         content.push_str(&std::format!(
             "| `{}` | {} | {} | {} | {} | {} | {} |\n",
-            r.op, r.dim.to_ascii_uppercase(), r.actual, r.baseline, delta_str, r.allowed_ceiling, status_badge
+            r.op,
+            r.dim.to_ascii_uppercase(),
+            r.actual,
+            r.baseline,
+            delta_str,
+            r.allowed_ceiling,
+            status_badge
         ));
     }
 
@@ -1069,8 +1092,13 @@ fn gas_ci_consolidated_report_table() {
         let (cpu, mem) = f.measure(|| {
             f.client.partial_release(&60, &f.contributor, &5_000);
         });
-        row("payout: partial_release (5k from escrow #60)", cpu, mem,
-            budgets::payout::PARTIAL_RELEASE_MAX_CPU, budgets::payout::PARTIAL_RELEASE_MAX_MEM);
+        row(
+            "payout: partial_release (5k from escrow #60)",
+            cpu,
+            mem,
+            budgets::payout::PARTIAL_RELEASE_MAX_CPU,
+            budgets::payout::PARTIAL_RELEASE_MAX_MEM,
+        );
     }
 
     // --- Pagination ---
@@ -1112,9 +1140,6 @@ fn gas_ci_consolidated_report_table() {
                 .env
                 .as_contract(&f.contract_id, || upgrade_safety::simulate_upgrade(&f.env));
         });
-        row("migration: simulate_upgrade (60 escrows)", cpu, mem,
-            let _r = upgrade_safety::simulate_upgrade(&f.env);
-        });
         row(
             "migration: simulate_upgrade (60 escrows)",
             cpu,
@@ -1146,9 +1171,13 @@ fn gas_ci_consolidated_report_table() {
                 },
             );
         });
-        row("migration: set_deprecation_target", cpu, mem,
+        row(
+            "migration: set_deprecation_target",
+            cpu,
+            mem,
             budgets::migration::SET_DEPRECATION_TARGET_CPU,
-            budgets::migration::SET_DEPRECATION_TARGET_MEM);
+            budgets::migration::SET_DEPRECATION_TARGET_MEM,
+        );
     }
 
     println!();
@@ -1181,8 +1210,16 @@ fn gas_ci_baseline_file_covers_all_ten_paths() {
     for path in required_paths {
         let cpu = get_baseline(path, "cpu");
         let mem = get_baseline(path, "mem");
-        assert!(cpu.is_some() && cpu.unwrap() > 0, "Missing or invalid baseline CPU for {}", path);
-        assert!(mem.is_some() && mem.unwrap() > 0, "Missing or invalid baseline MEM for {}", path);
+        assert!(
+            cpu.is_some() && cpu.unwrap() > 0,
+            "Missing or invalid baseline CPU for {}",
+            path
+        );
+        assert!(
+            mem.is_some() && mem.unwrap() > 0,
+            "Missing or invalid baseline MEM for {}",
+            path
+        );
     }
 }
 
@@ -1191,7 +1228,13 @@ fn gas_ci_gate_fails_when_cost_exceeds_baseline_beyond_tolerance() {
     let result = std::panic::catch_unwind(|| {
         let baseline = 1_000_000u64;
         let regressed_actual = 1_150_000u64; // +15% (> 10% stated tolerance)
-        record_and_enforce("test_validation_regression", "cpu", regressed_actual, baseline, RunMode::Strict);
+        record_and_enforce(
+            "test_validation_regression",
+            "cpu",
+            regressed_actual,
+            baseline,
+            RunMode::Strict,
+        );
     });
     assert!(
         result.is_err(),
@@ -1203,14 +1246,23 @@ fn gas_ci_gate_fails_when_cost_exceeds_baseline_beyond_tolerance() {
 fn gas_ci_gate_passes_within_stated_tolerance() {
     let baseline = 1_000_000u64;
     let actual_within_tolerance = 1_050_000u64; // +5% (<= 10% stated tolerance)
-    record_and_enforce("test_validation_pass", "cpu", actual_within_tolerance, baseline, RunMode::Strict);
+    record_and_enforce(
+        "test_validation_pass",
+        "cpu",
+        actual_within_tolerance,
+        baseline,
+        RunMode::Strict,
+    );
 }
 
 #[test]
 fn gas_ci_report_artifact_file_is_written() {
     write_gas_benchmark_report();
     let path = std::path::Path::new("gas_benchmark_report.md");
-    let fallback = std::path::Path::new("contracts/bounty_escrow/contracts/escrow/gas_benchmark_report.md");
-    assert!(path.exists() || fallback.exists(), "gas_benchmark_report.md should be written");
+    let fallback =
+        std::path::Path::new("contracts/bounty_escrow/contracts/escrow/gas_benchmark_report.md");
+    assert!(
+        path.exists() || fallback.exists(),
+        "gas_benchmark_report.md should be written"
+    );
 }
-

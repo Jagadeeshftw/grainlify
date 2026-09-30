@@ -23,8 +23,7 @@
 //!    canonical state and its output is compared field-by-field.
 
 use soroban_sdk::{
-    testutils::Address as _,
-    Address, Env, IntoVal, String as SdkString, TryFromVal, Val, Vec,
+    testutils::Address as _, Address, Env, IntoVal, String as SdkString, TryFromVal, Val, Vec,
 };
 use view_facade::query::PayoutRecord as FacadePayoutRecord;
 use view_facade::{ViewFacade, ViewFacadeClient};
@@ -123,7 +122,11 @@ fn query_recipient_history_output_matches_underlying_program_escrow() {
 
     let records = facade.query_recipient_history(&escrow_id, &program_id, &recipient);
 
-    assert_eq!(records.len(), 1, "facade must surface the one payout record");
+    assert_eq!(
+        records.len(),
+        1,
+        "facade must surface the one payout record"
+    );
     let record = records.get(0).unwrap();
     assert_eq!(record.recipient, recipient);
     assert_eq!(record.amount, 777_i128);
@@ -151,5 +154,8 @@ fn query_fee_config_output_matches_underlying_program_escrow() {
         insurance_reserve_bps: 250_u32,
     };
 
-    assert_eq!(config, expected, "facade FeeConfig must match the contract's");
+    assert_eq!(
+        config, expected,
+        "facade FeeConfig must match the contract's"
+    );
 }

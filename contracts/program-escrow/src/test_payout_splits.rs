@@ -570,7 +570,8 @@ mod edge_cases {
             assert_eq!(result.recipient_count, 1);
             assert_eq!(setup.get_balance(&setup.r1), amount);
             assert_eq!(
-                setup.get_balance(&setup.r1), amount,
+                setup.get_balance(&setup.r1),
+                amount,
                 "Conservation invariant: sum of payouts must equal funded amount"
             );
             let pd: ProgramData = setup.env.storage().instance().get(&PROGRAM_DATA).unwrap();
@@ -888,8 +889,7 @@ mod security {
             assert_eq!(result.total_distributed, huge);
             let total = setup.get_balance(&setup.r1) + setup.get_balance(&setup.r2);
             assert_eq!(
-                total,
-                huge,
+                total, huge,
                 "Conservation invariant: sum of payouts must equal funded amount"
             );
             let pd: ProgramData = setup.env.storage().instance().get(&PROGRAM_DATA).unwrap();
@@ -1163,18 +1163,24 @@ mod fee_enforcement {
         let t = FeeCapTestEnv::new();
         let r = t.client.try_update_fee_config(
             &Some(MAX_FEE_RATE + 1),
-            &None, &None, &None, &None, &None,
+            &None,
+            &None,
+            &None,
+            &None,
+            &None,
         );
-        assert!(r.is_err(), "lock_fee_rate above MAX_FEE_RATE must be rejected");
+        assert!(
+            r.is_err(),
+            "lock_fee_rate above MAX_FEE_RATE must be rejected"
+        );
     }
 
     #[test]
     fn test_lock_fee_rate_at_max_accepted() {
         let t = FeeCapTestEnv::new();
-        let r = t.client.try_update_fee_config(
-            &Some(MAX_FEE_RATE),
-            &None, &None, &None, &None, &None,
-        );
+        let r =
+            t.client
+                .try_update_fee_config(&Some(MAX_FEE_RATE), &None, &None, &None, &None, &None);
         assert!(r.is_ok(), "lock_fee_rate == MAX_FEE_RATE must be accepted");
         let cfg = t.get_fee_config();
         assert_eq!(cfg.lock_fee_rate, MAX_FEE_RATE);
@@ -1183,10 +1189,9 @@ mod fee_enforcement {
     #[test]
     fn test_lock_fee_rate_zero_accepted() {
         let t = FeeCapTestEnv::new();
-        let r = t.client.try_update_fee_config(
-            &Some(0),
-            &None, &None, &None, &None, &None,
-        );
+        let r = t
+            .client
+            .try_update_fee_config(&Some(0), &None, &None, &None, &None, &None);
         assert!(r.is_ok());
         let cfg = t.get_fee_config();
         assert_eq!(cfg.lock_fee_rate, 0);
@@ -1195,10 +1200,9 @@ mod fee_enforcement {
     #[test]
     fn test_lock_fee_rate_negative_rejected() {
         let t = FeeCapTestEnv::new();
-        let r = t.client.try_update_fee_config(
-            &Some(-1),
-            &None, &None, &None, &None, &None,
-        );
+        let r = t
+            .client
+            .try_update_fee_config(&Some(-1), &None, &None, &None, &None, &None);
         assert!(r.is_err(), "negative lock_fee_rate must be rejected");
     }
 
@@ -1209,19 +1213,28 @@ mod fee_enforcement {
         let t = FeeCapTestEnv::new();
         let r = t.client.try_update_fee_config(
             &None,
-            &Some(MAX_FEE_RATE + 1), &None, &None, &None, &None,
+            &Some(MAX_FEE_RATE + 1),
+            &None,
+            &None,
+            &None,
+            &None,
         );
-        assert!(r.is_err(), "payout_fee_rate above MAX_FEE_RATE must be rejected");
+        assert!(
+            r.is_err(),
+            "payout_fee_rate above MAX_FEE_RATE must be rejected"
+        );
     }
 
     #[test]
     fn test_payout_fee_rate_at_max_accepted() {
         let t = FeeCapTestEnv::new();
-        let r = t.client.try_update_fee_config(
-            &None,
-            &Some(MAX_FEE_RATE), &None, &None, &None, &None,
+        let r =
+            t.client
+                .try_update_fee_config(&None, &Some(MAX_FEE_RATE), &None, &None, &None, &None);
+        assert!(
+            r.is_ok(),
+            "payout_fee_rate == MAX_FEE_RATE must be accepted"
         );
-        assert!(r.is_ok(), "payout_fee_rate == MAX_FEE_RATE must be accepted");
         let cfg = t.get_fee_config();
         assert_eq!(cfg.payout_fee_rate, MAX_FEE_RATE);
     }
@@ -1229,10 +1242,9 @@ mod fee_enforcement {
     #[test]
     fn test_payout_fee_rate_zero_accepted() {
         let t = FeeCapTestEnv::new();
-        let r = t.client.try_update_fee_config(
-            &None,
-            &Some(0), &None, &None, &None, &None,
-        );
+        let r = t
+            .client
+            .try_update_fee_config(&None, &Some(0), &None, &None, &None, &None);
         assert!(r.is_ok());
         let cfg = t.get_fee_config();
         assert_eq!(cfg.payout_fee_rate, 0);
@@ -1241,10 +1253,9 @@ mod fee_enforcement {
     #[test]
     fn test_payout_fee_rate_negative_rejected() {
         let t = FeeCapTestEnv::new();
-        let r = t.client.try_update_fee_config(
-            &None,
-            &Some(-1), &None, &None, &None, &None,
-        );
+        let r = t
+            .client
+            .try_update_fee_config(&None, &Some(-1), &None, &None, &None, &None);
         assert!(r.is_err(), "negative payout_fee_rate must be rejected");
     }
 
@@ -1255,7 +1266,11 @@ mod fee_enforcement {
         let t = FeeCapTestEnv::new();
         let r = t.client.try_update_fee_config(
             &Some(MAX_FEE_RATE),
-            &Some(MAX_FEE_RATE), &None, &None, &None, &None,
+            &Some(MAX_FEE_RATE),
+            &None,
+            &None,
+            &None,
+            &None,
         );
         assert!(r.is_ok());
         let cfg = t.get_fee_config();
@@ -1268,7 +1283,11 @@ mod fee_enforcement {
         let t = FeeCapTestEnv::new();
         let r = t.client.try_update_fee_config(
             &Some(MAX_FEE_RATE + 1),
-            &Some(MAX_FEE_RATE + 1), &None, &None, &None, &None,
+            &Some(MAX_FEE_RATE + 1),
+            &None,
+            &None,
+            &None,
+            &None,
         );
         assert!(r.is_err(), "both rates above MAX_FEE_RATE must be rejected");
     }
@@ -1278,9 +1297,16 @@ mod fee_enforcement {
         let t = FeeCapTestEnv::new();
         let r = t.client.try_update_fee_config(
             &Some(500),
-            &Some(MAX_FEE_RATE + 1), &None, &None, &None, &None,
+            &Some(MAX_FEE_RATE + 1),
+            &None,
+            &None,
+            &None,
+            &None,
         );
-        assert!(r.is_err(), "payout_fee_rate > MAX_FEE_RATE must be rejected even when lock_fee_rate is valid");
+        assert!(
+            r.is_err(),
+            "payout_fee_rate > MAX_FEE_RATE must be rejected even when lock_fee_rate is valid"
+        );
     }
 
     // ── Preservation ───────────────────────────────────────────────────
@@ -1290,15 +1316,13 @@ mod fee_enforcement {
         let t = FeeCapTestEnv::new();
 
         // Set a known lock_fee_rate.
-        t.client.update_fee_config(
-            &Some(500), &Some(800), &None, &None, &None, &None,
-        );
+        t.client
+            .update_fee_config(&Some(500), &Some(800), &None, &None, &None, &None);
 
         // Now update only payout_fee_rate — lock_fee_rate must be preserved.
-        let r = t.client.try_update_fee_config(
-            &None,
-            &Some(MAX_FEE_RATE), &None, &None, &None, &None,
-        );
+        let r =
+            t.client
+                .try_update_fee_config(&None, &Some(MAX_FEE_RATE), &None, &None, &None, &None);
         assert!(r.is_ok());
         let cfg = t.get_fee_config();
         assert_eq!(cfg.lock_fee_rate, 500, "lock_fee_rate must be preserved");
@@ -1310,18 +1334,18 @@ mod fee_enforcement {
     #[test]
     fn test_negative_lock_fixed_fee_rejected() {
         let t = FeeCapTestEnv::new();
-        let r = t.client.try_update_fee_config(
-            &None, &None, &Some(-1), &None, &None, &None,
-        );
+        let r = t
+            .client
+            .try_update_fee_config(&None, &None, &Some(-1), &None, &None, &None);
         assert!(r.is_err(), "negative lock_fixed_fee must be rejected");
     }
 
     #[test]
     fn test_negative_payout_fixed_fee_rejected() {
         let t = FeeCapTestEnv::new();
-        let r = t.client.try_update_fee_config(
-            &None, &None, &None, &Some(-1), &None, &None,
-        );
+        let r = t
+            .client
+            .try_update_fee_config(&None, &None, &None, &Some(-1), &None, &None);
         assert!(r.is_err(), "negative payout_fixed_fee must be rejected");
     }
 }
@@ -1859,8 +1883,16 @@ mod validation_tests {
             assert_eq!(result.remaining_balance, 0);
 
             // Deterministic rounding recipient: beneficiary 0 absorbs remainder of 1
-            assert_eq!(setup.get_balance(&setup.r1), 2, "Recipient 0 must absorb dust remainder of 1");
-            assert_eq!(setup.get_balance(&setup.r2), 1, "Recipient 1 must receive floor share");
+            assert_eq!(
+                setup.get_balance(&setup.r1),
+                2,
+                "Recipient 0 must absorb dust remainder of 1"
+            );
+            assert_eq!(
+                setup.get_balance(&setup.r2),
+                1,
+                "Recipient 1 must receive floor share"
+            );
 
             // Strict conservation assertion
             let total_paid = setup.get_balance(&setup.r1) + setup.get_balance(&setup.r2);
@@ -1918,7 +1950,8 @@ mod validation_tests {
             // Recipient 0 receives base (2) + dust (1) = 3
             let r0_address = bens.get(0).unwrap().recipient;
             assert_eq!(
-                setup.get_balance(&r0_address), 3,
+                setup.get_balance(&r0_address),
+                3,
                 "First beneficiary must receive floor share + dust remainder"
             );
 
@@ -1926,8 +1959,10 @@ mod validation_tests {
             for i in 1..num_recipients {
                 let r_address = bens.get(i as u32).unwrap().recipient;
                 assert_eq!(
-                    setup.get_balance(&r_address), 2,
-                    "Beneficiary {} must receive exact floor share of 2", i
+                    setup.get_balance(&r_address),
+                    2,
+                    "Beneficiary {} must receive exact floor share of 2",
+                    i
                 );
             }
 
@@ -2019,4 +2054,3 @@ mod validation_tests {
         });
     }
 }
-

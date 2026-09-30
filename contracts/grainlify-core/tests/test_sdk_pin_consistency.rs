@@ -23,10 +23,12 @@
 use std::fs;
 use std::path::Path;
 
-/// The exact soroban-sdk pin shared by every crate under `contracts/`.
+/// The exact soroban-sdk pin the contracts/ tree (including this crate)
+/// builds against. Any other version is a bug.
 const CONTRACTS_PIN: &str = "=21.7.7";
 
-/// The exact soroban-sdk pin of the `soroban` workspace (repository target).
+/// The exact soroban-sdk pin the standalone soroban/ workspace builds
+/// against.
 const SOROBAN_WS_PIN: &str = "=23.4.1";
 
 /// Repository-wide target SDK major/minor/patch (destination for all trees).
@@ -120,7 +122,9 @@ fn soroban_workspace_pins_exact_sdk() {
 
 #[test]
 fn own_lockfile_resolves_single_sdk() {
-    let lock = read("contracts/grainlify-core/Cargo.lock");
+    // Since the workspace consolidation (#1939), the crate shares the
+    // single lockfile at contracts/Cargo.lock.
+    let lock = read("contracts/Cargo.lock");
     let entries: Vec<&str> = lock
         .split("[[package]]")
         .filter(|block| block.contains("name = \"soroban-sdk\""))
@@ -128,7 +132,7 @@ fn own_lockfile_resolves_single_sdk() {
     assert_eq!(
         entries.len(),
         1,
-        "contracts/grainlify-core/Cargo.lock must resolve exactly one soroban-sdk, found {}",
+        "contracts/Cargo.lock must resolve exactly one soroban-sdk, found {}",
         entries.len()
     );
     let expected = format!("version = \"{}\"", CONTRACTS_PIN.trim_start_matches('='));
@@ -195,7 +199,7 @@ fn gate_script_table_matches_the_pins() {
         "issue #1848",
     ] {
         assert!(
-            script.contains(needle.as_str()),
+            script.contains(needle),
             "scripts/check_sdk_versions.sh pin table must contain `{needle}`"
         );
     }
@@ -210,12 +214,7 @@ fn only_two_sdk_majors_are_allowlisted() {
         script.contains("*'\"=21.7.7\"'* | *'\"=23.4.1\"'*"),
         "gate must allow-list only =21.7.7 and =23.4.1 so a third version fails CI"
     );
-    // No other =N. pin should appear in the allow case arms.
-    for line in script.lines() {
-        if line.contains("*=\"=") && line.contains("soroban") {
-            continue;
-        }
-        if "*'\"=" in line && "21.7.7" not in line and False:
-            pass
-    }
+    // No other `=N.` pin belongs in the allow case arms: the gate script
+    // allow-lists exactly the two majors asserted above, and any third pin
+    // falls through check_sdk_versions.sh and fails CI there.
 }

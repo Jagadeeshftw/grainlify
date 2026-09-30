@@ -20,9 +20,7 @@ use soroban_sdk::{
     token, vec, Address, Env, String, Vec,
 };
 
-use crate::{
-    ProgramEscrowContract, ProgramEscrowContractClient, ProgramStatus, StatusTransition,
-};
+use crate::{ProgramEscrowContract, ProgramEscrowContractClient, ProgramStatus, StatusTransition};
 
 // -----------------------------------------------------------------------
 // Helpers
@@ -100,14 +98,7 @@ fn test_initial_transition_recorded_on_init() {
     let token = make_token(&env, &admin);
 
     let t0 = env.ledger().timestamp();
-    client.init_program(
-        &pid(&env, "p-001"),
-        &admin,
-        &token,
-        &admin,
-        &None,
-        &None,
-    );
+    client.init_program(&pid(&env, "p-001"), &admin, &token, &admin, &None, &None);
 
     let timeline = client.get_program_lifecycle_timeline(&pid(&env, "p-001"));
     assert_single_transition(&timeline, ProgramStatus::Draft, t0);
@@ -119,14 +110,7 @@ fn test_publish_records_draft_to_active_transition() {
     let token = make_token(&env, &admin);
 
     let t0 = env.ledger().timestamp();
-    client.init_program(
-        &pid(&env, "p-001"),
-        &admin,
-        &token,
-        &admin,
-        &None,
-        &None,
-    );
+    client.init_program(&pid(&env, "p-001"), &admin, &token, &admin, &None, &None);
 
     // let dwell time pass
     advance_time(&env, 3600); // 1 hour
@@ -244,8 +228,6 @@ fn test_non_existent_program_returns_empty() {
     );
 }
 
-
-
 // -----------------------------------------------------------------------
 // Tests: a program that is never published still has its initial
 // Draft→Draft entry.
@@ -257,14 +239,7 @@ fn test_never_published_still_has_initial_entry() {
     let token = make_token(&env, &admin);
 
     let t0 = env.ledger().timestamp();
-    client.init_program(
-        &pid(&env, "p-001"),
-        &admin,
-        &token,
-        &admin,
-        &None,
-        &None,
-    );
+    client.init_program(&pid(&env, "p-001"), &admin, &token, &admin, &None, &None);
 
     // Advance time significantly to prove we don't get a "transition" from
     // just the passage of time — the timeline should still have 1 entry.
@@ -284,14 +259,7 @@ fn test_failed_publish_does_not_record_transition() {
     let (env, admin, client) = setup();
     let token = make_token(&env, &admin);
 
-    client.init_program(
-        &pid(&env, "p-001"),
-        &admin,
-        &token,
-        &admin,
-        &None,
-        &None,
-    );
+    client.init_program(&pid(&env, "p-001"), &admin, &token, &admin, &None, &None);
 
     // Capture timeline length before the failing double-publish
     let len_before = client

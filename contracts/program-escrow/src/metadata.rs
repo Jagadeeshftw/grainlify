@@ -723,192 +723,192 @@ mod tests {
     #[cfg(any())]
     mod benchmarks {
 
-    fn benchmark_payload(env: &Env) -> crate::ProgramMetadata {
-        let mut tags: crate::Vec<crate::String> = crate::Vec::new(env);
-        tags.push_back(crate::String::from_str(env, "hackathon"));
-        tags.push_back(crate::String::from_str(env, "defi"));
+        fn benchmark_payload(env: &Env) -> crate::ProgramMetadata {
+            let mut tags: crate::Vec<crate::String> = crate::Vec::new(env);
+            tags.push_back(crate::String::from_str(env, "hackathon"));
+            tags.push_back(crate::String::from_str(env, "defi"));
 
-        let mut custom_fields: crate::Vec<crate::ProgramMetadataField> = crate::Vec::new(env);
-        custom_fields.push_back(crate::ProgramMetadataField {
-            key: crate::String::from_str(env, "total_participants"),
-            value: crate::String::from_str(env, "150"),
-        });
-        custom_fields.push_back(crate::ProgramMetadataField {
-            key: crate::String::from_str(env, "prize_pool_usd"),
-            value: crate::String::from_str(env, "50000"),
-        });
-        custom_fields.push_back(crate::ProgramMetadataField {
-            key: crate::String::from_str(env, "sponsor"),
-            value: crate::String::from_str(env, "Stellar Development Foundation"),
-        });
-        custom_fields.push_back(crate::ProgramMetadataField {
-            key: crate::String::from_str(env, "project_repository"),
-            value: crate::String::from_str(env, "https://github.com/stellar/example"),
-        });
-
-        crate::ProgramMetadata {
-            program_name: Some(crate::String::from_str(env, "Hackathon 2024")),
-            program_type: Some(crate::String::from_str(env, "hackathon")),
-            ecosystem: Some(crate::String::from_str(env, "stellar")),
-            tags,
-            start_date: Some(1_720_000_000),
-            end_date: Some(1_750_000_000),
-            custom_fields,
-        }
-    }
-
-    fn encoded_size<T>(env: &Env, value: &T) -> usize
-    where
-        T: soroban_sdk::IntoVal<Env, soroban_sdk::Val>,
-    {
-        use soroban_sdk::xdr::ToXdr;
-        let val: soroban_sdk::Val = soroban_sdk::IntoVal::into_val(value.clone(), env);
-        let bytes: soroban_sdk::Bytes = val.to_xdr(env);
-        bytes.len() as usize
-    }
-
-    #[test]
-    fn benchmark_representative_payload() {
-        let env = create_env();
-        let legacy = benchmark_payload(&env);
-        let compressed = CompressedProgramMetadata::from_legacy(&env, &legacy);
-
-        let legacy_size = encoded_size(&env, &legacy);
-        let compressed_size = encoded_size(&env, &compressed);
-
-        let savings_pct = if legacy_size > 0 {
-            ((legacy_size - compressed_size) as f64 / legacy_size as f64 * 100.0)
-        } else {
-            0.0
-        };
-
-        assert!(
-            compressed_size < legacy_size,
-            "compressed ({compressed_size}B) < legacy ({legacy_size}B)"
-        );
-    }
-
-    #[test]
-    fn benchmark_max_keys() {
-        let env = create_env();
-        let mut custom_fields: crate::Vec<crate::ProgramMetadataField> = crate::Vec::new(&env);
-        let known: &[&str] = &[
-            "total_participants",
-            "prize_pool_usd",
-            "sponsor",
-            "repository",
-            "website",
-            "contact_email",
-            "difficulty",
-            "category",
-            "status",
-            "version",
-        ];
-        for (i, k) in known.iter().enumerate() {
-            let val_str = ["v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9"][i];
+            let mut custom_fields: crate::Vec<crate::ProgramMetadataField> = crate::Vec::new(env);
             custom_fields.push_back(crate::ProgramMetadataField {
-                key: crate::String::from_str(&env, k),
-                value: crate::String::from_str(&env, val_str),
+                key: crate::String::from_str(env, "total_participants"),
+                value: crate::String::from_str(env, "150"),
             });
-        }
-        // Add 2 custom (non-matching) keys
-        custom_fields.push_back(crate::ProgramMetadataField {
-            key: crate::String::from_str(&env, "custom_field_0"),
-            value: crate::String::from_str(&env, "x"),
-        });
-        custom_fields.push_back(crate::ProgramMetadataField {
-            key: crate::String::from_str(&env, "custom_field_1"),
-            value: crate::String::from_str(&env, "y"),
-        });
-
-        let legacy = crate::ProgramMetadata {
-            program_name: Some(crate::String::from_str(&env, "MaxKeys")),
-            program_type: None,
-            ecosystem: None,
-            tags: crate::Vec::new(&env),
-            start_date: None,
-            end_date: None,
-            custom_fields,
-        };
-
-        let compressed = CompressedProgramMetadata::from_legacy(&env, &legacy);
-        let legacy_size = encoded_size(&env, &legacy);
-        let compressed_size = encoded_size(&env, &compressed);
-        let savings_pct = if legacy_size > 0 {
-            ((legacy_size - compressed_size) as f64 / legacy_size as f64 * 100.0)
-        } else {
-            0.0
-        };
-
-        assert!(
-            compressed_size < legacy_size,
-            "compressed ({compressed_size}B) < legacy ({legacy_size}B)"
-        );
-    }
-
-    #[test]
-    fn benchmark_custom_only_worst_case() {
-        let env = create_env();
-        let mut custom_fields: crate::Vec<crate::ProgramMetadataField> = crate::Vec::new(&env);
-        let keys: &[&str] = &[
-            "custom_key_0",
-            "custom_key_1",
-            "custom_key_2",
-            "custom_key_3",
-            "custom_key_4",
-        ];
-        let vals: &[&str] = &["value_0", "value_1", "value_2", "value_3", "value_4"];
-        for i in 0..5 {
             custom_fields.push_back(crate::ProgramMetadataField {
-                key: crate::String::from_str(&env, keys[i]),
-                value: crate::String::from_str(&env, vals[i]),
+                key: crate::String::from_str(env, "prize_pool_usd"),
+                value: crate::String::from_str(env, "50000"),
             });
+            custom_fields.push_back(crate::ProgramMetadataField {
+                key: crate::String::from_str(env, "sponsor"),
+                value: crate::String::from_str(env, "Stellar Development Foundation"),
+            });
+            custom_fields.push_back(crate::ProgramMetadataField {
+                key: crate::String::from_str(env, "project_repository"),
+                value: crate::String::from_str(env, "https://github.com/stellar/example"),
+            });
+
+            crate::ProgramMetadata {
+                program_name: Some(crate::String::from_str(env, "Hackathon 2024")),
+                program_type: Some(crate::String::from_str(env, "hackathon")),
+                ecosystem: Some(crate::String::from_str(env, "stellar")),
+                tags,
+                start_date: Some(1_720_000_000),
+                end_date: Some(1_750_000_000),
+                custom_fields,
+            }
         }
 
-        let legacy = crate::ProgramMetadata {
-            program_name: None,
-            program_type: None,
-            ecosystem: None,
-            tags: crate::Vec::new(&env),
-            start_date: None,
-            end_date: None,
-            custom_fields,
-        };
+        fn encoded_size<T>(env: &Env, value: &T) -> usize
+        where
+            T: soroban_sdk::IntoVal<Env, soroban_sdk::Val>,
+        {
+            use soroban_sdk::xdr::ToXdr;
+            let val: soroban_sdk::Val = soroban_sdk::IntoVal::into_val(value.clone(), env);
+            let bytes: soroban_sdk::Bytes = val.to_xdr(env);
+            bytes.len() as usize
+        }
 
-        let compressed = CompressedProgramMetadata::from_legacy(&env, &legacy);
-        let legacy_size = encoded_size(&env, &legacy);
-        let compressed_size = encoded_size(&env, &compressed);
-        let diff = compressed_size as i64 - legacy_size as i64;
+        #[test]
+        fn benchmark_representative_payload() {
+            let env = create_env();
+            let legacy = benchmark_payload(&env);
+            let compressed = CompressedProgramMetadata::from_legacy(&env, &legacy);
 
-        // Accept small overhead (enum discriminant) for all-custom keys.
-        assert!(
-            diff.abs() <= 32,
-            "diff ({diff}B) should be within tolerance"
-        );
-    }
+            let legacy_size = encoded_size(&env, &legacy);
+            let compressed_size = encoded_size(&env, &compressed);
 
-    #[test]
-    fn benchmark_empty_custom_fields() {
-        let env = create_env();
+            let savings_pct = if legacy_size > 0 {
+                ((legacy_size - compressed_size) as f64 / legacy_size as f64 * 100.0)
+            } else {
+                0.0
+            };
 
-        let legacy = crate::ProgramMetadata {
-            program_name: None,
-            program_type: None,
-            ecosystem: None,
-            tags: crate::Vec::new(&env),
-            start_date: None,
-            end_date: None,
-            custom_fields: crate::Vec::new(&env),
-        };
+            assert!(
+                compressed_size < legacy_size,
+                "compressed ({compressed_size}B) < legacy ({legacy_size}B)"
+            );
+        }
 
-        let compressed = CompressedProgramMetadata::from_legacy(&env, &legacy);
-        let legacy_size = encoded_size(&env, &legacy);
-        let compressed_size = encoded_size(&env, &compressed);
+        #[test]
+        fn benchmark_max_keys() {
+            let env = create_env();
+            let mut custom_fields: crate::Vec<crate::ProgramMetadataField> = crate::Vec::new(&env);
+            let known: &[&str] = &[
+                "total_participants",
+                "prize_pool_usd",
+                "sponsor",
+                "repository",
+                "website",
+                "contact_email",
+                "difficulty",
+                "category",
+                "status",
+                "version",
+            ];
+            for (i, k) in known.iter().enumerate() {
+                let val_str = ["v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9"][i];
+                custom_fields.push_back(crate::ProgramMetadataField {
+                    key: crate::String::from_str(&env, k),
+                    value: crate::String::from_str(&env, val_str),
+                });
+            }
+            // Add 2 custom (non-matching) keys
+            custom_fields.push_back(crate::ProgramMetadataField {
+                key: crate::String::from_str(&env, "custom_field_0"),
+                value: crate::String::from_str(&env, "x"),
+            });
+            custom_fields.push_back(crate::ProgramMetadataField {
+                key: crate::String::from_str(&env, "custom_field_1"),
+                value: crate::String::from_str(&env, "y"),
+            });
 
-        assert!(
-            (compressed_size as i64 - legacy_size as i64).unsigned_abs() <= 8,
-            "empty metadata sizes should be close"
-        );
-    }
+            let legacy = crate::ProgramMetadata {
+                program_name: Some(crate::String::from_str(&env, "MaxKeys")),
+                program_type: None,
+                ecosystem: None,
+                tags: crate::Vec::new(&env),
+                start_date: None,
+                end_date: None,
+                custom_fields,
+            };
+
+            let compressed = CompressedProgramMetadata::from_legacy(&env, &legacy);
+            let legacy_size = encoded_size(&env, &legacy);
+            let compressed_size = encoded_size(&env, &compressed);
+            let savings_pct = if legacy_size > 0 {
+                ((legacy_size - compressed_size) as f64 / legacy_size as f64 * 100.0)
+            } else {
+                0.0
+            };
+
+            assert!(
+                compressed_size < legacy_size,
+                "compressed ({compressed_size}B) < legacy ({legacy_size}B)"
+            );
+        }
+
+        #[test]
+        fn benchmark_custom_only_worst_case() {
+            let env = create_env();
+            let mut custom_fields: crate::Vec<crate::ProgramMetadataField> = crate::Vec::new(&env);
+            let keys: &[&str] = &[
+                "custom_key_0",
+                "custom_key_1",
+                "custom_key_2",
+                "custom_key_3",
+                "custom_key_4",
+            ];
+            let vals: &[&str] = &["value_0", "value_1", "value_2", "value_3", "value_4"];
+            for i in 0..5 {
+                custom_fields.push_back(crate::ProgramMetadataField {
+                    key: crate::String::from_str(&env, keys[i]),
+                    value: crate::String::from_str(&env, vals[i]),
+                });
+            }
+
+            let legacy = crate::ProgramMetadata {
+                program_name: None,
+                program_type: None,
+                ecosystem: None,
+                tags: crate::Vec::new(&env),
+                start_date: None,
+                end_date: None,
+                custom_fields,
+            };
+
+            let compressed = CompressedProgramMetadata::from_legacy(&env, &legacy);
+            let legacy_size = encoded_size(&env, &legacy);
+            let compressed_size = encoded_size(&env, &compressed);
+            let diff = compressed_size as i64 - legacy_size as i64;
+
+            // Accept small overhead (enum discriminant) for all-custom keys.
+            assert!(
+                diff.abs() <= 32,
+                "diff ({diff}B) should be within tolerance"
+            );
+        }
+
+        #[test]
+        fn benchmark_empty_custom_fields() {
+            let env = create_env();
+
+            let legacy = crate::ProgramMetadata {
+                program_name: None,
+                program_type: None,
+                ecosystem: None,
+                tags: crate::Vec::new(&env),
+                start_date: None,
+                end_date: None,
+                custom_fields: crate::Vec::new(&env),
+            };
+
+            let compressed = CompressedProgramMetadata::from_legacy(&env, &legacy);
+            let legacy_size = encoded_size(&env, &legacy);
+            let compressed_size = encoded_size(&env, &compressed);
+
+            assert!(
+                (compressed_size as i64 - legacy_size as i64).unsigned_abs() <= 8,
+                "empty metadata sizes should be close"
+            );
+        }
     }
 }

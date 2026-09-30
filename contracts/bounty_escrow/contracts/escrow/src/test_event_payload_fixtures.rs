@@ -69,7 +69,12 @@ fn lookback_boundary(src: &str, end: usize, bytes: usize) -> usize {
     start
 }
 
-fn parse_contracttype_structs(src: &str) -> std::vec::Vec<(std::string::String, std::vec::Vec<(std::string::String, std::string::String)>)> {
+fn parse_contracttype_structs(
+    src: &str,
+) -> std::vec::Vec<(
+    std::string::String,
+    std::vec::Vec<(std::string::String, std::string::String)>,
+)> {
     let bytes = src.as_bytes();
     let mut out = std::vec::Vec::new();
     let mut search_from = 0usize;
@@ -135,7 +140,13 @@ fn parse_contracttype_structs(src: &str) -> std::vec::Vec<(std::string::String, 
             if !line.starts_with("pub ") {
                 continue;
             }
-            let line = line.split("//").next().unwrap_or(line).trim().trim_end_matches(',').trim();
+            let line = line
+                .split("//")
+                .next()
+                .unwrap_or(line)
+                .trim()
+                .trim_end_matches(',')
+                .trim();
             if let Some(rest) = line.strip_prefix("pub ") {
                 if let Some((fname, fty)) = rest.split_once(':') {
                     fields.push((fname.trim().to_string(), clean_type(fty)));
@@ -148,7 +159,9 @@ fn parse_contracttype_structs(src: &str) -> std::vec::Vec<(std::string::String, 
     out
 }
 
-fn parse_contracttype_enums(src: &str) -> std::vec::Vec<(std::string::String, std::vec::Vec<std::string::String>)> {
+fn parse_contracttype_enums(
+    src: &str,
+) -> std::vec::Vec<(std::string::String, std::vec::Vec<std::string::String>)> {
     let bytes = src.as_bytes();
     let mut out = std::vec::Vec::new();
     let mut search_from = 0usize;
@@ -251,8 +264,10 @@ fn event_payload_fixtures_match_events_rs() {
     let src = include_str!("events.rs");
     let live = parse_contracttype_structs(src);
 
-    let mut live_map: std::collections::BTreeMap<std::string::String, std::vec::Vec<(std::string::String, std::string::String)>> =
-        std::collections::BTreeMap::new();
+    let mut live_map: std::collections::BTreeMap<
+        std::string::String,
+        std::vec::Vec<(std::string::String, std::string::String)>,
+    > = std::collections::BTreeMap::new();
     for (name, fields) in live {
         live_map.insert(name, fields);
     }
@@ -338,11 +353,11 @@ fn versioned_events_use_explicit_version_field() {
         .filter(|e| e.has_version_field)
         .map(|e| e.name)
         .collect();
-    assert!(
-        !versioned.is_empty(),
-        "expected versioned event payloads"
-    );
-    for fixture in EVENT_PAYLOAD_FIXTURES.iter().filter(|e| e.has_version_field) {
+    assert!(!versioned.is_empty(), "expected versioned event payloads");
+    for fixture in EVENT_PAYLOAD_FIXTURES
+        .iter()
+        .filter(|e| e.has_version_field)
+    {
         assert_eq!(
             fixture.fields[0].name, "version",
             "{} should declare `version` as the first field (envelope)",

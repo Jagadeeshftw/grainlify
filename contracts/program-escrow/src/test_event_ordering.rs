@@ -58,7 +58,10 @@ fn events_since(
     result
 }
 
-fn topics_from(env: &Env, events: &soroban_sdk::Vec<(Address, soroban_sdk::Vec<Val>, Val)>) -> std::vec::Vec<Symbol> {
+fn topics_from(
+    env: &Env,
+    events: &soroban_sdk::Vec<(Address, soroban_sdk::Vec<Val>, Val)>,
+) -> std::vec::Vec<Symbol> {
     let mut out = std::vec::Vec::new();
     for e in events.iter() {
         out.push(topic_at(env, &e, 0));
@@ -84,9 +87,22 @@ fn test_single_then_batch_payout_event_order() {
     let new_events = events_since(&env, before, &client.address);
     let topics = topics_from(&env, &new_events);
 
-    assert_eq!(topics.len(), 2, "expected 2 payout events, got {}", topics.len());
-    assert_eq!(topics[0], Symbol::new(&env, "Payout"), "first event should be Payout");
-    assert_eq!(topics[1], Symbol::new(&env, "BatchPay"), "second event should be BatchPay");
+    assert_eq!(
+        topics.len(),
+        2,
+        "expected 2 payout events, got {}",
+        topics.len()
+    );
+    assert_eq!(
+        topics[0],
+        Symbol::new(&env, "Payout"),
+        "first event should be Payout"
+    );
+    assert_eq!(
+        topics[1],
+        Symbol::new(&env, "BatchPay"),
+        "second event should be BatchPay"
+    );
 }
 
 #[test]
@@ -107,9 +123,22 @@ fn test_batch_then_single_payout_event_order() {
     let new_events = events_since(&env, before, &client.address);
     let topics = topics_from(&env, &new_events);
 
-    assert_eq!(topics.len(), 2, "expected 2 payout events, got {}", topics.len());
-    assert_eq!(topics[0], Symbol::new(&env, "BatchPay"), "first event should be BatchPay");
-    assert_eq!(topics[1], Symbol::new(&env, "Payout"), "second event should be Payout");
+    assert_eq!(
+        topics.len(),
+        2,
+        "expected 2 payout events, got {}",
+        topics.len()
+    );
+    assert_eq!(
+        topics[0],
+        Symbol::new(&env, "BatchPay"),
+        "first event should be BatchPay"
+    );
+    assert_eq!(
+        topics[1],
+        Symbol::new(&env, "Payout"),
+        "second event should be Payout"
+    );
 }
 
 #[test]
@@ -123,24 +152,23 @@ fn test_interleaved_single_batch_single_batch() {
     client.single_payout(&r1, &500, &None);
 
     let r2 = Address::generate(&env);
-    client.batch_payout(
-        &vec![&env, r2],
-        &vec![&env, 1_000_i128],
-    );
+    client.batch_payout(&vec![&env, r2], &vec![&env, 1_000_i128]);
 
     let r3 = Address::generate(&env);
     client.single_payout(&r3, &1_500, &None);
 
     let r4 = Address::generate(&env);
-    client.batch_payout(
-        &vec![&env, r4],
-        &vec![&env, 2_000_i128],
-    );
+    client.batch_payout(&vec![&env, r4], &vec![&env, 2_000_i128]);
 
     let new_events = events_since(&env, before, &client.address);
     let topics = topics_from(&env, &new_events);
 
-    assert_eq!(topics.len(), 4, "expected 4 payout events, got {}", topics.len());
+    assert_eq!(
+        topics.len(),
+        4,
+        "expected 4 payout events, got {}",
+        topics.len()
+    );
     assert_eq!(topics[0], Symbol::new(&env, "Payout"));
     assert_eq!(topics[1], Symbol::new(&env, "BatchPay"));
     assert_eq!(topics[2], Symbol::new(&env, "Payout"));
@@ -160,23 +188,33 @@ fn test_pause_between_payouts_preserves_order() {
     client.set_paused(&Some(true), &None, &None, &None, &None);
 
     let r2 = Address::generate(&env);
-    client.batch_payout(
-        &vec![&env, r2],
-        &vec![&env, 2_000_i128],
-    );
+    client.batch_payout(&vec![&env, r2], &vec![&env, 2_000_i128]);
 
     client.set_paused(&Some(false), &None, &None, &None, &None);
 
     let new_events = events_since(&env, before, &client.address);
     let topics = topics_from(&env, &new_events);
 
-    assert_eq!(topics.len(), 6, "expected 6 events (2 payouts + 4 pause), got {}", topics.len());
+    assert_eq!(
+        topics.len(),
+        6,
+        "expected 6 events (2 payouts + 4 pause), got {}",
+        topics.len()
+    );
     assert_eq!(topics[0], Symbol::new(&env, "Payout"), "1st: Payout");
     assert_eq!(topics[1], Symbol::new(&env, "PauseSt"), "2nd: PauseSt (v1)");
-    assert_eq!(topics[2], Symbol::new(&env, "PauseStV2"), "3rd: PauseStV2 (v2)");
+    assert_eq!(
+        topics[2],
+        Symbol::new(&env, "PauseStV2"),
+        "3rd: PauseStV2 (v2)"
+    );
     assert_eq!(topics[3], Symbol::new(&env, "BatchPay"), "4th: BatchPay");
     assert_eq!(topics[4], Symbol::new(&env, "PauseSt"), "5th: PauseSt (v1)");
-    assert_eq!(topics[5], Symbol::new(&env, "PauseStV2"), "6th: PauseStV2 (v2)");
+    assert_eq!(
+        topics[5],
+        Symbol::new(&env, "PauseStV2"),
+        "6th: PauseStV2 (v2)"
+    );
 }
 
 #[test]
@@ -187,10 +225,7 @@ fn test_batch_single_interleaved_with_multi_mode_pause() {
     let before = env.events().all().len();
 
     let r1 = Address::generate(&env);
-    client.batch_payout(
-        &vec![&env, r1],
-        &vec![&env, 1_000_i128],
-    );
+    client.batch_payout(&vec![&env, r1], &vec![&env, 1_000_i128]);
 
     client.set_paused(&Some(true), &Some(true), &None, &None, &None);
 
@@ -205,11 +240,31 @@ fn test_batch_single_interleaved_with_multi_mode_pause() {
     assert_eq!(topics.len(), 8, "expected 8 events, got {}", topics.len());
     assert_eq!(topics[0], Symbol::new(&env, "BatchPay"), "1st: BatchPay");
     assert_eq!(topics[1], Symbol::new(&env, "PauseSt"), "2nd: lock PauseSt");
-    assert_eq!(topics[2], Symbol::new(&env, "PauseStV2"), "3rd: lock PauseStV2");
-    assert_eq!(topics[3], Symbol::new(&env, "PauseSt"), "4th: release PauseSt");
-    assert_eq!(topics[4], Symbol::new(&env, "PauseStV2"), "5th: release PauseStV2");
-    assert_eq!(topics[5], Symbol::new(&env, "PauseSt"), "6th: release-unpause PauseSt");
-    assert_eq!(topics[6], Symbol::new(&env, "PauseStV2"), "7th: release-unpause PauseStV2");
+    assert_eq!(
+        topics[2],
+        Symbol::new(&env, "PauseStV2"),
+        "3rd: lock PauseStV2"
+    );
+    assert_eq!(
+        topics[3],
+        Symbol::new(&env, "PauseSt"),
+        "4th: release PauseSt"
+    );
+    assert_eq!(
+        topics[4],
+        Symbol::new(&env, "PauseStV2"),
+        "5th: release PauseStV2"
+    );
+    assert_eq!(
+        topics[5],
+        Symbol::new(&env, "PauseSt"),
+        "6th: release-unpause PauseSt"
+    );
+    assert_eq!(
+        topics[6],
+        Symbol::new(&env, "PauseStV2"),
+        "7th: release-unpause PauseStV2"
+    );
     assert_eq!(topics[7], Symbol::new(&env, "Payout"), "8th: Payout");
 }
 
@@ -229,10 +284,7 @@ fn test_event_ordering_determinism_across_sequential_calls() {
         client.set_paused(&Some(true), &None, &None, &None, &None);
 
         let r2 = Address::generate(&env);
-        client.batch_payout(
-            &vec![&env, r2],
-            &vec![&env, 1_000_i128],
-        );
+        client.batch_payout(&vec![&env, r2], &vec![&env, 1_000_i128]);
 
         client.set_paused(&Some(false), &None, &None, &None, &None);
 
@@ -250,7 +302,10 @@ fn test_event_ordering_determinism_across_sequential_calls() {
         "event topic order must be deterministic across runs"
     );
 
-    assert!(all_orders[0].len() > 1, "must have multiple events to compare");
+    assert!(
+        all_orders[0].len() > 1,
+        "must have multiple events to compare"
+    );
 }
 
 #[test]
@@ -264,10 +319,7 @@ fn test_all_events_have_v2_version_tag() {
     client.single_payout(&r1, &1_000, &None);
 
     let r2 = Address::generate(&env);
-    client.batch_payout(
-        &vec![&env, r2],
-        &vec![&env, 2_000_i128],
-    );
+    client.batch_payout(&vec![&env, r2], &vec![&env, 2_000_i128]);
 
     client.set_paused(&Some(true), &None, &None, &None, &None);
 

@@ -120,7 +120,9 @@ fn facades_assert_default_features_false_requirement() {
         "program-escrow must declare grainlify-core dependency"
     );
     assert!(
-        program_escrow_toml.contains("grainlify-core = { path = \"../grainlify-core\", default-features = false }"),
+        program_escrow_toml.contains(
+            "grainlify-core = { path = \"../grainlify-core\", default-features = false }"
+        ),
         "program-escrow/Cargo.toml must specify `default-features = false` for grainlify-core"
     );
 
@@ -131,11 +133,15 @@ fn facades_assert_default_features_false_requirement() {
         "view-facade must declare grainlify-core dependency"
     );
     assert!(
-        view_facade_toml.contains("grainlify-core = { path = \"../grainlify-core\", default-features = false }"),
+        view_facade_toml.contains(
+            "grainlify-core = { path = \"../grainlify-core\", default-features = false }"
+        ),
         "view-facade/Cargo.toml must specify `default-features = false` for grainlify-core"
     );
     assert!(
-        view_facade_toml.contains("program-escrow = { path = \"../program-escrow\", default-features = false }"),
+        view_facade_toml.contains(
+            "program-escrow = { path = \"../program-escrow\", default-features = false }"
+        ),
         "view-facade/Cargo.toml must specify `default-features = false` for program-escrow"
     );
 
@@ -146,7 +152,9 @@ fn facades_assert_default_features_false_requirement() {
         "escrow-view-facade must declare program-escrow dependency"
     );
     assert!(
-        escrow_view_facade_toml.contains("program-escrow = { path = \"../program-escrow\", default-features = false }"),
+        escrow_view_facade_toml.contains(
+            "program-escrow = { path = \"../program-escrow\", default-features = false }"
+        ),
         "escrow-view-facade/Cargo.toml must specify `default-features = false` for program-escrow"
     );
 }

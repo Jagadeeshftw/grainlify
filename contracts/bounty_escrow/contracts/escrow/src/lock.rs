@@ -1,27 +1,23 @@
 //! Fund locking: single lock, anonymous lock, dry-run, archival, batching, and multisig approvals.
 
-
-
-use soroban_sdk::{symbol_short, token, vec, Address, BytesN, Env, Vec};
 use crate::{
-    anti_abuse, events, gas_budget, invariants, monitoring, multitoken_invariants, rbac, reentrancy_guard,
-    Escrow, EscrowMetadata, EscrowStatus, AnonymousEscrow, DataKey, Error,
-    LockFundsItem, MultisigConfig, RefundMode, RefundRecord, SimulationResult,
-    ESCROW_LIVE_TTL, ESCROW_ARCHIVAL_TTL, CLAIM_LIVE_TTL, CLAIM_ARCHIVAL_TTL,
-    COMMITMENT_LIVE_TTL, COMMITMENT_ARCHIVAL_TTL, INDEX_LIVE_TTL, INDEX_ARCHIVAL_TTL,
-    ARCHIVAL_MARKER_TTL, TTL_RENEWAL_DIVISOR, MAX_BATCH_SIZE,
-    events::{emit_batch_funds_locked, emit_funds_locked, emit_funds_locked_anon,
-             BatchFundsLocked, FundsLocked, FundsLockedAnon, EscrowPublished,
-             CriticalOperationOutcome, EVENT_VERSION_V2},
-    ReleaseApproval,
-    FeeConfig,
-    Capability,
+    anti_abuse, events,
+    events::{
+        emit_batch_funds_locked, emit_funds_locked, emit_funds_locked_anon, BatchFundsLocked,
+        CriticalOperationOutcome, EscrowPublished, FundsLocked, FundsLockedAnon, EVENT_VERSION_V2,
+    },
+    gas_budget, invariants, monitoring, multitoken_invariants, rbac, reentrancy_guard,
+    AnonymousEscrow, Capability, DataKey, Error, Escrow, EscrowMetadata, EscrowStatus, FeeConfig,
+    LockFundsItem, MultisigConfig, RefundMode, RefundRecord, ReleaseApproval, SimulationResult,
+    ARCHIVAL_MARKER_TTL, CLAIM_ARCHIVAL_TTL, CLAIM_LIVE_TTL, COMMITMENT_ARCHIVAL_TTL,
+    COMMITMENT_LIVE_TTL, ESCROW_ARCHIVAL_TTL, ESCROW_LIVE_TTL, INDEX_ARCHIVAL_TTL, INDEX_LIVE_TTL,
+    MAX_BATCH_SIZE, TTL_RENEWAL_DIVISOR,
 };
+use soroban_sdk::{symbol_short, token, vec, Address, BytesN, Env, Vec};
 
 // ─────────────────────────────────────────────────────────────────
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────
-
 
 pub(crate) fn lock_funds_logic(
     env: Env,
@@ -246,7 +242,6 @@ pub(crate) fn lock_funds_logic(
     Ok(())
 }
 
-
 pub(crate) fn dry_run_lock_impl(
     env: &Env,
     depositor: Address,
@@ -313,7 +308,6 @@ pub(crate) fn dry_run_lock_impl(
     Ok((net_amount,))
 }
 
-
 pub(crate) fn publish_logic(env: Env, bounty_id: u64, publisher: Address) -> Result<(), Error> {
     // Validation precedence:
     // 1. Reentrancy guard
@@ -379,9 +373,7 @@ pub(crate) fn renew_tracked_record(
     let previous: Option<u32> = env.storage().persistent().get(marker);
 
     if previous
-        .map(|live_until| {
-            live_until.saturating_sub(current_ledger) <= renewal_threshold
-        })
+        .map(|live_until| live_until.saturating_sub(current_ledger) <= renewal_threshold)
         .unwrap_or(true)
     {
         env.storage()
@@ -392,15 +384,12 @@ pub(crate) fn renew_tracked_record(
             .set(marker, &current_ledger.saturating_add(extension_ttl));
     }
 
-    env.storage()
-        .persistent()
-        .extend_ttl(
-            marker,
-            ARCHIVAL_MARKER_TTL / TTL_RENEWAL_DIVISOR,
-            ARCHIVAL_MARKER_TTL,
-        );
+    env.storage().persistent().extend_ttl(
+        marker,
+        ARCHIVAL_MARKER_TTL / TTL_RENEWAL_DIVISOR,
+        ARCHIVAL_MARKER_TTL,
+    );
 }
-
 
 pub(crate) fn renew_escrow_record(env: &Env, bounty_id: u64, archival: bool) {
     let regular = DataKey::Escrow(bounty_id);
@@ -437,7 +426,6 @@ pub(crate) fn renew_escrow_record(env: &Env, bounty_id: u64, archival: bool) {
     }
 }
 
-
 pub(crate) fn renew_claim_record(env: &Env, bounty_id: u64, archival: bool) {
     renew_tracked_record(
         env,
@@ -448,7 +436,6 @@ pub(crate) fn renew_claim_record(env: &Env, bounty_id: u64, archival: bool) {
         archival,
     );
 }
-
 
 pub(crate) fn renew_capability_record(env: &Env, capability_id: &BytesN<32>, archival: bool) {
     renew_tracked_record(
@@ -461,7 +448,6 @@ pub(crate) fn renew_capability_record(env: &Env, capability_id: &BytesN<32>, arc
     );
 }
 
-
 pub(crate) fn renew_escrow_index(env: &Env, archival: bool) {
     renew_tracked_record(
         env,
@@ -472,7 +458,6 @@ pub(crate) fn renew_escrow_index(env: &Env, archival: bool) {
         archival,
     );
 }
-
 
 pub(crate) fn renew_depositor_index(env: &Env, depositor: &Address, archival: bool) {
     renew_tracked_record(
@@ -488,7 +473,6 @@ pub(crate) fn renew_depositor_index(env: &Env, depositor: &Address, archival: bo
 // ─────────────────────────────────────────────────────────────────
 // Public entry points (dispatcher targets)
 // ─────────────────────────────────────────────────────────────────
-
 
 /// Locks funds for a bounty and records escrow state.
 ///
@@ -506,12 +490,10 @@ pub fn lock_funds(
     amount: i128,
     deadline: u64,
 ) -> Result<(), Error> {
-    let res =
-        lock_funds_logic(env.clone(), depositor.clone(), bounty_id, amount, deadline);
+    let res = lock_funds_logic(env.clone(), depositor.clone(), bounty_id, amount, deadline);
     monitoring::track_operation(&env, symbol_short!("lock"), depositor, res.is_ok());
     res
 }
-
 
 /// Simulate lock operation without state changes or token transfers.
 ///
@@ -562,7 +544,6 @@ pub fn archive_escrow(env: Env, bounty_id: u64) -> Result<(), Error> {
     Ok(())
 }
 
-
 /// Get all archived escrow IDs.
 pub fn get_archived_escrows(env: Env) -> Vec<u64> {
     let index: Vec<u64> = env
@@ -581,7 +562,10 @@ pub fn get_archived_escrows(env: Env) -> Vec<u64> {
             .get::<DataKey, Escrow>(&DataKey::Escrow(id))
         {
             let terminal = escrow.archived
-                || matches!(escrow.status, EscrowStatus::Released | EscrowStatus::Refunded);
+                || matches!(
+                    escrow.status,
+                    EscrowStatus::Released | EscrowStatus::Refunded
+                );
             renew_escrow_record(&env, id, terminal);
             if escrow.archived {
                 archived.push_back(id);
@@ -601,7 +585,6 @@ pub fn get_archived_escrows(env: Env) -> Vec<u64> {
     }
     archived
 }
-
 
 /// Simulation of a lock operation.
 pub fn dry_run_lock(
@@ -632,7 +615,6 @@ pub fn dry_run_lock(
     }
 }
 
-
 /// Returns whether the given bounty escrow is marked as using non-transferable (soulbound)
 /// reward tokens. When true, the token is expected to disallow further transfers after claim.
 pub fn get_non_transferable_rewards(env: Env, bounty_id: u64) -> Result<bool, Error> {
@@ -645,7 +627,6 @@ pub fn get_non_transferable_rewards(env: Env, bounty_id: u64) -> Result<bool, Er
         .get(&DataKey::NonTransferableRewards(bounty_id))
         .unwrap_or(false))
 }
-
 
 /// Lock funds for a bounty in anonymous mode: only a 32-byte depositor commitment is stored.
 /// The depositor must authorize and transfer; their address is used only for the transfer
@@ -762,7 +743,6 @@ pub fn lock_funds_anonymous(
     Ok(())
 }
 
-
 /// Releases escrowed funds to a contributor.
 ///
 /// # Access Control
@@ -782,7 +762,6 @@ pub fn publish(env: Env, bounty_id: u64) -> Result<(), Error> {
         .expect("Admin not set");
     publish_logic(env, bounty_id, _caller)
 }
-
 
 /// Update multisig configuration (admin only)
 pub fn update_multisig_config(
@@ -815,7 +794,6 @@ pub fn update_multisig_config(
     Ok(())
 }
 
-
 /// Get multisig configuration
 pub fn get_multisig_config(env: Env) -> MultisigConfig {
     env.storage()
@@ -827,7 +805,6 @@ pub fn get_multisig_config(env: Env) -> MultisigConfig {
             required_signatures: 0,
         })
 }
-
 
 /// Approve release for large amount (requires multisig)
 pub fn approve_large_release(
@@ -857,15 +834,15 @@ pub fn approve_large_release(
     approver.require_auth();
 
     let approval_key = DataKey::ReleaseApproval(bounty_id);
-    let mut approval: ReleaseApproval = env
-        .storage()
-        .persistent()
-        .get(&approval_key)
-        .unwrap_or(ReleaseApproval {
-            bounty_id,
-            contributor: contributor.clone(),
-            approvals: vec![&env],
-        });
+    let mut approval: ReleaseApproval =
+        env.storage()
+            .persistent()
+            .get(&approval_key)
+            .unwrap_or(ReleaseApproval {
+                bounty_id,
+                contributor: contributor.clone(),
+                approvals: vec![&env],
+            });
 
     for existing in approval.approvals.iter() {
         if existing == approver {
@@ -889,7 +866,6 @@ pub fn approve_large_release(
 
     Ok(())
 }
-
 
 /// Batch lock funds for multiple bounties in a single atomic transaction.
 ///
@@ -1129,12 +1105,10 @@ pub fn batch_lock_funds(env: Env, items: Vec<LockFundsItem>) -> Result<u32, Erro
     Ok(locked_count)
 }
 
-
 /// Alias for batch_lock_funds to match the requested naming convention.
 pub fn batch_lock(env: Env, items: Vec<LockFundsItem>) -> Result<u32, Error> {
     batch_lock_funds(env, items)
 }
-
 
 /// Structure-of-Arrays (SoA) variant of `batch_lock_funds`.
 /// Reduces host-to-guest deserialization overhead by accepting parallel arrays
@@ -1164,4 +1138,3 @@ pub fn batch_lock_funds_soa(
     }
     batch_lock_funds(env, items)
 }
-

@@ -40,7 +40,10 @@
 
 extern crate std;
 
-use soroban_sdk::{testutils::{Address as _, Ledger as _}, Address, Env, String};
+use soroban_sdk::{
+    testutils::{Address as _, Ledger as _},
+    Address, Env, String,
+};
 
 use crate::{
     test_batch_operations::{init_program, setup, Ctx},
@@ -140,9 +143,7 @@ fn test_archive_migrates_payout_history_to_persistent_storage() {
     );
 
     // Test 2: persistent storage holds the full history
-    let archived_history = ctx
-        .client
-        .get_archived_program_payout_history(&prog_str);
+    let archived_history = ctx.client.get_archived_program_payout_history(&prog_str);
     assert_eq!(
         archived_history.len(),
         2,
@@ -154,14 +155,8 @@ fn test_archive_migrates_payout_history_to_persistent_storage() {
         .iter()
         .map(|r: PayoutRecord| r.recipient)
         .collect();
-    assert!(
-        recipients.contains(&r1),
-        "r1 should be in archived history"
-    );
-    assert!(
-        recipients.contains(&r2),
-        "r2 should be in archived history"
-    );
+    assert!(recipients.contains(&r1), "r1 should be in archived history");
+    assert!(recipients.contains(&r2), "r2 should be in archived history");
 
     // Verify amounts
     let amounts: std::vec::Vec<i128> = archived_history
@@ -196,7 +191,10 @@ fn test_get_archived_program_payout_history_returns_correct_records() {
     assert_eq!(history.len(), 3, "expected 3 records in archived history");
 
     let total: i128 = history.iter().map(|r: PayoutRecord| r.amount).sum();
-    assert_eq!(total, 450_i128, "sum of archived payout amounts should be 450");
+    assert_eq!(
+        total, 450_i128,
+        "sum of archived payout amounts should be 450"
+    );
 }
 
 // ─── Test 5: query_recipient_history still works post-archival ────────────────
@@ -216,9 +214,7 @@ fn test_query_recipient_history_works_for_archived_program() {
     ctx.client.archive_program(&prog_str);
 
     // Per-recipient persistent index is independent of the inline history
-    let history = ctx
-        .client
-        .query_recipient_history(&prog_str, &recipient);
+    let history = ctx.client.query_recipient_history(&prog_str, &recipient);
 
     assert_eq!(
         history.len(),
@@ -245,18 +241,18 @@ fn test_double_archival_is_idempotent_and_preserves_history() {
     // First archival
     ctx.client.archive_program(&prog_str);
 
-    let history_first = ctx
-        .client
-        .get_archived_program_payout_history(&prog_str);
-    assert_eq!(history_first.len(), 1, "should have 1 record after first archival");
+    let history_first = ctx.client.get_archived_program_payout_history(&prog_str);
+    assert_eq!(
+        history_first.len(),
+        1,
+        "should have 1 record after first archival"
+    );
 
     // Second archival — the guard `if !env.storage().persistent().has(&history_key)`
     // should prevent overwriting the already-migrated history with an empty vec.
     ctx.client.archive_program(&prog_str);
 
-    let history_second = ctx
-        .client
-        .get_archived_program_payout_history(&prog_str);
+    let history_second = ctx.client.get_archived_program_payout_history(&prog_str);
     assert_eq!(
         history_second.len(),
         1,
@@ -281,7 +277,10 @@ fn test_archive_program_with_no_payouts() {
 
     // Persistent key should hold an empty vec (not panic / error)
     let history = ctx.client.get_archived_program_payout_history(&prog_str);
-    assert!(history.is_empty(), "no-payout program should have empty archived history");
+    assert!(
+        history.is_empty(),
+        "no-payout program should have empty archived history"
+    );
 }
 
 // ─── Test 8: only admin can archive ──────────────────────────────────────────
@@ -308,8 +307,7 @@ fn test_archive_requires_admin() {
     let non_admin = Address::generate(&env2);
     let token_admin2 = Address::generate(&env2);
     let token_id2 = env2.register_stellar_asset_contract(token_admin2.clone());
-    let contract_id2 =
-        env2.register_contract(None, crate::ProgramEscrowContract);
+    let contract_id2 = env2.register_contract(None, crate::ProgramEscrowContract);
     let client2 = crate::ProgramEscrowContractClient::new(&env2, &contract_id2);
     client2.initialize_contract(&non_admin);
 
@@ -363,7 +361,8 @@ fn test_instance_storage_footprint_shrinks_after_archival() {
         // Execute M payouts per program
         for _ in 0..M {
             let recipient = Address::generate(&ctx.env);
-            ctx.client.single_payout(&recipient, &100_i128, &None::<String>);
+            ctx.client
+                .single_payout(&recipient, &100_i128, &None::<String>);
         }
 
         // Confirm M history entries exist before archival
@@ -441,9 +440,7 @@ fn test_no_data_loss_after_archival() {
     let prog_str = String::from_str(&ctx.env, program_id);
 
     // Generate deterministic payouts
-    let recipients: std::vec::Vec<Address> = (0..10)
-        .map(|_| Address::generate(&ctx.env))
-        .collect();
+    let recipients: std::vec::Vec<Address> = (0..10).map(|_| Address::generate(&ctx.env)).collect();
 
     for (i, r) in recipients.iter().enumerate() {
         let amount = 100_i128 * (i as i128 + 1); // 100, 200, …, 1000
@@ -666,9 +663,12 @@ fn test_archive_blocked_after_partial_trigger() {
     let r2 = Address::generate(&ctx.env);
     let r3 = Address::generate(&ctx.env);
 
-    ctx.client.create_program_release_schedule(&r1, &1_000, &(now + 10));
-    ctx.client.create_program_release_schedule(&r2, &1_000, &(now + 20));
-    ctx.client.create_program_release_schedule(&r3, &1_000, &(now + 100_000));
+    ctx.client
+        .create_program_release_schedule(&r1, &1_000, &(now + 10));
+    ctx.client
+        .create_program_release_schedule(&r2, &1_000, &(now + 20));
+    ctx.client
+        .create_program_release_schedule(&r3, &1_000, &(now + 100_000));
 
     // Advance just past the first two timestamps and trigger.
     ctx.env.ledger().set_timestamp(now + 30);
@@ -695,9 +695,12 @@ fn test_archive_succeeds_after_all_multi_schedules_released() {
     let r3 = Address::generate(&ctx.env);
 
     // Create three schedules all due within the next 50 seconds.
-    ctx.client.create_program_release_schedule(&r1, &1_000, &(now + 10));
-    ctx.client.create_program_release_schedule(&r2, &2_000, &(now + 20));
-    ctx.client.create_program_release_schedule(&r3, &3_000, &(now + 30));
+    ctx.client
+        .create_program_release_schedule(&r1, &1_000, &(now + 10));
+    ctx.client
+        .create_program_release_schedule(&r2, &2_000, &(now + 20));
+    ctx.client
+        .create_program_release_schedule(&r3, &3_000, &(now + 30));
 
     // Advance time past all three and trigger.
     ctx.env.ledger().set_timestamp(now + 50);

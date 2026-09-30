@@ -142,10 +142,7 @@ pub fn verify_reserve_solvency(env: &Env) -> i128 {
 /// 3. Balance never transitions to negative, even transiently.
 ///
 /// Returns `Ok((balance_before, balance_after))` on success.
-pub fn debit_insurance_reserve(
-    env: &Env,
-    amount: i128,
-) -> Result<(i128, i128), ContractError> {
+pub fn debit_insurance_reserve(env: &Env, amount: i128) -> Result<(i128, i128), ContractError> {
     if amount <= 0 {
         return Err(ContractError::InvalidAmount);
     }

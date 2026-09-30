@@ -1,19 +1,16 @@
 //! Granular pause flags, freeze/unfreeze for escrows and addresses, emergency withdrawal.
 
-
-
-use soroban_sdk::{symbol_short, token, Address, Env, String, Symbol, Vec};
 use crate::{
-    events, rbac, reentrancy_guard,
-    DataKey, DeprecationState, DeprecationStatus, Error, Escrow, EscrowStatus,
-    FreezeRecord, PauseFlags, PauseStateChanged, RefundRecord,
+    events,
     events::{emit_deprecation_state_changed, DeprecationStateChanged, EVENT_VERSION_V2},
+    rbac, reentrancy_guard, DataKey, DeprecationState, DeprecationStatus, Error, Escrow,
+    EscrowStatus, FreezeRecord, PauseFlags, PauseStateChanged, RefundRecord,
 };
+use soroban_sdk::{symbol_short, token, Address, Env, String, Symbol, Vec};
 
 // ─────────────────────────────────────────────────────────────────
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────
-
 
 pub(crate) fn get_escrow_freeze_record_internal(env: &Env, bounty_id: u64) -> Option<FreezeRecord> {
     env.storage()
@@ -21,13 +18,14 @@ pub(crate) fn get_escrow_freeze_record_internal(env: &Env, bounty_id: u64) -> Op
         .get(&DataKey::EscrowFreeze(bounty_id))
 }
 
-
-pub(crate) fn get_address_freeze_record_internal(env: &Env, address: &Address) -> Option<FreezeRecord> {
+pub(crate) fn get_address_freeze_record_internal(
+    env: &Env,
+    address: &Address,
+) -> Option<FreezeRecord> {
     env.storage()
         .persistent()
         .get(&DataKey::AddressFreeze(address.clone()))
 }
-
 
 /// # Freeze precedence (escrow-level vs address-level)
 ///
@@ -65,7 +63,6 @@ pub(crate) fn ensure_escrow_not_frozen(env: &Env, bounty_id: u64) -> Result<(), 
     Ok(())
 }
 
-
 pub(crate) fn ensure_address_not_frozen(env: &Env, address: &Address) -> Result<(), Error> {
     if get_address_freeze_record_internal(env, address)
         .map(|record| record.frozen)
@@ -75,7 +72,6 @@ pub(crate) fn ensure_address_not_frozen(env: &Env, address: &Address) -> Result<
     }
     Ok(())
 }
-
 
 /// Check if an operation is paused
 pub(crate) fn check_paused(env: &Env, operation: Symbol) -> bool {
@@ -105,7 +101,6 @@ pub(crate) fn check_paused(env: &Env, operation: Symbol) -> bool {
 // ─────────────────────────────────────────────────────────────────
 // Public entry points (dispatcher targets)
 // ─────────────────────────────────────────────────────────────────
-
 
 /// Updates the granular pause state and metadata for the contract.
 ///
@@ -196,7 +191,6 @@ pub fn set_paused(
     Ok(())
 }
 
-
 /// Drains all reward tokens from the contract to a target address.
 ///
 /// This is an emergency recovery function and should only be used as a last resort.
@@ -250,7 +244,6 @@ pub fn emergency_withdraw(env: Env, target: Address) -> Result<(), Error> {
     Ok(())
 }
 
-
 /// Set deprecation (kill switch) and optional migration target. Admin only.
 /// When deprecated is true: new lock_funds and batch_lock_funds are blocked; existing escrows
 /// can still release, refund, or be migrated off-chain. Emits DeprecationStateChanged.
@@ -284,7 +277,6 @@ pub fn set_deprecated(
     Ok(())
 }
 
-
 /// View: returns whether the contract is deprecated and the optional migration target address.
 pub fn get_deprecation_status(env: Env) -> DeprecationStatus {
     let s = crate::participant_filter::get_deprecation_state(&env);
@@ -293,7 +285,6 @@ pub fn get_deprecation_status(env: Env) -> DeprecationStatus {
         migration_target: s.migration_target,
     }
 }
-
 
 /// Get current pause flags
 pub fn get_pause_flags(env: &Env) -> PauseFlags {
@@ -308,7 +299,6 @@ pub fn get_pause_flags(env: &Env) -> PauseFlags {
             paused_at: 0,
         })
 }
-
 
 /// Freeze a specific escrow so release and refund paths fail before any token transfer.
 ///
@@ -354,7 +344,6 @@ pub fn freeze_escrow(
     Ok(())
 }
 
-
 /// Remove an escrow-level freeze and restore normal release/refund behavior.
 pub fn unfreeze_escrow(env: Env, bounty_id: u64) -> Result<(), Error> {
     if !env.storage().instance().has(&DataKey::Admin) {
@@ -382,12 +371,10 @@ pub fn unfreeze_escrow(env: Env, bounty_id: u64) -> Result<(), Error> {
     Ok(())
 }
 
-
 /// Return the current escrow-level freeze record, if one exists.
 pub fn get_escrow_freeze_record(env: Env, bounty_id: u64) -> Option<FreezeRecord> {
     get_escrow_freeze_record_internal(&env, bounty_id)
 }
-
 
 /// Return the escrow data for a given bounty_id. Returns an error if not found.
 ///
@@ -401,20 +388,20 @@ pub fn get_escrow_info(env: Env, bounty_id: u64) -> Result<Escrow, Error> {
         .get(&DataKey::Escrow(bounty_id))
         .ok_or(Error::BountyNotFound)?;
     let archival = escrow.archived
-        || matches!(escrow.status, EscrowStatus::Released | EscrowStatus::Refunded);
+        || matches!(
+            escrow.status,
+            EscrowStatus::Released | EscrowStatus::Refunded
+        );
     crate::lock::renew_escrow_record(&env, bounty_id, archival);
     Ok(escrow)
 }
-
 
 /// Compatibility view retained for the independently runnable lifecycle
 /// test suite. New callers should prefer `get_escrow_info` so missing
 /// records are represented as typed errors.
 pub fn get_escrow(env: Env, bounty_id: u64) -> Escrow {
-    get_escrow_info(env, bounty_id)
-        .unwrap_or_else(|_| panic!("Bounty not found"))
+    get_escrow_info(env, bounty_id).unwrap_or_else(|_| panic!("Bounty not found"))
 }
-
 
 /// Return the refund records attached to an escrow for lifecycle tests and
 /// legacy clients. Missing bounties remain an explicit contract failure.
@@ -423,7 +410,6 @@ pub fn get_refund_history(env: Env, bounty_id: u64) -> Vec<RefundRecord> {
         .unwrap_or_else(|_| panic!("Bounty not found"))
         .refund_history
 }
-
 
 pub fn get_balance(env: Env) -> i128 {
     let token_addr: Address = env
@@ -434,7 +420,6 @@ pub fn get_balance(env: Env) -> i128 {
     let client = token::Client::new(&env, &token_addr);
     client.balance(&env.current_contract_address())
 }
-
 
 /// Freeze all release/refund operations for escrows owned by `address`.
 ///
@@ -472,7 +457,6 @@ pub fn freeze_address(
     Ok(())
 }
 
-
 /// Remove an address-level freeze and restore normal release/refund behavior.
 pub fn unfreeze_address(env: Env, address: Address) -> Result<(), Error> {
     if !env.storage().instance().has(&DataKey::Admin) {
@@ -491,12 +475,10 @@ pub fn unfreeze_address(env: Env, address: Address) -> Result<(), Error> {
     Ok(())
 }
 
-
 /// Return the current address-level freeze record, if one exists.
 pub fn get_address_freeze_record(env: Env, address: Address) -> Option<FreezeRecord> {
     get_address_freeze_record_internal(&env, &address)
 }
-
 
 /// Check if the contract is in maintenance mode
 pub fn is_maintenance_mode(env: Env) -> bool {
@@ -506,7 +488,6 @@ pub fn is_maintenance_mode(env: Env) -> bool {
         .unwrap_or(false)
 }
 
-
 pub fn get_maintenance_schema_version(env: Env) -> u32 {
     env.storage()
         .instance()
@@ -514,13 +495,8 @@ pub fn get_maintenance_schema_version(env: Env) -> u32 {
         .unwrap_or(0)
 }
 
-
 /// Update maintenance mode (admin only)
-pub fn set_maintenance_mode(
-    env: Env,
-    enabled: bool,
-    reason: Option<String>,
-) -> Result<(), Error> {
+pub fn set_maintenance_mode(env: Env, enabled: bool, reason: Option<String>) -> Result<(), Error> {
     if !env.storage().instance().has(&DataKey::Admin) {
         return Err(Error::NotInitialized);
     }
@@ -572,7 +548,6 @@ pub fn set_maintenance_mode(
     Ok(())
 }
 
-
 // ============================================================================
 // CEI + REENTRANCY GUARD HARDENING
 // ============================================================================
@@ -584,4 +559,3 @@ pub fn is_reentrancy_guard_locked(env: Env) -> bool {
         .get(&symbol_short!("r_guard"))
         .unwrap_or(false)
 }
-

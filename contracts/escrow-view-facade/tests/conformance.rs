@@ -107,7 +107,11 @@ fn query_recipient_history_output_matches_underlying_program_escrow() {
     let program_contract = env.register_contract(None, ReferenceProgramEscrow);
     let records = facade.query_recipient_history(&program_contract, &program_id, &recipient);
 
-    assert_eq!(records.len(), 1, "facade must surface the one payout record");
+    assert_eq!(
+        records.len(),
+        1,
+        "facade must surface the one payout record"
+    );
     let record = records.get(0).unwrap();
     assert_eq!(record.recipient, recipient);
     assert_eq!(record.amount, 4_242_i128);
