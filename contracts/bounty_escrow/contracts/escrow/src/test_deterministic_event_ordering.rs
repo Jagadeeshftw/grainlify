@@ -66,6 +66,16 @@ fn setup() -> Ctx<'static> {
     let contract_id = env.register_contract(None, BountyEscrowContract);
     let client = BountyEscrowContractClient::new(&env, &contract_id);
     client.init(&admin, &token_id);
+    env.as_contract(&contract_id, || {
+        crate::anti_abuse::set_config(
+            &env,
+            crate::anti_abuse::AntiAbuseConfig {
+                window_size: 3600,
+                max_operations: 100,
+                cooldown_period: 0,
+            },
+        );
+    });
 
     Ctx {
         env,
@@ -86,6 +96,12 @@ fn lock_item(ctx: &Ctx, bounty_id: u64, depositor: Address, amount: i128) -> Loc
         amount,
         deadline: ctx.env.ledger().timestamp() + DEADLINE_OFFSET,
     }
+}
+
+/// Batch fixtures intentionally reuse participants. Exempt them from the
+/// anti-abuse cooldown so these tests exercise event ordering, not throttling.
+fn whitelist(ctx: &Ctx, address: &Address) {
+    ctx.client.set_whitelist(address, &true);
 }
 
 /// Enable a flat percentage fee (10%) on both lock and release, routed to a
@@ -164,6 +180,7 @@ fn bounty_ids_for_topic(ctx: &Ctx, target: Symbol) -> Vec<u64> {
 fn test_batch_lock_events_ordered_by_bounty_id_then_aggregate_last() {
     let ctx = setup();
     let depositor = Address::generate(&ctx.env);
+    whitelist(&ctx, &depositor);
     mint(&ctx, &depositor, AMOUNT * 3);
 
     let items = vec![
@@ -199,6 +216,7 @@ fn test_batch_lock_events_ordered_by_bounty_id_then_aggregate_last() {
 fn test_batch_lock_failure_emits_no_funds_locked_events() {
     let ctx = setup();
     let depositor = Address::generate(&ctx.env);
+    whitelist(&ctx, &depositor);
     mint(&ctx, &depositor, AMOUNT * 3);
 
     let items = vec![
@@ -237,6 +255,8 @@ fn test_batch_release_events_ordered_by_bounty_id_then_aggregate_last() {
     let ctx = setup();
     let depositor = Address::generate(&ctx.env);
     let contributor = Address::generate(&ctx.env);
+    whitelist(&ctx, &depositor);
+    whitelist(&ctx, &contributor);
     mint(&ctx, &depositor, AMOUNT * 3);
 
     let lock_items = vec![
@@ -292,6 +312,8 @@ fn test_batch_release_failure_emits_no_funds_released_events() {
     let ctx = setup();
     let depositor = Address::generate(&ctx.env);
     let contributor = Address::generate(&ctx.env);
+    whitelist(&ctx, &depositor);
+    whitelist(&ctx, &contributor);
     mint(&ctx, &depositor, AMOUNT);
 
     ctx.client.batch_lock_funds(&vec![

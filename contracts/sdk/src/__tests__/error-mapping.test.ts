@@ -5,6 +5,8 @@
  * These tests act as a safety net: if a new error variant is added to a
  * contract but not reflected here, the "completeness" assertions will fail.
  */
+import { readFileSync } from "fs";
+import { resolve } from "path";
 import {
   ContractErrorCode,
   ContractError,
@@ -15,7 +17,49 @@ import {
   BOUNTY_ESCROW_ERROR_MAP,
   GOVERNANCE_ERROR_MAP,
   CIRCUIT_BREAKER_ERROR_MAP,
-} from '../errors';
+} from "../errors";
+
+function readRustErrorDiscriminants(relativePath: string): number[] {
+  const source = readFileSync(
+    resolve(__dirname, "../../../", relativePath),
+    "utf8",
+  );
+  const enumBody = source.match(
+    /(?:pub|)\s*enum Error\s*\{([\s\S]*?)\n\}/,
+  )?.[1];
+
+  if (!enumBody) {
+    throw new Error(`Could not find Error enum in ${relativePath}`);
+  }
+
+  return [...enumBody.matchAll(/=\s*(\d+)\s*,/g)].map((match) =>
+    Number(match[1]),
+  );
+}
+
+function readRustErrorConstants(relativePath: string): number[] {
+  const source = readFileSync(
+    resolve(__dirname, "../../../", relativePath),
+    "utf8",
+  );
+  const errorSection = source.match(
+    /Error codes \(u32[^\n]*\)([\s\S]*?)Core circuit breaker functions/,
+  )?.[1];
+
+  if (!errorSection) {
+    throw new Error(
+      `Could not find circuit-breaker error section in ${relativePath}`,
+    );
+  }
+
+  return [
+    ...errorSection.matchAll(
+      /pub const ERR_[A-Z0-9_]+:\s*u32\s*=\s*(\d+)\s*;/g,
+    ),
+  ]
+    .map((match) => Number(match[1]))
+    .filter((code) => code !== 0);
+}
 
 // -----------------------------------------------------------------------
 // Authoritative list of every error discriminant in each contract.
@@ -27,10 +71,9 @@ import {
 // The SDK may support additional legacy numeric aliases beyond this list, but
 // this regression guard tracks only the on-chain contract's canonical values.
 const BOUNTY_ESCROW_DISCRIMINANTS: number[] = [
-  1, 2, 6, 7, 13, 14, 16, 18, 21, 22, 23, 26, 27, 28,
-  29, 30, 31, 32, 34, 35, 36, 37, 39, 40, 41, 43, 45,
-  46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 201, 202,
-  203,
+  1, 2, 6, 7, 13, 14, 16, 18, 21, 22, 23, 26, 27, 28, 29, 30, 31, 32, 34, 35,
+  36, 37, 39, 40, 41, 43, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 201,
+  202, 203,
 ];
 
 /** contracts/grainlify-core/src/governance.rs — Error enum */
@@ -44,10 +87,10 @@ const CIRCUIT_BREAKER_CODES: number[] = [1001, 1002, 1003];
 // =======================================================================
 // 1. Completeness: every ContractErrorCode has a non-empty message
 // =======================================================================
-describe('Error mapping completeness', () => {
+describe("Error mapping completeness", () => {
   const allCodes = Object.values(ContractErrorCode);
 
-  it('every ContractErrorCode has a human-readable message', () => {
+  it("every ContractErrorCode has a human-readable message", () => {
     for (const code of allCodes) {
       const msg = getContractErrorMessage(code as ContractErrorCode);
       expect(msg).toBeDefined();
@@ -55,7 +98,7 @@ describe('Error mapping completeness', () => {
     }
   });
 
-  it('createContractError produces a ContractError for every code', () => {
+  it("createContractError produces a ContractError for every code", () => {
     for (const code of allCodes) {
       const err = createContractError(code as ContractErrorCode);
       expect(err).toBeInstanceOf(ContractError);
@@ -64,10 +107,48 @@ describe('Error mapping completeness', () => {
     }
   });
 
-  it('createContractError appends details when provided', () => {
+  it("createContractError appends details when provided", () => {
     for (const code of allCodes) {
-      const err = createContractError(code as ContractErrorCode, 'extra context');
-      expect(err.message).toContain('extra context');
+      const err = createContractError(
+        code as ContractErrorCode,
+        "extra context",
+      );
+      expect(err.message).toContain("extra context");
+    }
+  });
+});
+
+// =======================================================================
+// 1b. Source-derived contract mapping guard
+// =======================================================================
+describe("Contract source error mapping", () => {
+  it("maps every bounty-escrow error discriminant", () => {
+    const discriminants = readRustErrorDiscriminants(
+      "bounty_escrow/contracts/escrow/src/lib.rs",
+    );
+
+    for (const code of discriminants) {
+      expect(BOUNTY_ESCROW_ERROR_MAP[code]).toBeDefined();
+    }
+  });
+
+  it("maps every governance error discriminant", () => {
+    const discriminants = readRustErrorDiscriminants(
+      "grainlify-core/src/governance.rs",
+    );
+
+    for (const code of discriminants) {
+      expect(GOVERNANCE_ERROR_MAP[code]).toBeDefined();
+    }
+  });
+
+  it("maps every circuit-breaker error constant", () => {
+    const codes = readRustErrorConstants(
+      "program-escrow/src/error_recovery.rs",
+    );
+
+    for (const code of codes) {
+      expect(CIRCUIT_BREAKER_ERROR_MAP[code]).toBeDefined();
     }
   });
 });
@@ -75,73 +156,73 @@ describe('Error mapping completeness', () => {
 // =======================================================================
 // 2. Numeric look-up tables cover every on-chain discriminant
 // =======================================================================
-describe('Numeric error code tables', () => {
-  describe('Bounty-escrow', () => {
-    it('maps every contract discriminant (1-33)', () => {
+describe("Numeric error code tables", () => {
+  describe("Bounty-escrow", () => {
+    it("maps every contract discriminant (1-33)", () => {
       for (const code of BOUNTY_ESCROW_DISCRIMINANTS) {
         expect(BOUNTY_ESCROW_ERROR_MAP[code]).toBeDefined();
       }
     });
 
-    it('resolves via parseContractErrorByCode', () => {
+    it("resolves via parseContractErrorByCode", () => {
       for (const code of BOUNTY_ESCROW_DISCRIMINANTS) {
-        const err = parseContractErrorByCode(code, 'bounty_escrow');
+        const err = parseContractErrorByCode(code, "bounty_escrow");
         expect(err).toBeInstanceOf(ContractError);
-        expect(err.code).not.toBe('CONTRACT_ERROR');
+        expect(err.code).not.toBe("CONTRACT_ERROR");
         expect(err.contractErrorCode).toBe(code);
       }
     });
 
-    it('returns generic error for unmapped code', () => {
-      const err = parseContractErrorByCode(999, 'bounty_escrow');
-      expect(err.code).toBe('CONTRACT_ERROR');
+    it("returns generic error for unmapped code", () => {
+      const err = parseContractErrorByCode(999, "bounty_escrow");
+      expect(err.code).toBe("CONTRACT_ERROR");
       expect(err.contractErrorCode).toBe(999);
-      expect(err.message).toContain('Unknown');
+      expect(err.message).toContain("Unknown");
     });
   });
 
-  describe('Governance', () => {
-    it('maps every contract discriminant (1-14)', () => {
+  describe("Governance", () => {
+    it("maps every contract discriminant (1-14)", () => {
       for (const code of GOVERNANCE_DISCRIMINANTS) {
         expect(GOVERNANCE_ERROR_MAP[code]).toBeDefined();
       }
     });
 
-    it('resolves via parseContractErrorByCode', () => {
+    it("resolves via parseContractErrorByCode", () => {
       for (const code of GOVERNANCE_DISCRIMINANTS) {
-        const err = parseContractErrorByCode(code, 'governance');
+        const err = parseContractErrorByCode(code, "governance");
         expect(err).toBeInstanceOf(ContractError);
-        expect(err.code).not.toBe('CONTRACT_ERROR');
+        expect(err.code).not.toBe("CONTRACT_ERROR");
         expect(err.contractErrorCode).toBe(code);
       }
     });
 
-    it('returns generic error for unmapped code', () => {
-      const err = parseContractErrorByCode(99, 'governance');
-      expect(err.code).toBe('CONTRACT_ERROR');
+    it("returns generic error for unmapped code", () => {
+      const err = parseContractErrorByCode(99, "governance");
+      expect(err.code).toBe("CONTRACT_ERROR");
       expect(err.contractErrorCode).toBe(99);
     });
   });
 
-  describe('Circuit-breaker', () => {
-    it('maps every error constant (1001-1003)', () => {
+  describe("Circuit-breaker", () => {
+    it("maps every error constant (1001-1003)", () => {
       for (const code of CIRCUIT_BREAKER_CODES) {
         expect(CIRCUIT_BREAKER_ERROR_MAP[code]).toBeDefined();
       }
     });
 
-    it('resolves via parseContractErrorByCode', () => {
+    it("resolves via parseContractErrorByCode", () => {
       for (const code of CIRCUIT_BREAKER_CODES) {
-        const err = parseContractErrorByCode(code, 'circuit_breaker');
+        const err = parseContractErrorByCode(code, "circuit_breaker");
         expect(err).toBeInstanceOf(ContractError);
-        expect(err.code).not.toBe('CONTRACT_ERROR');
+        expect(err.code).not.toBe("CONTRACT_ERROR");
         expect(err.contractErrorCode).toBe(code);
       }
     });
 
-    it('returns generic error for unmapped code', () => {
-      const err = parseContractErrorByCode(9999, 'circuit_breaker');
-      expect(err.code).toBe('CONTRACT_ERROR');
+    it("returns generic error for unmapped code", () => {
+      const err = parseContractErrorByCode(9999, "circuit_breaker");
+      expect(err.code).toBe("CONTRACT_ERROR");
     });
   });
 });
@@ -149,21 +230,24 @@ describe('Numeric error code tables', () => {
 // =======================================================================
 // 3. String-based parseContractError covers representative patterns
 // =======================================================================
-describe('parseContractError string matching', () => {
+describe("parseContractError string matching", () => {
   // ── Program-escrow ──────────────────────────────────────────────────
   const programEscrowCases: [string, ContractErrorCode][] = [
-    ['Program not initialized',                        ContractErrorCode.NOT_INITIALIZED],
-    ['require_auth failed',                            ContractErrorCode.UNAUTHORIZED],
-    ['Insufficient balance',                           ContractErrorCode.INSUFFICIENT_BALANCE],
-    ['Amount must be greater than zero',               ContractErrorCode.INVALID_AMOUNT],
-    ['Program already initialized',                    ContractErrorCode.ALREADY_INITIALIZED],
-    ['Cannot process empty batch',                     ContractErrorCode.EMPTY_BATCH],
-    ['Recipients and amounts must have the same length', ContractErrorCode.LENGTH_MISMATCH],
-    ['Payout amount overflow',                         ContractErrorCode.OVERFLOW],
-    ['Amount is below minimum',                        ContractErrorCode.AMOUNT_BELOW_MIN],
-    ['AmountBelowMinimum',                             ContractErrorCode.AMOUNT_BELOW_MIN],
-    ['Amount exceeds maximum allowed',                 ContractErrorCode.AMOUNT_ABOVE_MAX],
-    ['AmountAboveMaximum',                             ContractErrorCode.AMOUNT_ABOVE_MAX],
+    ["Program not initialized", ContractErrorCode.NOT_INITIALIZED],
+    ["require_auth failed", ContractErrorCode.UNAUTHORIZED],
+    ["Insufficient balance", ContractErrorCode.INSUFFICIENT_BALANCE],
+    ["Amount must be greater than zero", ContractErrorCode.INVALID_AMOUNT],
+    ["Program already initialized", ContractErrorCode.ALREADY_INITIALIZED],
+    ["Cannot process empty batch", ContractErrorCode.EMPTY_BATCH],
+    [
+      "Recipients and amounts must have the same length",
+      ContractErrorCode.LENGTH_MISMATCH,
+    ],
+    ["Payout amount overflow", ContractErrorCode.OVERFLOW],
+    ["Amount is below minimum", ContractErrorCode.AMOUNT_BELOW_MIN],
+    ["AmountBelowMinimum", ContractErrorCode.AMOUNT_BELOW_MIN],
+    ["Amount exceeds maximum allowed", ContractErrorCode.AMOUNT_ABOVE_MAX],
+    ["AmountAboveMaximum", ContractErrorCode.AMOUNT_ABOVE_MAX],
   ];
 
   it.each(programEscrowCases)(
@@ -177,20 +261,23 @@ describe('parseContractError string matching', () => {
 
   // ── Bounty-escrow ──────────────────────────────────────────────────
   const bountyEscrowCases: [string, ContractErrorCode][] = [
-    ['BountyExists',                                   ContractErrorCode.BOUNTY_EXISTS],
-    ['Bounty not found',                               ContractErrorCode.BOUNTY_NOT_FOUND],
-    ['FundsNotLocked',                                 ContractErrorCode.BOUNTY_FUNDS_NOT_LOCKED],
-    ['DeadlineNotPassed',                              ContractErrorCode.BOUNTY_DEADLINE_NOT_PASSED],
-    ['InvalidFeeRate',                                 ContractErrorCode.BOUNTY_INVALID_FEE_RATE],
-    ['Fee recipient address not set',                  ContractErrorCode.BOUNTY_FEE_RECIPIENT_NOT_SET],
-    ['InvalidBatchSize',                               ContractErrorCode.BOUNTY_INVALID_BATCH_SIZE],
-    ['BatchSizeMismatch',                              ContractErrorCode.BOUNTY_BATCH_SIZE_MISMATCH],
-    ['DuplicateBountyId',                              ContractErrorCode.BOUNTY_DUPLICATE_ID],
-    ['Bounty amount is invalid',                       ContractErrorCode.BOUNTY_INVALID_AMOUNT],
-    ['Bounty deadline is invalid',                     ContractErrorCode.BOUNTY_INVALID_DEADLINE],
-    ['InsufficientFunds',                              ContractErrorCode.BOUNTY_INSUFFICIENT_FUNDS],
-    ['RefundNotApproved',                              ContractErrorCode.BOUNTY_REFUND_NOT_APPROVED],
-    ['FundsPaused',                                    ContractErrorCode.BOUNTY_FUNDS_PAUSED],
+    ["BountyExists", ContractErrorCode.BOUNTY_EXISTS],
+    ["Bounty not found", ContractErrorCode.BOUNTY_NOT_FOUND],
+    ["FundsNotLocked", ContractErrorCode.BOUNTY_FUNDS_NOT_LOCKED],
+    ["DeadlineNotPassed", ContractErrorCode.BOUNTY_DEADLINE_NOT_PASSED],
+    ["InvalidFeeRate", ContractErrorCode.BOUNTY_INVALID_FEE_RATE],
+    [
+      "Fee recipient address not set",
+      ContractErrorCode.BOUNTY_FEE_RECIPIENT_NOT_SET,
+    ],
+    ["InvalidBatchSize", ContractErrorCode.BOUNTY_INVALID_BATCH_SIZE],
+    ["BatchSizeMismatch", ContractErrorCode.BOUNTY_BATCH_SIZE_MISMATCH],
+    ["DuplicateBountyId", ContractErrorCode.BOUNTY_DUPLICATE_ID],
+    ["Bounty amount is invalid", ContractErrorCode.BOUNTY_INVALID_AMOUNT],
+    ["Bounty deadline is invalid", ContractErrorCode.BOUNTY_INVALID_DEADLINE],
+    ["InsufficientFunds", ContractErrorCode.BOUNTY_INSUFFICIENT_FUNDS],
+    ["RefundNotApproved", ContractErrorCode.BOUNTY_REFUND_NOT_APPROVED],
+    ["FundsPaused", ContractErrorCode.BOUNTY_FUNDS_PAUSED],
   ];
 
   it.each(bountyEscrowCases)(
@@ -204,33 +291,30 @@ describe('parseContractError string matching', () => {
 
   // ── Governance ─────────────────────────────────────────────────────
   const governanceCases: [string, ContractErrorCode][] = [
-    ['ProposalNotFound',                               ContractErrorCode.GOV_PROPOSAL_NOT_FOUND],
-    ['ProposalNotActive',                              ContractErrorCode.GOV_PROPOSAL_NOT_ACTIVE],
-    ['VotingNotStarted',                               ContractErrorCode.GOV_VOTING_NOT_STARTED],
-    ['VotingEnded',                                    ContractErrorCode.GOV_VOTING_ENDED],
-    ['VotingStillActive',                              ContractErrorCode.GOV_VOTING_STILL_ACTIVE],
-    ['AlreadyVoted',                                   ContractErrorCode.GOV_ALREADY_VOTED],
-    ['ProposalNotApproved',                            ContractErrorCode.GOV_PROPOSAL_NOT_APPROVED],
-    ['ExecutionDelayNotMet',                           ContractErrorCode.GOV_EXECUTION_DELAY_NOT_MET],
-    ['ProposalExpired',                                ContractErrorCode.GOV_PROPOSAL_EXPIRED],
-    ['InsufficientStake',                              ContractErrorCode.GOV_INSUFFICIENT_STAKE],
-    ['InvalidThreshold',                               ContractErrorCode.GOV_INVALID_THRESHOLD],
-    ['ThresholdTooLow',                                ContractErrorCode.GOV_THRESHOLD_TOO_LOW],
+    ["ProposalNotFound", ContractErrorCode.GOV_PROPOSAL_NOT_FOUND],
+    ["ProposalNotActive", ContractErrorCode.GOV_PROPOSAL_NOT_ACTIVE],
+    ["VotingNotStarted", ContractErrorCode.GOV_VOTING_NOT_STARTED],
+    ["VotingEnded", ContractErrorCode.GOV_VOTING_ENDED],
+    ["VotingStillActive", ContractErrorCode.GOV_VOTING_STILL_ACTIVE],
+    ["AlreadyVoted", ContractErrorCode.GOV_ALREADY_VOTED],
+    ["ProposalNotApproved", ContractErrorCode.GOV_PROPOSAL_NOT_APPROVED],
+    ["ExecutionDelayNotMet", ContractErrorCode.GOV_EXECUTION_DELAY_NOT_MET],
+    ["ProposalExpired", ContractErrorCode.GOV_PROPOSAL_EXPIRED],
+    ["InsufficientStake", ContractErrorCode.GOV_INSUFFICIENT_STAKE],
+    ["InvalidThreshold", ContractErrorCode.GOV_INVALID_THRESHOLD],
+    ["ThresholdTooLow", ContractErrorCode.GOV_THRESHOLD_TOO_LOW],
   ];
 
-  it.each(governanceCases)(
-    'governance: "%s" → %s',
-    (message, expectedCode) => {
-      const err = parseContractError(new Error(message));
-      expect(err).toBeInstanceOf(ContractError);
-      expect(err.code).toBe(expectedCode);
-    },
-  );
+  it.each(governanceCases)('governance: "%s" → %s', (message, expectedCode) => {
+    const err = parseContractError(new Error(message));
+    expect(err).toBeInstanceOf(ContractError);
+    expect(err.code).toBe(expectedCode);
+  });
 
   // ── Circuit-breaker ────────────────────────────────────────────────
   const circuitBreakerCases: [string, ContractErrorCode][] = [
-    ['Circuit breaker is open',                        ContractErrorCode.CIRCUIT_OPEN],
-    ['Token transfer failed',                          ContractErrorCode.CIRCUIT_TRANSFER_FAILED],
+    ["Circuit breaker is open", ContractErrorCode.CIRCUIT_OPEN],
+    ["Token transfer failed", ContractErrorCode.CIRCUIT_TRANSFER_FAILED],
   ];
 
   it.each(circuitBreakerCases)(
@@ -243,21 +327,21 @@ describe('parseContractError string matching', () => {
   );
 
   // ── Fallback ───────────────────────────────────────────────────────
-  it('returns generic CONTRACT_ERROR for unrecognised messages', () => {
-    const err = parseContractError(new Error('something completely different'));
+  it("returns generic CONTRACT_ERROR for unrecognised messages", () => {
+    const err = parseContractError(new Error("something completely different"));
     expect(err).toBeInstanceOf(ContractError);
-    expect(err.code).toBe('CONTRACT_ERROR');
-    expect(err.message).toContain('something completely different');
+    expect(err.code).toBe("CONTRACT_ERROR");
+    expect(err.message).toContain("something completely different");
   });
 
-  it('handles null/undefined input gracefully', () => {
+  it("handles null/undefined input gracefully", () => {
     const err = parseContractError(null);
     expect(err).toBeInstanceOf(ContractError);
-    expect(err.code).toBe('CONTRACT_ERROR');
+    expect(err.code).toBe("CONTRACT_ERROR");
   });
 
-  it('handles string input', () => {
-    const err = parseContractError('Bounty not found');
+  it("handles string input", () => {
+    const err = parseContractError("Bounty not found");
     expect(err).toBeInstanceOf(ContractError);
     expect(err.code).toBe(ContractErrorCode.BOUNTY_NOT_FOUND);
   });
@@ -266,32 +350,32 @@ describe('parseContractError string matching', () => {
 // =======================================================================
 // 4. Cross-layer consistency: numeric ↔ string resolution agrees
 // =======================================================================
-describe('Cross-layer consistency', () => {
-  it('bounty-escrow numeric and string parsers yield the same code', () => {
+describe("Cross-layer consistency", () => {
+  it("bounty-escrow numeric and string parsers yield the same code", () => {
     const numericToString: [number, string][] = [
-      [201, 'BountyExists'],
-      [202, 'Bounty not found'],
-      [13, 'Bounty amount is invalid'],
-      [16, 'InsufficientFunds'],
+      [201, "BountyExists"],
+      [202, "Bounty not found"],
+      [13, "Bounty amount is invalid"],
+      [16, "InsufficientFunds"],
     ];
 
     for (const [code, message] of numericToString) {
-      const fromNumeric = parseContractErrorByCode(code, 'bounty_escrow');
+      const fromNumeric = parseContractErrorByCode(code, "bounty_escrow");
       const fromString = parseContractError(new Error(message));
       expect(fromNumeric.code).toBe(fromString.code);
     }
   });
 
-  it('governance numeric and string parsers yield the same code', () => {
+  it("governance numeric and string parsers yield the same code", () => {
     const numericToString: [number, string][] = [
-      [6,  'ProposalNotFound'],
-      [9,  'VotingEnded'],
-      [11, 'AlreadyVoted'],
-      [14, 'ProposalExpired'],
+      [6, "ProposalNotFound"],
+      [9, "VotingEnded"],
+      [11, "AlreadyVoted"],
+      [14, "ProposalExpired"],
     ];
 
     for (const [code, message] of numericToString) {
-      const fromNumeric = parseContractErrorByCode(code, 'governance');
+      const fromNumeric = parseContractErrorByCode(code, "governance");
       const fromString = parseContractError(new Error(message));
       expect(fromNumeric.code).toBe(fromString.code);
     }
@@ -301,22 +385,22 @@ describe('Cross-layer consistency', () => {
 // =======================================================================
 // 5. Regression guard: expected enum counts
 // =======================================================================
-describe('Enum size regression guards', () => {
-  it('ContractErrorCode has the expected number of values', () => {
+describe("Enum size regression guards", () => {
+  it("ContractErrorCode has the expected number of values", () => {
     const count = Object.keys(ContractErrorCode).length;
     // Update this if the unified registry gains or removes codes.
     expect(count).toBe(82);
   });
 
-  it('BOUNTY_ESCROW_ERROR_MAP has the expected number of entries', () => {
-    expect(Object.keys(BOUNTY_ESCROW_ERROR_MAP).length).toBe(43);
+  it("BOUNTY_ESCROW_ERROR_MAP has the expected number of entries", () => {
+    expect(Object.keys(BOUNTY_ESCROW_ERROR_MAP).length).toBe(58);
   });
 
-  it('GOVERNANCE_ERROR_MAP has the expected number of entries', () => {
-    expect(Object.keys(GOVERNANCE_ERROR_MAP).length).toBe(15);
+  it("GOVERNANCE_ERROR_MAP has the expected number of entries", () => {
+    expect(Object.keys(GOVERNANCE_ERROR_MAP).length).toBe(24);
   });
 
-  it('CIRCUIT_BREAKER_ERROR_MAP has the expected number of entries', () => {
+  it("CIRCUIT_BREAKER_ERROR_MAP has the expected number of entries", () => {
     expect(Object.keys(CIRCUIT_BREAKER_ERROR_MAP).length).toBe(3);
   });
 });

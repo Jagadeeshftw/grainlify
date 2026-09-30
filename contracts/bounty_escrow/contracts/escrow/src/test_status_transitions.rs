@@ -146,6 +146,84 @@ fn has_event_topic(env: &Env, topic: &str) -> bool {
     })
 }
 
+/// Escrow status machine, pinned as the authoritative contract invariant.
+///
+/// Legal edges are explicit and intentionally small:
+/// - Draft -> Locked
+/// - Locked -> Released
+/// - Locked -> Refunded
+/// - Locked -> PartiallyRefunded
+/// - PartiallyRefunded -> Refunded
+/// - PartiallyRefunded -> PartiallyRefunded
+///
+/// Everything else is rejected. Terminal states are Released and Refunded; the contract
+/// rejects re-entry into any earlier state with `Error::FundsNotLocked`, and re-locking an
+/// existing escrow is rejected with `Error::BountyExists`.
+#[test]
+fn test_status_pair_matrix_is_exhaustive_and_documented() {
+    let states = [
+        EscrowStatus::Draft,
+        EscrowStatus::Locked,
+        EscrowStatus::Released,
+        EscrowStatus::Refunded,
+        EscrowStatus::PartiallyRefunded,
+    ];
+    let documented_edges = [
+        (EscrowStatus::Draft, EscrowStatus::Locked),
+        (EscrowStatus::Locked, EscrowStatus::Released),
+        (EscrowStatus::Locked, EscrowStatus::Refunded),
+        (EscrowStatus::Locked, EscrowStatus::PartiallyRefunded),
+        (EscrowStatus::PartiallyRefunded, EscrowStatus::Refunded),
+        (
+            EscrowStatus::PartiallyRefunded,
+            EscrowStatus::PartiallyRefunded,
+        ),
+    ];
+
+    let mut total_pairs = 0usize;
+    for from in states.iter() {
+        for to in states.iter() {
+            total_pairs += 1;
+            let is_documented = documented_edges
+                .iter()
+                .any(|(legal_from, legal_to)| legal_from == from && legal_to == to);
+            assert!(
+                is_documented
+                    || matches!(
+                        (from, to),
+                        (EscrowStatus::Locked, EscrowStatus::Locked)
+                            | (EscrowStatus::Draft, EscrowStatus::Released)
+                            | (EscrowStatus::Draft, EscrowStatus::Refunded)
+                            | (EscrowStatus::Draft, EscrowStatus::PartiallyRefunded)
+                            | (EscrowStatus::Released, EscrowStatus::Locked)
+                            | (EscrowStatus::Released, EscrowStatus::Released)
+                            | (EscrowStatus::Released, EscrowStatus::Refunded)
+                            | (EscrowStatus::Released, EscrowStatus::PartiallyRefunded)
+                            | (EscrowStatus::Refunded, EscrowStatus::Locked)
+                            | (EscrowStatus::Refunded, EscrowStatus::Released)
+                            | (EscrowStatus::Refunded, EscrowStatus::Refunded)
+                            | (EscrowStatus::Refunded, EscrowStatus::PartiallyRefunded)
+                            | (EscrowStatus::Locked, EscrowStatus::Draft)
+                            | (EscrowStatus::Released, EscrowStatus::Draft)
+                            | (EscrowStatus::Refunded, EscrowStatus::Draft)
+                            | (EscrowStatus::PartiallyRefunded, EscrowStatus::Locked)
+                            | (EscrowStatus::PartiallyRefunded, EscrowStatus::Draft)
+                    ),
+                "State pair {:?} -> {:?} is not documented as a legal edge and must be rejected.",
+                from,
+                to
+            );
+        }
+    }
+
+    assert_eq!(total_pairs, 25, "All 5x5 status pairs must be enumerated");
+    assert_eq!(
+        documented_edges.len(),
+        6,
+        "The status machine must have exactly six legal edges"
+    );
+}
+
 #[test]
 fn test_refund_eligibility_ineligible_before_deadline_without_approval() {
     let setup = TestSetup::new();
@@ -380,11 +458,15 @@ fn test_maintenance_mode_blocks_all_operations() {
 
     // Disable maintenance mode to lock, then re-enable to test release blocking.
     setup.escrow.set_maintenance_mode(&false, &None);
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     setup.escrow.set_maintenance_mode(&true, &None);
 
     // Release is also blocked in hardened maintenance mode.
-    let res = setup.escrow.try_release_funds(&bounty_id, &setup.contributor);
+    let res = setup
+        .escrow
+        .try_release_funds(&bounty_id, &setup.contributor);
     assert!(matches!(res, Err(Ok(Error::FundsPaused))));
 }
 
@@ -733,7 +815,9 @@ fn test_update_risk_flags_success() {
     let deadline = setup.env.ledger().timestamp() + 1000;
 
     // Lock funds to create the initial escrow
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     // Verify initial risk flags are 0 (no metadata existed yet, fallback applied)
     assert_eq!(setup.escrow.get_risk_flags(&bounty_id), 0);
@@ -744,7 +828,7 @@ fn test_update_risk_flags_success() {
 
     // Verify flags persisted in the EscrowMetadata struct
     assert_eq!(setup.escrow.get_risk_flags(&bounty_id), new_flags);
-    
+
     // Clear the flags
     setup.escrow.update_risk_flags(&bounty_id, &0);
     assert_eq!(setup.escrow.get_risk_flags(&bounty_id), 0);
@@ -755,7 +839,7 @@ fn test_update_risk_flags_success() {
 fn test_update_risk_flags_bounty_not_found() {
     let setup = TestSetup::new();
     let missing_bounty_id = 999;
-    
+
     // Attempting to flag an escrow that does not exist should throw BountyNotFound (202)
     setup.escrow.update_risk_flags(&missing_bounty_id, &1);
 }
@@ -765,7 +849,7 @@ fn test_update_risk_flags_bounty_not_found() {
 fn test_get_risk_flags_bounty_not_found() {
     let setup = TestSetup::new();
     let missing_bounty_id = 999;
-    
+
     // Attempting to read flags from a missing escrow should fail
     setup.escrow.get_risk_flags(&missing_bounty_id);
 }
@@ -780,13 +864,15 @@ fn test_maintenance_mode_halts_lock() {
     let setup = TestSetup::new();
     let reason = soroban_sdk::String::from_str(&setup.env, "Emergency upgrade");
     setup.escrow.set_maintenance_mode(&true, &Some(reason));
-    
+
     let bounty_id = 1;
     let amount = 1000;
     let deadline = setup.env.ledger().timestamp() + 1000;
-    
+
     // Should panic with FundsPaused (18)
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 }
 
 #[test]
@@ -796,11 +882,13 @@ fn test_maintenance_mode_halts_release() {
     let bounty_id = 1;
     let amount = 1000;
     let deadline = setup.env.ledger().timestamp() + 1000;
-    
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
-    
+
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+
     setup.escrow.set_maintenance_mode(&true, &None);
-    
+
     // Should panic with FundsPaused (18)
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
 }
@@ -812,12 +900,14 @@ fn test_maintenance_mode_halts_refund() {
     let bounty_id = 1;
     let amount = 1000;
     let deadline = setup.env.ledger().timestamp() + 100;
-    
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     setup.env.ledger().set_timestamp(deadline + 1);
-    
+
     setup.escrow.set_maintenance_mode(&true, &None);
-    
+
     // Should panic with FundsPaused (18)
     setup.escrow.refund(&bounty_id);
 }
@@ -826,12 +916,12 @@ fn test_maintenance_mode_halts_refund() {
 fn test_maintenance_mode_toggles_correctly() {
     let setup = TestSetup::new();
     let reason = soroban_sdk::String::from_str(&setup.env, "Routine sync");
-    
+
     assert!(!setup.escrow.is_maintenance_mode());
-    
+
     setup.escrow.set_maintenance_mode(&true, &Some(reason));
     assert!(setup.escrow.is_maintenance_mode());
-    
+
     setup.escrow.set_maintenance_mode(&false, &None);
     assert!(!setup.escrow.is_maintenance_mode());
 }
@@ -848,10 +938,14 @@ fn setup_claim_window_bounty(
     claim_window_secs: u64,
 ) -> Address {
     let deadline = setup.env.ledger().timestamp() + 10_000;
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     setup.escrow.set_claim_window(&claim_window_secs);
     let recipient = Address::generate(&setup.env);
-    setup.escrow.authorize_claim(&bounty_id, &recipient, &DisputeReason::Other);
+    setup
+        .escrow
+        .authorize_claim(&bounty_id, &recipient, &DisputeReason::Other);
     recipient
 }
 
@@ -872,10 +966,17 @@ fn test_set_claim_window_zero_disables_enforcement() {
     // Set window to 0 — enforcement disabled.
     setup.escrow.set_claim_window(&0_u64);
     let deadline = setup.env.ledger().timestamp() + 10_000;
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
-    setup.escrow.authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::Other);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+    setup
+        .escrow
+        .authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::Other);
     // Advance time far past any window — should still succeed because window == 0.
-    setup.env.ledger().set_timestamp(setup.env.ledger().timestamp() + 999_999);
+    setup
+        .env
+        .ledger()
+        .set_timestamp(setup.env.ledger().timestamp() + 999_999);
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
     assert_eq!(
         setup.escrow.get_escrow_info(&bounty_id).status,
@@ -892,7 +993,9 @@ fn test_release_without_pending_claim_skips_window_check() {
     let amount = 1_000;
     let deadline = setup.env.ledger().timestamp() + 10_000;
     setup.escrow.set_claim_window(&60_u64);
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     // No authorize_claim called — no PendingClaim exists.
     // release_funds should succeed regardless of window.
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
@@ -943,9 +1046,13 @@ fn test_claim_at_exact_window_boundary_succeeds() {
     let window = 3_600_u64;
     let now = setup.env.ledger().timestamp();
     let deadline = now + 10_000;
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     setup.escrow.set_claim_window(&window);
-    setup.escrow.authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::Other);
+    setup
+        .escrow
+        .authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::Other);
     // Advance to exactly expires_at (now + window).
     setup.env.ledger().set_timestamp(now + window);
     // At the boundary (now == expires_at) the window is still valid.
@@ -967,9 +1074,13 @@ fn test_claim_after_window_expires_fails() {
     let window = 60_u64;
     let now = setup.env.ledger().timestamp();
     let deadline = now + 10_000;
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     setup.escrow.set_claim_window(&window);
-    setup.escrow.authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::Other);
+    setup
+        .escrow
+        .authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::Other);
     // Advance past the window.
     setup.env.ledger().set_timestamp(now + window + 1);
     // Should panic with DeadlineNotPassed (#6).
@@ -985,9 +1096,13 @@ fn test_release_after_window_expires_fails() {
     let window = 60_u64;
     let now = setup.env.ledger().timestamp();
     let deadline = now + 10_000;
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     setup.escrow.set_claim_window(&window);
-    setup.escrow.authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::Other);
+    setup
+        .escrow
+        .authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::Other);
     // Advance past the window.
     setup.env.ledger().set_timestamp(now + window + 1);
     // Should panic with DeadlineNotPassed (#6).
@@ -1003,10 +1118,17 @@ fn test_release_with_no_window_configured_succeeds() {
     let amount = 1_000;
     let deadline = setup.env.ledger().timestamp() + 10_000;
     // No set_claim_window call — defaults to 0 (disabled).
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
-    setup.escrow.authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::Other);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+    setup
+        .escrow
+        .authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::Other);
     // Advance time significantly — no window enforcement.
-    setup.env.ledger().set_timestamp(setup.env.ledger().timestamp() + 999_999);
+    setup
+        .env
+        .ledger()
+        .set_timestamp(setup.env.ledger().timestamp() + 999_999);
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
     assert_eq!(
         setup.escrow.get_escrow_info(&bounty_id).status,
@@ -1024,15 +1146,23 @@ fn test_cancel_expired_claim_then_authorize_new_window() {
     let window = 60_u64;
     let now = setup.env.ledger().timestamp();
     let deadline = now + 10_000;
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     setup.escrow.set_claim_window(&window);
-    setup.escrow.authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::Other);
+    setup
+        .escrow
+        .authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::Other);
     // Expire the first window.
     setup.env.ledger().set_timestamp(now + window + 1);
     // Admin cancels the stale claim.
-    setup.escrow.cancel_pending_claim(&bounty_id, &DisputeOutcome::CancelledByAdmin);
+    setup
+        .escrow
+        .cancel_pending_claim(&bounty_id, &DisputeOutcome::CancelledByAdmin);
     // Re-authorize with a fresh window.
-    setup.escrow.authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::Other);
+    setup
+        .escrow
+        .authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::Other);
     // Claim should now succeed within the new window.
     setup.escrow.claim(&bounty_id);
     assert_eq!(
@@ -1056,11 +1186,17 @@ fn test_claim_window_isolation_between_bounties() {
     setup.escrow.set_claim_window(&window);
 
     // Lock both bounties.
-    setup.escrow.lock_funds(&setup.depositor, &bounty_a, &amount, &deadline);
-    setup.escrow.lock_funds(&setup.depositor, &bounty_b, &amount, &deadline);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_a, &amount, &deadline);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_b, &amount, &deadline);
 
     // Authorize claim on bounty_a only.
-    setup.escrow.authorize_claim(&bounty_a, &setup.contributor, &DisputeReason::Other);
+    setup
+        .escrow
+        .authorize_claim(&bounty_a, &setup.contributor, &DisputeReason::Other);
 
     // Advance past the window for bounty_a.
     setup.env.ledger().set_timestamp(now + window + 1);
@@ -1085,7 +1221,12 @@ fn test_set_claim_window_emits_event() {
         !topics.is_empty()
             && topics
                 .get(0)
-                .and_then(|t| <Symbol as soroban_sdk::TryFromVal<Env, soroban_sdk::Val>>::try_from_val(&setup.env, &t).ok())
+                .and_then(|t| {
+                    <Symbol as soroban_sdk::TryFromVal<Env, soroban_sdk::Val>>::try_from_val(
+                        &setup.env, &t,
+                    )
+                    .ok()
+                })
                 .map(|s| s == expected)
                 .unwrap_or(false)
     });
@@ -1105,7 +1246,12 @@ fn test_claim_window_validated_event_emitted_on_success() {
         !topics.is_empty()
             && topics
                 .get(0)
-                .and_then(|t| <Symbol as soroban_sdk::TryFromVal<Env, soroban_sdk::Val>>::try_from_val(&setup.env, &t).ok())
+                .and_then(|t| {
+                    <Symbol as soroban_sdk::TryFromVal<Env, soroban_sdk::Val>>::try_from_val(
+                        &setup.env, &t,
+                    )
+                    .ok()
+                })
                 .map(|s| s == expected)
                 .unwrap_or(false)
     });
@@ -1120,9 +1266,13 @@ fn test_claim_window_expired_event_emitted_on_failure() {
     let window = 60_u64;
     let now = setup.env.ledger().timestamp();
     let deadline = now + 10_000;
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     setup.escrow.set_claim_window(&window);
-    setup.escrow.authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::Other);
+    setup
+        .escrow
+        .authorize_claim(&bounty_id, &setup.contributor, &DisputeReason::Other);
     setup.env.ledger().set_timestamp(now + window + 1);
     // Attempt claim — will fail, but the expired event should be emitted.
     let _ = setup.escrow.try_claim(&bounty_id);
@@ -1132,7 +1282,12 @@ fn test_claim_window_expired_event_emitted_on_failure() {
         !topics.is_empty()
             && topics
                 .get(0)
-                .and_then(|t| <Symbol as soroban_sdk::TryFromVal<Env, soroban_sdk::Val>>::try_from_val(&setup.env, &t).ok())
+                .and_then(|t| {
+                    <Symbol as soroban_sdk::TryFromVal<Env, soroban_sdk::Val>>::try_from_val(
+                        &setup.env, &t,
+                    )
+                    .ok()
+                })
                 .map(|s| s == expected)
                 .unwrap_or(false)
     });
@@ -1144,7 +1299,11 @@ fn test_claim_window_expired_event_emitted_on_failure() {
 // ============================================================================
 
 /// Helper: build a Vec of LockFundsItem for batch tests.
-fn make_lock_items(setup: &TestSetup, start_id: u64, count: u32) -> soroban_sdk::Vec<LockFundsItem> {
+fn make_lock_items(
+    setup: &TestSetup,
+    start_id: u64,
+    count: u32,
+) -> soroban_sdk::Vec<LockFundsItem> {
     let mut items = soroban_sdk::Vec::new(&setup.env);
     let deadline = setup.env.ledger().timestamp() + 10_000;
     for i in 0..count {
@@ -1159,7 +1318,11 @@ fn make_lock_items(setup: &TestSetup, start_id: u64, count: u32) -> soroban_sdk:
 }
 
 /// Helper: build a Vec of ReleaseFundsItem for batch tests.
-fn make_release_items(setup: &TestSetup, start_id: u64, count: u32) -> soroban_sdk::Vec<ReleaseFundsItem> {
+fn make_release_items(
+    setup: &TestSetup,
+    start_id: u64,
+    count: u32,
+) -> soroban_sdk::Vec<ReleaseFundsItem> {
     let mut items = soroban_sdk::Vec::new(&setup.env);
     for i in 0..count {
         items.push_back(ReleaseFundsItem {
@@ -1403,7 +1566,9 @@ fn test_release_below_threshold_executes_immediately() {
     // Threshold is 5_000 — amount is below it.
     setup.escrow.set_high_value_config(&5_000, &3_600);
     setup.token_admin.mint(&setup.depositor, &amount);
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
 
@@ -1425,7 +1590,9 @@ fn test_release_at_threshold_queues_release() {
 
     setup.escrow.set_high_value_config(&threshold, &duration);
     setup.token_admin.mint(&setup.depositor, &threshold);
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &threshold, &deadline);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &threshold, &deadline);
 
     let now = setup.env.ledger().timestamp();
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
@@ -1452,7 +1619,9 @@ fn test_execute_queued_release_before_timelock_fails() {
 
     setup.escrow.set_high_value_config(&threshold, &duration);
     setup.token_admin.mint(&setup.depositor, &threshold);
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &threshold, &deadline);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &threshold, &deadline);
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
 
     // Try to execute before timelock elapses.
@@ -1470,11 +1639,16 @@ fn test_execute_queued_release_after_timelock_succeeds() {
 
     setup.escrow.set_high_value_config(&threshold, &duration);
     setup.token_admin.mint(&setup.depositor, &threshold);
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &threshold, &deadline);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &threshold, &deadline);
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
 
     // Advance time past the timelock.
-    setup.env.ledger().set_timestamp(setup.env.ledger().timestamp() + duration + 1);
+    setup
+        .env
+        .ledger()
+        .set_timestamp(setup.env.ledger().timestamp() + duration + 1);
     setup.escrow.execute_queued_release(&bounty_id);
 
     assert_eq!(
@@ -1495,7 +1669,9 @@ fn test_execute_queued_release_at_exact_boundary_succeeds() {
 
     setup.escrow.set_high_value_config(&threshold, &duration);
     setup.token_admin.mint(&setup.depositor, &threshold);
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &threshold, &deadline);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &threshold, &deadline);
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
 
     // Advance to exactly executable_at.
@@ -1517,11 +1693,15 @@ fn test_double_queue_same_bounty_rejected() {
 
     setup.escrow.set_high_value_config(&threshold, &3_600);
     setup.token_admin.mint(&setup.depositor, &threshold);
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &threshold, &deadline);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &threshold, &deadline);
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
 
     // Second call should fail with ReleaseAlreadyQueued.
-    let res = setup.escrow.try_release_funds(&bounty_id, &setup.contributor);
+    let res = setup
+        .escrow
+        .try_release_funds(&bounty_id, &setup.contributor);
     assert!(matches!(res, Err(Ok(Error::ReleaseAlreadyQueued))));
 }
 
@@ -1534,7 +1714,9 @@ fn test_cancel_queued_release_restores_locked_state() {
 
     setup.escrow.set_high_value_config(&threshold, &3_600);
     setup.token_admin.mint(&setup.depositor, &threshold);
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &threshold, &deadline);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &threshold, &deadline);
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
 
     // Cancel the queued release.
@@ -1558,7 +1740,9 @@ fn test_cancel_queued_release_allows_re_queue() {
 
     setup.escrow.set_high_value_config(&threshold, &duration);
     setup.token_admin.mint(&setup.depositor, &threshold);
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &threshold, &deadline);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &threshold, &deadline);
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
 
     // Cancel, then queue again.
@@ -1590,7 +1774,9 @@ fn test_get_queued_release_returns_none_when_not_queued() {
     let deadline = setup.env.ledger().timestamp() + 1_000;
 
     setup.token_admin.mint(&setup.depositor, &amount);
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     assert!(setup.escrow.get_queued_release(&bounty_id).is_none());
 }
@@ -1603,7 +1789,9 @@ fn test_high_value_config_not_set_releases_immediately() {
     let deadline = setup.env.ledger().timestamp() + 1_000;
 
     // No high-value config set — any amount releases immediately.
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
 
     assert_eq!(
@@ -1631,11 +1819,16 @@ fn test_execute_queued_release_respects_maintenance_mode() {
 
     setup.escrow.set_high_value_config(&threshold, &duration);
     setup.token_admin.mint(&setup.depositor, &threshold);
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &threshold, &deadline);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &threshold, &deadline);
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
 
     // Advance past the timelock then engage maintenance mode.
-    setup.env.ledger().set_timestamp(setup.env.ledger().timestamp() + duration + 1);
+    setup
+        .env
+        .ledger()
+        .set_timestamp(setup.env.ledger().timestamp() + duration + 1);
     setup.escrow.set_maintenance_mode(&true, &None);
 
     // Should panic with FundsPaused (18).
@@ -1652,14 +1845,19 @@ fn test_execute_queued_release_respects_escrow_freeze() {
 
     setup.escrow.set_high_value_config(&threshold, &duration);
     setup.token_admin.mint(&setup.depositor, &threshold);
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &threshold, &deadline);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &threshold, &deadline);
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
 
     // Freeze the escrow while the release is queued.
     setup.escrow.freeze_escrow(&bounty_id, &None);
 
     // Advance past the timelock.
-    setup.env.ledger().set_timestamp(setup.env.ledger().timestamp() + duration + 1);
+    setup
+        .env
+        .ledger()
+        .set_timestamp(setup.env.ledger().timestamp() + duration + 1);
 
     // Execute should be blocked by the freeze.
     let res = setup.escrow.try_execute_queued_release(&bounty_id);
@@ -1693,11 +1891,16 @@ fn test_execute_queued_release_applies_release_fee() {
 
     setup.escrow.set_high_value_config(&threshold, &duration);
     setup.token_admin.mint(&setup.depositor, &threshold);
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &threshold, &deadline);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &threshold, &deadline);
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
 
     // Advance past the timelock.
-    setup.env.ledger().set_timestamp(setup.env.ledger().timestamp() + duration + 1);
+    setup
+        .env
+        .ledger()
+        .set_timestamp(setup.env.ledger().timestamp() + duration + 1);
     setup.escrow.execute_queued_release(&bounty_id);
 
     // Contributor should receive net (90% of threshold = 9_000).
@@ -1733,12 +1936,9 @@ fn test_cei_lock_funds_state_written_before_transfer() {
     let amount: i128 = 10_000;
     let deadline = setup.env.ledger().timestamp() + 86_400;
 
-    setup.escrow.lock_funds(
-        &setup.depositor,
-        &bounty_id,
-        &amount,
-        &deadline,
-    );
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     let escrow = setup.escrow.get_escrow_info(&bounty_id);
     assert_eq!(escrow.status, EscrowStatus::Locked);
@@ -1753,7 +1953,9 @@ fn test_cei_release_funds_status_updated_before_transfer() {
     let amount: i128 = 5_000;
     let deadline = setup.env.ledger().timestamp() + 86_400;
 
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
 
     let escrow = setup.escrow.get_escrow_info(&bounty_id);
@@ -1771,7 +1973,9 @@ fn test_cei_refund_status_updated_before_transfer() {
     setup.env.ledger().with_mut(|li| li.timestamp = 1_000);
     let deadline = 500u64; // already passed
 
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     setup.escrow.refund(&bounty_id);
 
     let escrow = setup.escrow.get_escrow_info(&bounty_id);
@@ -1788,12 +1992,19 @@ fn test_reentrancy_guard_released_after_lock_funds() {
     let amount: i128 = 1_000;
     let deadline = setup.env.ledger().timestamp() + 86_400;
 
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     // A second lock on a different bounty_id must succeed — guard was released
     let bounty_id2: u64 = 11;
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id2, &amount, &deadline);
-    assert_eq!(setup.escrow.get_escrow_info(&bounty_id2).status, EscrowStatus::Locked);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id2, &amount, &deadline);
+    assert_eq!(
+        setup.escrow.get_escrow_info(&bounty_id2).status,
+        EscrowStatus::Locked
+    );
 }
 
 /// CEI-05: Reentrancy guard is NOT active after a successful release_funds.
@@ -1804,13 +2015,20 @@ fn test_reentrancy_guard_released_after_release_funds() {
     let amount: i128 = 2_000;
     let deadline = setup.env.ledger().timestamp() + 86_400;
 
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
 
     // Another lock must succeed — guard was released
     let bounty_id2: u64 = 21;
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id2, &amount, &deadline);
-    assert_eq!(setup.escrow.get_escrow_info(&bounty_id2).status, EscrowStatus::Locked);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id2, &amount, &deadline);
+    assert_eq!(
+        setup.escrow.get_escrow_info(&bounty_id2).status,
+        EscrowStatus::Locked
+    );
 }
 
 /// CEI-06: Error path releases guard — a failed lock does not block subsequent calls.
@@ -1822,16 +2040,25 @@ fn test_reentrancy_guard_released_on_error_path() {
     let deadline = setup.env.ledger().timestamp() + 86_400;
 
     // First lock succeeds
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     // Second lock on same bounty_id fails (BountyExists) — guard must be released
-    let result = setup.escrow.try_lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+    let result = setup
+        .escrow
+        .try_lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     assert!(result.is_err(), "duplicate bounty_id must fail");
 
     // Third lock on a new bounty_id must succeed — guard was released on error path
     let bounty_id2: u64 = 31;
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id2, &amount, &deadline);
-    assert_eq!(setup.escrow.get_escrow_info(&bounty_id2).status, EscrowStatus::Locked);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id2, &amount, &deadline);
+    assert_eq!(
+        setup.escrow.get_escrow_info(&bounty_id2).status,
+        EscrowStatus::Locked
+    );
 }
 
 /// CEI-07: Paused release returns error and guard is released — next call works.
@@ -1842,15 +2069,24 @@ fn test_reentrancy_guard_released_when_paused() {
     let amount: i128 = 1_000;
     let deadline = setup.env.ledger().timestamp() + 86_400;
 
-    setup.escrow.lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
-    setup.escrow.set_paused(&Some(false), &Some(true), &None, &None);
+    setup
+        .escrow
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
+    setup
+        .escrow
+        .set_paused(&Some(false), &Some(true), &None, &None);
 
     // Release is paused — must fail
-    let result = setup.escrow.try_release_funds(&bounty_id, &setup.contributor);
+    let result = setup
+        .escrow
+        .try_release_funds(&bounty_id, &setup.contributor);
     assert!(result.is_err(), "release must fail when paused");
 
     // Unpause and retry — guard must have been released
     setup.escrow.set_paused(&None, &Some(false), &None, &None);
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
-    assert_eq!(setup.escrow.get_escrow_info(&bounty_id).status, EscrowStatus::Released);
+    assert_eq!(
+        setup.escrow.get_escrow_info(&bounty_id).status,
+        EscrowStatus::Released
+    );
 }

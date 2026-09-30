@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "policy": "Snapshots are reviewed artifacts. A persistent key or value-type change requires a format bump and a migration note.",
+  "policy": "Snapshots are reviewed artifacts. A persistent key or value-type change requires a format bump and a migration note. Snapshots that declare a type_layout_source also pin the declared encoding of every #[contracttype] type in that source; a field addition/removal/reorder/retype fails CI until the schema version, migration note and fixture are updated.",
   "contracts": [
     { "package": "grainlify-core", "manifest": "contracts/grainlify-core/Cargo.toml", "snapshot": "contracts/storage-layout/grainlify-core.json", "persistent": true },
     { "package": "program-escrow", "manifest": "contracts/program-escrow/Cargo.toml", "snapshot": "contracts/storage-layout/program-escrow.json", "persistent": true },

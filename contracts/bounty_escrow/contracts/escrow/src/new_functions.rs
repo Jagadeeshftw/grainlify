@@ -159,9 +159,7 @@
             trigger_type: events::RefundTriggerType::OracleAttestation,
         });
 
-        env.storage()
-            .persistent()
-            .set(&DataKey::Escrow(bounty_id), &escrow);
+        Self::write_escrow(&env, bounty_id, &escrow)?;
 
         // Mark oracle refund used — prevents double-refund
         env.storage()
@@ -285,9 +283,7 @@
             trigger_type: events::RefundTriggerType::DeadlineExpired,
         });
 
-        env.storage()
-            .persistent()
-            .set(&DataKey::Escrow(bounty_id), &escrow);
+        Self::write_escrow(&env, bounty_id, &escrow)?;
 
         // INTERACTION: external token transfer is last
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();

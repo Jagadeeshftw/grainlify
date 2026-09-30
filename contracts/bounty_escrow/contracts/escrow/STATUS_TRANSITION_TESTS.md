@@ -1,57 +1,61 @@
 # Escrow Status Transitions Test Suite
 
 ## Overview
-This test suite validates all allowed and disallowed status transitions in the bounty escrow contract.
+This suite pins the escrow lifecycle as a finite-state machine and asserts that every status pair is either an explicit legal edge or a rejected illegal transition.
 
-## Status States
-The escrow contract has four possible states:
-- **Locked**: Initial state after funds are locked
-- **Released**: Funds have been released to contributor
-- **Refunded**: Funds have been fully refunded to depositor
-- **PartiallyRefunded**: Funds have been partially refunded
+## States
+The escrow contract has five statuses:
+- **Draft**: initial unpublished record before funds are locked
+- **Locked**: active escrow holding funds
+- **Released**: terminal success state after payout
+- **Refunded**: terminal full-refund state
+- **PartiallyRefunded**: intermediate refund state with remaining balance still owed to the depositor
 
-## Valid Transitions
+## Legal edges
 
-| From | To | Test | Description |
-|------|-----|------|-------------|
-| Locked | Released | `test_locked_to_released` | Standard release flow |
-| Locked | Refunded | `test_locked_to_refunded` | Full refund after deadline |
-| Locked | PartiallyRefunded | `test_locked_to_partially_refunded` | Partial refund with admin approval |
-| PartiallyRefunded | Refunded | `test_partially_refunded_to_refunded` | Complete remaining refund |
+| From | To | Entry point | Result |
+|------|-----|-------------|--------|
+| Draft | Locked | `publish` / lock creation path | allowed |
+| Locked | Released | `release_funds` | allowed |
+| Locked | Refunded | `refund` | allowed |
+| Locked | PartiallyRefunded | `approve_refund` + `refund` | allowed |
+| PartiallyRefunded | Refunded | `refund` | allowed |
+| PartiallyRefunded | PartiallyRefunded | subsequent partial refund | allowed |
 
-## Invalid Transitions
+## Illegal edges
+All other state pairs are rejected.
 
-All other transitions are invalid and properly rejected with appropriate errors:
+- `Error::FundsNotLocked` rejects re-entry into a released or refunded state, or any transition out of a terminal state.
+- `Error::BountyExists` rejects attempts to lock an escrow that already exists, including re-locking a `Locked`, `Released`, `Refunded`, or `PartiallyRefunded` escrow.
 
-### From Released State
-- Released → Locked: `test_released_to_locked_fails` (Error #3: BountyExists)
-- Released → Released: `test_released_to_released_fails` (Error #5: FundsNotLocked)
-- Released → Refunded: `test_released_to_refunded_fails` (Error #5: FundsNotLocked)
-- Released → PartiallyRefunded: `test_released_to_partially_refunded_fails` (Error #5: FundsNotLocked)
+| From | To | Rejection |
+|------|-----|-----------|
+| Draft | Released | `Error::FundsNotLocked` |
+| Draft | Refunded | `Error::FundsNotLocked` |
+| Draft | PartiallyRefunded | `Error::FundsNotLocked` |
+| Locked | Locked | `Error::BountyExists` |
+| Locked | Draft | `Error::FundsNotLocked` |
+| Released | Locked | `Error::BountyExists` |
+| Released | Released | `Error::FundsNotLocked` |
+| Released | Refunded | `Error::FundsNotLocked` |
+| Released | PartiallyRefunded | `Error::FundsNotLocked` |
+| Released | Draft | `Error::FundsNotLocked` |
+| Refunded | Locked | `Error::BountyExists` |
+| Refunded | Released | `Error::FundsNotLocked` |
+| Refunded | Refunded | `Error::FundsNotLocked` |
+| Refunded | PartiallyRefunded | `Error::FundsNotLocked` |
+| Refunded | Draft | `Error::FundsNotLocked` |
+| PartiallyRefunded | Locked | `Error::BountyExists` |
+| PartiallyRefunded | Released | `Error::FundsNotLocked` |
+| PartiallyRefunded | Draft | `Error::FundsNotLocked` |
 
-### From Refunded State
-- Refunded → Locked: `test_refunded_to_locked_fails` (Error #3: BountyExists)
-- Refunded → Released: `test_refunded_to_released_fails` (Error #5: FundsNotLocked)
-- Refunded → Refunded: `test_refunded_to_refunded_fails` (Error #5: FundsNotLocked)
-- Refunded → PartiallyRefunded: `test_refunded_to_partially_refunded_fails` (Error #5: FundsNotLocked)
-
-### From PartiallyRefunded State
-- PartiallyRefunded → Locked: `test_partially_refunded_to_locked_fails` (Error #3: BountyExists)
-- PartiallyRefunded → Released: `test_partially_refunded_to_released_fails` (Error #5: FundsNotLocked)
-
-## Test Implementation
+## Test implementation
 - **File**: `src/test_status_transitions.rs`
-- **Total Tests**: 14 (4 valid transitions + 10 invalid transitions)
-- **Test Pattern**: Table-driven approach with one test per transition
-- **Error Validation**: Each invalid transition test validates the specific error code returned
+- **Coverage**: every status pair in the $5 \times 5$ matrix is enumerated in `test_status_pair_matrix_is_exhaustive_and_documented`
+- **Contract invariant**: legal edges are fixed, and every non-edge is rejected with a named error
 
-## Running Tests
+## Verification
+Run:
 ```bash
-cargo test test_status_transitions --lib
+cargo test --lib test_status_pair_matrix_is_exhaustive_and_documented -- --nocapture
 ```
-
-## Test Results
-All 14 tests pass successfully, confirming that:
-1. Valid state transitions work as expected
-2. Invalid state transitions are properly blocked with appropriate error codes
-3. The contract maintains state integrity throughout its lifecycle

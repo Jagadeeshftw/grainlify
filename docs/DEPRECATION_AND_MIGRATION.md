@@ -12,7 +12,7 @@ This document describes the controlled kill-switch mechanism used to deprecate o
 
 - **Bounty escrow** (`contracts/bounty_escrow`): `lock_funds` and `batch_lock_funds` are blocked when deprecated; release and refund still work.
 - **Soroban escrow** (`soroban/contracts/escrow`): `lock_funds` blocked when deprecated.
-- **Soroban program-escrow** (`soroban/contracts/program-escrow`): `register_program` and `batch_register_programs` blocked when deprecated.
+- **Soroban program-escrow** (`soroban/contracts/program-escrow`, crate `soroban-program-escrow`): `register_program` and `batch_register_programs` blocked when deprecated.
 
 ## Admin Operations
 
@@ -20,7 +20,7 @@ This document describes the controlled kill-switch mechanism used to deprecate o
 
 - **Bounty escrow**: `set_deprecated(deprecated: bool, migration_target: Option<Address>)`  
   Call with `deprecated = true` to enable the kill switch; optionally set `migration_target` to the new contract address.
-- **Soroban escrow / program-escrow**: Same signature and behavior.
+- **Soroban escrow / soroban-program-escrow**: Same signature and behavior.
 
 ### View deprecation status (anyone)
 

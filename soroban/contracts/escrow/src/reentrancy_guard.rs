@@ -45,4 +45,3 @@ pub fn release(env: &Env) {
         .instance()
         .set(&DataKey::ReentrancyGuard, &NOT_ENTERED);
 }
-

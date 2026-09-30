@@ -6,6 +6,12 @@
 
 use soroban_sdk::Env;
 
-pub(crate) fn migrate_v1_to_v2(_env: &Env) {}
+pub(crate) fn migrate_v1_to_v2(_env: &Env) {
+    #[cfg(test)]
+    crate::migration_failure_injection::maybe_trap(crate::MigrationTrapPoint::DuringV1ToV2);
+}
 
-pub(crate) fn migrate_v2_to_v3(_env: &Env) {}
+pub(crate) fn migrate_v2_to_v3(_env: &Env) {
+    #[cfg(test)]
+    crate::migration_failure_injection::maybe_trap(crate::MigrationTrapPoint::DuringV2ToV3);
+}

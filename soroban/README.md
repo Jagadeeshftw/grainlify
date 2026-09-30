@@ -16,27 +16,31 @@ The build-reproducibility workflow builds this workspace's WASM to verify reprod
 This repository contains the Soroban smart contract workspace for the Grainlify project.  
 It follows **multi-crate workspace best practices** with separate directories for each contract, allowing modular development and testing.
 
+> **Escrow authority:** the `escrow` crate below is **superseded** and is kept
+> for behavioural parity only; it is not deployed. The authoritative escrow
+> implementation is `contracts/bounty_escrow/contracts/escrow`
+> (`bounty_escrow.wasm`). See
+> [`docs/contracts/escrow-implementation-authority.md`](../docs/contracts/escrow-implementation-authority.md).
+
 ---
 
 ## Project Structure
 
 ```text
-.
-├── contracts
-│   ├── escrow
-│   │   ├── src
-│   │   │   ├── lib.rs
-│   │   │   └── test.rs
-│   │   └── Cargo.toml
-│   ├── program-escrow
-│   │   ├── src
-│   │   │   ├── lib.rs
-│   │   │   └── test.rs
-│   │   └── Cargo.toml
-│   └── README.md
-├── Cargo.toml          # Workspace-level configuration
-├── .soroban/           # Local network configuration
-└── .env.example        # Example Stellar testnet variables
+soroban/
+|-- Cargo.toml                 # SDK 23 workspace
+|-- README.md
+|-- contracts/
+|   |-- escrow/
+|   |   |-- Cargo.toml
+|   |   \-- README.md
+|   |-- program-escrow/
+|   |   |-- Cargo.toml
+|   |   \-- README.md
+|   \-- stream/
+|       |-- Cargo.toml
+|       \-- README.md
+\-- .env.example              # Testnet configuration example
 ```
 
 # Setup Instructions

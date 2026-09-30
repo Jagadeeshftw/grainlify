@@ -1,4 +1,14 @@
-# Bounty Escrow Contract
+# Bounty escrow workspace
+
+## Workspace and deployment status
+
+This directory is a Cargo workspace, not a deployable crate. Its member [bounty-escrow](contracts/escrow/README.md) implements the bounty fund lifecycle described below. The member's [deployment manifest](../bounty-escrow-manifest.json) lists no deployed networks or contract ID, so a live deployment is not verified here.
+
+## Crate relationships
+
+- Depends on: no other in-repository crate as a workspace manifest; it provides the soroban-sdk 21.7.7 and ethnum dependency pins used by its member.
+- Depended on by: [bounty-escrow](contracts/escrow/README.md) is the workspace member and inherits those pins.
+- The similarly named [Soroban escrow](../../soroban/contracts/escrow/README.md) lives in a separate SDK 23 workspace and is not this member package.
 
 ## Batch Operations & Failure Semantics
 

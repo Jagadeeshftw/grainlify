@@ -2,5 +2,2488 @@
   "format": 1,
   "package": "program-escrow",
   "schema_version": 2,
-  "persistent_keys": [{"name": "Admin", "type": "Address"}, {"name": "PauseFlags", "type": "PauseFlags"}, {"name": "MaintenanceMode", "type": "bool"}, {"name": "ReadOnlyMode", "type": "bool"}]
+  "type_layout_source": "contracts/program-escrow/src/types.rs",
+  "type_layout_goldens": "contracts/program-escrow/src/serialization_goldens.rs",
+  "type_layout_policy": "Every #[contracttype] type declared in type_layout_source must appear here with its declared encoding. Adding, removing, reordering or retyping a field changes the encoding and must be accompanied by a STORAGE_SCHEMA_VERSION bump, a migration note and regenerated serialization goldens.",
+  "type_layouts": [
+    {
+      "type": "RoleTransitionState",
+      "kind": "struct",
+      "encoding": [
+        [
+          "proposer",
+          "Address"
+        ],
+        [
+          "proposed_role",
+          "Address"
+        ],
+        [
+          "proposed_at",
+          "u64"
+        ],
+        [
+          "deadline",
+          "u64"
+        ],
+        [
+          "nonce",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "RoleManagementConfig",
+      "kind": "struct",
+      "encoding": [
+        [
+          "rotation_enabled",
+          "bool"
+        ],
+        [
+          "max_transition_period",
+          "u64"
+        ],
+        [
+          "emergency_blocks_rotations",
+          "bool"
+        ]
+      ]
+    },
+    {
+      "type": "FeeConfig",
+      "kind": "struct",
+      "encoding": [
+        [
+          "lock_fee_rate",
+          "i128"
+        ],
+        [
+          "payout_fee_rate",
+          "i128"
+        ],
+        [
+          "lock_fixed_fee",
+          "i128"
+        ],
+        [
+          "payout_fixed_fee",
+          "i128"
+        ],
+        [
+          "fee_recipient",
+          "Address"
+        ],
+        [
+          "fee_enabled",
+          "bool"
+        ],
+        [
+          "fee_waivers",
+          "u32"
+        ],
+        [
+          "insurance_reserve_bps",
+          "u32"
+        ]
+      ],
+      "xdr_sha256": "20493e706b208c8a2f1a495b581c1aa466a67c1ff5885ac6cbf3360f4f4953e9"
+    },
+    {
+      "type": "FeeCollectedEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "operation",
+          "Symbol"
+        ],
+        [
+          "fee_amount",
+          "i128"
+        ],
+        [
+          "fee_rate_bps",
+          "i128"
+        ],
+        [
+          "fee_fixed",
+          "i128"
+        ],
+        [
+          "recipient",
+          "Address"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "InsuranceReserveWithdrawnEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "admin",
+          "Address"
+        ],
+        [
+          "target",
+          "Address"
+        ],
+        [
+          "amount",
+          "i128"
+        ],
+        [
+          "balance_before",
+          "i128"
+        ],
+        [
+          "balance_after",
+          "i128"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "monitoring::OperationMetric",
+      "kind": "struct",
+      "encoding": [
+        [
+          "operation",
+          "Symbol"
+        ],
+        [
+          "caller",
+          "Address"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ],
+        [
+          "success",
+          "bool"
+        ]
+      ]
+    },
+    {
+      "type": "monitoring::PerformanceMetric",
+      "kind": "struct",
+      "encoding": [
+        [
+          "function",
+          "Symbol"
+        ],
+        [
+          "duration",
+          "u64"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "monitoring::HealthStatus",
+      "kind": "struct",
+      "encoding": [
+        [
+          "is_healthy",
+          "bool"
+        ],
+        [
+          "last_operation",
+          "u64"
+        ],
+        [
+          "total_operations",
+          "u64"
+        ],
+        [
+          "contract_version",
+          "String"
+        ]
+      ]
+    },
+    {
+      "type": "monitoring::Analytics",
+      "kind": "struct",
+      "encoding": [
+        [
+          "operation_count",
+          "u64"
+        ],
+        [
+          "unique_users",
+          "u64"
+        ],
+        [
+          "error_count",
+          "u64"
+        ],
+        [
+          "error_rate",
+          "u32"
+        ]
+      ]
+    },
+    {
+      "type": "monitoring::StateSnapshot",
+      "kind": "struct",
+      "encoding": [
+        [
+          "timestamp",
+          "u64"
+        ],
+        [
+          "total_operations",
+          "u64"
+        ],
+        [
+          "total_users",
+          "u64"
+        ],
+        [
+          "total_errors",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "monitoring::PerformanceStats",
+      "kind": "struct",
+      "encoding": [
+        [
+          "function_name",
+          "Symbol"
+        ],
+        [
+          "call_count",
+          "u64"
+        ],
+        [
+          "total_time",
+          "u64"
+        ],
+        [
+          "avg_time",
+          "u64"
+        ],
+        [
+          "last_called",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "PayoutIdempotencyKey",
+      "kind": "struct",
+      "encoding": [
+        [
+          "key",
+          "String"
+        ],
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "payout_type",
+          "PayoutType"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ],
+        [
+          "recipient",
+          "Option<Address>"
+        ],
+        [
+          "amount",
+          "Option<i128>"
+        ],
+        [
+          "recipients",
+          "Option<Vec<Address>>"
+        ],
+        [
+          "amounts",
+          "Option<Vec<i128>>"
+        ],
+        [
+          "total_amount",
+          "i128"
+        ]
+      ]
+    },
+    {
+      "type": "PayoutType",
+      "kind": "enum",
+      "encoding": [
+        "Single",
+        "Batch(u32)"
+      ]
+    },
+    {
+      "type": "PayoutRecord",
+      "kind": "struct",
+      "encoding": [
+        [
+          "recipient",
+          "Address"
+        ],
+        [
+          "amount",
+          "i128"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ],
+      "xdr_sha256": "35f4f2fffa097ff6313bd0ad339be060b5ffcec5e296845956ae929cee22fe5c"
+    },
+    {
+      "type": "ProgramInitializedEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "authorized_payout_key",
+          "Address"
+        ],
+        [
+          "token_address",
+          "Address"
+        ],
+        [
+          "total_funds",
+          "i128"
+        ]
+      ],
+      "xdr_sha256": "4f9b81baeac7bcdc055a0d2cc2f5610fdadecd4170dca9f40196d0796fe761c1"
+    },
+    {
+      "type": "FundsLockedEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "amount",
+          "i128"
+        ],
+        [
+          "remaining_balance",
+          "i128"
+        ]
+      ],
+      "xdr_sha256": "656a4de97044c2c5782dd58a6646e6b64eae130711b04567656e5975deaeb85e"
+    },
+    {
+      "type": "BatchPayoutEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "recipient_count",
+          "u32"
+        ],
+        [
+          "total_amount",
+          "i128"
+        ],
+        [
+          "remaining_balance",
+          "i128"
+        ],
+        [
+          "idempotency_key",
+          "Option<String>"
+        ],
+        [
+          "correlation_id",
+          "Option<CorrelationId>"
+        ]
+      ],
+      "xdr_sha256": "58ee50d97750929de8c5384c29c5fa3649fbeaaf77a29e2015bba835ed3173f8"
+    },
+    {
+      "type": "BatchPayoutReplayedEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "idempotency_key",
+          "String"
+        ]
+      ]
+    },
+    {
+      "type": "PayoutEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "recipient",
+          "Address"
+        ],
+        [
+          "amount",
+          "i128"
+        ],
+        [
+          "remaining_balance",
+          "i128"
+        ],
+        [
+          "correlation_id",
+          "Option<CorrelationId>"
+        ]
+      ],
+      "xdr_sha256": "5d3a3556b4c125bfe832779a3364591636e38174cd4ba2c9c913b8ce0ca4704a"
+    },
+    {
+      "type": "ReleaseScheduledEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "schedule_id",
+          "u64"
+        ],
+        [
+          "recipient",
+          "Address"
+        ],
+        [
+          "amount",
+          "i128"
+        ],
+        [
+          "release_timestamp",
+          "u64"
+        ],
+        [
+          "correlation_id",
+          "Option<CorrelationId>"
+        ]
+      ]
+    },
+    {
+      "type": "ScheduleReleasedEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "schedule_id",
+          "u64"
+        ],
+        [
+          "recipient",
+          "Address"
+        ],
+        [
+          "amount",
+          "i128"
+        ],
+        [
+          "released_at",
+          "u64"
+        ],
+        [
+          "released_by",
+          "Address"
+        ],
+        [
+          "correlation_id",
+          "Option<CorrelationId>"
+        ]
+      ]
+    },
+    {
+      "type": "ScheduleTriggerSummaryEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "triggered_at",
+          "u64"
+        ],
+        [
+          "released_count",
+          "u32"
+        ],
+        [
+          "skipped_count",
+          "u32"
+        ]
+      ]
+    },
+    {
+      "type": "ProgramRiskFlagsUpdated",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "previous_flags",
+          "u32"
+        ],
+        [
+          "new_flags",
+          "u32"
+        ],
+        [
+          "admin",
+          "Address"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "ProgramDelegateSetEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "delegate",
+          "Address"
+        ],
+        [
+          "permissions",
+          "u32"
+        ],
+        [
+          "updated_by",
+          "Address"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "ProgramDelegateRevokedEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "delegate",
+          "Address"
+        ],
+        [
+          "revoked_by",
+          "Address"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ],
+        [
+          "emergency",
+          "bool"
+        ]
+      ]
+    },
+    {
+      "type": "ProgramMetadataUpdatedEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "updated_by",
+          "Address"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "AdminProposedEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "proposed_by",
+          "Address"
+        ],
+        [
+          "proposed_admin",
+          "Address"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "AdminAcceptedEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "previous_admin",
+          "Address"
+        ],
+        [
+          "new_admin",
+          "Address"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "AdminRotationCancelledEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "cancelled_by",
+          "Address"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "ControllerProposedEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "proposed_by",
+          "Address"
+        ],
+        [
+          "proposed_controller",
+          "Address"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "ControllerAcceptedEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "previous_controller",
+          "Address"
+        ],
+        [
+          "new_controller",
+          "Address"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "ControllerRotationCancelledEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "cancelled_by",
+          "Address"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "ProgramPublishedEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "publisher",
+          "Address"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "ProgramMetadataField",
+      "kind": "struct",
+      "encoding": [
+        [
+          "key",
+          "soroban_sdk::String"
+        ],
+        [
+          "value",
+          "soroban_sdk::String"
+        ]
+      ]
+    },
+    {
+      "type": "ProgramMetadata",
+      "kind": "struct",
+      "encoding": [
+        [
+          "program_name",
+          "Option<soroban_sdk::String>"
+        ],
+        [
+          "program_type",
+          "Option<soroban_sdk::String>"
+        ],
+        [
+          "ecosystem",
+          "Option<soroban_sdk::String>"
+        ],
+        [
+          "tags",
+          "soroban_sdk::Vec<soroban_sdk::String>"
+        ],
+        [
+          "start_date",
+          "Option<u64>"
+        ],
+        [
+          "end_date",
+          "Option<u64>"
+        ],
+        [
+          "custom_fields",
+          "soroban_sdk::Vec<ProgramMetadataField>"
+        ]
+      ]
+    },
+    {
+      "type": "ProgramStatus",
+      "kind": "enum",
+      "encoding": [
+        "Draft",
+        "Active"
+      ]
+    },
+    {
+      "type": "FotRouter",
+      "kind": "struct",
+      "encoding": [
+        [
+          "router_contract",
+          "Address"
+        ],
+        [
+          "slippage_bps",
+          "u32"
+        ],
+        [
+          "max_fot_multiplier_bps",
+          "u32"
+        ]
+      ]
+    },
+    {
+      "type": "OptionalFotRouter",
+      "kind": "enum",
+      "encoding": [
+        "None",
+        "Some(FotRouter)"
+      ]
+    },
+    {
+      "type": "FotRouterSetEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "router_contract",
+          "Address"
+        ],
+        [
+          "slippage_bps",
+          "u32"
+        ],
+        [
+          "max_fot_multiplier_bps",
+          "u32"
+        ],
+        [
+          "set_by",
+          "Address"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "FotRouterClearedEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "set_by",
+          "Address"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "ProgramData",
+      "kind": "struct",
+      "encoding": [
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "total_funds",
+          "i128"
+        ],
+        [
+          "remaining_balance",
+          "i128"
+        ],
+        [
+          "authorized_payout_key",
+          "Address"
+        ],
+        [
+          "delegate",
+          "Option<Address>"
+        ],
+        [
+          "delegate_permissions",
+          "u32"
+        ],
+        [
+          "payout_history",
+          "soroban_sdk::Vec<PayoutRecord>"
+        ],
+        [
+          "token_address",
+          "Address"
+        ],
+        [
+          "initial_liquidity",
+          "i128"
+        ],
+        [
+          "risk_flags",
+          "u32"
+        ],
+        [
+          "reference_hash",
+          "Option<soroban_sdk::Bytes>"
+        ],
+        [
+          "archived",
+          "bool"
+        ],
+        [
+          "archived_at",
+          "Option<u64>"
+        ],
+        [
+          "status",
+          "ProgramStatus"
+        ],
+        [
+          "circuit_breaker_threshold",
+          "Option<u32>"
+        ],
+        [
+          "fot_router",
+          "OptionalFotRouter"
+        ]
+      ],
+      "xdr_sha256": "440d3026b28018f4b54f80853b4553dcdf10fc209b60ff5836b4b4f669b347ba"
+    },
+    {
+      "type": "DisputeState",
+      "kind": "enum",
+      "encoding": [
+        "None",
+        "Open",
+        "Resolved"
+      ]
+    },
+    {
+      "type": "ProgramDelegateInfo",
+      "kind": "struct",
+      "encoding": [
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "delegate",
+          "Option<Address>"
+        ],
+        [
+          "permissions",
+          "u32"
+        ]
+      ]
+    },
+    {
+      "type": "DisputeRecord",
+      "kind": "struct",
+      "encoding": [
+        [
+          "raised_by",
+          "Address"
+        ],
+        [
+          "reason",
+          "String"
+        ],
+        [
+          "opened_at",
+          "u64"
+        ],
+        [
+          "state",
+          "DisputeState"
+        ],
+        [
+          "resolved_by",
+          "Option<Address>"
+        ],
+        [
+          "resolved_at",
+          "Option<u64>"
+        ],
+        [
+          "resolution_notes",
+          "Option<String>"
+        ]
+      ]
+    },
+    {
+      "type": "DisputeOpenedEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "raised_by",
+          "Address"
+        ],
+        [
+          "reason",
+          "String"
+        ],
+        [
+          "opened_at",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "DisputeResolvedEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "resolved_by",
+          "Address"
+        ],
+        [
+          "resolution_notes",
+          "String"
+        ],
+        [
+          "resolved_at",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "SpendLimitSetEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "previous_threshold",
+          "i128"
+        ],
+        [
+          "new_threshold",
+          "i128"
+        ],
+        [
+          "set_by",
+          "Address"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "SpendLimitExceededEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "requested_amount",
+          "i128"
+        ],
+        [
+          "threshold",
+          "i128"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "SpendLimitSchemaVersionSet",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "schema_version",
+          "u32"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "CircuitBreakerThresholdSetEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "previous_threshold",
+          "Option<u32>"
+        ],
+        [
+          "new_threshold",
+          "Option<u32>"
+        ],
+        [
+          "set_by",
+          "Address"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "IdempotencyRecord",
+      "kind": "struct",
+      "encoding": [
+        [
+          "idempotency_key",
+          "String"
+        ],
+        [
+          "operation_type",
+          "Symbol"
+        ],
+        [
+          "success",
+          "bool"
+        ],
+        [
+          "executed_at",
+          "u64"
+        ],
+        [
+          "executor",
+          "Address"
+        ],
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "total_amount",
+          "i128"
+        ],
+        [
+          "recipient_count",
+          "u32"
+        ],
+        [
+          "error_code",
+          "Option<u32>"
+        ]
+      ]
+    },
+    {
+      "type": "IdempotencyKeyUsedEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "idempotency_key",
+          "String"
+        ],
+        [
+          "operation_type",
+          "Symbol"
+        ],
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "total_amount",
+          "i128"
+        ],
+        [
+          "recipient_count",
+          "u32"
+        ],
+        [
+          "executor",
+          "Address"
+        ],
+        [
+          "executed_at",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "IdempotencyKeyRetryEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "idempotency_key",
+          "String"
+        ],
+        [
+          "original_success",
+          "bool"
+        ],
+        [
+          "original_executed_at",
+          "u64"
+        ],
+        [
+          "original_executor",
+          "Address"
+        ],
+        [
+          "retry_attempt_at",
+          "u64"
+        ],
+        [
+          "retry_by",
+          "Address"
+        ]
+      ]
+    },
+    {
+      "type": "IdempotencySchemaVersionSet",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "schema_version",
+          "u32"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "MultisigThresholdConfig",
+      "kind": "struct",
+      "encoding": [
+        [
+          "signers",
+          "soroban_sdk::Vec<Address>"
+        ],
+        [
+          "required_approvals",
+          "u32"
+        ],
+        [
+          "high_value_threshold",
+          "i128"
+        ]
+      ]
+    },
+    {
+      "type": "AdminOpKind",
+      "kind": "enum",
+      "encoding": [
+        "UpdateFeeConfig",
+        "UpdateMultisigConfig",
+        "EmergencyWithdraw"
+      ]
+    },
+    {
+      "type": "PendingAdminOp",
+      "kind": "struct",
+      "encoding": [
+        [
+          "kind",
+          "AdminOpKind"
+        ],
+        [
+          "value",
+          "i128"
+        ],
+        [
+          "proposed_by",
+          "Address"
+        ],
+        [
+          "proposed_at",
+          "u32"
+        ],
+        [
+          "expires_at",
+          "u32"
+        ],
+        [
+          "approvals",
+          "soroban_sdk::Vec<Address>"
+        ],
+        [
+          "payload_hash",
+          "soroban_sdk::Bytes"
+        ]
+      ]
+    },
+    {
+      "type": "AdminOpProposedEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "kind",
+          "AdminOpKind"
+        ],
+        [
+          "proposed_by",
+          "Address"
+        ],
+        [
+          "expires_at",
+          "u32"
+        ],
+        [
+          "required_approvals",
+          "u32"
+        ]
+      ]
+    },
+    {
+      "type": "AdminOpApprovedEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "kind",
+          "AdminOpKind"
+        ],
+        [
+          "approved_by",
+          "Address"
+        ],
+        [
+          "approvals_so_far",
+          "u32"
+        ],
+        [
+          "required_approvals",
+          "u32"
+        ]
+      ]
+    },
+    {
+      "type": "AdminOpExecutedEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "kind",
+          "AdminOpKind"
+        ],
+        [
+          "executed_by",
+          "Address"
+        ]
+      ]
+    },
+    {
+      "type": "ProgramSpendingConfig",
+      "kind": "struct",
+      "encoding": [
+        [
+          "window_size",
+          "u64"
+        ],
+        [
+          "max_amount",
+          "i128"
+        ],
+        [
+          "enabled",
+          "bool"
+        ]
+      ]
+    },
+    {
+      "type": "ProgramSpendingState",
+      "kind": "struct",
+      "encoding": [
+        [
+          "window_start",
+          "u64"
+        ],
+        [
+          "amount_released",
+          "i128"
+        ]
+      ]
+    },
+    {
+      "type": "AllowedTokenEntry",
+      "kind": "struct",
+      "encoding": [
+        [
+          "token",
+          "Address"
+        ],
+        [
+          "decimals",
+          "u32"
+        ]
+      ]
+    },
+    {
+      "type": "TokenAllowlistUpdatedEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "token",
+          "Address"
+        ],
+        [
+          "added",
+          "bool"
+        ],
+        [
+          "updated_by",
+          "Address"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ],
+        [
+          "decimals",
+          "u32"
+        ]
+      ]
+    },
+    {
+      "type": "TokenRejectedEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "token",
+          "Address"
+        ],
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "TokenAllowlistSchemaVersionSet",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "schema_version",
+          "u32"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "TokenDecimalsConfiguredEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "token",
+          "Address"
+        ],
+        [
+          "configured_decimals",
+          "u32"
+        ],
+        [
+          "reported_decimals",
+          "Option<u32>"
+        ],
+        [
+          "configured_by",
+          "Address"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "TokenDecimalsMismatchEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "token",
+          "Address"
+        ],
+        [
+          "configured_decimals",
+          "u32"
+        ],
+        [
+          "reported_decimals",
+          "u32"
+        ],
+        [
+          "configured_by",
+          "Address"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "DataKey",
+      "kind": "enum",
+      "encoding": [
+        "Program(String)",
+        "Admin",
+        "MultisigConfig(String)",
+        "SplitConfig(String)",
+        "PendingClaim(String, u64)",
+        "ClaimWindow",
+        "PauseFlags",
+        "ProgramPauseFlags(String)",
+        "RateLimitConfig",
+        "MaintenanceMode",
+        "ProgramDependencies(String)",
+        "DependencyStatus(String)",
+        "Dispute",
+        "PayoutIdempotency(String)",
+        "HistoryPaginationConfig",
+        "SpendLimitSchemaVersion",
+        "PauseSchemaVersion",
+        "TokenAllowlist",
+        "TokenDecimals(Address)",
+        "DynamicPricingConfig",
+        "PricingState",
+        "DemandMetrics",
+        "SupplyMetrics",
+        "OracleData",
+        "TokenAllowlistSchemaVersion",
+        "SpendingConfig(String)",
+        "SpendingState(String)",
+        "ReadOnlyMode",
+        "Metadata(String)",
+        "MetadataV2(String)",
+        "RotationNonce(String)",
+        "ReleaseTriggerSchemaVersion",
+        "ReentrancyGuard",
+        "IdempotencyKey(String)",
+        "IdempotencySchemaVersion",
+        "BatchPayoutSchemaVersion",
+        "CircuitBreakerSchemaVersion",
+        "BatchReceipt(u64)",
+        "PendingAdmin",
+        "PendingAdminTransition",
+        "PendingController(String)",
+        "RoleManagementSchemaVersion",
+        "RoleManagementConfig",
+        "RecipientPayoutIndex(String, Address)",
+        "DelegateMetaRateLimit(String)",
+        "InsuranceReserve",
+        "LifecycleTimeline(String)",
+        "ProgramAccessSignal(String)"
+      ]
+    },
+    {
+      "type": "AnonymousResolver",
+      "kind": "struct",
+      "encoding": [
+        [
+          "resolver",
+          "Address"
+        ],
+        [
+          "set_by",
+          "Address"
+        ],
+        [
+          "updated_at",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "AnonymousResolverSetEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "resolver",
+          "Address"
+        ],
+        [
+          "set_by",
+          "Address"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "AnonymousResolverRemovedEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "removed_by",
+          "Address"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "PauseFlags",
+      "kind": "struct",
+      "encoding": [
+        [
+          "lock_paused",
+          "bool"
+        ],
+        [
+          "release_paused",
+          "bool"
+        ],
+        [
+          "refund_paused",
+          "bool"
+        ],
+        [
+          "pause_reason",
+          "Option<String>"
+        ],
+        [
+          "paused_at",
+          "u64"
+        ],
+        [
+          "lock_unpause_at",
+          "Option<u64>"
+        ],
+        [
+          "release_unpause_at",
+          "Option<u64>"
+        ],
+        [
+          "refund_unpause_at",
+          "Option<u64>"
+        ]
+      ],
+      "xdr_sha256": "7284b545bdba4b39f0d04c56c9ae129605e701743dab0378f37147802aa93715"
+    },
+    {
+      "type": "PauseStateChanged",
+      "kind": "struct",
+      "encoding": [
+        [
+          "operation",
+          "Symbol"
+        ],
+        [
+          "paused",
+          "bool"
+        ],
+        [
+          "admin",
+          "Address"
+        ],
+        [
+          "reason",
+          "Option<String>"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ],
+        [
+          "receipt_id",
+          "u64"
+        ]
+      ],
+      "xdr_sha256": "3efa93cd4b2274fd1ff472854ab8a806100886e67350ceb2a4394aa92a0cf07d"
+    },
+    {
+      "type": "PauseStateChangedV2",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "operation",
+          "Symbol"
+        ],
+        [
+          "previous_paused",
+          "bool"
+        ],
+        [
+          "paused",
+          "bool"
+        ],
+        [
+          "actor",
+          "Address"
+        ],
+        [
+          "reason",
+          "Option<String>"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ],
+        [
+          "receipt_id",
+          "u64"
+        ],
+        [
+          "schema_version",
+          "u32"
+        ]
+      ]
+    },
+    {
+      "type": "AutoUnpauseEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "operation",
+          "Symbol"
+        ],
+        [
+          "actor",
+          "String"
+        ],
+        [
+          "unpause_at",
+          "u64"
+        ],
+        [
+          "triggered_at",
+          "u64"
+        ],
+        [
+          "receipt_id",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "MaintenanceModeChanged",
+      "kind": "struct",
+      "encoding": [
+        [
+          "enabled",
+          "bool"
+        ],
+        [
+          "admin",
+          "Address"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "EmergencyWithdrawEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "admin",
+          "Address"
+        ],
+        [
+          "target",
+          "Address"
+        ],
+        [
+          "amount",
+          "i128"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ],
+        [
+          "receipt_id",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "RateLimitConfig",
+      "kind": "struct",
+      "encoding": [
+        [
+          "window_size",
+          "u64"
+        ],
+        [
+          "max_operations",
+          "u32"
+        ],
+        [
+          "cooldown_period",
+          "u64"
+        ]
+      ],
+      "xdr_sha256": "27b3ada1ce91151b92a89afa5e10737236b0ac7d1de63d7d0fff53dba77e71e8"
+    },
+    {
+      "type": "DelegateMetaRateLimitState",
+      "kind": "struct",
+      "encoding": [
+        [
+          "window_start",
+          "u64"
+        ],
+        [
+          "count",
+          "u32"
+        ]
+      ]
+    },
+    {
+      "type": "HistoryPaginationConfig",
+      "kind": "struct",
+      "encoding": [
+        [
+          "max_limit",
+          "u32"
+        ],
+        [
+          "schema_version",
+          "u32"
+        ]
+      ]
+    },
+    {
+      "type": "Analytics",
+      "kind": "struct",
+      "encoding": [
+        [
+          "total_locked",
+          "i128"
+        ],
+        [
+          "total_released",
+          "i128"
+        ],
+        [
+          "total_payouts",
+          "u32"
+        ],
+        [
+          "active_programs",
+          "u32"
+        ],
+        [
+          "operation_count",
+          "u32"
+        ]
+      ],
+      "xdr_sha256": "883ad34a3d48d83d167371eca452348f1a2a1965d65f44112ce1e8904bb1e2a0"
+    },
+    {
+      "type": "StatusTransition",
+      "kind": "struct",
+      "encoding": [
+        [
+          "from_status",
+          "ProgramStatus"
+        ],
+        [
+          "to_status",
+          "ProgramStatus"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "ProgramLifecycleTimeline",
+      "kind": "struct",
+      "encoding": [
+        [
+          "transitions",
+          "soroban_sdk::Vec<StatusTransition>"
+        ]
+      ]
+    },
+    {
+      "type": "ProgramReputation",
+      "kind": "struct",
+      "encoding": [
+        [
+          "total_payouts",
+          "u32"
+        ],
+        [
+          "qualified_payout_count",
+          "u32"
+        ],
+        [
+          "total_scheduled",
+          "u32"
+        ],
+        [
+          "completed_releases",
+          "u32"
+        ],
+        [
+          "pending_releases",
+          "u32"
+        ],
+        [
+          "overdue_releases",
+          "u32"
+        ],
+        [
+          "dispute_count",
+          "u32"
+        ],
+        [
+          "refund_count",
+          "u32"
+        ],
+        [
+          "total_funds_locked",
+          "i128"
+        ],
+        [
+          "total_funds_distributed",
+          "i128"
+        ],
+        [
+          "completion_rate_bps",
+          "u32"
+        ],
+        [
+          "payout_fulfillment_rate_bps",
+          "u32"
+        ],
+        [
+          "overall_score_bps",
+          "u32"
+        ]
+      ]
+    },
+    {
+      "type": "ProgramReleaseSchedule",
+      "kind": "struct",
+      "encoding": [
+        [
+          "schedule_id",
+          "u64"
+        ],
+        [
+          "recipient",
+          "Address"
+        ],
+        [
+          "amount",
+          "i128"
+        ],
+        [
+          "release_timestamp",
+          "u64"
+        ],
+        [
+          "released",
+          "bool"
+        ],
+        [
+          "released_at",
+          "Option<u64>"
+        ],
+        [
+          "released_by",
+          "Option<Address>"
+        ]
+      ],
+      "xdr_sha256": "a501d9d33a604f1ad9c3910742328f7854d5808a663dad2257a0626e4037e7b6"
+    },
+    {
+      "type": "ProgramReleaseHistory",
+      "kind": "struct",
+      "encoding": [
+        [
+          "schedule_id",
+          "u64"
+        ],
+        [
+          "recipient",
+          "Address"
+        ],
+        [
+          "amount",
+          "i128"
+        ],
+        [
+          "released_at",
+          "u64"
+        ],
+        [
+          "release_type",
+          "ReleaseType"
+        ]
+      ],
+      "xdr_sha256": "22790fa0e539244b7991eeaf61b3b221e6eac4d27e0c79d9f17c9e948c053427"
+    },
+    {
+      "type": "ReleaseType",
+      "kind": "enum",
+      "encoding": [
+        "Manual",
+        "Automatic"
+      ]
+    },
+    {
+      "type": "EpochSnapshot",
+      "kind": "struct",
+      "encoding": [
+        [
+          "created_at",
+          "u64"
+        ],
+        [
+          "created_by",
+          "Address"
+        ],
+        [
+          "schedules",
+          "soroban_sdk::Vec<ProgramReleaseSchedule>"
+        ]
+      ]
+    },
+    {
+      "type": "DependencyStatus",
+      "kind": "enum",
+      "encoding": [
+        "Pending",
+        "Verified",
+        "Rejected"
+      ]
+    },
+    {
+      "type": "ProgramInitItem",
+      "kind": "struct",
+      "encoding": [
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "authorized_payout_key",
+          "Address"
+        ],
+        [
+          "token_address",
+          "Address"
+        ],
+        [
+          "reference_hash",
+          "Option<soroban_sdk::Bytes>"
+        ]
+      ],
+      "xdr_sha256": "118c714ec83fd00568c5bb8c27d1238c53f9c4964b06972a640d19b71e8d3965"
+    },
+    {
+      "type": "MultisigConfig",
+      "kind": "struct",
+      "encoding": [
+        [
+          "threshold_amount",
+          "i128"
+        ],
+        [
+          "signers",
+          "soroban_sdk::Vec<Address>"
+        ],
+        [
+          "required_signatures",
+          "u32"
+        ]
+      ],
+      "xdr_sha256": "3248ee0eab603ebd3d1be342935b53671f34f6a6c3aab70ab9149948ead0cf06"
+    },
+    {
+      "type": "ProgramAggregateStats",
+      "kind": "struct",
+      "encoding": [
+        [
+          "total_funds",
+          "i128"
+        ],
+        [
+          "remaining_balance",
+          "i128"
+        ],
+        [
+          "total_paid_out",
+          "i128"
+        ],
+        [
+          "authorized_payout_key",
+          "Address"
+        ],
+        [
+          "payout_history",
+          "soroban_sdk::Vec<PayoutRecord>"
+        ],
+        [
+          "token_address",
+          "Address"
+        ],
+        [
+          "payout_count",
+          "u32"
+        ],
+        [
+          "scheduled_count",
+          "u32"
+        ],
+        [
+          "released_count",
+          "u32"
+        ]
+      ],
+      "xdr_sha256": "76f32280598f810d2bb731cdc22c9e6ad1aa505c00b9de44a3f542aca8985574"
+    },
+    {
+      "type": "LockItem",
+      "kind": "struct",
+      "encoding": [
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "amount",
+          "i128"
+        ]
+      ]
+    },
+    {
+      "type": "ReleaseItem",
+      "kind": "struct",
+      "encoding": [
+        [
+          "program_id",
+          "String"
+        ],
+        [
+          "schedule_id",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "BatchFundsLocked",
+      "kind": "struct",
+      "encoding": [
+        [
+          "count",
+          "u32"
+        ],
+        [
+          "total_amount",
+          "i128"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "BatchFundsReleased",
+      "kind": "struct",
+      "encoding": [
+        [
+          "count",
+          "u32"
+        ],
+        [
+          "total_amount",
+          "i128"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "BatchReceipt",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "batch_id",
+          "u64"
+        ],
+        [
+          "merkle_root",
+          "soroban_sdk::BytesN<32>"
+        ],
+        [
+          "total_amount",
+          "i128"
+        ],
+        [
+          "recipient_count",
+          "u32"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "BatchReceiptKey",
+      "kind": "enum",
+      "encoding": [
+        "Receipt(u64)",
+        "NextId"
+      ]
+    }
+  ],
+  "persistent_keys": [
+    {
+      "name": "Admin",
+      "type": "Address"
+    },
+    {
+      "name": "PauseFlags",
+      "type": "PauseFlags"
+    },
+    {
+      "name": "MaintenanceMode",
+      "type": "bool"
+    },
+    {
+      "name": "ReadOnlyMode",
+      "type": "bool"
+    }
+  ]
 }

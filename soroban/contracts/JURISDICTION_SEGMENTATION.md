@@ -4,7 +4,7 @@ This document describes how to use optional jurisdiction tags/configuration with
 
 ## Goals
 
-- Keep one deployable contract per domain (`program-escrow`, `escrow`)
+- Keep one deployable contract per domain (`soroban-program-escrow`, `escrow`)
 - Support segment-specific policy (KYC, limits, pause behavior)
 - Preserve backward compatibility for existing generic flows
 

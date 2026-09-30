@@ -39,8 +39,8 @@
 //! * All `symbol_short!` strings are ≤ 9 bytes — Soroban rejects longer values,
 //!   which would corrupt topic-based filtering.
 use crate::CapabilityAction;
-use soroban_sdk::{contracttype, symbol_short, Address, BytesN, Env, Symbol};
 use grainlify_core::CorrelationId;
+use soroban_sdk::{contracttype, symbol_short, Address, BytesN, Env, Symbol};
 
 // ── Version constant ─────────────────────────────────────────────────────────
 
@@ -50,6 +50,11 @@ use grainlify_core::CorrelationId;
 /// payload schema changes in a breaking way.  Non-breaking additions that is new
 /// optional fields do not require a version bump.
 pub const EVENT_VERSION_V2: u32 = 2;
+
+// Payload shapes for every `#[contracttype]` event/enum in this file are pinned by
+// `event_payload_fixtures.rs` (checked in `test_event_payload_fixtures.rs`).
+// Regenerate after schema edits: `python3 scripts/regen_event_payload_fixtures.py`
+// Breaking field changes must bump EVENT_VERSION_V2; additive optional fields may not.
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // INITIALIZATION EVENTS
@@ -101,24 +106,15 @@ pub fn emit_bounty_initialized(env: &Env, event: BountyEscrowInitialized) {
 }
 
 pub fn emit_admin_proposed(e: &Env, old: Address, new: Address) {
-    e.events().publish(
-        (symbol_short!("adm_prop"),),
-        (old, new),
-    );
+    e.events().publish((symbol_short!("adm_prop"),), (old, new));
 }
 
 pub fn emit_admin_transferred(e: &Env, old: Address, new: Address) {
-    e.events().publish(
-        (symbol_short!("admin_tx"),),
-        (old, new),
-    );
+    e.events().publish((symbol_short!("admin_tx"),), (old, new));
 }
 
 pub fn emit_admin_transfer_cancelled_v1(e: &Env, admin: Address) {
-    e.events().publish(
-        (symbol_short!("adm_cncl2"),),
-        (admin,),
-    );
+    e.events().publish((symbol_short!("adm_cncl2"),), (admin,));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -657,7 +653,6 @@ pub fn emit_fee_routing_changed(env: &Env, event: FeeRoutingChanged) {
     env.events().publish(topics, event.clone());
 }
 
-
 /// Payload for the [`emit_fee_routed`] event
 ///
 /// Emitted when a split fee is distributed to multiple recipients.
@@ -1082,10 +1077,7 @@ pub struct ParticipantListSchemaVersionSet {
 }
 
 /// Emit [`ParticipantListSchemaVersionSet`].
-pub fn emit_participant_list_schema_version_set(
-    env: &Env,
-    event: ParticipantListSchemaVersionSet,
-) {
+pub fn emit_participant_list_schema_version_set(env: &Env, event: ParticipantListSchemaVersionSet) {
     let topics = (symbol_short!("pf_schema"),);
     env.events().publish(topics, event);
 }

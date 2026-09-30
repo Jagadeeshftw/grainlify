@@ -13,7 +13,7 @@
 # EXAMPLE:
 #   bash scripts/verify-wasm-artifacts.sh \
 #     contracts/bounty_escrow/target/wasm32-unknown-unknown/release \
-#     bounty_escrow.wasm escrow.wasm
+#     bounty_escrow.wasm
 #
 # EXIT CODES:
 #   0  — all assertions passed

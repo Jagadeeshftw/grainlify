@@ -37,5 +37,7 @@ fn test_get_nonexistent_address() {
     let client = GrainlifyContractClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
     client.init_admin(&admin);
-    assert!(client.get_deployed_contract(&Address::generate(&env)).is_none());
+    assert!(client
+        .get_deployed_contract(&Address::generate(&env))
+        .is_none());
 }

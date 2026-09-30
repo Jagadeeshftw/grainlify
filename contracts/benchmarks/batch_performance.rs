@@ -16,10 +16,10 @@
 //! }
 //! ```
 //! 
-//! *Note: For `bounty_escrow` benchmarks comparing AoS and SoA implementations,
-//! refer to `contracts/bounty_escrow/contracts/escrow/src/test_batch_soa_benchmark.rs`.
-//! Structure-of-Arrays (SoA) layout significantly reduces host-to-guest
-//! deserialization overhead in Soroban compared to Array-of-Structs (AoS).*
+//! *Note: `bounty_escrow` exposes a single array-of-structs (AoS) batch shape.
+//! The former structure-of-arrays (SoA) entry points benchmarked no better than
+//! AoS (0.6–0.8% CPU overhead, see `BATCH_SEMANTIC.md`) and were removed in
+//! issue #1878.*
 //!
 //! Then run:
 //!

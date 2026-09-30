@@ -3,8 +3,8 @@
 This document defines semantic versioning (MAJOR.MINOR.PATCH) for all Grainlify contracts, tracks breaking changes, and documents migration and compatibility expectations across versions.
 
 Contracts covered:
-- grainlify-core
-- program-escrow
+- grainlify-core (`contracts/grainlify-core`)
+- program-escrow (`contracts/program-escrow` - Authoritative deployable crate; disambiguated from `soroban-program-escrow`)
 - bounty-escrow (placeholder until stabilized)
 
 ## Versioning Policy

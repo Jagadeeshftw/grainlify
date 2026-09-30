@@ -59,7 +59,11 @@ pub enum MultiSigError {
     InvalidThreshold,
     ProposalCancelled,
     ProposalExpired,
+    /// Reserved for the paused-contract guard; kept so the error surface stays
+    /// stable even when a build does not construct it.
+    #[allow(dead_code)]
     ContractPaused,
+    #[allow(dead_code)]
     StateInconsistent,
 }
 
@@ -255,7 +259,7 @@ impl MultiSig {
     /// Returns true if the stored multisig configuration is invalid.
     pub fn is_state_inconsistent(env: &Env) -> bool {
         match Self::get_config_opt(env) {
-            Some(config) => config.threshold == 0 || config.threshold > config.signers.len() as u32,
+            Some(config) => config.threshold == 0 || config.threshold > config.signers.len(),
             None => false,
         }
     }
@@ -266,6 +270,10 @@ impl MultiSig {
     }
 
     /// Returns `true` if a proposal was cancelled.
+    ///
+    /// Retained as part of the query surface; the cancellation path currently
+    /// rejects a cancelled proposal directly.
+    #[allow(dead_code)]
     pub fn is_cancelled(env: &Env, proposal_id: u64) -> bool {
         Self::get_proposal_opt(env, proposal_id)
             .map(|p| p.cancelled)
@@ -289,7 +297,7 @@ impl MultiSig {
 
     /// Sets the multisig configuration directly for controlled restore flows.
     pub fn set_config(env: &Env, config: MultiSigConfig) {
-        if config.threshold == 0 || config.threshold > config.signers.len() as u32 {
+        if config.threshold == 0 || config.threshold > config.signers.len() {
             panic!("{:?}", MultiSigError::InvalidThreshold);
         }
         env.storage().instance().set(&DataKey::Config, &config);

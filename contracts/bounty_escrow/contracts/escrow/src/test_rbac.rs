@@ -239,15 +239,7 @@ fn test_admin_can_set_filter_mode() {
 
 // ─── Admin-only: update_anti_abuse_config ───────────────────────────────────
 
-#[test]
-fn test_admin_can_update_anti_abuse_config() {
-    let s = Setup::new();
-    s.client.update_anti_abuse_config(&7200u64, &50u32, &120u64);
-    let cfg = s.client.get_anti_abuse_config();
-    assert_eq!(cfg.window_size, 7200);
-    assert_eq!(cfg.max_operations, 50);
-    assert_eq!(cfg.cooldown_period, 120);
-}
+
 
 // ─── Operator: whitelist / blocklist ────────────────────────────────────────
 

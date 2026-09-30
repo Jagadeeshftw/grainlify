@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 # Smoke deployment test for each deployable contract artifact (#1744)
 set -euo pipefail
 
@@ -9,7 +9,7 @@ CONTRACTS=(
   "contracts/bounty_escrow/contracts/escrow|escrow|initialize|get_version"
   "contracts/grainlify-core|grainlify_core|initialize|get_version"
   "soroban/contracts/escrow|escrow|initialize|get_version"
-  "soroban/contracts/program-escrow|program_escrow|initialize|get_version"
+  "soroban/contracts/program-escrow|soroban_program_escrow|initialize|get_version"
   "soroban/contracts/stream|stream|initialize|get_version"
 )
 

@@ -36,11 +36,13 @@ pub fn calculate_fee(amount: i128, fee_rate: i128) -> i128 {
     if fee_rate == 0 {
         return 0;
     }
-    amount
+    let fee = amount
         .checked_mul(fee_rate)
         .expect("Fee calculation overflow")
         .checked_div(BASIS_POINTS)
-        .expect("Fee calculation overflow")
+        .expect("Fee calculation overflow");
+    assert!(fee <= amount, "Fee cannot exceed amount");
+    fee
 }
 
 /// Split `amount` into `(fee, net)` where `fee + net == amount`.

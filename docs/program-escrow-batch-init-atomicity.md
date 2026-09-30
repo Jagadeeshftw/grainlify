@@ -38,22 +38,47 @@
 
 ## Pre-validation CPU Cost
 
-Measured on the Soroban testnet simulation budget with `soroban-sdk 21.7.7`. Each row captures the full `batch_initialize_programs` call, including both pre-validation and the registry-update loop, for a batch of all-unique valid items.
+Measured with `soroban-sdk 21.7.7` via
+`cargo test test_batch_init_prevalidation_bench -- --nocapture`. Each row
+captures the full `batch_initialize_programs` call — pre-validation *and* the
+registry-update loop — for a batch of all-unique valid items.
 
 | Batch size | CPU instructions | % of 100 M budget |
-|------------|-----------------|-------------------|
-| 1 | ~XX,XXX | ~X.XX |
-| 10 | ~XX,XXX | ~X.XX |
-| 50 | ~XX,XXX | ~X.XX |
-| 100 | ~XX,XXX | ~X.XX |
-
-*Note: Replace with measured values from `cargo test test_batch_init_prevalidation_bench -- --nocapture` after compilation is repaired.*
+|------------|-----------------:|------------------:|
+| 1 | 255,830 | 0.26 % |
+| 10 | 1,810,684 | 1.81 % |
+| 50 | 16,559,332 | 16.56 % |
+| 100 | 69,727,396 | 69.73 % |
 
 ### Observations
 
 - Pre-validation (dedup + existence) scales **O(n log n)** due to insertion sort.
 - The registry-update loop scales **O(n)** — one `set`, one event per item.
-- The current `MAX_BATCH_SIZE = 100` leaves a > 90 % safety margin below the 100 M ceiling.
+- Cost is noticeably superlinear in practice: 50 items cost 16.6 M but 100 cost
+  69.7 M, i.e. 4.2× the instructions for 2× the items. The insertion-sort dedup
+  and the growing `PROGRAM_REGISTRY` vector both contribute.
+
+### ⚠️ Headroom is ~30 %, not >90 %
+
+An earlier revision of this document claimed "the current `MAX_BATCH_SIZE = 100`
+leaves a >90 % safety margin below the 100 M ceiling". **That was wrong**, and
+it survived only because the benchmark that produces these numbers was disabled
+behind `#[cfg(any())]` in `lib.rs` and therefore had never been executed. The
+figures above are its first real output.
+
+A full-size `batch_initialize_programs` consumes ~70 % of the per-invocation
+budget. Two caveats in opposite directions:
+
+- These are **host-side Rust** figures. The SDK documents host CPU cost as
+  *under*-estimating the WASM equivalent, so real on-chain cost may be higher —
+  this is the pessimistic direction and the number to plan against.
+- The 100 M ceiling is per invocation, and an operator only pays it by choosing
+  a maximum-size batch. Smaller batches have proportionally more headroom.
+
+The test now asserts against the real 100 M ceiling rather than a guessed
+threshold, so a future change that pushes a full batch over the ceiling fails the
+build. Lowering `MAX_BATCH_SIZE` for this entry point, or replacing the
+insertion-sort dedup, is the follow-up this measurement argues for.
 
 ---
 
@@ -67,6 +92,7 @@ Measured on the Soroban testnet simulation budget with `soroban-sdk 21.7.7`. Eac
 | `benchmarks/program-escrow/thresholds.json` | CI gate thresholds (provisional) |
 | `docs/gas-optimization/batch-size-tuning.md` | `MAX_BATCH_SIZE` derivation for `batch_payout` |
 | `docs/gas-optimization/batch-payout-benchmarks.md` | Benchmark collection process |
+| `docs/batch-failure-semantics.md` | Failure model for **every** batch entry point in both contracts |
 
 ---
 

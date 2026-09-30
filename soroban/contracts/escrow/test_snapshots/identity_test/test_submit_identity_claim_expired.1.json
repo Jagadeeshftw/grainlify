@@ -83,7 +83,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                 },
                 {
-                  "bytes": "cf7918a2f6f1bd8dcfe2933604fecb209bb7f014592d41bd44a9e90336081c0f"
+                  "bytes": "00b4769730a886710324ce92aa082850ad21e96d1812985e5fe31e77b0c8f80a"
                 },
                 {
                   "bool": true
@@ -204,7 +204,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "bytes": "cf7918a2f6f1bd8dcfe2933604fecb209bb7f014592d41bd44a9e90336081c0f"
+                  "bytes": "00b4769730a886710324ce92aa082850ad21e96d1812985e5fe31e77b0c8f80a"
                 }
               }
             },

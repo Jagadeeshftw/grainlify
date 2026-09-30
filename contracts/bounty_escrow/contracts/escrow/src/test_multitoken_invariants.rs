@@ -549,10 +549,7 @@ fn test_inv2_tampered_balance_detected_by_invariant() {
         .get(&DataKey::Escrow(1u64))
         .unwrap();
     escrow.remaining_amount = 9_999; // doesn't match actual token balance
-    t.env
-        .storage()
-        .persistent()
-        .set(&DataKey::Escrow(1u64), &escrow);
+    crate::BountyEscrowContract::write_escrow(&t.env, 1u64, &escrow).unwrap();
 
     // INV-2 should now detect the mismatch.
     let report = check_all_invariants(&t.env);
@@ -904,10 +901,7 @@ fn test_check_all_invariants_reports_inv2_violation() {
         .get(&DataKey::Escrow(1u64))
         .unwrap();
     escrow.remaining_amount = 5_000; // inflate artificially
-    t.env
-        .storage()
-        .persistent()
-        .set(&DataKey::Escrow(1u64), &escrow);
+    crate::BountyEscrowContract::write_escrow(&t.env, 1u64, &escrow).unwrap();
 
     let report = check_all_invariants(&t.env);
     assert!(!report.healthy);
@@ -942,10 +936,7 @@ fn test_check_all_invariants_reports_inv4_violation() {
         archived: false,
         archived_at: None,
     };
-    t.env
-        .storage()
-        .persistent()
-        .set(&DataKey::Escrow(1u64), &bad_escrow);
+    crate::BountyEscrowContract::write_escrow(&t.env, 1u64, &bad_escrow).unwrap();
 
     let report = check_all_invariants(&t.env);
     assert!(!report.healthy);
