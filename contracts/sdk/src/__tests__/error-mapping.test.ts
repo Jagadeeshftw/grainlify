@@ -144,7 +144,7 @@ describe("Contract source error mapping", () => {
 
   it("maps every circuit-breaker error constant", () => {
     const codes = readRustErrorConstants(
-      "program-escrow/src/error_recovery.rs",
+      "program-escrow/src/error_recovery_parts/core.rs",
     );
 
     for (const code of codes) {

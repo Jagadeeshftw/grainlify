@@ -4764,7 +4764,6 @@ impl ProgramEscrowContract {
             },
         );
         panic_with_error!(&env, &ContractError::TokenNotAllowed);
-        panic_with_error!(env, &ContractError::TokenNotAllowed);
     }
 
     /// Add a token to the allowlist **and permanently bind its decimal scale**
@@ -7368,7 +7367,7 @@ impl ProgramEscrowContract {
     }
 
     pub fn get_program_release_schedule(env: Env, schedule_id: u64) -> ProgramReleaseSchedule {
-        let schedules = Self::get_release_schedules(env);
+        let schedules = Self::get_release_schedules(env.clone());
         for s in schedules.iter() {
             if s.schedule_id == schedule_id {
                 return s;

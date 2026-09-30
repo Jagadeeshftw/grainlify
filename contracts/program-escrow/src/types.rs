@@ -2038,7 +2038,6 @@ pub fn get_program_dependencies_internal(
         .instance()
         .get(&DataKey::ProgramDependencies(program_id.clone()))
         .unwrap_or_else(|| Vec::new(env))
-        .unwrap_or(soroban_sdk::Vec::new(env))
 }
 
 pub fn dependency_status_internal(env: &Env, dependency_id: &String) -> DependencyStatus {

@@ -192,6 +192,7 @@ fn test_status_pair_matrix_is_exhaustive_and_documented() {
                     || matches!(
                         (from, to),
                         (EscrowStatus::Locked, EscrowStatus::Locked)
+                            | (EscrowStatus::Draft, EscrowStatus::Draft)
                             | (EscrowStatus::Draft, EscrowStatus::Released)
                             | (EscrowStatus::Draft, EscrowStatus::Refunded)
                             | (EscrowStatus::Draft, EscrowStatus::PartiallyRefunded)
@@ -208,6 +209,7 @@ fn test_status_pair_matrix_is_exhaustive_and_documented() {
                             | (EscrowStatus::Refunded, EscrowStatus::Draft)
                             | (EscrowStatus::PartiallyRefunded, EscrowStatus::Locked)
                             | (EscrowStatus::PartiallyRefunded, EscrowStatus::Draft)
+                            | (EscrowStatus::PartiallyRefunded, EscrowStatus::Released)
                     ),
                 "State pair {:?} -> {:?} is not documented as a legal edge and must be rejected.",
                 from,

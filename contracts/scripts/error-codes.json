@@ -249,6 +249,26 @@
       "OracleCallFailed": 1307,
       "DynamicPricingNotEnabled": 1308
     },
+    "contracts/program-escrow/src/types_parts/pause_and_storage.rs::BatchError": {
+      "Unauthorized": 3,
+      "InvalidAmount": 4,
+      "ProgramAlreadyExists": 401,
+      "DuplicateProgramId": 402,
+      "InvalidBatchSizeProgram": 403,
+      "ProgramNotFound": 404,
+      "ScheduleNotFound": 405,
+      "AlreadyReleased": 406,
+      "FundsPaused": 407,
+      "DuplicateScheduleId": 408,
+      "InvalidMerkleRoot": 409,
+      "BatchTooLarge": 410,
+      "InvalidPaginationLimit": 411,
+      "PaginationLimitExceeded": 412,
+      "InvalidPaginationOffset": 413,
+      "BatchReceiptNotFound": 414,
+      "IdempotencyKeyConflict": 415,
+      "IdempotencyKeyInvalid": 416
+    },
     "contracts/program-escrow/src/types.rs::BatchError": {
       "Unauthorized": 3,
       "InvalidAmount": 4,

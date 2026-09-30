@@ -1012,6 +1012,12 @@ pub fn batch_lock_funds(env: Env, items: Vec<LockFundsItem>) -> Result<u32, Erro
         // First loop: write all state (escrow, indices). Second loop: transfers + events.
         let mut locked_count = 0u32;
         for item in ordered_items.iter() {
+            // Rate-limit each depositor per executed item, matching single-lock
+            // semantics (batching must not bypass the anti-abuse quota). Runs
+            // after validation so contract errors keep precedence and the
+            // quota is only consumed when the lock actually executes.
+            anti_abuse::check_rate_limit(&env, item.depositor.clone());
+
             let escrow = Escrow {
                 depositor: item.depositor.clone(),
                 amount: item.amount,

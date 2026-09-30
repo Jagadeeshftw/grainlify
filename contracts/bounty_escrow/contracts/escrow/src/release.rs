@@ -924,6 +924,12 @@ pub fn batch_release_funds(env: Env, items: Vec<ReleaseFundsItem>) -> Result<u32
         let mut release_pairs: Vec<(Address, i128)> = Vec::new(&env);
         let mut released_count = 0u32;
         for item in ordered_items.iter() {
+            // Rate-limit each contributor per executed item, matching
+            // single-release semantics (batching must not bypass the
+            // anti-abuse quota). Runs after validation so contract errors
+            // keep precedence and the quota is only consumed on execution.
+            crate::anti_abuse::check_rate_limit(&env, item.contributor.clone());
+
             let mut escrow: Escrow = env
                 .storage()
                 .persistent()

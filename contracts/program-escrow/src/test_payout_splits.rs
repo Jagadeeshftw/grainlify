@@ -1091,6 +1091,7 @@ mod config_validation {
 #[cfg(test)]
 mod fee_enforcement {
     use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::{Address, Env, String};
 
     use crate::{
         ContractError, FeeConfig, OptionalFotRouter, ProgramData, ProgramEscrowContract,
@@ -1168,6 +1169,7 @@ mod fee_enforcement {
             &None,
             &None,
             &None,
+            &None,
         );
         assert!(
             r.is_err(),
@@ -1178,9 +1180,15 @@ mod fee_enforcement {
     #[test]
     fn test_lock_fee_rate_at_max_accepted() {
         let t = FeeCapTestEnv::new();
-        let r =
-            t.client
-                .try_update_fee_config(&Some(MAX_FEE_RATE), &None, &None, &None, &None, &None);
+        let r = t.client.try_update_fee_config(
+            &Some(MAX_FEE_RATE),
+            &None,
+            &None,
+            &None,
+            &None,
+            &None,
+            &None,
+        );
         assert!(r.is_ok(), "lock_fee_rate == MAX_FEE_RATE must be accepted");
         let cfg = t.get_fee_config();
         assert_eq!(cfg.lock_fee_rate, MAX_FEE_RATE);
@@ -1191,7 +1199,7 @@ mod fee_enforcement {
         let t = FeeCapTestEnv::new();
         let r = t
             .client
-            .try_update_fee_config(&Some(0), &None, &None, &None, &None, &None);
+            .try_update_fee_config(&Some(0), &None, &None, &None, &None, &None, &None);
         assert!(r.is_ok());
         let cfg = t.get_fee_config();
         assert_eq!(cfg.lock_fee_rate, 0);
@@ -1202,7 +1210,7 @@ mod fee_enforcement {
         let t = FeeCapTestEnv::new();
         let r = t
             .client
-            .try_update_fee_config(&Some(-1), &None, &None, &None, &None, &None);
+            .try_update_fee_config(&Some(-1), &None, &None, &None, &None, &None, &None);
         assert!(r.is_err(), "negative lock_fee_rate must be rejected");
     }
 
@@ -1218,6 +1226,7 @@ mod fee_enforcement {
             &None,
             &None,
             &None,
+            &None,
         );
         assert!(
             r.is_err(),
@@ -1228,9 +1237,15 @@ mod fee_enforcement {
     #[test]
     fn test_payout_fee_rate_at_max_accepted() {
         let t = FeeCapTestEnv::new();
-        let r =
-            t.client
-                .try_update_fee_config(&None, &Some(MAX_FEE_RATE), &None, &None, &None, &None);
+        let r = t.client.try_update_fee_config(
+            &None,
+            &Some(MAX_FEE_RATE),
+            &None,
+            &None,
+            &None,
+            &None,
+            &None,
+        );
         assert!(
             r.is_ok(),
             "payout_fee_rate == MAX_FEE_RATE must be accepted"
@@ -1244,7 +1259,7 @@ mod fee_enforcement {
         let t = FeeCapTestEnv::new();
         let r = t
             .client
-            .try_update_fee_config(&None, &Some(0), &None, &None, &None, &None);
+            .try_update_fee_config(&None, &Some(0), &None, &None, &None, &None, &None);
         assert!(r.is_ok());
         let cfg = t.get_fee_config();
         assert_eq!(cfg.payout_fee_rate, 0);
@@ -1255,7 +1270,7 @@ mod fee_enforcement {
         let t = FeeCapTestEnv::new();
         let r = t
             .client
-            .try_update_fee_config(&None, &Some(-1), &None, &None, &None, &None);
+            .try_update_fee_config(&None, &Some(-1), &None, &None, &None, &None, &None);
         assert!(r.is_err(), "negative payout_fee_rate must be rejected");
     }
 
@@ -1267,6 +1282,7 @@ mod fee_enforcement {
         let r = t.client.try_update_fee_config(
             &Some(MAX_FEE_RATE),
             &Some(MAX_FEE_RATE),
+            &None,
             &None,
             &None,
             &None,
@@ -1288,6 +1304,7 @@ mod fee_enforcement {
             &None,
             &None,
             &None,
+            &None,
         );
         assert!(r.is_err(), "both rates above MAX_FEE_RATE must be rejected");
     }
@@ -1298,6 +1315,7 @@ mod fee_enforcement {
         let r = t.client.try_update_fee_config(
             &Some(500),
             &Some(MAX_FEE_RATE + 1),
+            &None,
             &None,
             &None,
             &None,
@@ -1317,12 +1335,18 @@ mod fee_enforcement {
 
         // Set a known lock_fee_rate.
         t.client
-            .update_fee_config(&Some(500), &Some(800), &None, &None, &None, &None);
+            .update_fee_config(&Some(500), &Some(800), &None, &None, &None, &None, &None);
 
         // Now update only payout_fee_rate — lock_fee_rate must be preserved.
-        let r =
-            t.client
-                .try_update_fee_config(&None, &Some(MAX_FEE_RATE), &None, &None, &None, &None);
+        let r = t.client.try_update_fee_config(
+            &None,
+            &Some(MAX_FEE_RATE),
+            &None,
+            &None,
+            &None,
+            &None,
+            &None,
+        );
         assert!(r.is_ok());
         let cfg = t.get_fee_config();
         assert_eq!(cfg.lock_fee_rate, 500, "lock_fee_rate must be preserved");
@@ -1336,7 +1360,7 @@ mod fee_enforcement {
         let t = FeeCapTestEnv::new();
         let r = t
             .client
-            .try_update_fee_config(&None, &None, &Some(-1), &None, &None, &None);
+            .try_update_fee_config(&None, &None, &Some(-1), &None, &None, &None, &None);
         assert!(r.is_err(), "negative lock_fixed_fee must be rejected");
     }
 
@@ -1345,7 +1369,7 @@ mod fee_enforcement {
         let t = FeeCapTestEnv::new();
         let r = t
             .client
-            .try_update_fee_config(&None, &None, &None, &Some(-1), &None, &None);
+            .try_update_fee_config(&None, &None, &None, &Some(-1), &None, &None, &None);
         assert!(r.is_err(), "negative payout_fixed_fee must be rejected");
     }
 }
