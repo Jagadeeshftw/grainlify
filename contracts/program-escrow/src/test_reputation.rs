@@ -1,4 +1,4 @@
-﻿#![cfg(test)]
+#![cfg(test)]
 
 use super::reputation::{
     benchmark_overall_scores_dust_vs_typical, REPUTATION_DUST_PAYOUT_AMOUNT,
@@ -20,7 +20,11 @@ fn fund_contract(
     env: &Env,
     contract_id: &Address,
     amount: i128,
-) -> (token::Client<'static>, Address, token::StellarAssetClient<'static>) {
+) -> (
+    token::Client<'static>,
+    Address,
+    token::StellarAssetClient<'static>,
+) {
     let token_admin = Address::generate(env);
     let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
     let token_id = token_contract.address();
@@ -258,11 +262,7 @@ fn test_reputation_benchmark_dust_vs_typical_on_chain() {
     let (typical_client, _, _, _, _) = setup_active_program(&env_typical, locked);
     let typical_recipient = Address::generate(&env_typical);
     for _ in 0..N {
-        typical_client.single_payout(
-            &typical_recipient,
-            &REPUTATION_TYPICAL_PAYOUT_AMOUNT,
-            &None,
-        );
+        typical_client.single_payout(&typical_recipient, &REPUTATION_TYPICAL_PAYOUT_AMOUNT, &None);
     }
     let typical_rep = typical_client.get_program_reputation();
 
@@ -287,14 +287,9 @@ fn test_reputation_qualifying_threshold_boundary() {
         &(REPUTATION_MIN_QUALIFYING_PAYOUT_AMOUNT - 1),
         &None,
     );
-    client.single_payout(
-        &at_floor,
-        &REPUTATION_MIN_QUALIFYING_PAYOUT_AMOUNT,
-        &None,
-    );
+    client.single_payout(&at_floor, &REPUTATION_MIN_QUALIFYING_PAYOUT_AMOUNT, &None);
 
     let rep = client.get_program_reputation();
     assert_eq!(rep.total_payouts, 2);
     assert_eq!(rep.qualified_payout_count, 1);
 }
-

@@ -4,7 +4,10 @@ extern crate std;
 
 use super::*;
 use crate::test_support::*;
-use soroban_sdk::{testutils::{Address as _, Events, Ledger, MockAuth, MockAuthInvoke}, token, vec, Address, Env, IntoVal, Map, String, Symbol, TryFromVal, Val};
+use soroban_sdk::{
+    testutils::{Address as _, Events, Ledger, MockAuth, MockAuthInvoke},
+    token, vec, Address, Env, IntoVal, Map, String, Symbol, TryFromVal, Val,
+};
 
 #[test]
 fn test_admin_rotation() {
@@ -127,7 +130,8 @@ fn test_admin_rotation_acceptance_success() {
     client.propose_admin(&new_admin);
 
     // Advance time past the 24h timelock before accepting
-    env.ledger().with_mut(|li| li.timestamp = 1_000_000 + ROTATION_TIMELOCK_DELAY);
+    env.ledger()
+        .with_mut(|li| li.timestamp = 1_000_000 + ROTATION_TIMELOCK_DELAY);
 
     // Accept admin role
     client.accept_admin();
@@ -235,7 +239,8 @@ fn test_controller_rotation_acceptance_success() {
     client.propose_controller(&program_id, &admin, &new_controller);
 
     // Advance time past the 24h timelock before accepting
-    env.ledger().with_mut(|li| li.timestamp = 1_000_000 + ROTATION_TIMELOCK_DELAY);
+    env.ledger()
+        .with_mut(|li| li.timestamp = 1_000_000 + ROTATION_TIMELOCK_DELAY);
 
     // Accept controller role
     client.accept_controller(&program_id);

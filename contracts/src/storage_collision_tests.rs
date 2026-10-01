@@ -192,8 +192,7 @@ mod collision_tests {
         // so it aliases the program-escrow slot of the same name.
         let colliding = Symbol::new(&env, "PE_PROGRAM_DATA");
         assert!(
-            validation::validate_storage_key(colliding.clone(), namespaces::BOUNTY_ESCROW)
-                .is_err(),
+            validation::validate_storage_key(colliding.clone(), namespaces::BOUNTY_ESCROW).is_err(),
             "a mis-namespaced key must be reported as a collision"
         );
 
@@ -202,18 +201,14 @@ mod collision_tests {
         assert!(
             validation::validate_storage_key(unnamed.clone(), namespaces::PROGRAM_ESCROW).is_err()
         );
-        assert!(
-            validation::validate_storage_key(unnamed, namespaces::BOUNTY_ESCROW).is_err()
-        );
+        assert!(validation::validate_storage_key(unnamed, namespaces::BOUNTY_ESCROW).is_err());
 
         // Sanity check: the correctly namespaced key still passes.
-        assert!(
-            validation::validate_storage_key(
-                Symbol::new(&env, "PE_PROGRAM_DATA"),
-                namespaces::PROGRAM_ESCROW
-            )
-            .is_ok()
-        );
+        assert!(validation::validate_storage_key(
+            Symbol::new(&env, "PE_PROGRAM_DATA"),
+            namespaces::PROGRAM_ESCROW
+        )
+        .is_ok());
     }
 
     /// Shared constants must stay aligned with the namespaced layout.
@@ -267,7 +262,11 @@ mod collision_tests {
         {
             let rendered = symbol.to_string();
             for bad in problematic {
-                assert_ne!(rendered, bad, "generic key {} must always be namespaced", bad);
+                assert_ne!(
+                    rendered, bad,
+                    "generic key {} must always be namespaced",
+                    bad
+                );
             }
             assert!(
                 rendered.starts_with(namespaces::PROGRAM_ESCROW)
@@ -347,8 +346,12 @@ mod regression_tests {
 
         let pe_pause_changed = program_escrow::PAUSE_STATE_CHANGED;
         let be_pause_changed = bounty_escrow::PAUSE_STATE_CHANGED;
-        assert!(validation::validate_storage_key(pe_pause_changed, namespaces::PROGRAM_ESCROW).is_ok());
-        assert!(validation::validate_storage_key(be_pause_changed, namespaces::BOUNTY_ESCROW).is_ok());
+        assert!(
+            validation::validate_storage_key(pe_pause_changed, namespaces::PROGRAM_ESCROW).is_ok()
+        );
+        assert!(
+            validation::validate_storage_key(be_pause_changed, namespaces::BOUNTY_ESCROW).is_ok()
+        );
 
         let pe_wrong = program_escrow::FUNDS_LOCKED;
         let be_wrong = bounty_escrow::FUNDS_LOCKED;

@@ -123,11 +123,8 @@ pub fn apply_fot_router(
     let amount_val: Val = net_amount.into_val(env);
     let args = vec![&env, token_val, amount_val];
 
-    let gross: i128 = env.invoke_contract(
-        &router.router_contract,
-        &Symbol::new(env, "quote"),
-        args,
-    );
+    let gross: i128 =
+        env.invoke_contract(&router.router_contract, &Symbol::new(env, "quote"), args);
 
     // A non-positive gross means the configured fee cannot be routed (e.g. a
     // fee >= 100% makes the gross-up divisor non-positive). Reject with the
@@ -157,7 +154,9 @@ pub fn apply_fot_router(
 
     // Apply slippage tolerance
     let multiplier = crate::BASIS_POINTS + router.slippage_bps as i128;
-    let adjusted = match gross.checked_mul(multiplier).and_then(|n| n.checked_div(crate::BASIS_POINTS))
+    let adjusted = match gross
+        .checked_mul(multiplier)
+        .and_then(|n| n.checked_div(crate::BASIS_POINTS))
     {
         Some(v) => v,
         None => panic_with_error!(env, &crate::errors::ContractError::FotRoutingFailed),

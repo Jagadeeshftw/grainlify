@@ -1,4 +1,3 @@
-
 // Module-level allow: these math helpers are reserved for upcoming fee-routing
 // and decimal-scaling features. A single annotation is clearer than per-item allows.
 #![allow(dead_code)]

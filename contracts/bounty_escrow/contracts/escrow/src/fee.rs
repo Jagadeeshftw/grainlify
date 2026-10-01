@@ -1,20 +1,14 @@
 //! Fee configuration, per-bounty routing overrides, and treasury distribution.
 
-
-
-use soroban_sdk::{token, symbol_short, Address, Env, Vec};
 use crate::{
-    events, rbac,
-    DataKey, Error, Escrow, FeeConfig, PerBountyFeeRouting, TokenFeeConfig, TreasuryDestination,
-    EscrowStatus,
-    BASIS_POINTS, MAX_FEE_RATE,
-    events::{EVENT_VERSION_V2},
+    events, events::EVENT_VERSION_V2, rbac, DataKey, Error, Escrow, EscrowStatus, FeeConfig,
+    PerBountyFeeRouting, TokenFeeConfig, TreasuryDestination, BASIS_POINTS, MAX_FEE_RATE,
 };
+use soroban_sdk::{symbol_short, token, Address, Env, Vec};
 
 // ─────────────────────────────────────────────────────────────────
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────
-
 
 /// Calculate fee amount based on rate (in basis points), using **ceiling division**.
 ///
@@ -43,9 +37,13 @@ pub(crate) fn calculate_fee(amount: i128, fee_rate: i128) -> i128 {
     numerator / BASIS_POINTS
 }
 
-
 /// Total fee on `amount`: ceiling percentage plus optional fixed, capped at `amount`.
-pub(crate) fn combined_fee_amount(amount: i128, rate_bps: i128, fixed: i128, fee_enabled: bool) -> i128 {
+pub(crate) fn combined_fee_amount(
+    amount: i128,
+    rate_bps: i128,
+    fixed: i128,
+    fee_enabled: bool,
+) -> i128 {
     if !fee_enabled || amount <= 0 {
         return 0;
     }
@@ -56,9 +54,6 @@ pub(crate) fn combined_fee_amount(amount: i128, rate_bps: i128, fixed: i128, fee
     let sum = pct.saturating_add(fixed);
     sum.min(amount).max(0)
 }
-
-
-
 
 /// Get fee configuration (internal helper)
 pub(crate) fn get_fee_config_internal(env: &Env) -> FeeConfig {
@@ -76,7 +71,6 @@ pub(crate) fn get_fee_config_internal(env: &Env) -> FeeConfig {
             distribution_enabled: false,
         })
 }
-
 
 /// Validates treasury destinations before enabling multi-region routing.
 pub(crate) fn validate_treasury_destinations(
@@ -113,7 +107,6 @@ pub(crate) fn validate_treasury_destinations(
 
     Ok(())
 }
-
 
 /// Routes a fee either to the configured fee recipient or across weighted treasury routes.
 ///
@@ -255,7 +248,6 @@ pub(crate) fn route_fee(
     Ok(())
 }
 
-
 /// Internal: whether per-bounty fee routing is immutable for `bounty_id`.
 ///
 /// Routing locks as soon as depositor funds are committed: a regular
@@ -276,7 +268,6 @@ pub(crate) fn fee_routing_is_locked(env: &Env, bounty_id: u64) -> bool {
             .has(&DataKey::EscrowAnon(bounty_id))
     }
 }
-
 
 /// Internal: shared validation, storage, and audit-event emission for the
 /// pre-lock and post-lock fee routing paths.
@@ -385,7 +376,6 @@ pub(crate) fn set_fee_routing_internal(
 
     Ok(())
 }
-
 
 /// Internal: route a fee using per-bounty routing when available, falling back to
 /// the global `route_fee` path.
@@ -511,7 +501,6 @@ pub(crate) fn route_fee_for_bounty(
     }
 }
 
-
 /// Internal: resolve the effective fee config for the escrow token.
 ///
 /// # Precedence (global kill-switch first)
@@ -567,7 +556,6 @@ pub(crate) fn resolve_fee_config(env: &Env) -> (i128, i128, i128, i128, Address,
 // ─────────────────────────────────────────────────────────────────
 // Public entry points (dispatcher targets)
 // ─────────────────────────────────────────────────────────────────
-
 
 /// Update fee configuration (admin only)
 pub fn update_fee_config(
@@ -645,7 +633,6 @@ pub fn update_fee_config(
     Ok(())
 }
 
-
 /// Configures weighted treasury destinations for multi-region fee routing.
 ///
 /// When enabled, collected lock and release fees are routed proportionally
@@ -677,7 +664,6 @@ pub fn set_treasury_distributions(
     Ok(())
 }
 
-
 /// Returns the current treasury routing configuration.
 pub fn get_treasury_distributions(env: Env) -> (Vec<TreasuryDestination>, bool) {
     let fee_config = get_fee_config_internal(&env);
@@ -686,7 +672,6 @@ pub fn get_treasury_distributions(env: Env) -> (Vec<TreasuryDestination>, bool) 
         fee_config.distribution_enabled,
     )
 }
-
 
 // ── Per-bounty fee routing ────────────────────────────────────────────────
 
@@ -742,7 +727,6 @@ pub fn set_fee_routing(
     )
 }
 
-
 /// Change per-bounty fee routing **after** the bounty is locked
 /// (admin only, audited override path).
 ///
@@ -786,7 +770,6 @@ pub fn set_fee_routing_with_reason(
     )
 }
 
-
 /// Return the per-bounty fee routing override for `bounty_id`, if one has been set.
 ///
 /// Returns `None` when no override exists; callers should fall back to the
@@ -796,7 +779,6 @@ pub fn get_fee_routing(env: Env, bounty_id: u64) -> Option<PerBountyFeeRouting> 
         .persistent()
         .get(&DataKey::PerBountyFeeRouting(bounty_id))
 }
-
 
 /// Get the current **global** fee configuration (view function).
 ///
@@ -815,7 +797,6 @@ pub fn get_fee_routing(env: Env, bounty_id: u64) -> Option<PerBountyFeeRouting> 
 pub fn get_fee_config(env: Env) -> FeeConfig {
     get_fee_config_internal(&env)
 }
-
 
 /// Set a per-token fee configuration (admin only).
 ///
@@ -886,7 +867,6 @@ pub fn set_token_fee_config(
     Ok(())
 }
 
-
 /// Get the per-token fee configuration for `token`, if one has been set.
 ///
 /// Returns `None` when no token-specific config exists; callers should
@@ -896,4 +876,3 @@ pub fn get_token_fee_config(env: Env, token: Address) -> Option<TokenFeeConfig> 
         .instance()
         .get(&DataKey::TokenFeeConfig(token))
 }
-

@@ -165,12 +165,9 @@ jobs:
             --release
           mkdir -p /tmp/pass1
           cp contracts/bounty_escrow/target/wasm32-unknown-unknown/release/bounty_escrow.wasm /tmp/pass1/
-          cp contracts/bounty_escrow/target/wasm32-unknown-unknown/release/escrow.wasm /tmp/pass1/
           sha256sum /tmp/pass1/*.wasm > /tmp/pass1.sha256
           echo "Pass 1 checksums:"
           cat /tmp/pass1.sha256
-            --release \
-            --locked
 
       - name: Pass 2 — Clean and Rebuild bounty_escrow workspace
         run: |
@@ -185,7 +182,6 @@ jobs:
             --release
           mkdir -p /tmp/pass2
           cp contracts/bounty_escrow/target/wasm32-unknown-unknown/release/bounty_escrow.wasm /tmp/pass2/
-          cp contracts/bounty_escrow/target/wasm32-unknown-unknown/release/escrow.wasm /tmp/pass2/
           sha256sum /tmp/pass2/*.wasm > /tmp/pass2.sha256
           echo "Pass 2 checksums:"
           cat /tmp/pass2.sha256
@@ -193,7 +189,7 @@ jobs:
       - name: Compare Pass 1 and Pass 2 for bitwise reproducibility
         run: |
           echo "Verifying bitwise reproducibility for bounty_escrow workspace artifacts..."
-          for artifact in bounty_escrow.wasm escrow.wasm; do
+          for artifact in bounty_escrow.wasm; do
             if ! cmp -s "/tmp/pass1/$artifact" "/tmp/pass2/$artifact"; then
               echo "::error::Reproducibility check FAILED: $artifact differs between Pass 1 and Pass 2!"
               exit 1
@@ -219,28 +215,31 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # All four crates are members of the unified contracts/ workspace
+          # (#1939): artifacts land in contracts/target/ and the single
+          # lockfile is contracts/Cargo.lock.
           - name: grainlify-core
             manifest: contracts/grainlify-core/Cargo.toml
-            lockfile: contracts/grainlify-core/Cargo.lock
-            target_dir: contracts/grainlify-core/target
+            lockfile: contracts/Cargo.lock
+            target_dir: contracts/target
             expected_wasm: grainlify_core.wasm
 
           - name: program-escrow
             manifest: contracts/program-escrow/Cargo.toml
-            lockfile: contracts/program-escrow/Cargo.lock
-            target_dir: contracts/program-escrow/target
+            lockfile: contracts/Cargo.lock
+            target_dir: contracts/target
             expected_wasm: program_escrow.wasm
 
           - name: view-facade
             manifest: contracts/view-facade/Cargo.toml
-            lockfile: contracts/view-facade/Cargo.lock
-            target_dir: contracts/view-facade/target
+            lockfile: contracts/Cargo.lock
+            target_dir: contracts/target
             expected_wasm: view_facade.wasm
 
           - name: escrow-view-facade
             manifest: contracts/escrow-view-facade/Cargo.toml
-            lockfile: contracts/escrow-view-facade/Cargo.lock
-            target_dir: contracts/escrow-view-facade/target
+            lockfile: contracts/Cargo.lock
+            target_dir: contracts/target
             expected_wasm: escrow_view_facade.wasm
 
     steps:
@@ -354,17 +353,14 @@ jobs:
             --manifest-path soroban/Cargo.toml \
             --package escrow \
             --package soroban-program-escrow \
-            --package program-escrow \
             --target wasm32-unknown-unknown \
             --release
           mkdir -p /tmp/pass1
           cp soroban/target/wasm32-unknown-unknown/release/escrow.wasm /tmp/pass1/
-          cp soroban/target/wasm32-unknown-unknown/release/program_escrow.wasm /tmp/pass1/
+          cp soroban/target/wasm32-unknown-unknown/release/soroban_program_escrow.wasm /tmp/pass1/
           sha256sum /tmp/pass1/*.wasm > /tmp/pass1.sha256
           echo "Pass 1 checksums:"
           cat /tmp/pass1.sha256
-            --release \
-            --locked
 
       - name: Pass 2 — Clean and Rebuild soroban workspace
         run: |
@@ -372,7 +368,6 @@ jobs:
             soroban/target/wasm32-unknown-unknown/release \
             escrow.wasm \
             soroban_program_escrow.wasm
-            program_escrow.wasm
           cargo clean --manifest-path soroban/Cargo.toml
           cargo build \
             --manifest-path soroban/Cargo.toml \
@@ -382,7 +377,7 @@ jobs:
             --release
           mkdir -p /tmp/pass2
           cp soroban/target/wasm32-unknown-unknown/release/escrow.wasm /tmp/pass2/
-          cp soroban/target/wasm32-unknown-unknown/release/program_escrow.wasm /tmp/pass2/
+          cp soroban/target/wasm32-unknown-unknown/release/soroban_program_escrow.wasm /tmp/pass2/
           sha256sum /tmp/pass2/*.wasm > /tmp/pass2.sha256
           echo "Pass 2 checksums:"
           cat /tmp/pass2.sha256
@@ -390,7 +385,7 @@ jobs:
       - name: Compare Pass 1 and Pass 2 for bitwise reproducibility
         run: |
           echo "Verifying bitwise reproducibility for soroban workspace artifacts..."
-          for artifact in escrow.wasm program_escrow.wasm; do
+          for artifact in escrow.wasm soroban_program_escrow.wasm; do
             if ! cmp -s "/tmp/pass1/$artifact" "/tmp/pass2/$artifact"; then
               echo "::error::Reproducibility check FAILED: $artifact in soroban workspace differs between Pass 1 and Pass 2!"
               exit 1

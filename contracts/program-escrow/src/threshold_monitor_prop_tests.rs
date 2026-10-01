@@ -12,7 +12,10 @@ const WINDOW_SECS: u64 = 10;
 const FAILURE_THRESHOLD: u32 = 3;
 
 fn boundary_offsets() -> impl Strategy<Value = Vec<(bool, u8)>> {
-    prop::collection::vec((any::<bool>(), prop_oneof![Just(9), Just(10), Just(11)]), 0..24)
+    prop::collection::vec(
+        (any::<bool>(), prop_oneof![Just(9), Just(10), Just(11)]),
+        0..24,
+    )
 }
 
 fn expected_breach(events: &[(bool, u8)]) -> bool {

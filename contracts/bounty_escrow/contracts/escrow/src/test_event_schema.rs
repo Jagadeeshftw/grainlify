@@ -96,13 +96,10 @@ mod tests {
         // Soroban rejects symbol_short! strings > 9 bytes at compile time.
         // This test documents the full topic inventory for auditors.
         let topics: &[&str] = &[
-            "init", "f_lock", "f_rel", "f_ref", "pub", "archive",
-            "orc_cfg", "fee", "fee_cfg", "fee_rte", "fee_rt",
-            "b_lock", "b_rel", "approval", "prng_sel", "f_lkanon",
-            "deprec", "maint", "pf_mode", "risk", "npref",
-            "ticket_i", "ticket_c", "pause", "em_wtd",
-            "cap_new", "cap_use", "cap_rev", "tmlk_cfg",
-            "act_prop", "act_exec", "act_cncl",
+            "init", "f_lock", "f_rel", "f_ref", "pub", "archive", "orc_cfg", "fee", "fee_cfg",
+            "fee_rte", "fee_rt", "b_lock", "b_rel", "approval", "prng_sel", "f_lkanon", "deprec",
+            "maint", "pf_mode", "risk", "npref", "ticket_i", "ticket_c", "pause", "em_wtd",
+            "cap_new", "cap_use", "cap_rev", "tmlk_cfg", "act_prop", "act_exec", "act_cncl",
         ];
         for topic in topics {
             assert!(

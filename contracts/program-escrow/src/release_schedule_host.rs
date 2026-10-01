@@ -114,7 +114,8 @@ impl Storage {
     }
 
     pub fn set_entries(&mut self, key: &str, entries: Vec<ReleaseEntry>) {
-        self.inner.insert(key.to_string(), StorageValue::Entries(entries));
+        self.inner
+            .insert(key.to_string(), StorageValue::Entries(entries));
     }
 
     pub fn get_balance(&self) -> u64 {
@@ -125,7 +126,8 @@ impl Storage {
     }
 
     pub fn set_balance(&mut self, balance: u64) {
-        self.inner.insert(ESCROW_BALANCE.to_string(), StorageValue::Balance(balance));
+        self.inner
+            .insert(ESCROW_BALANCE.to_string(), StorageValue::Balance(balance));
     }
 
     pub fn is_paused(&self) -> bool {
@@ -136,7 +138,8 @@ impl Storage {
     }
 
     pub fn set_paused(&mut self, paused: bool) {
-        self.inner.insert(PROGRAM_PAUSED.to_string(), StorageValue::Paused(paused));
+        self.inner
+            .insert(PROGRAM_PAUSED.to_string(), StorageValue::Paused(paused));
     }
 
     pub fn get_authorized_key(&self) -> Option<String> {

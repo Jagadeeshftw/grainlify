@@ -70,13 +70,13 @@ fn test_batch_payout_at_max_size_succeeds() {
     let total = per_recipient * MAX_BATCH_SIZE as i128;
     init_funded_program(&env, &client, &token_id, &admin, total);
 
-    let recipients: soroban_sdk::Vec<Address> = (0..MAX_BATCH_SIZE)
-        .fold(soroban_sdk::Vec::new(&env), |mut v, _| {
+    let recipients: soroban_sdk::Vec<Address> =
+        (0..MAX_BATCH_SIZE).fold(soroban_sdk::Vec::new(&env), |mut v, _| {
             v.push_back(Address::generate(&env));
             v
         });
-    let amounts: soroban_sdk::Vec<i128> = (0..MAX_BATCH_SIZE)
-        .fold(soroban_sdk::Vec::new(&env), |mut v, _| {
+    let amounts: soroban_sdk::Vec<i128> =
+        (0..MAX_BATCH_SIZE).fold(soroban_sdk::Vec::new(&env), |mut v, _| {
             v.push_back(per_recipient);
             v
         });
@@ -93,13 +93,13 @@ fn test_batch_payout_exceeds_max_returns_batch_too_large() {
     let oversized = MAX_BATCH_SIZE + 1;
     init_funded_program(&env, &client, &token_id, &admin, oversized as i128 * 10);
 
-    let recipients: soroban_sdk::Vec<Address> = (0..oversized)
-        .fold(soroban_sdk::Vec::new(&env), |mut v, _| {
+    let recipients: soroban_sdk::Vec<Address> =
+        (0..oversized).fold(soroban_sdk::Vec::new(&env), |mut v, _| {
             v.push_back(Address::generate(&env));
             v
         });
-    let amounts: soroban_sdk::Vec<i128> = (0..oversized)
-        .fold(soroban_sdk::Vec::new(&env), |mut v, _| {
+    let amounts: soroban_sdk::Vec<i128> =
+        (0..oversized).fold(soroban_sdk::Vec::new(&env), |mut v, _| {
             v.push_back(10_i128);
             v
         });
@@ -121,13 +121,13 @@ fn test_batch_payout_double_max_returns_batch_too_large() {
     let oversized = MAX_BATCH_SIZE * 2;
     init_funded_program(&env, &client, &token_id, &admin, oversized as i128 * 10);
 
-    let recipients: soroban_sdk::Vec<Address> = (0..oversized)
-        .fold(soroban_sdk::Vec::new(&env), |mut v, _| {
+    let recipients: soroban_sdk::Vec<Address> =
+        (0..oversized).fold(soroban_sdk::Vec::new(&env), |mut v, _| {
             v.push_back(Address::generate(&env));
             v
         });
-    let amounts: soroban_sdk::Vec<i128> = (0..oversized)
-        .fold(soroban_sdk::Vec::new(&env), |mut v, _| {
+    let amounts: soroban_sdk::Vec<i128> =
+        (0..oversized).fold(soroban_sdk::Vec::new(&env), |mut v, _| {
             v.push_back(10_i128);
             v
         });
@@ -150,13 +150,13 @@ fn test_batch_too_large_fires_before_any_transfer() {
     let initial_balance: i128 = oversized as i128 * 10;
     init_funded_program(&env, &client, &token_id, &admin, initial_balance);
 
-    let recipients: soroban_sdk::Vec<Address> = (0..oversized)
-        .fold(soroban_sdk::Vec::new(&env), |mut v, _| {
+    let recipients: soroban_sdk::Vec<Address> =
+        (0..oversized).fold(soroban_sdk::Vec::new(&env), |mut v, _| {
             v.push_back(Address::generate(&env));
             v
         });
-    let amounts: soroban_sdk::Vec<i128> = (0..oversized)
-        .fold(soroban_sdk::Vec::new(&env), |mut v, _| {
+    let amounts: soroban_sdk::Vec<i128> =
+        (0..oversized).fold(soroban_sdk::Vec::new(&env), |mut v, _| {
             v.push_back(10_i128);
             v
         });

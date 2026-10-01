@@ -63,8 +63,8 @@
     "migration_set_deprecation_target": {
       "operation": "migration",
       "description": "set deprecation target state and event emission",
-      "cpu": 106920,
-      "mem": 16731
+      "cpu": 121978,
+      "mem": 19447
     }
   },
   "wasm_size_budget_ceiling_bytes": 260000

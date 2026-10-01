@@ -1,19 +1,16 @@
 //! Capability token issuance, revocation, and scoped authorisation enforcement.
 
-
-
-use soroban_sdk::{Address, BytesN, Env};
 use crate::{
-    events, reentrancy_guard,
-    Capability, CapabilityAction, ClaimRecord, DataKey, Error, Escrow, EscrowStatus,
-    COMMITMENT_LIVE_TTL, COMMITMENT_ARCHIVAL_TTL,
+    events,
     events::{CriticalOperationOutcome, EVENT_VERSION_V2},
+    reentrancy_guard, Capability, CapabilityAction, ClaimRecord, DataKey, Error, Escrow,
+    EscrowStatus, COMMITMENT_ARCHIVAL_TTL, COMMITMENT_LIVE_TTL,
 };
+use soroban_sdk::{Address, BytesN, Env};
 
 // ─────────────────────────────────────────────────────────────────
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────
-
 
 pub(crate) fn next_capability_id(env: &Env) -> BytesN<32> {
     let mut id = [0u8; 32];
@@ -28,7 +25,6 @@ pub(crate) fn next_capability_id(env: &Env) -> BytesN<32> {
     BytesN::from_array(env, &id)
 }
 
-
 pub(crate) fn record_receipt(
     _env: &Env,
     _outcome: CriticalOperationOutcome,
@@ -38,7 +34,6 @@ pub(crate) fn record_receipt(
 ) {
     // Backward-compatible no-op until receipt storage/events are fully wired.
 }
-
 
 pub(crate) fn load_capability(env: &Env, capability_id: BytesN<32>) -> Result<Capability, Error> {
     let capability: Capability = env
@@ -53,7 +48,6 @@ pub(crate) fn load_capability(env: &Env, capability_id: BytesN<32>) -> Result<Ca
     crate::lock::renew_capability_record(env, &capability_id, archival);
     Ok(capability)
 }
-
 
 pub(crate) fn validate_capability_scope_at_issue(
     env: &Env,
@@ -135,7 +129,6 @@ pub(crate) fn validate_capability_scope_at_issue(
     Ok(())
 }
 
-
 pub(crate) fn ensure_owner_still_authorized(
     env: &Env,
     capability: &Capability,
@@ -212,7 +205,6 @@ pub(crate) fn ensure_owner_still_authorized(
     }
     Ok(())
 }
-
 
 /// Validates and consumes a capability token for a specific action.
 ///
@@ -295,7 +287,6 @@ pub(crate) fn consume_capability(
 // Public entry points (dispatcher targets)
 // ─────────────────────────────────────────────────────────────────
 
-
 /// Issues a new capability token for a specific action on a bounty.
 ///
 /// The capability token is represented by a secure, unforgeable `BytesN<32>` identifier
@@ -375,12 +366,7 @@ pub fn issue_capability(
     Ok(capability_id.clone())
 }
 
-
-pub fn revoke_capability(
-    env: Env,
-    owner: Address,
-    capability_id: BytesN<32>,
-) -> Result<(), Error> {
+pub fn revoke_capability(env: Env, owner: Address, capability_id: BytesN<32>) -> Result<(), Error> {
     let mut capability = load_capability(&env, capability_id.clone())?;
     if capability.owner != owner {
         return Err(Error::Unauthorized);
@@ -409,8 +395,6 @@ pub fn revoke_capability(
     Ok(())
 }
 
-
 pub fn get_capability(env: Env, capability_id: BytesN<32>) -> Result<Capability, Error> {
     load_capability(&env, capability_id.clone())
 }
-

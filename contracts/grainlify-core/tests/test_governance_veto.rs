@@ -1,9 +1,5 @@
 #![cfg(test)]
 
-use grainlify_core::governance::{
-    Error, GovernanceConfig, GovernanceContract, ProposalStatus, VotingScheme,
-};
-use soroban_sdk::{symbol_short, Address, BytesN, Env, Symbol};
 use grainlify_core::governance::{Error, GovernanceConfig, ProposalStatus, VoteType, VotingScheme};
 use soroban_sdk::testutils::{Address as _, Ledger as _};
 use soroban_sdk::{symbol_short, Address, BytesN, Env};
@@ -56,8 +52,6 @@ fn test_veto_proposal_success() {
         governance_token: actor(&env),
     };
 
-    GovernanceContract::init_governance_state(env.clone(), admin.clone(), config).unwrap();
-    GovernanceContract::set_security_council(env.clone(), admin.clone(), security_council.clone())
     gov_support::init_governance_state(env.clone(), admin.clone(), config).unwrap();
     gov_support::set_security_council(env.clone(), admin.clone(), security_council.clone())
         .unwrap();
@@ -113,8 +107,6 @@ fn test_veto_proposal_not_security_council() {
         governance_token: actor(&env),
     };
 
-    GovernanceContract::init_governance_state(env.clone(), admin.clone(), config).unwrap();
-    GovernanceContract::set_security_council(env.clone(), admin.clone(), security_council.clone())
     gov_support::init_governance_state(env.clone(), admin.clone(), config).unwrap();
     gov_support::set_security_council(env.clone(), admin.clone(), security_council.clone())
         .unwrap();
@@ -171,8 +163,6 @@ fn test_veto_proposal_security_council_not_set() {
     gov_support::finalize_proposal(env.clone(), proposal_id).unwrap();
 
     // Try to veto without Security Council set
-    let result =
-        GovernanceContract::veto_proposal(env.clone(), security_council.clone(), proposal_id);
     let result = gov_support::veto_proposal(env.clone(), security_council.clone(), proposal_id);
     assert_eq!(result, Err(Error::SecurityCouncilNotSet));
 }
@@ -198,8 +188,6 @@ fn test_veto_proposal_not_approved() {
         governance_token: actor(&env),
     };
 
-    GovernanceContract::init_governance_state(env.clone(), admin.clone(), config).unwrap();
-    GovernanceContract::set_security_council(env.clone(), admin.clone(), security_council.clone())
     gov_support::init_governance_state(env.clone(), admin.clone(), config).unwrap();
     gov_support::set_security_council(env.clone(), admin.clone(), security_council.clone())
         .unwrap();
@@ -213,8 +201,6 @@ fn test_veto_proposal_not_approved() {
     .unwrap();
 
     // Try to veto while proposal is still Active
-    let result =
-        GovernanceContract::veto_proposal(env.clone(), security_council.clone(), proposal_id);
     let result = gov_support::veto_proposal(env.clone(), security_council.clone(), proposal_id);
     assert_eq!(result, Err(Error::CannotVeto));
 }
@@ -240,8 +226,6 @@ fn test_veto_proposal_after_timelock() {
         governance_token: actor(&env),
     };
 
-    GovernanceContract::init_governance_state(env.clone(), admin.clone(), config).unwrap();
-    GovernanceContract::set_security_council(env.clone(), admin.clone(), security_council.clone())
     gov_support::init_governance_state(env.clone(), admin.clone(), config).unwrap();
     gov_support::set_security_council(env.clone(), admin.clone(), security_council.clone())
         .unwrap();
@@ -261,8 +245,6 @@ fn test_veto_proposal_after_timelock() {
     env.ledger().set_timestamp(201);
 
     // Try to veto after timelock has passed
-    let result =
-        GovernanceContract::veto_proposal(env.clone(), security_council.clone(), proposal_id);
     let result = gov_support::veto_proposal(env.clone(), security_council.clone(), proposal_id);
     assert_eq!(result, Err(Error::CannotVeto));
 }
@@ -289,7 +271,6 @@ fn test_set_and_get_security_council() {
     gov_support::init_governance_state(env.clone(), admin.clone(), config).unwrap();
 
     // Set Security Council
-    GovernanceContract::set_security_council(env.clone(), admin.clone(), security_council.clone())
     gov_support::set_security_council(env.clone(), admin.clone(), security_council.clone())
         .unwrap();
 
@@ -319,8 +300,6 @@ fn test_vetoed_proposal_cannot_be_executed() {
         governance_token: actor(&env),
     };
 
-    GovernanceContract::init_governance_state(env.clone(), admin.clone(), config).unwrap();
-    GovernanceContract::set_security_council(env.clone(), admin.clone(), security_council.clone())
     gov_support::init_governance_state(env.clone(), admin.clone(), config).unwrap();
     gov_support::set_security_council(env.clone(), admin.clone(), security_council.clone())
         .unwrap();

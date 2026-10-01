@@ -79,7 +79,8 @@ pub fn overall_score_bps(
         let weighted = (completion_rate_bps as u64)
             .saturating_mul(COMPLETION_WEIGHT_PERCENT)
             .saturating_add(
-                (payout_fulfillment_rate_bps as u64).saturating_mul(PAYOUT_FULFILLMENT_WEIGHT_PERCENT),
+                (payout_fulfillment_rate_bps as u64)
+                    .saturating_mul(PAYOUT_FULFILLMENT_WEIGHT_PERCENT),
             )
             .saturating_div(100);
         (weighted.min(BPS_SCALE as u64)) as u32

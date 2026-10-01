@@ -1,25 +1,22 @@
 //! Refund workflows: admin approval, full/partial, capability-based, anonymous, oracle, auto-refund, and eligibility view.
 
-
-
-use soroban_sdk::{symbol_short, token, Address, BytesN, Env};
 use crate::{
-    events, gas_budget, invariants, multitoken_invariants, reentrancy_guard,
-    Capability, CapabilityAction, DataKey, Error, Escrow, EscrowStatus,
-    RefundApproval, RefundEligibilityCode, RefundEligibilityView, RefundMode, RefundRecord,
-    SimulationResult,
+    events,
+    events::{
+        emit_funds_refunded, emit_refund_approval_consumed, emit_refund_approval_set,
+        CriticalOperationOutcome, FundsRefunded, RefundApprovalConsumed, RefundApprovalSet,
+        RefundTriggerType, EVENT_VERSION_V2,
+    },
+    gas_budget, invariants, multitoken_invariants, reentrancy_guard, AnonymousEscrow, Capability,
+    CapabilityAction, ClaimRecord, DataKey, Error, Escrow, EscrowStatus, RefundApproval,
+    RefundEligibilityCode, RefundEligibilityView, RefundMode, RefundRecord, SimulationResult,
     REFUND_ELIGIBILITY_SCHEMA_VERSION_V1,
-    events::{emit_funds_refunded, emit_refund_approval_consumed, emit_refund_approval_set,
-             CriticalOperationOutcome, FundsRefunded, RefundApprovalConsumed, RefundApprovalSet,
-             RefundTriggerType, EVENT_VERSION_V2},
-    AnonymousEscrow,
-    ClaimRecord,
 };
+use soroban_sdk::{symbol_short, token, Address, BytesN, Env};
 
 // ─────────────────────────────────────────────────────────────────
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────
-
 
 pub(crate) fn compute_refund_eligibility(env: &Env, bounty_id: u64) -> RefundEligibilityView {
     let now = env.ledger().timestamp();
@@ -102,8 +99,7 @@ pub(crate) fn compute_refund_eligibility(env: &Env, bounty_id: u64) -> RefundEli
             approval_present: false,
         };
     }
-    if escrow.status != EscrowStatus::Locked && escrow.status != EscrowStatus::PartiallyRefunded
-    {
+    if escrow.status != EscrowStatus::Locked && escrow.status != EscrowStatus::PartiallyRefunded {
         return RefundEligibilityView {
             eligible: false,
             code: RefundEligibilityCode::IneligibleInvalidStatus,
@@ -194,8 +190,10 @@ pub(crate) fn compute_refund_eligibility(env: &Env, bounty_id: u64) -> RefundEli
     }
 }
 
-
-pub(crate) fn dry_run_refund_impl(env: &Env, bounty_id: u64) -> Result<(i128, EscrowStatus, i128), Error> {
+pub(crate) fn dry_run_refund_impl(
+    env: &Env,
+    bounty_id: u64,
+) -> Result<(i128, EscrowStatus, i128), Error> {
     if !env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
         return Err(Error::BountyNotFound);
     }
@@ -239,7 +237,6 @@ pub(crate) fn dry_run_refund_impl(env: &Env, bounty_id: u64) -> Result<(i128, Es
 // Public entry points (dispatcher targets)
 // ─────────────────────────────────────────────────────────────────
 
-
 /// Backward-compatible refund-eligibility tuple view.
 /// Returns `(can_refund, deadline_passed, remaining_amount, approval)`.
 pub fn get_refund_eligibility(
@@ -264,13 +261,11 @@ pub fn get_refund_eligibility(
     )
 }
 
-
 /// New typed refund-eligibility view with explicit semantics.
 /// Implements issue #1040: Add refund eligibility view with clear semantics.
 pub fn get_refund_eligibility_view(env: Env, bounty_id: u64) -> RefundEligibilityView {
     compute_refund_eligibility(&env, bounty_id)
 }
-
 
 /// Return the refund-eligibility view storage schema version written during `init`.
 ///
@@ -282,7 +277,6 @@ pub fn get_refund_schema_version(env: Env) -> u32 {
         .get(&DataKey::RefundEligibilitySchemaVersion)
         .unwrap_or(0u32)
 }
-
 
 /// Approve a refund before deadline (admin only).
 /// This allows early refunds with admin approval.
@@ -310,8 +304,7 @@ pub fn approve_refund(
         .get(&DataKey::Escrow(bounty_id))
         .unwrap();
 
-    if escrow.status != EscrowStatus::Locked && escrow.status != EscrowStatus::PartiallyRefunded
-    {
+    if escrow.status != EscrowStatus::Locked && escrow.status != EscrowStatus::PartiallyRefunded {
         return Err(Error::FundsNotLocked);
     }
 
@@ -349,7 +342,6 @@ pub fn approve_refund(
     multitoken_invariants::assert_after_disbursement(&env);
     Ok(())
 }
-
 
 /// Refunds remaining funds when refund conditions are met.
 ///
@@ -429,8 +421,7 @@ pub fn refund(env: Env, bounty_id: u64) -> Result<(), Error> {
     admin.require_auth();
     escrow.depositor.require_auth();
 
-    if escrow.status != EscrowStatus::Locked && escrow.status != EscrowStatus::PartiallyRefunded
-    {
+    if escrow.status != EscrowStatus::Locked && escrow.status != EscrowStatus::PartiallyRefunded {
         reentrancy_guard::release(&env);
         return Err(Error::FundsNotLocked);
     }
@@ -503,11 +494,7 @@ pub fn refund(env: Env, bounty_id: u64) -> Result<(), Error> {
     env.storage()
         .persistent()
         .set(&DataKey::Escrow(bounty_id), &escrow);
-    crate::lock::renew_escrow_record(
-        &env,
-        bounty_id,
-        escrow.status == EscrowStatus::Refunded,
-    );
+    crate::lock::renew_escrow_record(&env, bounty_id, escrow.status == EscrowStatus::Refunded);
 
     // Remove approval after successful execution
     if approval.is_some() {
@@ -573,7 +560,6 @@ pub fn refund(env: Env, bounty_id: u64) -> Result<(), Error> {
     Ok(())
 }
 
-
 /// Simulate refund operation without state changes or token transfers.
 ///
 /// Returns a `SimulationResult` indicating whether the operation would succeed and the
@@ -607,7 +593,6 @@ pub fn dry_run_refund(env: Env, bounty_id: u64) -> SimulationResult {
     }
 }
 
-
 /// Sets or clears the anonymous resolver address.
 /// Only the admin can call this. The resolver is the trusted entity that
 /// resolves anonymous escrow refunds via `refund_resolved`.
@@ -629,7 +614,6 @@ pub fn set_anonymous_resolver(env: Env, resolver: Option<Address>) -> Result<(),
     multitoken_invariants::assert_after_disbursement(&env);
     Ok(())
 }
-
 
 /// Refund an anonymous escrow to a resolved recipient.
 /// Only the configured anonymous resolver can call this; they resolve the depositor
@@ -736,11 +720,7 @@ pub fn refund_resolved(env: Env, bounty_id: u64, recipient: Address) -> Result<(
     env.storage()
         .persistent()
         .set(&DataKey::EscrowAnon(bounty_id), &anon);
-    crate::lock::renew_escrow_record(
-        &env,
-        bounty_id,
-        anon.status == EscrowStatus::Refunded,
-    );
+    crate::lock::renew_escrow_record(&env, bounty_id, anon.status == EscrowStatus::Refunded);
 
     // Remove approval after successful execution
     if approval.is_some() {
@@ -774,7 +754,6 @@ pub fn refund_resolved(env: Env, bounty_id: u64, recipient: Address) -> Result<(
     multitoken_invariants::assert_after_disbursement(&env);
     Ok(())
 }
-
 
 /// Delegated refund path using a capability.
 /// This can be used for short-lived, bounded delegated refunds without granting admin rights.
@@ -810,8 +789,7 @@ pub fn refund_with_capability(
     crate::pause_freeze::ensure_escrow_not_frozen(&env, bounty_id)?;
     crate::pause_freeze::ensure_address_not_frozen(&env, &escrow.depositor)?;
 
-    if escrow.status != EscrowStatus::Locked && escrow.status != EscrowStatus::PartiallyRefunded
-    {
+    if escrow.status != EscrowStatus::Locked && escrow.status != EscrowStatus::PartiallyRefunded {
         reentrancy_guard::release(&env);
         return Err(Error::FundsNotLocked);
     }
@@ -867,11 +845,7 @@ pub fn refund_with_capability(
     env.storage()
         .persistent()
         .set(&DataKey::Escrow(bounty_id), &escrow);
-    crate::lock::renew_escrow_record(
-        &env,
-        bounty_id,
-        escrow.status == EscrowStatus::Refunded,
-    );
+    crate::lock::renew_escrow_record(&env, bounty_id, escrow.status == EscrowStatus::Refunded);
 
     let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
     let client = token::Client::new(&env, &token_addr);
@@ -894,4 +868,3 @@ pub fn refund_with_capability(
     multitoken_invariants::assert_after_disbursement(&env);
     Ok(())
 }
-

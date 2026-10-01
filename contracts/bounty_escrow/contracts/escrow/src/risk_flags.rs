@@ -1,19 +1,16 @@
 //! Risk flags and escrow metadata: set, clear, update, and schema version.
 
-
-
-use soroban_sdk::{Address, Env, String};
 use crate::{
-    events, rbac,
-    DataKey, Error, EscrowMetadata,
-    NOTIFICATION_PREFS_MASK, RISK_FLAG_MASK_ALL, RISK_FLAGS_VALID_MASK,
+    events,
     events::{emit_risk_flags_updated, RiskFlagsUpdated, EVENT_VERSION_V2},
+    rbac, DataKey, Error, EscrowMetadata, NOTIFICATION_PREFS_MASK, RISK_FLAGS_VALID_MASK,
+    RISK_FLAG_MASK_ALL,
 };
+use soroban_sdk::{Address, Env, String};
 
 // ─────────────────────────────────────────────────────────────────
 // Public entry points (dispatcher targets)
 // ─────────────────────────────────────────────────────────────────
-
 
 // =========================================================================
 // RISK FLAGS GOVERNANCE
@@ -82,7 +79,6 @@ pub fn set_escrow_risk_flags(
     Ok(meta)
 }
 
-
 /// Clear (AND-NOT) risk flag bits on a bounty's metadata (admin only).
 ///
 /// # Invariants
@@ -145,7 +141,6 @@ pub fn clear_escrow_risk_flags(
     Ok(meta)
 }
 
-
 /// Get the metadata for a bounty. Returns a default (all-zero) record if
 /// no metadata has been written yet.
 ///
@@ -165,7 +160,6 @@ pub fn get_metadata(env: Env, bounty_id: u64) -> EscrowMetadata {
             reference_hash: None,
         })
 }
-
 
 /// Update the metadata fields for a bounty (admin only).
 ///
@@ -215,7 +209,6 @@ pub fn update_metadata(
     Ok(updated)
 }
 
-
 /// Return the risk-flags governance storage schema version written during `init`.
 /// Returns `0` on legacy deployments where the marker was never written.
 pub fn get_risk_flags_schema_version(env: Env) -> u32 {
@@ -224,7 +217,6 @@ pub fn get_risk_flags_schema_version(env: Env) -> u32 {
         .get(&DataKey::RefundEligibilitySchemaVersion)
         .unwrap_or(0u32)
 }
-
 
 // ============================================================================
 // RISK FLAGS GOVERNANCE
@@ -295,7 +287,6 @@ pub fn update_risk_flags(env: Env, bounty_id: u64, new_flags: u32) -> Result<(),
     Ok(())
 }
 
-
 /// Retrieves the current risk flags for a given bounty.
 pub fn get_risk_flags(env: Env, bounty_id: u64) -> Result<u32, Error> {
     if !env.storage().persistent().has(&DataKey::Escrow(bounty_id))
@@ -314,4 +305,3 @@ pub fn get_risk_flags(env: Env, bounty_id: u64) -> Result<u32, Error> {
 
     Ok(metadata.map(|m| m.risk_flags).unwrap_or(0))
 }
-

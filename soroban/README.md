@@ -1,14 +1,16 @@
 # Grainlify Soroban Contracts
 
-## Workspace and deployment status
+## Status: legacy / reference tree
 
+This tree is the **legacy / reference workspace**, not the tree Grainlify develops or deploys contracts from. The **authoritative** tree is [`contracts/`](../contracts/) (Soroban SDK 21.x); this workspace is pinned to Soroban SDK **23.x** and implements its own escrow, program-escrow, and stream contracts against that newer major.
 This Cargo workspace groups [escrow](contracts/escrow/README.md), [program-escrow](contracts/program-escrow/README.md), and [grainlify-stream](contracts/stream/README.md). The workspace manifest itself is not a deployable contract. **No member of this workspace is deployable**: `escrow` and `program-escrow` are both superseded (see the authority notices below), and `grainlify-stream` is a `testutils`-only host-side fixture with no `crate-type`. No live deployment IDs for its contract members are recorded here; the environment example configures testnet access, not deployment.
 
-## Crate relationships
+It is kept for two reasons:
 
-- Depends on: no in-repository crate as a workspace manifest; it supplies the soroban-sdk 23.4.1 and ethnum pins to its members.
-- Depended on by: escrow, program-escrow, and grainlify-stream are workspace members. None declares a Cargo path dependency on another member.
-- This workspace is separate from the SDK 21 packages under [contracts](../contracts/README.md). Behavior parity between same-name crates does not imply a build dependency.
+1. **Behavioral parity testing** — the `escrow` contract's test suite deliberately mirrors `contracts/bounty_escrow` behavioral intent (see [Escrow Contract Snapshot Parity](#escrow-contract-snapshot-parity) below).
+2. **SDK 23 reference** — it preserves a working implementation of these contracts on the newer SDK major.
+
+The build-reproducibility workflow builds this workspace's WASM to verify reproducibility, but the deployable WASM that CI gates on (benchmark, gas, and WASM-size-budget gates) comes from `contracts/bounty_escrow` only. No new Grainlify contract work should be opened against this tree. If you are changing shared behavior that both trees implement, change `contracts/` first and mirror the parity tests here only where this tree's tests assert that behavior. The intended end state (including whether the trees converge) is recorded in the [root README](../README.md#contract-workspaces-why-there-are-two-trees).
 
 ## Overview
 

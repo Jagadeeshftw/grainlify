@@ -4,7 +4,10 @@ extern crate std;
 
 use super::*;
 use crate::test_support::*;
-use soroban_sdk::{testutils::{Address as _, Events, Ledger, MockAuth, MockAuthInvoke}, token, vec, Address, Env, IntoVal, Map, String, Symbol, TryFromVal, Val};
+use soroban_sdk::{
+    testutils::{Address as _, Events, Ledger, MockAuth, MockAuthInvoke},
+    token, vec, Address, Env, IntoVal, Map, String, Symbol, TryFromVal, Val,
+};
 
 #[test]
 fn test_token_allowlist_enforcement_default_allows_all() {
@@ -90,7 +93,10 @@ fn test_token_allowlist_batch_initialization() {
         reference_hash: None,
     });
 
-    let count = client.try_batch_initialize_programs(&items).unwrap().unwrap();
+    let count = client
+        .try_batch_initialize_programs(&items)
+        .unwrap()
+        .unwrap();
     assert_eq!(count, 1);
 }
 
@@ -252,9 +258,7 @@ fn test_multi_tenant_no_cross_program_balance_or_analytics() {
     assert_eq!(stats_b.remaining_balance, 300_000);
 
     let r = Address::generate(&env);
-    client_a.single_payout(&r, &100_000,
-    &None
-);
+    client_a.single_payout(&r, &100_000, &None);
 
     assert_eq!(client_a.get_remaining_balance(), 400_000);
     assert_eq!(client_b.get_remaining_balance(), 300_000);

@@ -15,10 +15,7 @@
 //!    empty results instead of trapping when the underlying query fails.
 
 use crate::{EscrowStatus, EscrowViewFacade, EscrowViewFacadeClient};
-use soroban_sdk::{
-    testutils::Address as _,
-    Address, Env, String, Vec,
-};
+use soroban_sdk::{testutils::Address as _, Address, Env, String, Vec};
 
 // ── Mock escrow contract with configurable failure modes ──────────────────────
 

@@ -1,20 +1,19 @@
 //! Participant allowlist/blocklist, filter mode, and paginated queries.
 
-
-
-use soroban_sdk::{symbol_short, Address, Env, Vec};
 use crate::{
     anti_abuse, events,
+    events::{
+        emit_participant_filter_mode_changed, emit_participant_filter_queried,
+        ParticipantFilterModeChanged, ParticipantFilterQueried, EVENT_VERSION_V2,
+    },
     DataKey, DeprecationState, Error, ParticipantFilterMode, ParticipantListPage,
-    PARTICIPANT_LIST_SCHEMA_VERSION_V1, MAX_PARTICIPANT_FILTER_PAGE_SIZE,
-    events::{emit_participant_filter_mode_changed, emit_participant_filter_queried,
-             ParticipantFilterModeChanged, ParticipantFilterQueried, EVENT_VERSION_V2},
+    MAX_PARTICIPANT_FILTER_PAGE_SIZE, PARTICIPANT_LIST_SCHEMA_VERSION_V1,
 };
+use soroban_sdk::{symbol_short, Address, Env, Vec};
 
 // ─────────────────────────────────────────────────────────────────
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────
-
 
 /// Returns current deprecation state (internal). When deprecated is true, new locks are blocked.
 pub(crate) fn get_deprecation_state(env: &Env) -> DeprecationState {
@@ -27,14 +26,12 @@ pub(crate) fn get_deprecation_state(env: &Env) -> DeprecationState {
         })
 }
 
-
 pub(crate) fn get_participant_filter_mode(env: &Env) -> ParticipantFilterMode {
     env.storage()
         .instance()
         .get(&DataKey::ParticipantFilterMode)
         .unwrap_or(ParticipantFilterMode::Disabled)
 }
-
 
 pub(crate) fn read_participant_index(env: &Env, key: DataKey) -> Vec<Address> {
     env.storage()
@@ -43,11 +40,9 @@ pub(crate) fn read_participant_index(env: &Env, key: DataKey) -> Vec<Address> {
         .unwrap_or(Vec::<Address>::new(env))
 }
 
-
 pub(crate) fn write_participant_index(env: &Env, key: DataKey, values: &Vec<Address>) {
     env.storage().instance().set(&key, values);
 }
-
 
 pub(crate) fn index_contains(values: &Vec<Address>, needle: &Address) -> bool {
     for value in values.iter() {
@@ -58,13 +53,11 @@ pub(crate) fn index_contains(values: &Vec<Address>, needle: &Address) -> bool {
     false
 }
 
-
 pub(crate) fn index_insert_unique(values: &mut Vec<Address>, value: Address) {
     if !index_contains(values, &value) {
         values.push_back(value);
     }
 }
-
 
 pub(crate) fn index_remove(env: &Env, values: &Vec<Address>, value: &Address) -> Vec<Address> {
     let mut filtered = Vec::<Address>::new(env);
@@ -75,7 +68,6 @@ pub(crate) fn index_remove(env: &Env, values: &Vec<Address>, value: &Address) ->
     }
     filtered
 }
-
 
 pub(crate) fn paginate_addresses(
     env: &Env,
@@ -101,7 +93,6 @@ pub(crate) fn paginate_addresses(
     out
 }
 
-
 /// Enforces participant filtering: returns Err if the address is not allowed to participate
 /// (lock_funds / batch_lock_funds) under the current filter mode.
 pub(crate) fn check_participant_filter(env: &Env, address: Address) -> Result<(), Error> {
@@ -126,7 +117,6 @@ pub(crate) fn check_participant_filter(env: &Env, address: Address) -> Result<()
 // ─────────────────────────────────────────────────────────────────
 // Public entry points (dispatcher targets)
 // ─────────────────────────────────────────────────────────────────
-
 
 pub fn set_whitelist(env: Env, address: Address, whitelisted: bool) -> Result<(), Error> {
     if !env.storage().instance().has(&DataKey::Admin) {
@@ -157,11 +147,9 @@ pub fn set_whitelist(env: Env, address: Address, whitelisted: bool) -> Result<()
     Ok(())
 }
 
-
 pub fn set_whitelist_entry(env: Env, address: Address, whitelisted: bool) -> Result<(), Error> {
     set_whitelist(env, address, whitelisted)
 }
-
 
 pub fn set_blocklist(env: Env, address: Address, blocked: bool) -> Result<(), Error> {
     if !env.storage().instance().has(&DataKey::Admin) {
@@ -192,11 +180,9 @@ pub fn set_blocklist(env: Env, address: Address, blocked: bool) -> Result<(), Er
     Ok(())
 }
 
-
 pub fn set_blocklist_entry(env: Env, address: Address, blocked: bool) -> Result<(), Error> {
     set_blocklist(env, address, blocked)
 }
-
 
 pub fn set_filter_mode(env: Env, mode: ParticipantFilterMode) -> Result<(), Error> {
     if !env.storage().instance().has(&DataKey::Admin) {
@@ -220,23 +206,19 @@ pub fn set_filter_mode(env: Env, mode: ParticipantFilterMode) -> Result<(), Erro
     Ok(())
 }
 
-
 pub fn get_filter_mode(env: Env) -> ParticipantFilterMode {
     get_participant_filter_mode(&env)
 }
-
 
 /// Return the total number of allowlisted addresses.
 pub fn get_whitelist_count(env: Env) -> u32 {
     read_participant_index(&env, DataKey::WhitelistIndex).len()
 }
 
-
 /// Return the total number of blocklisted addresses.
 pub fn get_blocklist_count(env: Env) -> u32 {
     read_participant_index(&env, DataKey::BlocklistIndex).len()
 }
-
 
 /// Return the participant list storage schema version initialized during `init()`.
 ///
@@ -248,7 +230,6 @@ pub fn get_participant_schema_version(env: Env) -> u32 {
         .get(&DataKey::ParticipantListSchemaVersion)
         .unwrap_or(0)
 }
-
 
 /// Return a deterministic page of allowlisted addresses with pagination metadata.
 ///
@@ -280,7 +261,6 @@ pub fn query_whitelist(env: Env, offset: u32, limit: u32) -> ParticipantListPage
     }
 }
 
-
 /// Return a deterministic page of blocklisted addresses with pagination metadata.
 ///
 /// `limit` is silently capped at `MAX_PARTICIPANT_FILTER_PAGE_SIZE` (50).
@@ -310,4 +290,3 @@ pub fn query_blocklist(env: Env, offset: u32, limit: u32) -> ParticipantListPage
         has_more,
     }
 }
-

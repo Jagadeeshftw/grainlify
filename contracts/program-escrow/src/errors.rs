@@ -518,7 +518,7 @@ pub enum ContractError {
     /// This error occurs when the circuit breaker threshold
     /// is not in the valid range (1-100).
     InvalidCircuitBreakerThreshold = 804,
-    
+
     // =========================================================================
     // Threshold Monitoring Errors (900-999)
     // =========================================================================
@@ -697,7 +697,6 @@ pub enum ContractError {
     // =========================================================================
     // FoT Router Errors (1210-1219)
     // =========================================================================
-
     /// Fee-on-transfer routing failed.
     ///
     /// This error occurs when the FoT router contract returns an unexpected
@@ -715,7 +714,6 @@ pub enum ContractError {
     // =========================================================================
     // Dynamic Pricing Errors (1300-1399)
     // =========================================================================
-
     /// Oracle data is stale.
     ///
     /// This error occurs when oracle data exceeds the staleness threshold.
@@ -808,7 +806,7 @@ impl BatchPayoutError {
             BatchPayoutError::InsufficientBalance => "Insufficient balance",
             BatchPayoutError::CircuitBreakerOpen => "Circuit breaker is OPEN",
             BatchPayoutError::DuplicateRecipient => "Duplicate recipient in batch",
-BatchPayoutError::FeeConsumesAmount => "Payout fee consumes entire payout",
+            BatchPayoutError::FeeConsumesAmount => "Payout fee consumes entire payout",
         }
     }
 }
@@ -906,16 +904,22 @@ impl ContractError {
             ContractError::InvalidFeeRate => "Invalid fee rate",
             ContractError::FeeRecipientNotSet => "Fee recipient not set",
             ContractError::FeeCollectionFailed => "Fee collection failed",
-            ContractError::InvalidInsuranceReserveBps => "Invalid insurance reserve basis-point rate",
-            ContractError::InsufficientInsuranceReserve => "Insurance reserve balance insufficient for withdrawal",
+            ContractError::InvalidInsuranceReserveBps => {
+                "Invalid insurance reserve basis-point rate"
+            }
+            ContractError::InsufficientInsuranceReserve => {
+                "Insurance reserve balance insufficient for withdrawal"
+            }
 
             // Circuit Breaker Errors
             ContractError::CircuitBreakerOpen => "Circuit breaker is open",
             ContractError::CircuitBreakerConfigFailed => "Circuit breaker configuration failed",
             ContractError::CircuitBreakerResetFailed => "Circuit breaker reset failed",
             ContractError::CircuitBreakerAdminNotSet => "Circuit breaker admin not set",
-            ContractError::InvalidCircuitBreakerThreshold => "Invalid circuit breaker threshold (must be 1-100)",
-            
+            ContractError::InvalidCircuitBreakerThreshold => {
+                "Invalid circuit breaker threshold (must be 1-100)"
+            }
+
             // Threshold Monitoring Errors
             ContractError::ThresholdBreached => "Threshold breached",
             ContractError::InvalidThresholdConfig => "Invalid threshold configuration",
@@ -937,7 +941,7 @@ impl ContractError {
             ContractError::BatchItemNotFound => "Batch item not found",
             ContractError::BatchItemAlreadyProcessed => "Batch item already processed",
             ContractError::MaxRetriesExceeded => "Maximum retries exceeded",
-            
+
             // Dynamic Pricing Errors
             ContractError::OracleDataStale => "Oracle data is stale",
             ContractError::OracleDataInvalid => "Oracle data is invalid",

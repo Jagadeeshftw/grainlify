@@ -37,10 +37,6 @@
 
 extern crate std;
 
-use soroban_sdk::{
-    testutils::{budget as _, Address as _},
-    Address, BytesN, Env, Vec as SorobanVec,
-};
 use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, Vec as SorobanVec};
 
 use crate::{ContractError, GrainlifyContract, GrainlifyContractClient, CONFIG_SNAPSHOT_LIMIT};

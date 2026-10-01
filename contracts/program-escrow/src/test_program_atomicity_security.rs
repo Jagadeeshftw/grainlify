@@ -4,7 +4,10 @@ extern crate std;
 
 use super::*;
 use crate::test_support::*;
-use soroban_sdk::{testutils::{Address as _, Events, Ledger, MockAuth, MockAuthInvoke}, token, vec, Address, Env, IntoVal, Map, String, Symbol, TryFromVal, Val};
+use soroban_sdk::{
+    testutils::{Address as _, Events, Ledger, MockAuth, MockAuthInvoke},
+    token, vec, Address, Env, IntoVal, Map, String, Symbol, TryFromVal, Val,
+};
 
 #[test]
 fn test_idempotency_key_batch_payout_success() {
@@ -22,7 +25,12 @@ fn test_idempotency_key_batch_payout_success() {
     assert_eq!(result.remaining_balance, 700_0000000);
 
     // Verify idempotency record was stored
-    let record: IdempotencyRecord = env.as_contract(&client.address, || { env.storage().instance().get(&DataKey::IdempotencyKey(idempotency_key.clone())).unwrap() });
+    let record: IdempotencyRecord = env.as_contract(&client.address, || {
+        env.storage()
+            .instance()
+            .get(&DataKey::IdempotencyKey(idempotency_key.clone()))
+            .unwrap()
+    });
     assert_eq!(record.idempotency_key, idempotency_key);
     assert_eq!(record.operation_type, symbol_short!("batchpay"));
     assert!(record.success);
@@ -76,7 +84,12 @@ fn test_idempotency_key_single_payout_success() {
     assert_eq!(result.remaining_balance, 500_0000000);
 
     // Verify idempotency record was stored
-    let record: IdempotencyRecord = env.as_contract(&client.address, || { env.storage().instance().get(&DataKey::IdempotencyKey(idempotency_key.clone())).unwrap() });
+    let record: IdempotencyRecord = env.as_contract(&client.address, || {
+        env.storage()
+            .instance()
+            .get(&DataKey::IdempotencyKey(idempotency_key.clone()))
+            .unwrap()
+    });
     assert_eq!(record.idempotency_key, idempotency_key);
     assert_eq!(record.operation_type, symbol_short!("singlepay"));
     assert!(record.success);
@@ -139,7 +152,12 @@ fn test_idempotency_key_insufficient_funds() {
     assert!(result.is_err());
 
     // Verify failure record was stored
-    let record: IdempotencyRecord = env.as_contract(&client.address, || { env.storage().instance().get(&DataKey::IdempotencyKey(idempotency_key.clone())).unwrap() });
+    let record: IdempotencyRecord = env.as_contract(&client.address, || {
+        env.storage()
+            .instance()
+            .get(&DataKey::IdempotencyKey(idempotency_key.clone()))
+            .unwrap()
+    });
     assert_eq!(record.idempotency_key, idempotency_key);
     assert!(!record.success);
     assert!(record.error_code.is_some());
@@ -204,7 +222,8 @@ fn test_idempotency_key_operation_isolation() {
     let idempotency_key = String::from_str(&env, "batch-replay-test");
 
     // First batch payout
-    let data1 = client.batch_payout_idempotent(&recipients, &amounts, &Some(idempotency_key.clone()));
+    let data1 =
+        client.batch_payout_idempotent(&recipients, &amounts, &Some(idempotency_key.clone()));
     let balance_after_first = token_client.balance(&client.address);
     assert_eq!(data1.remaining_balance, 7000);
 
@@ -214,7 +233,11 @@ fn test_idempotency_key_operation_isolation() {
     let different_amounts = vec![&env, 5000];
 
     // This should return the original result, not execute with new params
-    let data2 = client.batch_payout_idempotent(&different_recipients, &different_amounts, &Some(idempotency_key.clone()));
+    let data2 = client.batch_payout_idempotent(
+        &different_recipients,
+        &different_amounts,
+        &Some(idempotency_key.clone()),
+    );
     let balance_after_replay = token_client.balance(&client.address);
 
     // Balance should be the same (no execution with different params)
@@ -244,8 +267,18 @@ fn test_idempotency_key_different_keys_same_operation() {
     assert_eq!(result2.remaining_balance, 400_0000000);
 
     // Verify both keys have their own records
-    let record1: IdempotencyRecord = env.as_contract(&client.address, || { env.storage().instance().get(&DataKey::IdempotencyKey(key1)).unwrap() });
-    let record2: IdempotencyRecord = env.as_contract(&client.address, || { env.storage().instance().get(&DataKey::IdempotencyKey(key2)).unwrap() });
+    let record1: IdempotencyRecord = env.as_contract(&client.address, || {
+        env.storage()
+            .instance()
+            .get(&DataKey::IdempotencyKey(key1))
+            .unwrap()
+    });
+    let record2: IdempotencyRecord = env.as_contract(&client.address, || {
+        env.storage()
+            .instance()
+            .get(&DataKey::IdempotencyKey(key2))
+            .unwrap()
+    });
     assert_eq!(record1.recipient_count, 1);
     assert_eq!(record2.recipient_count, 1);
 }
@@ -273,7 +306,11 @@ fn test_batch_atomicity_duplicate_recipient_no_partial_transfer() {
         &None,
     );
     assert!(result.is_err(), "duplicate recipient must be rejected");
-    assert_eq!(client.get_remaining_balance(), 10_000, "balance must be unchanged");
+    assert_eq!(
+        client.get_remaining_balance(),
+        10_000,
+        "balance must be unchanged"
+    );
     assert_eq!(token_client.balance(&r1), 0);
     assert_eq!(token_client.balance(&r2), 0);
 }
@@ -352,7 +389,10 @@ fn test_batch_atomicity_exceeds_max_batch_size() {
     }
 
     let result = client.try_batch_payout(&recipients, &amounts, &None);
-    assert!(result.is_err(), "batch exceeding MAX_BATCH_SIZE must be rejected");
+    assert!(
+        result.is_err(),
+        "batch exceeding MAX_BATCH_SIZE must be rejected"
+    );
     assert_eq!(client.get_remaining_balance(), total);
 }
 
@@ -409,8 +449,6 @@ fn test_update_fee_recipient_admin_only() {
     assert!(events.len() > 0);
 }
 
-
-
 #[test]
 fn test_update_fee_recipient_multiple_times() {
     let env = Env::default();
@@ -445,7 +483,10 @@ fn test_fee_recipient_update_event_contains_old_and_new() {
 
     let events = env.events().all();
     // Verify at least one event was published
-    assert!(events.len() > 0, "Expected at least one event to be published");
+    assert!(
+        events.len() > 0,
+        "Expected at least one event to be published"
+    );
 }
 
 #[test]

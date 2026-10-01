@@ -17,10 +17,7 @@
 
 #![cfg(test)]
 
-use soroban_sdk::{
-    testutils::Address as _,
-    Address, Env,
-};
+use soroban_sdk::{testutils::Address as _, Address, Env};
 
 use crate::{ContractKind, FacadeError, ViewFacade, ViewFacadeClient};
 
@@ -124,12 +121,12 @@ fn test_deregister_requires_admin_auth() {
     client.init(&admin).unwrap();
 
     let addr = dummy_contract(&env);
-    client.register(&addr, &ContractKind::BountyEscrow, &1u32).unwrap();
+    client
+        .register(&addr, &ContractKind::BountyEscrow, &1u32)
+        .unwrap();
 
     // Try to deregister without auth — must fail
-    let result = client
-        .mock_auths(&[])
-        .try_deregister(&addr);
+    let result = client.mock_auths(&[]).try_deregister(&addr);
     assert!(result.is_err(), "deregister must require admin auth");
 }
 
@@ -156,8 +153,10 @@ fn test_view_call_does_not_grant_register_access() {
     let result = client
         .mock_auths(&[])
         .try_register(&addr, &ContractKind::ProgramEscrow, &1u32);
-    assert!(result.is_err(),
-        "view calls must not grant register access to unprivileged caller");
+    assert!(
+        result.is_err(),
+        "view calls must not grant register access to unprivileged caller"
+    );
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -171,8 +170,11 @@ fn test_double_init_is_rejected() {
 
     let attacker = Address::generate(&env);
     let result = client.try_init(&attacker);
-    assert_eq!(result, Err(Ok(FacadeError::AlreadyInitialized)),
-        "second init must be rejected with AlreadyInitialized");
+    assert_eq!(
+        result,
+        Err(Ok(FacadeError::AlreadyInitialized)),
+        "second init must be rejected with AlreadyInitialized"
+    );
 }
 
 #[test]
@@ -185,8 +187,11 @@ fn test_admin_cannot_be_replaced_after_init() {
     let _ = client.try_init(&new_admin);
 
     // Admin must still be the original
-    assert_eq!(client.get_admin(), Some(original_admin),
-        "admin must be immutable after initialization");
+    assert_eq!(
+        client.get_admin(),
+        Some(original_admin),
+        "admin must be immutable after initialization"
+    );
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -199,7 +204,9 @@ fn test_registry_state_consistent_across_reads() {
     let (client, _) = setup(&env);
 
     let addr = dummy_contract(&env);
-    client.register(&addr, &ContractKind::BountyEscrow, &1u32).unwrap();
+    client
+        .register(&addr, &ContractKind::BountyEscrow, &1u32)
+        .unwrap();
 
     // Multiple reads must return identical results
     let r1 = client.list_contracts_all();
@@ -214,7 +221,9 @@ fn test_unprivileged_caller_sees_same_registry_as_admin() {
     let (client, _) = setup(&env);
 
     let addr = dummy_contract(&env);
-    client.register(&addr, &ContractKind::GrainlifyCore, &2u32).unwrap();
+    client
+        .register(&addr, &ContractKind::GrainlifyCore, &2u32)
+        .unwrap();
 
     // Any caller can read — result is the same
     let all = client.list_contracts_all();
@@ -233,7 +242,9 @@ fn test_paginated_list_requires_no_auth() {
 
     for _ in 0..5 {
         let addr = dummy_contract(&env);
-        client.register(&addr, &ContractKind::BountyEscrow, &1u32).unwrap();
+        client
+            .register(&addr, &ContractKind::BountyEscrow, &1u32)
+            .unwrap();
     }
 
     // Paginated read — no auth needed
@@ -290,7 +301,10 @@ fn test_deregister_nonexistent_is_noop() {
     let addr = dummy_contract(&env);
     // Never registered — deregister must succeed silently
     let result = client.try_deregister(&addr);
-    assert!(result.is_ok(), "deregister of non-existent address must be a no-op");
+    assert!(
+        result.is_ok(),
+        "deregister of non-existent address must be a no-op"
+    );
     assert_eq!(client.contract_count(), 0);
 }
 
@@ -313,7 +327,9 @@ fn test_get_contract_returns_correct_entry_after_register() {
     let (client, _) = setup(&env);
 
     let addr = dummy_contract(&env);
-    client.register(&addr, &ContractKind::ProgramEscrow, &3u32).unwrap();
+    client
+        .register(&addr, &ContractKind::ProgramEscrow, &3u32)
+        .unwrap();
 
     let entry = client.get_contract(&addr).unwrap();
     assert_eq!(entry.address, addr);

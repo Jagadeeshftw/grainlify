@@ -16,9 +16,7 @@
 //! 5. **Edge cases** — Cache with different escrow addresses, empty cache,
 //!    multiple programs on the same escrow.
 
-use crate::{
-    ContractKind, QueryCache, ViewFacade, ViewFacadeClient,
-};
+use crate::{ContractKind, QueryCache, ViewFacade, ViewFacadeClient};
 use soroban_sdk::{
     testutils::{Address as _, MockAuth, MockAuthInvoke},
     Address, Env, IntoVal, String,
@@ -99,7 +97,10 @@ fn test_cache_key_isolation_by_escrow() {
     // Check that escrow_b does NOT have a cached entry.
     let key_b = crate::QueryCacheKey::FeeConfig(escrow_b.clone());
     let cached_b: Option<program_escrow::FeeConfig> = env.storage().temporary().get(&key_b);
-    assert!(cached_b.is_none(), "escrow B should not have a cached FeeConfig");
+    assert!(
+        cached_b.is_none(),
+        "escrow B should not have a cached FeeConfig"
+    );
 }
 
 /// Different `program_id` values produce different cache keys; storing
@@ -124,11 +125,12 @@ fn test_cache_key_isolation_by_program_id() {
         token_address: escrow.clone(),
         initial_liquidity: 0,
         risk_flags: 0,
-        reference_hash: None,            archived: false,
-            archived_at: None,
-            status: program_escrow::ProgramStatus::Active,
-            circuit_breaker_threshold: None,
-            fot_router: program_escrow::OptionalFotRouter::None,
+        reference_hash: None,
+        archived: false,
+        archived_at: None,
+        status: program_escrow::ProgramStatus::Active,
+        circuit_breaker_threshold: None,
+        fot_router: program_escrow::OptionalFotRouter::None,
     };
     env.storage().temporary().set(&key_a, &dummy_a);
 
@@ -190,11 +192,12 @@ fn test_cache_hit_returns_cached_program_data() {
         token_address: escrow.clone(),
         initial_liquidity: 0,
         risk_flags: 0,
-        reference_hash: None,            archived: false,
-            archived_at: None,
-            status: program_escrow::ProgramStatus::Active,
-            circuit_breaker_threshold: None,
-            fot_router: program_escrow::OptionalFotRouter::None,
+        reference_hash: None,
+        archived: false,
+        archived_at: None,
+        status: program_escrow::ProgramStatus::Active,
+        circuit_breaker_threshold: None,
+        fot_router: program_escrow::OptionalFotRouter::None,
     };
     env.storage().temporary().set(&key, &data);
 
@@ -258,11 +261,12 @@ fn test_invalidate_program_data_causes_cache_miss() {
         token_address: escrow.clone(),
         initial_liquidity: 0,
         risk_flags: 0,
-        reference_hash: None,            archived: false,
-            archived_at: None,
-            status: program_escrow::ProgramStatus::Active,
-            circuit_breaker_threshold: None,
-            fot_router: program_escrow::OptionalFotRouter::None,
+        reference_hash: None,
+        archived: false,
+        archived_at: None,
+        status: program_escrow::ProgramStatus::Active,
+        circuit_breaker_threshold: None,
+        fot_router: program_escrow::OptionalFotRouter::None,
     };
     env.storage().temporary().set(&key, &data);
 
@@ -432,11 +436,12 @@ fn test_fee_and_program_data_cache_independent() {
         token_address: escrow.clone(),
         initial_liquidity: 0,
         risk_flags: 0,
-        reference_hash: None,            archived: false,
-            archived_at: None,
-            status: program_escrow::ProgramStatus::Active,
-            circuit_breaker_threshold: None,
-            fot_router: program_escrow::OptionalFotRouter::None,
+        reference_hash: None,
+        archived: false,
+        archived_at: None,
+        status: program_escrow::ProgramStatus::Active,
+        circuit_breaker_threshold: None,
+        fot_router: program_escrow::OptionalFotRouter::None,
     };
     env.storage().temporary().set(&prog_key, &prog_data);
 
@@ -467,8 +472,16 @@ fn test_query_program_balance_and_fee_populates_both_cache_entries() {
     let fee_key = crate::QueryCacheKey::FeeConfig(escrow.clone());
 
     // Before populating, both must be empty
-    assert!(env.storage().temporary().get::<_, program_escrow::ProgramData>(&prog_key).is_none());
-    assert!(env.storage().temporary().get::<_, program_escrow::FeeConfig>(&fee_key).is_none());
+    assert!(env
+        .storage()
+        .temporary()
+        .get::<_, program_escrow::ProgramData>(&prog_key)
+        .is_none());
+    assert!(env
+        .storage()
+        .temporary()
+        .get::<_, program_escrow::FeeConfig>(&fee_key)
+        .is_none());
 
     // Populate both (simulating the aggregated call)
     let prog_data = program_escrow::ProgramData {
@@ -482,11 +495,12 @@ fn test_query_program_balance_and_fee_populates_both_cache_entries() {
         token_address: escrow.clone(),
         initial_liquidity: 0,
         risk_flags: 0,
-        reference_hash: None,            archived: false,
-            archived_at: None,
-            status: program_escrow::ProgramStatus::Active,
-            circuit_breaker_threshold: None,
-            fot_router: program_escrow::OptionalFotRouter::None,
+        reference_hash: None,
+        archived: false,
+        archived_at: None,
+        status: program_escrow::ProgramStatus::Active,
+        circuit_breaker_threshold: None,
+        fot_router: program_escrow::OptionalFotRouter::None,
     };
     let fee_config = program_escrow::FeeConfig {
         lock_fee_rate: 42,
@@ -502,7 +516,8 @@ fn test_query_program_balance_and_fee_populates_both_cache_entries() {
     env.storage().temporary().set(&fee_key, &fee_config);
 
     // A subsequent cache-aware read should hit the cache for both
-    let cached_prog: program_escrow::ProgramData = env.storage().temporary().get(&prog_key).unwrap();
+    let cached_prog: program_escrow::ProgramData =
+        env.storage().temporary().get(&prog_key).unwrap();
     assert_eq!(cached_prog.total_funds, 9000);
     assert_eq!(cached_prog.remaining_balance, 4500);
 
@@ -512,8 +527,16 @@ fn test_query_program_balance_and_fee_populates_both_cache_entries() {
 
     // And they must be independent (invalidating one doesn't affect the other)
     QueryCache::invalidate_fee_config(&env, &escrow);
-    assert!(env.storage().temporary().get::<_, program_escrow::FeeConfig>(&fee_key).is_none());
-    assert!(env.storage().temporary().get::<_, program_escrow::ProgramData>(&prog_key).is_some());
+    assert!(env
+        .storage()
+        .temporary()
+        .get::<_, program_escrow::FeeConfig>(&fee_key)
+        .is_none());
+    assert!(env
+        .storage()
+        .temporary()
+        .get::<_, program_escrow::ProgramData>(&prog_key)
+        .is_some());
 }
 
 // ---------------------------------------------------------------------------

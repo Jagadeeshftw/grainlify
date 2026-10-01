@@ -87,7 +87,11 @@ impl QueryCache {
     ) -> ProgramData {
         let key = QueryCacheKey::ProgramData(escrow.clone(), program_id.clone());
 
-        if let Some(cached) = env.storage().temporary().get::<QueryCacheKey, ProgramData>(&key) {
+        if let Some(cached) = env
+            .storage()
+            .temporary()
+            .get::<QueryCacheKey, ProgramData>(&key)
+        {
             return cached;
         }
 
@@ -104,7 +108,11 @@ impl QueryCache {
     pub fn get_or_load_fee_config(env: &Env, escrow: &Address) -> FeeConfig {
         let key = QueryCacheKey::FeeConfig(escrow.clone());
 
-        if let Some(cached) = env.storage().temporary().get::<QueryCacheKey, FeeConfig>(&key) {
+        if let Some(cached) = env
+            .storage()
+            .temporary()
+            .get::<QueryCacheKey, FeeConfig>(&key)
+        {
             return cached;
         }
 

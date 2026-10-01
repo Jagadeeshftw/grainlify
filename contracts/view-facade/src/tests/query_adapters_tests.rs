@@ -121,7 +121,9 @@ fn test_pagination_covers_full_registry() {
     let page_size = 4u32;
     let mut offset = 0u32;
     loop {
-        let page = facade.list_contracts(Some(offset), Some(page_size)).unwrap();
+        let page = facade
+            .list_contracts(Some(offset), Some(page_size))
+            .unwrap();
         collected.extend_from_slice(&page);
         if page.len() < page_size as usize {
             break;

@@ -479,7 +479,11 @@ mod recipient_index_tests {
         let batch_a = soroban_sdk::vec![&env, 4000_i128];
         client.batch_payout_idempotent(&idem_b, &batch_r, &batch_a);
         let index = client.query_recipient_history(&String::from_str(&env, "prog-1"), &recipient);
-        assert_eq!(index.len(), 4, "batch idempotent replay must not duplicate index");
+        assert_eq!(
+            index.len(),
+            4,
+            "batch idempotent replay must not duplicate index"
+        );
 
         // 7. Another fresh single_payout after idempotent replay
         client.single_payout(&recipient, &5000, &None);

@@ -810,7 +810,7 @@ fn test_two_tokens_different_decimals_both_allowed() {
     let env = Env::default();
     let (client, _) = setup_contract(&env);
 
-    let usdc = make_token_dec(&env);   // 6 decimals (like USDC)
+    let usdc = make_token_dec(&env); // 6 decimals (like USDC)
     let custom = make_token_dec(&env); // 18 decimals (custom token)
 
     client.add_allowed_token_with_decimals(&usdc, &6u32);
@@ -844,16 +844,16 @@ fn test_decimals_stored_independently_per_token() {
     let env = Env::default();
     let (client, _) = setup_contract(&env);
 
-    let t6  = make_token_dec(&env);
-    let t7  = make_token_dec(&env);
+    let t6 = make_token_dec(&env);
+    let t7 = make_token_dec(&env);
     let t18 = make_token_dec(&env);
 
-    client.add_allowed_token_with_decimals(&t6,  &6u32);
-    client.add_allowed_token_with_decimals(&t7,  &7u32);
+    client.add_allowed_token_with_decimals(&t6, &6u32);
+    client.add_allowed_token_with_decimals(&t7, &7u32);
     client.add_allowed_token_with_decimals(&t18, &18u32);
 
-    assert_eq!(token_decimals(&client, &t6),  Some(6u32));
-    assert_eq!(token_decimals(&client, &t7),  Some(7u32));
+    assert_eq!(token_decimals(&client, &t6), Some(6u32));
+    assert_eq!(token_decimals(&client, &t7), Some(7u32));
     assert_eq!(token_decimals(&client, &t18), Some(18u32));
 }
 
@@ -953,7 +953,8 @@ fn test_add_token_with_decimals_event_has_correct_decimals_field() {
     let ev = events.iter().find(|e| {
         if let Some(t0) = e.1.get(0) {
             let sym: Result<Symbol, _> = t0.try_into_val(&env);
-            sym.map(|s| s == Symbol::new(&env, "TkAllow")).unwrap_or(false)
+            sym.map(|s| s == Symbol::new(&env, "TkAllow"))
+                .unwrap_or(false)
         } else {
             false
         }
@@ -980,7 +981,8 @@ fn test_remove_token_event_decimals_field_is_zero() {
     let ev = events.iter().rev().find(|e| {
         if let Some(t0) = e.1.get(0) {
             let sym: Result<Symbol, _> = t0.try_into_val(&env);
-            sym.map(|s| s == Symbol::new(&env, "TkAllow")).unwrap_or(false)
+            sym.map(|s| s == Symbol::new(&env, "TkAllow"))
+                .unwrap_or(false)
         } else {
             false
         }
@@ -1028,7 +1030,7 @@ fn test_legacy_add_allowed_token_still_works_with_v2_list() {
     let env = Env::default();
     let (client, _) = setup_contract(&env);
     let t_legacy = make_token_dec(&env);
-    let t_new    = make_token_dec(&env);
+    let t_new = make_token_dec(&env);
 
     // Add one via legacy path, one via new path
     client.add_allowed_token(&t_legacy);

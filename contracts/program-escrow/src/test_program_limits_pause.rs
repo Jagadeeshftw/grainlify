@@ -4,7 +4,10 @@ extern crate std;
 
 use super::*;
 use crate::test_support::*;
-use soroban_sdk::{testutils::{Address as _, Events, Ledger, MockAuth, MockAuthInvoke}, token, vec, Address, Env, IntoVal, Map, String, Symbol, TryFromVal, Val};
+use soroban_sdk::{
+    testutils::{Address as _, Events, Ledger, MockAuth, MockAuthInvoke},
+    token, vec, Address, Env, IntoVal, Map, String, Symbol, TryFromVal, Val,
+};
 
 fn test_spend_limit_single_payout_below_threshold_succeeds() {
     let env = Env::default();
@@ -13,9 +16,7 @@ fn test_spend_limit_single_payout_below_threshold_succeeds() {
     let recipient = Address::generate(&env);
 
     client.set_program_spend_threshold(&program_id, &5_000);
-    client.single_payout(&recipient, &4_999,
-    &None
-);
+    client.single_payout(&recipient, &4_999, &None);
 
     assert_eq!(token_client.balance(&recipient), 4_999);
     assert_eq!(client.get_remaining_balance(), 5_001);
@@ -30,9 +31,7 @@ fn test_spend_limit_single_payout_at_threshold_succeeds() {
     let recipient = Address::generate(&env);
 
     client.set_program_spend_threshold(&program_id, &5_000);
-    client.single_payout(&recipient, &5_000,
-    &None
-);
+    client.single_payout(&recipient, &5_000, &None);
 
     assert_eq!(token_client.balance(&recipient), 5_000);
     assert_eq!(client.get_remaining_balance(), 5_000);
@@ -48,9 +47,7 @@ fn test_spend_limit_single_payout_above_threshold_rejected() {
     let recipient = Address::generate(&env);
 
     client.set_program_spend_threshold(&program_id, &5_000);
-    client.single_payout(&recipient, &5_001,
-    &None
-); // must panic
+    client.single_payout(&recipient, &5_001, &None); // must panic
 }
 
 /// SL-4: batch_payout total below threshold succeeds.
@@ -66,8 +63,8 @@ fn test_spend_limit_batch_payout_below_threshold_succeeds() {
     client.batch_payout(
         &soroban_sdk::vec![&env, r1.clone(), r2.clone()],
         &soroban_sdk::vec![&env, 2_000i128, 3_000i128],
-        &None
-);
+        &None,
+    );
 
     assert_eq!(token_client.balance(&r1), 2_000);
     assert_eq!(token_client.balance(&r2), 3_000);
@@ -104,9 +101,7 @@ fn test_spend_limit_threshold_checked_before_balance() {
 
     // Balance is 100_000 but threshold is only 1_000.
     client.set_program_spend_threshold(&program_id, &1_000);
-    client.single_payout(&recipient, &50_000,
-    &None
-); // threshold exceeded, not balance
+    client.single_payout(&recipient, &50_000, &None); // threshold exceeded, not balance
 }
 
 /// SL-7: no threshold set â†’ i128::MAX â†’ any amount within balance is allowed.
@@ -124,9 +119,7 @@ fn test_spend_limit_no_threshold_allows_full_balance() {
         "default threshold must be i128::MAX"
     );
 
-    client.single_payout(&recipient, &10_000,
-    &None
-);
+    client.single_payout(&recipient, &10_000, &None);
     assert_eq!(token_client.balance(&recipient), 10_000);
     assert_eq!(client.get_remaining_balance(), 0);
 }
@@ -141,16 +134,12 @@ fn test_spend_limit_threshold_update_takes_effect() {
 
     // Set tight threshold.
     client.set_program_spend_threshold(&program_id, &3_000);
-    client.single_payout(&recipient, &3_000,
-    &None
-);
+    client.single_payout(&recipient, &3_000, &None);
     assert_eq!(token_client.balance(&recipient), 3_000);
 
     // Raise threshold.
     client.set_program_spend_threshold(&program_id, &10_000);
-    client.single_payout(&recipient, &10_000,
-    &None
-);
+    client.single_payout(&recipient, &10_000, &None);
     assert_eq!(token_client.balance(&recipient), 13_000);
     assert_eq!(client.get_remaining_balance(), 7_000);
 }
@@ -185,9 +174,7 @@ fn test_spend_limit_exceeded_event_emitted_on_rejection() {
 
     let events_before = env.events().all().len();
     // Attempt an over-threshold payout; it will panic but the event is emitted first.
-    let result = client.try_single_payout(&recipient, &5_000,
-    &None
-);
+    let result = client.try_single_payout(&recipient, &5_000, &None);
     assert!(result.is_err(), "over-threshold payout must fail");
 
     // The SpendLimitExceededEvent must have been emitted before the panic.
@@ -228,9 +215,7 @@ fn test_spend_limit_minimum_threshold_rejects_larger_amounts() {
     let recipient = Address::generate(&env);
 
     client.set_program_spend_threshold(&program_id, &1);
-    client.single_payout(&recipient, &2,
-    &None
-); // must panic
+    client.single_payout(&recipient, &2, &None); // must panic
 }
 
 /// SL-13: threshold of 1 allows amount == 1.
@@ -242,9 +227,7 @@ fn test_spend_limit_minimum_threshold_allows_exact_amount() {
     let recipient = Address::generate(&env);
 
     client.set_program_spend_threshold(&program_id, &1);
-    client.single_payout(&recipient, &1,
-    &None
-);
+    client.single_payout(&recipient, &1, &None);
     assert_eq!(token_client.balance(&recipient), 1);
 }
 
@@ -281,9 +264,7 @@ fn test_spending_window_no_limit_allows_payout() {
     let (client, _admin, token_client, _token_admin) = setup_program(&env, 10_000);
     let recipient = Address::generate(&env);
 
-    client.single_payout(&recipient, &10_000,
-    &None
-);
+    client.single_payout(&recipient, &10_000, &None);
     assert_eq!(token_client.balance(&recipient), 10_000);
 }
 
@@ -296,9 +277,7 @@ fn test_spending_window_disabled_limit_allows_payout() {
     let recipient = Address::generate(&env);
 
     client.set_program_spending_limit(&program_id, &86400u64, &100i128, &false);
-    client.single_payout(&recipient, &10_000,
-    &None
-);
+    client.single_payout(&recipient, &10_000, &None);
     assert_eq!(token_client.balance(&recipient), 10_000);
 }
 
@@ -311,9 +290,7 @@ fn test_spending_window_single_payout_within_limit_succeeds() {
     let recipient = Address::generate(&env);
 
     client.set_program_spending_limit(&program_id, &86400u64, &5_000i128, &true);
-    client.single_payout(&recipient, &5_000,
-    &None
-);
+    client.single_payout(&recipient, &5_000, &None);
     assert_eq!(token_client.balance(&recipient), 5_000);
 }
 
@@ -327,9 +304,7 @@ fn test_spending_window_single_payout_exceeds_limit_rejected() {
     let recipient = Address::generate(&env);
 
     client.set_program_spending_limit(&program_id, &86400u64, &3_000i128, &true);
-    client.single_payout(&recipient, &3_001,
-    &None
-);
+    client.single_payout(&recipient, &3_001, &None);
 }
 
 /// SW-5: Cumulative payouts within window are tracked; second payout that
@@ -345,12 +320,8 @@ fn test_spending_window_cumulative_limit_enforced() {
 
     // Window limit = 5_000; first payout = 3_000 (ok), second = 3_000 (total 6_000 > 5_000)
     client.set_program_spending_limit(&program_id, &86400u64, &5_000i128, &true);
-    client.single_payout(&r1, &3_000,
-    &None
-);
-    client.single_payout(&r2, &3_000,
-    &None
-); // must panic
+    client.single_payout(&r1, &3_000, &None);
+    client.single_payout(&r2, &3_000, &None); // must panic
 }
 
 /// SW-6: batch_payout total within window limit succeeds.
@@ -366,8 +337,8 @@ fn test_spending_window_batch_payout_within_limit_succeeds() {
     client.batch_payout(
         &soroban_sdk::vec![&env, r1.clone(), r2.clone()],
         &soroban_sdk::vec![&env, 2_000i128, 3_000i128],
-        &None
-);
+        &None,
+    );
     assert_eq!(token_client.balance(&r1), 2_000);
     assert_eq!(token_client.balance(&r2), 3_000);
 }
@@ -403,18 +374,14 @@ fn test_spending_window_resets_after_window_expires() {
     client.set_program_spending_limit(&program_id, &100u64, &5_000i128, &true);
 
     // Exhaust the window
-    client.single_payout(&r1, &5_000,
-    &None
-);
+    client.single_payout(&r1, &5_000, &None);
     assert_eq!(token_client.balance(&r1), 5_000);
 
     // Advance time past the window
     env.ledger().with_mut(|l| l.timestamp += 101);
 
     // New window: same limit available again
-    client.single_payout(&r2, &5_000,
-    &None
-);
+    client.single_payout(&r2, &5_000, &None);
     assert_eq!(token_client.balance(&r2), 5_000);
 }
 
@@ -451,12 +418,8 @@ fn test_spending_window_state_tracks_cumulative_amount() {
     let r2 = Address::generate(&env);
 
     client.set_program_spending_limit(&program_id, &86400u64, &10_000i128, &true);
-    client.single_payout(&r1, &2_000,
-    &None
-);
-    client.single_payout(&r2, &3_000,
-    &None
-);
+    client.single_payout(&r1, &2_000, &None);
+    client.single_payout(&r2, &3_000, &None);
 
     let state = client.get_program_spending_state(&program_id).unwrap();
     assert_eq!(state.amount_released, 5_000);
@@ -493,9 +456,7 @@ fn test_spending_window_rejection_emits_event() {
     client.set_program_spending_limit(&program_id, &86400u64, &1_000i128, &true);
 
     let events_before = env.events().all().len();
-    let result = client.try_single_payout(&recipient, &5_000,
-    &None
-);
+    let result = client.try_single_payout(&recipient, &5_000, &None);
     assert!(result.is_err(), "over-limit payout must fail");
 
     let events_after = env.events().all();
@@ -515,16 +476,12 @@ fn test_spending_window_limit_update_takes_effect() {
     let r2 = Address::generate(&env);
 
     client.set_program_spending_limit(&program_id, &86400u64, &3_000i128, &true);
-    client.single_payout(&r1, &3_000,
-    &None
-);
+    client.single_payout(&r1, &3_000, &None);
     assert_eq!(token_client.balance(&r1), 3_000);
 
     // Raise limit
     client.set_program_spending_limit(&program_id, &86400u64, &20_000i128, &true);
-    client.single_payout(&r2, &10_000,
-    &None
-);
+    client.single_payout(&r2, &10_000, &None);
     assert_eq!(token_client.balance(&r2), 10_000);
 }
 
@@ -572,9 +529,7 @@ fn test_release_paused_blocks_single_payout() {
     client.set_paused(&None, &Some(true), &None, &None, &None);
 
     let recipient = Address::generate(&env);
-    client.single_payout(&recipient, &100,
-    &None
-);
+    client.single_payout(&recipient, &100, &None);
 }
 
 /// PM-04: release_paused blocks batch_payout with deterministic "Funds Paused" panic.
@@ -590,8 +545,8 @@ fn test_release_paused_blocks_batch_payout() {
     client.batch_payout(
         &soroban_sdk::vec![&env, r1],
         &soroban_sdk::vec![&env, 100i128],
-        &None
-);
+        &None,
+    );
 }
 
 /// PM-05: lock_paused blocks lock_program_funds with deterministic "Funds Paused" panic.
@@ -614,9 +569,7 @@ fn test_lock_paused_does_not_block_single_payout() {
     client.set_paused(&Some(true), &None, &None, &None, &None);
 
     let recipient = Address::generate(&env);
-    let data = client.single_payout(&recipient, &200,
-    &None
-);
+    let data = client.single_payout(&recipient, &200, &None);
     assert_eq!(data.remaining_balance, 800);
 }
 
@@ -640,15 +593,11 @@ fn test_unpause_restores_single_payout() {
 
     client.set_paused(&None, &Some(true), &None, &None, &None);
     assert!(client
-        .try_single_payout(&Address::generate(&env), &100,
-    &None
-)
+        .try_single_payout(&Address::generate(&env), &100, &None)
         .is_err());
 
     client.set_paused(&None, &Some(false), &None, &None, &None);
-    let data = client.single_payout(&Address::generate(&env), &100,
-    &None
-);
+    let data = client.single_payout(&Address::generate(&env), &100, &None);
     assert_eq!(data.remaining_balance, 900);
 }
 
@@ -663,18 +612,17 @@ fn test_unpause_restores_batch_payout() {
     assert!(client
         .try_batch_payout(
             &soroban_sdk::vec![&env, r1.clone()],
-            &soroban_sdk::vec![&env, 100i128]
-        ,
-    &None
-)
+            &soroban_sdk::vec![&env, 100i128],
+            &None
+        )
         .is_err());
 
     client.set_paused(&None, &Some(false), &None, &None, &None);
     let data = client.batch_payout(
         &soroban_sdk::vec![&env, r1],
         &soroban_sdk::vec![&env, 100i128],
-        &None
-);
+        &None,
+    );
     assert_eq!(data.remaining_balance, 900);
 }
 
@@ -776,9 +724,7 @@ fn test_all_flags_paused_blocks_all_operations() {
     );
     assert!(
         client
-            .try_single_payout(&Address::generate(&env), &100,
-    &None
-)
+            .try_single_payout(&Address::generate(&env), &100, &None)
             .is_err(),
         "single_payout must be blocked"
     );
@@ -786,10 +732,9 @@ fn test_all_flags_paused_blocks_all_operations() {
         client
             .try_batch_payout(
                 &soroban_sdk::vec![&env, Address::generate(&env)],
-                &soroban_sdk::vec![&env, 100i128]
-            ,
-    &None
-)
+                &soroban_sdk::vec![&env, 100i128],
+                &None
+            )
             .is_err(),
         "batch_payout must be blocked"
     );
@@ -859,4 +804,3 @@ fn test_pause_reason_cleared_on_full_unpause() {
         "reason must be cleared when fully unpaused"
     );
 }
-

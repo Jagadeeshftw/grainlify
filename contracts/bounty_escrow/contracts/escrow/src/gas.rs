@@ -1,14 +1,11 @@
 //! Gas budget configuration and advisory status queries.
 
-
-
-use soroban_sdk::{Address, Env};
 use crate::{gas_budget, rbac, DataKey, Error};
+use soroban_sdk::{Address, Env};
 
 // ─────────────────────────────────────────────────────────────────
 // Public entry points (dispatcher targets)
 // ─────────────────────────────────────────────────────────────────
-
 
 /// Configure per-operation gas budget caps for the contract instance.
 ///
@@ -64,7 +61,6 @@ pub fn set_gas_budget(
     Ok(())
 }
 
-
 /// Return the current per-operation gas budget configuration.
 ///
 /// Returns the fully uncapped default if no configuration has been set.
@@ -80,7 +76,6 @@ pub fn set_gas_budget(
 pub fn get_gas_budget(env: Env) -> gas_budget::GasBudgetConfig {
     gas_budget::get_config(&env)
 }
-
 
 /// Return the advisory enforcement status for the current gas budget config.
 ///
@@ -119,4 +114,3 @@ pub fn get_gas_budget_advisory_status(env: Env) -> gas_budget::GasBudgetAdvisory
     gas_budget::emit_advisory_notice_if_needed(&env, &status);
     status
 }
-

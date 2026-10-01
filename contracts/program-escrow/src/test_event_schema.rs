@@ -9,8 +9,10 @@ use soroban_sdk::{
     Address, Env, String, Symbol, TryFromVal, Val, Vec,
 };
 
+use crate::{
+    BatchPayoutEvent, PayoutEvent, ReleaseScheduledEvent, ScheduleReleasedEvent, EVENT_VERSION_V2,
+};
 use grainlify_core::{generate_correlation_id, CorrelationId, UpgradeEvent, EVENT_SCHEMA_VERSION};
-use crate::{BatchPayoutEvent, PayoutEvent, ReleaseScheduledEvent, ScheduleReleasedEvent, EVENT_VERSION_V2};
 
 #[test]
 fn test_deterministic_correlation_id_consistency() {
@@ -22,7 +24,10 @@ fn test_deterministic_correlation_id_consistency() {
     let corr_id_1 = generate_correlation_id(&env, &initiator, nonce, Some(&domain));
     let corr_id_2 = generate_correlation_id(&env, &initiator, nonce, Some(&domain));
 
-    assert_eq!(corr_id_1, corr_id_2, "Deterministic correlation IDs for identical parameters must match");
+    assert_eq!(
+        corr_id_1, corr_id_2,
+        "Deterministic correlation IDs for identical parameters must match"
+    );
 }
 
 #[test]
@@ -61,14 +66,15 @@ fn test_cross_contract_event_correlation_sequence() {
         correlation_id: Some(shared_correlation_id.clone()),
     };
 
-    env.events().publish(
-        (symbol_short!("Payout"),),
-        escrow_event.clone(),
-    );
+    env.events()
+        .publish((symbol_short!("Payout"),), escrow_event.clone());
 
     // 4. Inspect published events and verify the shared correlation ID is present and consistent on both sides
     let published_events = env.events().all();
-    assert!(published_events.len() >= 2, "Expected at least 2 emitted events");
+    assert!(
+        published_events.len() >= 2,
+        "Expected at least 2 emitted events"
+    );
 
     let first_raw_event = published_events.get(0).unwrap();
     let second_raw_event = published_events.get(1).unwrap();
@@ -89,8 +95,7 @@ fn test_cross_contract_event_correlation_sequence() {
         "Escrow payout event must contain the identical shared correlation ID"
     );
     assert_eq!(
-        decoded_core.correlation_id,
-        decoded_escrow.correlation_id,
+        decoded_core.correlation_id, decoded_escrow.correlation_id,
         "Correlation IDs across multi-contract event sequence must match exactly"
     );
 }
@@ -110,7 +115,8 @@ fn test_event_schema_backwards_compatibility_without_correlation_id() {
         correlation_id: None,
     };
 
-    env.events().publish((symbol_short!("Payout"),), payout.clone());
+    env.events()
+        .publish((symbol_short!("Payout"),), payout.clone());
 
     let published = env.events().all();
     let raw = published.get(0).unwrap();
@@ -160,16 +166,22 @@ fn test_batch_payout_and_schedule_events_with_correlation_id() {
         correlation_id: Some(corr_id.clone()),
     };
 
-    env.events().publish((symbol_short!("BatchPay"),), batch_ev.clone());
-    env.events().publish((symbol_short!("RelSch"),), release_ev.clone());
-    env.events().publish((symbol_short!("SchRel"),), schedule_released_ev.clone());
+    env.events()
+        .publish((symbol_short!("BatchPay"),), batch_ev.clone());
+    env.events()
+        .publish((symbol_short!("RelSch"),), release_ev.clone());
+    env.events()
+        .publish((symbol_short!("SchRel"),), schedule_released_ev.clone());
 
     let all_events = env.events().all();
     assert_eq!(all_events.len(), 3);
 
-    let decoded_batch: BatchPayoutEvent = BatchPayoutEvent::try_from_val(&env, &all_events.get(0).unwrap().2).unwrap();
-    let decoded_rel: ReleaseScheduledEvent = ReleaseScheduledEvent::try_from_val(&env, &all_events.get(1).unwrap().2).unwrap();
-    let decoded_sch_rel: ScheduleReleasedEvent = ScheduleReleasedEvent::try_from_val(&env, &all_events.get(2).unwrap().2).unwrap();
+    let decoded_batch: BatchPayoutEvent =
+        BatchPayoutEvent::try_from_val(&env, &all_events.get(0).unwrap().2).unwrap();
+    let decoded_rel: ReleaseScheduledEvent =
+        ReleaseScheduledEvent::try_from_val(&env, &all_events.get(1).unwrap().2).unwrap();
+    let decoded_sch_rel: ScheduleReleasedEvent =
+        ScheduleReleasedEvent::try_from_val(&env, &all_events.get(2).unwrap().2).unwrap();
 
     assert_eq!(decoded_batch.correlation_id, Some(corr_id.clone()));
     assert_eq!(decoded_rel.correlation_id, Some(corr_id.clone()));

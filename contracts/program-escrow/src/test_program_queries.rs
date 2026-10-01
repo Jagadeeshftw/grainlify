@@ -4,7 +4,10 @@ extern crate std;
 
 use super::*;
 use crate::test_support::*;
-use soroban_sdk::{testutils::{Address as _, Events, Ledger, MockAuth, MockAuthInvoke}, token, vec, Address, Env, IntoVal, Map, String, Symbol, TryFromVal, Val};
+use soroban_sdk::{
+    testutils::{Address as _, Events, Ledger, MockAuth, MockAuthInvoke},
+    token, vec, Address, Env, IntoVal, Map, String, Symbol, TryFromVal, Val,
+};
 
 #[test]
 fn test_query_payouts_by_recipient_returns_correct_records() {
@@ -15,15 +18,9 @@ fn test_query_payouts_by_recipient_returns_correct_records() {
     let r2 = Address::generate(&env);
 
     // Multiple payouts: two to r1, one to r2
-    client.single_payout(&r1, &100_000,
-    &None
-);
-    client.single_payout(&r2, &150_000,
-    &None
-);
-    client.single_payout(&r1, &50_000,
-    &None
-);
+    client.single_payout(&r1, &100_000, &None);
+    client.single_payout(&r2, &150_000, &None);
+    client.single_payout(&r1, &50_000, &None);
 
     let r1_records = client.query_payouts_by_recipient(&r1, &0, &10);
     assert_eq!(r1_records.len(), 2);
@@ -44,9 +41,7 @@ fn test_query_payouts_by_recipient_unknown_returns_empty() {
     let r1 = Address::generate(&env);
     let unknown = Address::generate(&env);
 
-    client.single_payout(&r1, &50_000,
-    &None
-);
+    client.single_payout(&r1, &50_000, &None);
 
     let results = client.query_payouts_by_recipient(&unknown, &0, &10);
     assert_eq!(results.len(), 0);
@@ -57,18 +52,10 @@ fn test_query_payouts_by_amount_range_returns_matching() {
     let env = Env::default();
     let (client, _admin, _token, _token_admin) = setup_program(&env, 600_000);
 
-    client.single_payout(&Address::generate(&env), &10_000,
-    &None
-);
-    client.single_payout(&Address::generate(&env), &50_000,
-    &None
-);
-    client.single_payout(&Address::generate(&env), &100_000,
-    &None
-);
-    client.single_payout(&Address::generate(&env), &200_000,
-    &None
-);
+    client.single_payout(&Address::generate(&env), &10_000, &None);
+    client.single_payout(&Address::generate(&env), &50_000, &None);
+    client.single_payout(&Address::generate(&env), &100_000, &None);
+    client.single_payout(&Address::generate(&env), &200_000, &None);
 
     // Filter: 40_000 to 110_000
     let results = client.query_payouts_by_amount(&40_000, &110_000, &0, &10);
@@ -83,15 +70,9 @@ fn test_query_payouts_by_amount_exact_boundaries_included() {
     let env = Env::default();
     let (client, _admin, _token, _token_admin) = setup_program(&env, 600_000);
 
-    client.single_payout(&Address::generate(&env), &100_000,
-    &None
-);
-    client.single_payout(&Address::generate(&env), &200_000,
-    &None
-);
-    client.single_payout(&Address::generate(&env), &300_000,
-    &None
-);
+    client.single_payout(&Address::generate(&env), &100_000, &None);
+    client.single_payout(&Address::generate(&env), &200_000, &None);
+    client.single_payout(&Address::generate(&env), &300_000, &None);
 
     // Exact boundaries should be included
     let results = client.query_payouts_by_amount(&100_000, &300_000, &0, &10);
@@ -103,12 +84,8 @@ fn test_query_payouts_by_amount_no_results_outside_range() {
     let env = Env::default();
     let (client, _admin, _token, _token_admin) = setup_program(&env, 200_000);
 
-    client.single_payout(&Address::generate(&env), &50_000,
-    &None
-);
-    client.single_payout(&Address::generate(&env), &100_000,
-    &None
-);
+    client.single_payout(&Address::generate(&env), &50_000, &None);
+    client.single_payout(&Address::generate(&env), &100_000, &None);
 
     let results = client.query_payouts_by_amount(&500_000, &999_000, &0, &10);
     assert_eq!(results.len(), 0);
@@ -122,24 +99,16 @@ fn test_query_payouts_by_timestamp_range_filters_correctly() {
     let base = env.ledger().timestamp();
 
     env.ledger().set_timestamp(base + 100);
-    client.single_payout(&Address::generate(&env), &100_000,
-    &None
-);
+    client.single_payout(&Address::generate(&env), &100_000, &None);
 
     env.ledger().set_timestamp(base + 300);
-    client.single_payout(&Address::generate(&env), &100_000,
-    &None
-);
+    client.single_payout(&Address::generate(&env), &100_000, &None);
 
     env.ledger().set_timestamp(base + 700);
-    client.single_payout(&Address::generate(&env), &100_000,
-    &None
-);
+    client.single_payout(&Address::generate(&env), &100_000, &None);
 
     env.ledger().set_timestamp(base + 1200);
-    client.single_payout(&Address::generate(&env), &100_000,
-    &None
-);
+    client.single_payout(&Address::generate(&env), &100_000, &None);
 
     // Filter for timestamps between base+200 and base+800
     let results = client.query_payouts_by_timestamp(&(base + 200), &(base + 800), &0, &10);
@@ -157,19 +126,13 @@ fn test_query_payouts_by_timestamp_exact_boundary_included() {
     let base = env.ledger().timestamp();
 
     env.ledger().set_timestamp(base + 100);
-    client.single_payout(&Address::generate(&env), &100_000,
-    &None
-);
+    client.single_payout(&Address::generate(&env), &100_000, &None);
 
     env.ledger().set_timestamp(base + 200);
-    client.single_payout(&Address::generate(&env), &100_000,
-    &None
-);
+    client.single_payout(&Address::generate(&env), &100_000, &None);
 
     env.ledger().set_timestamp(base + 300);
-    client.single_payout(&Address::generate(&env), &100_000,
-    &None
-);
+    client.single_payout(&Address::generate(&env), &100_000, &None);
 
     // Exact boundary should include first and last
     let results = client.query_payouts_by_timestamp(&(base + 100), &(base + 300), &0, &10);
@@ -183,9 +146,7 @@ fn test_query_payouts_pagination_offset_and_limit() {
 
     let r1 = Address::generate(&env);
     for _ in 0..5 {
-        client.single_payout(&r1, &10_000,
-    &None
-);
+        client.single_payout(&r1, &10_000, &None);
     }
 
     // Page 1
@@ -207,9 +168,7 @@ fn test_query_payouts_pagination_limit_zero_rejected() {
     let env = Env::default();
     let (client, _admin, _token, _token_admin) = setup_program(&env, 100_000);
     let r1 = Address::generate(&env);
-    client.single_payout(&r1, &10_000,
-    &None
-);
+    client.single_payout(&r1, &10_000, &None);
     let _ = client.query_payouts_by_recipient(&r1, &0, &0);
 }
 
@@ -219,9 +178,7 @@ fn test_query_payouts_pagination_limit_above_max_rejected() {
     let env = Env::default();
     let (client, _admin, _token, _token_admin) = setup_program(&env, 100_000);
     let r1 = Address::generate(&env);
-    client.single_payout(&r1, &10_000,
-    &None
-);
+    client.single_payout(&r1, &10_000, &None);
     let _ = client.query_payouts_by_recipient(&r1, &0, &201);
 }
 
@@ -304,15 +261,9 @@ fn test_combined_recipient_and_amount_filter_manual() {
 
     let r1 = Address::generate(&env);
 
-    client.single_payout(&r1, &10_000,
-    &None
-);
-    client.single_payout(&r1, &200_000,
-    &None
-);
-    client.single_payout(&r1, &50_000,
-    &None
-);
+    client.single_payout(&r1, &10_000, &None);
+    client.single_payout(&r1, &200_000, &None);
+    client.single_payout(&r1, &50_000, &None);
 
     // Get r1's records, then filter by amount > 100_000 in test
     let records = client.query_payouts_by_recipient(&r1, &0, &10);

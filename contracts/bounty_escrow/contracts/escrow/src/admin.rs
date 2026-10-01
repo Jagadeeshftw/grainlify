@@ -1,31 +1,26 @@
 //! Contract initialisation, admin rotation, maintenance mode, batch size caps, and network identity.
 
-
-
-use soroban_sdk::{symbol_short, Address, BytesN, Env, Vec};
 use crate::{
-    events, rbac,
-    AdminRotationConfig, AdminRotationStatus, BatchSizeCaps, DataKey, Error,
-    EscrowMetadata, LockFundsItem, PersistentRecordStatus, ReleaseFundsItem,
-    ADMIN_TIMELOCK, DEFAULT_ADMIN_ROTATION_TIMELOCK, MAX_ADMIN_ROTATION_TIMELOCK,
-    MAX_BATCH_SIZE, MIN_ADMIN_ROTATION_TIMELOCK,
-    ESCROW_LIVE_TTL, ESCROW_ARCHIVAL_TTL, CLAIM_LIVE_TTL, CLAIM_ARCHIVAL_TTL,
-    COMMITMENT_LIVE_TTL, COMMITMENT_ARCHIVAL_TTL, INDEX_LIVE_TTL, INDEX_ARCHIVAL_TTL,
-    ARCHIVAL_MARKER_TTL, TTL_RENEWAL_DIVISOR,
-    NOTIFICATION_PREFS_MASK, PARTICIPANT_LIST_SCHEMA_VERSION_V1,
-    MAINTENANCE_MODE_SCHEMA_VERSION_V1, FEE_ROUTING_SCHEMA_VERSION_V1,
-    HIGH_VALUE_CONFIG_SCHEMA_VERSION_V1, REFUND_ELIGIBILITY_SCHEMA_VERSION_V1,
-    Escrow, EscrowStatus,
-    events::{emit_admin_rotation_accepted, emit_admin_rotation_cancelled,
-             emit_admin_rotation_proposed, emit_admin_rotation_timelock_updated,
-             EVENT_VERSION_V2},
-    Capability,
+    events,
+    events::{
+        emit_admin_rotation_accepted, emit_admin_rotation_cancelled, emit_admin_rotation_proposed,
+        emit_admin_rotation_timelock_updated, EVENT_VERSION_V2,
+    },
+    rbac, AdminRotationConfig, AdminRotationStatus, BatchSizeCaps, Capability, DataKey, Error,
+    Escrow, EscrowMetadata, EscrowStatus, LockFundsItem, PersistentRecordStatus, ReleaseFundsItem,
+    ADMIN_TIMELOCK, ARCHIVAL_MARKER_TTL, CLAIM_ARCHIVAL_TTL, CLAIM_LIVE_TTL,
+    COMMITMENT_ARCHIVAL_TTL, COMMITMENT_LIVE_TTL, DEFAULT_ADMIN_ROTATION_TIMELOCK,
+    ESCROW_ARCHIVAL_TTL, ESCROW_LIVE_TTL, FEE_ROUTING_SCHEMA_VERSION_V1,
+    HIGH_VALUE_CONFIG_SCHEMA_VERSION_V1, INDEX_ARCHIVAL_TTL, INDEX_LIVE_TTL,
+    MAINTENANCE_MODE_SCHEMA_VERSION_V1, MAX_ADMIN_ROTATION_TIMELOCK, MAX_BATCH_SIZE,
+    MIN_ADMIN_ROTATION_TIMELOCK, NOTIFICATION_PREFS_MASK, PARTICIPANT_LIST_SCHEMA_VERSION_V1,
+    REFUND_ELIGIBILITY_SCHEMA_VERSION_V1, TTL_RENEWAL_DIVISOR,
 };
+use soroban_sdk::{symbol_short, Address, BytesN, Env, Vec};
 
 // ─────────────────────────────────────────────────────────────────
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────
-
 
 pub(crate) fn order_batch_lock_items(env: &Env, items: &Vec<LockFundsItem>) -> Vec<LockFundsItem> {
     let mut ordered: Vec<LockFundsItem> = Vec::new(env);
@@ -46,7 +41,6 @@ pub(crate) fn order_batch_lock_items(env: &Env, items: &Vec<LockFundsItem>) -> V
     }
     ordered
 }
-
 
 pub(crate) fn order_batch_release_items(
     env: &Env,
@@ -71,7 +65,6 @@ pub(crate) fn order_batch_release_items(
     ordered
 }
 
-
 /// Returns the effective batch size caps, defaulting to the compile-time hard limit.
 pub(crate) fn get_batch_size_caps_internal(env: &Env) -> BatchSizeCaps {
     env.storage()
@@ -82,7 +75,6 @@ pub(crate) fn get_batch_size_caps_internal(env: &Env) -> BatchSizeCaps {
             release_cap: MAX_BATCH_SIZE,
         })
 }
-
 
 pub(crate) fn validate_batch_size_caps(caps: &BatchSizeCaps) -> Result<(), Error> {
     if caps.lock_cap == 0
@@ -95,7 +87,6 @@ pub(crate) fn validate_batch_size_caps(caps: &BatchSizeCaps) -> Result<(), Error
     Ok(())
 }
 
-
 // Retained for future batch-operation paths that enforce per-call caps.
 #[allow(dead_code)]
 pub(crate) fn validate_batch_len(batch_size: u32, cap: u32) -> Result<(), Error> {
@@ -105,14 +96,12 @@ pub(crate) fn validate_batch_len(batch_size: u32, cap: u32) -> Result<(), Error>
     Ok(())
 }
 
-
 /// Returns the effective runtime cap for `batch_lock_funds`.
 ///
 /// Returns the effective runtime cap for `batch_release_funds`.
 pub(crate) fn get_max_release_batch_size(env: Env) -> u32 {
     get_batch_size_caps_internal(&env).release_cap
 }
-
 
 pub(crate) fn persistent_record_status(
     env: &Env,
@@ -122,9 +111,7 @@ pub(crate) fn persistent_record_status(
     match env.storage().persistent().get::<DataKey, u32>(marker) {
         None if env.storage().persistent().has(record) => PersistentRecordStatus::Live,
         None => PersistentRecordStatus::Missing,
-        Some(live_until) if env.ledger().sequence() <= live_until => {
-            PersistentRecordStatus::Live
-        }
+        Some(live_until) if env.ledger().sequence() <= live_until => PersistentRecordStatus::Live,
         Some(_) => PersistentRecordStatus::Archived,
     }
 }
@@ -133,19 +120,16 @@ pub(crate) fn persistent_record_status(
 // Public entry points (dispatcher targets)
 // ─────────────────────────────────────────────────────────────────
 
-
 /// Return whether an escrow record is live, archived/restorable, or unknown.
 pub fn probe_escrow_archival(env: Env, bounty_id: u64) -> PersistentRecordStatus {
     let marker = DataKey::EscrowTtl(bounty_id);
-    let regular =
-        persistent_record_status(&env, &marker, &DataKey::Escrow(bounty_id));
+    let regular = persistent_record_status(&env, &marker, &DataKey::Escrow(bounty_id));
     if regular == PersistentRecordStatus::Missing {
         persistent_record_status(&env, &marker, &DataKey::EscrowAnon(bounty_id))
     } else {
         regular
     }
 }
-
 
 /// Return whether a pending claim is live, archived/restorable, or unknown.
 pub fn probe_claim_archival(env: Env, bounty_id: u64) -> PersistentRecordStatus {
@@ -156,12 +140,8 @@ pub fn probe_claim_archival(env: Env, bounty_id: u64) -> PersistentRecordStatus 
     )
 }
 
-
 /// Return whether a capability commitment is live, archived/restorable, or unknown.
-pub fn probe_commitment_archival(
-    env: Env,
-    capability_id: BytesN<32>,
-) -> PersistentRecordStatus {
+pub fn probe_commitment_archival(env: Env, capability_id: BytesN<32>) -> PersistentRecordStatus {
     persistent_record_status(
         &env,
         &DataKey::CapabilityTtl(capability_id.clone()),
@@ -169,29 +149,19 @@ pub fn probe_commitment_archival(
     )
 }
 
-
 /// Return whether the global escrow index is live, archived/restorable, or unknown.
 pub fn probe_index_archival(env: Env) -> PersistentRecordStatus {
-    persistent_record_status(
-        &env,
-        &DataKey::EscrowIndexTtl,
-        &DataKey::EscrowIndex,
-    )
+    persistent_record_status(&env, &DataKey::EscrowIndexTtl, &DataKey::EscrowIndex)
 }
 
-
 /// Return whether a depositor index is live, archived/restorable, or unknown.
-pub fn probe_depositor_index_archival(
-    env: Env,
-    depositor: Address,
-) -> PersistentRecordStatus {
+pub fn probe_depositor_index_archival(env: Env, depositor: Address) -> PersistentRecordStatus {
     persistent_record_status(
         &env,
         &DataKey::DepositorIndexTtl(depositor.clone()),
         &DataKey::DepositorIndex(depositor),
     )
 }
-
 
 /// Initialize the contract with the admin address and the token address (XLM).
 pub fn init(env: Env, admin: Address, token: Address) -> Result<(), Error> {
@@ -285,7 +255,6 @@ pub fn init(env: Env, admin: Address, token: Address) -> Result<(), Error> {
     Ok(())
 }
 
-
 pub fn init_with_network(
     env: Env,
     admin: Address,
@@ -301,35 +270,27 @@ pub fn init_with_network(
     Ok(())
 }
 
-
 pub fn get_chain_id(env: Env) -> Option<soroban_sdk::String> {
     env.storage().instance().get(&DataKey::ChainId)
 }
-
 
 pub fn get_network_id(env: Env) -> Option<soroban_sdk::String> {
     env.storage().instance().get(&DataKey::NetworkId)
 }
 
-
-pub fn get_network_info(
-    env: Env,
-) -> (Option<soroban_sdk::String>, Option<soroban_sdk::String>) {
+pub fn get_network_info(env: Env) -> (Option<soroban_sdk::String>, Option<soroban_sdk::String>) {
     (get_chain_id(env.clone()), get_network_id(env))
 }
-
 
 /// Return the persisted contract version.
 pub fn get_version(env: Env) -> u32 {
     env.storage().instance().get(&DataKey::Version).unwrap_or(0)
 }
 
-
 /// Returns the currently active admin, or `None` if the contract is not initialized.
 pub fn get_admin(env: Env) -> Option<Address> {
     env.storage().instance().get(&DataKey::Admin)
 }
-
 
 /// Update the persisted contract version (admin only).
 pub fn set_version(env: Env, new_version: u32) -> Result<(), Error> {
@@ -344,7 +305,6 @@ pub fn set_version(env: Env, new_version: u32) -> Result<(), Error> {
         .set(&DataKey::Version, &new_version);
     Ok(())
 }
-
 
 pub fn propose_admin(env: Env, new_admin: Address) {
     let admin: Address = env
@@ -363,7 +323,6 @@ pub fn propose_admin(env: Env, new_admin: Address) {
 
     events::emit_admin_proposed(&env, admin, new_admin);
 }
-
 
 pub fn accept_admin(env: Env) {
     let pending: Address = env
@@ -400,7 +359,6 @@ pub fn accept_admin(env: Env) {
     events::emit_admin_transferred(&env, old_admin, pending);
 }
 
-
 pub fn cancel_admin_transfer(env: Env) {
     let admin: Address = env
         .storage()
@@ -416,7 +374,6 @@ pub fn cancel_admin_transfer(env: Env) {
 
     events::emit_admin_transfer_cancelled_v1(&env, admin);
 }
-
 
 /// Propose a new admin. The current admin remains active until the pending admin
 /// explicitly accepts after the configured timelock.
@@ -461,7 +418,6 @@ pub fn propose_admin_rotation(env: Env, new_admin: Address) -> Result<u64, Error
 
     Ok(execute_after)
 }
-
 
 /// Accept a previously proposed admin rotation once the timelock has elapsed.
 pub fn accept_admin_rotation(env: Env) -> Result<Address, Error> {
@@ -508,7 +464,6 @@ pub fn accept_admin_rotation(env: Env) -> Result<Address, Error> {
     Ok(pending_admin)
 }
 
-
 /// Cancel a pending admin rotation while keeping the current admin unchanged.
 pub fn cancel_admin_rotation(env: Env) -> Result<(), Error> {
     let admin: Address = env
@@ -539,7 +494,6 @@ pub fn cancel_admin_rotation(env: Env) -> Result<(), Error> {
 
     Ok(())
 }
-
 
 /// Update the global admin-rotation timelock duration.
 pub fn set_rotation_timelock_duration(env: Env, duration: u64) -> Result<(), Error> {
@@ -573,7 +527,6 @@ pub fn set_rotation_timelock_duration(env: Env, duration: u64) -> Result<(), Err
     Ok(())
 }
 
-
 /// Returns the configured timelock duration for future admin rotations.
 pub fn get_rotation_timelock_duration(env: Env) -> u64 {
     env.storage()
@@ -582,18 +535,15 @@ pub fn get_rotation_timelock_duration(env: Env) -> u64 {
         .unwrap_or(DEFAULT_ADMIN_ROTATION_TIMELOCK)
 }
 
-
 /// Returns the pending admin, if a rotation is currently waiting for acceptance.
 pub fn get_pending_admin(env: Env) -> Option<Address> {
     env.storage().instance().get(&DataKey::PendingAdmin)
 }
 
-
 /// Returns the acceptance timestamp for the current pending admin rotation.
 pub fn get_admin_rotation_timelock(env: Env) -> Option<u64> {
     env.storage().instance().get(&DataKey::AdminTimelock)
 }
-
 
 /// Returns comprehensive admin rotation state for indexing and UI display.
 ///
@@ -620,7 +570,6 @@ pub fn get_admin_rotation_status(env: Env) -> Option<AdminRotationStatus> {
     })
 }
 
-
 /// Returns the full admin rotation configuration.
 pub fn get_admin_rotation_config(env: Env) -> AdminRotationConfig {
     let duration = get_rotation_timelock_duration(env.clone());
@@ -635,12 +584,10 @@ pub fn get_admin_rotation_config(env: Env) -> AdminRotationConfig {
     }
 }
 
-
 /// Returns the effective max batch size for lock operations.
 pub fn get_max_batch_size(env: Env) -> u32 {
     get_batch_size_caps_internal(&env).lock_cap
 }
-
 
 /// View: returns the effective batch size caps for lock and release operations.
 ///
@@ -649,7 +596,6 @@ pub fn get_max_batch_size(env: Env) -> u32 {
 pub fn get_batch_size_caps(env: Env) -> BatchSizeCaps {
     get_batch_size_caps_internal(&env)
 }
-
 
 /// Admin: configure independent batch size caps for lock and release operations.
 ///
@@ -698,7 +644,6 @@ pub fn set_batch_size_caps(env: Env, lock_cap: u32, release_cap: u32) -> Result<
     Ok(())
 }
 
-
 /// Returns the notification preference bitmask for a bounty.
 ///
 /// # Errors
@@ -711,7 +656,6 @@ pub fn get_notification_preferences(env: Env, bounty_id: u64) -> Result<u32, Err
         .ok_or(Error::BountyNotFound)?;
     Ok(metadata.notification_prefs)
 }
-
 
 /// Sets the notification preference bitmask for a bounty (admin only).
 ///
@@ -771,4 +715,3 @@ pub fn set_notification_preferences(
 
     Ok(())
 }
-

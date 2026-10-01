@@ -125,15 +125,8 @@ fn test_insurance_reserve_bps_defaults_to_zero() {
 #[test]
 fn test_update_fee_config_sets_insurance_reserve_bps() {
     let t = TestEnv::new(0);
-    t.client.update_fee_config(
-        &None,
-        &None,
-        &None,
-        &None,
-        &None,
-        &None,
-        &Some(500_u32),
-    );
+    t.client
+        .update_fee_config(&None, &None, &None, &None, &None, &None, &Some(500_u32));
     let cfg = t.client.get_fee_config();
     assert_eq!(cfg.insurance_reserve_bps, 500);
 }
@@ -177,25 +170,11 @@ fn test_insurance_reserve_bps_above_max_rejected() {
 #[test]
 fn test_insurance_reserve_bps_preserved_across_partial_updates() {
     let t = TestEnv::new(0);
-    t.client.update_fee_config(
-        &None,
-        &None,
-        &None,
-        &None,
-        &None,
-        &None,
-        &Some(200_u32),
-    );
+    t.client
+        .update_fee_config(&None, &None, &None, &None, &None, &None, &Some(200_u32));
     // Now update only payout_fee_rate, leave insurance_reserve_bps as None
-    t.client.update_fee_config(
-        &None,
-        &Some(100_i128),
-        &None,
-        &None,
-        &None,
-        &None,
-        &None,
-    );
+    t.client
+        .update_fee_config(&None, &Some(100_i128), &None, &None, &None, &None, &None);
     let cfg = t.client.get_fee_config();
     assert_eq!(cfg.insurance_reserve_bps, 200);
     assert_eq!(cfg.payout_fee_rate, 100);
@@ -685,8 +664,14 @@ fn test_solvency_normal_payout_path() {
     t.client.single_payout(&recipient, &gross, &None);
 
     let r1 = t.client.get_insurance_reserve_balance();
-    assert_eq!(r1, 20, "reserve storage must reflect exact carve-out credit");
-    assert!(r1 >= r0, "solvency invariant: reserve must grow non-negatively");
+    assert_eq!(
+        r1, 20,
+        "reserve storage must reflect exact carve-out credit"
+    );
+    assert!(
+        r1 >= r0,
+        "solvency invariant: reserve must grow non-negatively"
+    );
 
     // Direct storage assertion
     t.env.as_contract(&t.client.address, || {
@@ -696,13 +681,19 @@ fn test_solvency_normal_payout_path() {
             .instance()
             .get(&DataKey::InsuranceReserve)
             .unwrap_or(0);
-        assert_eq!(stored, 20, "storage key DataKey::InsuranceReserve must equal 20");
+        assert_eq!(
+            stored, 20,
+            "storage key DataKey::InsuranceReserve must equal 20"
+        );
     });
 
     let recipient_bal = t.token.balance(&recipient);
     let fee_bal = t.token.balance(&t.fee_recipient);
     assert_eq!(recipient_bal, 1_960, "recipient receives net amount");
-    assert_eq!(fee_bal, 20, "fee recipient receives fee minus reserve share");
+    assert_eq!(
+        fee_bal, 20,
+        "fee recipient receives fee minus reserve share"
+    );
     assert_eq!(
         recipient_bal + fee_bal + r1,
         gross,
@@ -711,17 +702,23 @@ fn test_solvency_normal_payout_path() {
 
     // Event assertions: events emitted, but NO reserve withdrawal event
     let events_after = t.env.events().all();
-    assert!(events_after.len() > events_before, "events must be recorded");
-    let has_withdrawal_event = events_after
-        .iter()
-        .skip(events_before as usize)
-        .any(|(_, topics, _)| {
-            if let Ok(topic_sym) = Symbol::try_from_val(&t.env, &topics.get(0).unwrap_or_default()) {
-                topic_sym == INSURANCE_RESERVE_WITHDRAWN
-            } else {
-                false
-            }
-        });
+    assert!(
+        events_after.len() > events_before,
+        "events must be recorded"
+    );
+    let has_withdrawal_event =
+        events_after
+            .iter()
+            .skip(events_before as usize)
+            .any(|(_, topics, _)| {
+                if let Ok(topic_sym) =
+                    Symbol::try_from_val(&t.env, &topics.get(0).unwrap_or_default())
+                {
+                    topic_sym == INSURANCE_RESERVE_WITHDRAWN
+                } else {
+                    false
+                }
+            });
     assert!(
         !has_withdrawal_event,
         "normal payout must NOT emit InsuranceReserveWithdrawnEvent"
@@ -760,7 +757,11 @@ fn test_solvency_fee_shortfall_and_underfunded_safe_failure() {
         r_after_fail, r_initial,
         "storage must be strictly unchanged after failed underfunded withdrawal"
     );
-    assert_eq!(t.token.balance(&target), 0, "no tokens transferred to target");
+    assert_eq!(
+        t.token.balance(&target),
+        0,
+        "no tokens transferred to target"
+    );
 
     // Direct storage check
     t.env.as_contract(&t.client.address, || {
@@ -775,16 +776,19 @@ fn test_solvency_fee_shortfall_and_underfunded_safe_failure() {
 
     // Event check: zero withdrawal events emitted
     let events_after = t.env.events().all();
-    let has_withdrawal_event = events_after
-        .iter()
-        .skip(events_before as usize)
-        .any(|(_, topics, _)| {
-            if let Ok(topic_sym) = Symbol::try_from_val(&t.env, &topics.get(0).unwrap_or_default()) {
-                topic_sym == INSURANCE_RESERVE_WITHDRAWN
-            } else {
-                false
-            }
-        });
+    let has_withdrawal_event =
+        events_after
+            .iter()
+            .skip(events_before as usize)
+            .any(|(_, topics, _)| {
+                if let Ok(topic_sym) =
+                    Symbol::try_from_val(&t.env, &topics.get(0).unwrap_or_default())
+                {
+                    topic_sym == INSURANCE_RESERVE_WITHDRAWN
+                } else {
+                    false
+                }
+            });
     assert!(
         !has_withdrawal_event,
         "failed underfunded withdrawal must NOT emit withdrawal event"
@@ -793,7 +797,10 @@ fn test_solvency_fee_shortfall_and_underfunded_safe_failure() {
     // 2. Empty reserve safe failure on a separate contract instance
     let t_empty = TestEnv::new(10_000);
     let res_empty = t_empty.client.try_withdraw_insurance_reserve(&target, &1);
-    assert!(res_empty.is_err(), "withdrawal from empty reserve must fail");
+    assert!(
+        res_empty.is_err(),
+        "withdrawal from empty reserve must fail"
+    );
     assert_eq!(t_empty.client.get_insurance_reserve_balance(), 0);
 }
 
@@ -821,12 +828,9 @@ fn test_solvency_refund_path() {
     let claim_recipient = Address::generate(&t.env);
     let claim_amount = 2_000_i128;
     let deadline = t.env.ledger().timestamp() + 3_600;
-    let claim_id = t.client.create_pending_claim(
-        &t.program_id,
-        &claim_recipient,
-        &claim_amount,
-        &deadline,
-    );
+    let claim_id =
+        t.client
+            .create_pending_claim(&t.program_id, &claim_recipient, &claim_amount, &deadline);
 
     let remaining_before_refund = t.client.get_remaining_balance();
     let events_before_refund = t.env.events().all().len();
@@ -855,34 +859,49 @@ fn test_solvency_refund_path() {
             .instance()
             .get(&DataKey::InsuranceReserve)
             .unwrap_or(0);
-        assert_eq!(stored, 50, "DataKey::InsuranceReserve storage preserved across refund");
+        assert_eq!(
+            stored, 50,
+            "DataKey::InsuranceReserve storage preserved across refund"
+        );
     });
 
     // Assert events: claim cancelled event emitted, zero reserve withdrawal events
     let all_events = t.env.events().all();
-    let has_claim_cancel_event = all_events
-        .iter()
-        .skip(events_before_refund as usize)
-        .any(|(_, topics, _)| {
-            if let Ok(topic_sym) = Symbol::try_from_val(&t.env, &topics.get(0).unwrap_or_default()) {
-                topic_sym == symbol_short!("ClmCncl")
-            } else {
-                false
-            }
-        });
-    assert!(has_claim_cancel_event, "cancel_claim must emit ClmCncl event");
+    let has_claim_cancel_event =
+        all_events
+            .iter()
+            .skip(events_before_refund as usize)
+            .any(|(_, topics, _)| {
+                if let Ok(topic_sym) =
+                    Symbol::try_from_val(&t.env, &topics.get(0).unwrap_or_default())
+                {
+                    topic_sym == symbol_short!("ClmCncl")
+                } else {
+                    false
+                }
+            });
+    assert!(
+        has_claim_cancel_event,
+        "cancel_claim must emit ClmCncl event"
+    );
 
-    let has_withdrawal_event = all_events
-        .iter()
-        .skip(events_before_refund as usize)
-        .any(|(_, topics, _)| {
-            if let Ok(topic_sym) = Symbol::try_from_val(&t.env, &topics.get(0).unwrap_or_default()) {
-                topic_sym == INSURANCE_RESERVE_WITHDRAWN
-            } else {
-                false
-            }
-        });
-    assert!(!has_withdrawal_event, "refund path must NOT emit reserve withdrawal event");
+    let has_withdrawal_event =
+        all_events
+            .iter()
+            .skip(events_before_refund as usize)
+            .any(|(_, topics, _)| {
+                if let Ok(topic_sym) =
+                    Symbol::try_from_val(&t.env, &topics.get(0).unwrap_or_default())
+                {
+                    topic_sym == INSURANCE_RESERVE_WITHDRAWN
+                } else {
+                    false
+                }
+            });
+    assert!(
+        !has_withdrawal_event,
+        "refund path must NOT emit reserve withdrawal event"
+    );
 }
 
 /// Path 4: Cancellation path transition.
@@ -907,8 +926,12 @@ fn test_solvency_cancellation_path() {
     let r2 = Address::generate(&t.env);
     let deadline = t.env.ledger().timestamp() + 7_200;
 
-    let c1 = t.client.create_pending_claim(&t.program_id, &r1, &500, &deadline);
-    let c2 = t.client.create_pending_claim(&t.program_id, &r2, &800, &deadline);
+    let c1 = t
+        .client
+        .create_pending_claim(&t.program_id, &r1, &500, &deadline);
+    let c2 = t
+        .client
+        .create_pending_claim(&t.program_id, &r2, &800, &deadline);
 
     // Cancel first claim
     t.client.cancel_claim(&t.program_id, &c1, &t.admin);
@@ -934,7 +957,10 @@ fn test_solvency_cancellation_path() {
             .instance()
             .get(&DataKey::InsuranceReserve)
             .unwrap_or(0);
-        assert_eq!(stored, 10, "DataKey::InsuranceReserve storage unchanged across cancellations");
+        assert_eq!(
+            stored, 10,
+            "DataKey::InsuranceReserve storage unchanged across cancellations"
+        );
     });
 }
 
@@ -1007,13 +1033,17 @@ fn test_solvency_repeated_failure_path() {
         .iter()
         .skip(events_before as usize)
         .any(|(_, topics, _)| {
-            if let Ok(topic_sym) = Symbol::try_from_val(&t.env, &topics.get(0).unwrap_or_default()) {
+            if let Ok(topic_sym) = Symbol::try_from_val(&t.env, &topics.get(0).unwrap_or_default())
+            {
                 topic_sym == INSURANCE_RESERVE_WITHDRAWN
             } else {
                 false
             }
         });
-    assert!(!has_spurious_event, "no withdrawal events during failed attempts");
+    assert!(
+        !has_spurious_event,
+        "no withdrawal events during failed attempts"
+    );
     assert_eq!(t.token.balance(&target), 0, "target balance strictly 0");
 
     // Subsequent valid withdrawal: admin withdraws 40 tokens
@@ -1033,7 +1063,8 @@ fn test_solvency_repeated_failure_path() {
         .iter()
         .skip(events_before as usize)
         .filter(|(_, topics, _)| {
-            if let Ok(topic_sym) = Symbol::try_from_val(&t.env, &topics.get(0).unwrap_or_default()) {
+            if let Ok(topic_sym) = Symbol::try_from_val(&t.env, &topics.get(0).unwrap_or_default())
+            {
                 topic_sym == INSURANCE_RESERVE_WITHDRAWN
             } else {
                 false
@@ -1075,4 +1106,3 @@ fn test_solvency_strict_non_negative_no_transient_negative() {
     assert_eq!(bal_after, 10, "reserve balance must remain exactly 10");
     assert!(bal_after >= 0, "solvency invariant: balance must be >= 0");
 }
-

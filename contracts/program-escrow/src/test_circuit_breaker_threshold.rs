@@ -10,10 +10,7 @@
 #[cfg(test)]
 mod test {
     use crate::error_recovery::{self, CircuitBreakerKey, CircuitState};
-    use crate::{
-        ProgramEscrowContract, ProgramEscrowContractClient,
-        errors::ContractError,
-    };
+    use crate::{errors::ContractError, ProgramEscrowContract, ProgramEscrowContractClient};
     use soroban_sdk::{
         symbol_short,
         testutils::{Address as _, Events, Ledger},
@@ -107,10 +104,10 @@ mod test {
     #[test]
     fn test_set_custom_threshold() {
         let s = setup();
-        
+
         // Set threshold to 10
         s.client.set_cb_threshold(&s.program_id, &Some(10u8));
-        
+
         let program_data = get_program_data(&s.env, &s.program_id);
         assert_eq!(program_data.circuit_breaker_threshold, Some(10));
     }
@@ -119,13 +116,13 @@ mod test {
     #[test]
     fn test_reset_threshold_to_none() {
         let s = setup();
-        
+
         // Set threshold to 10
         s.client.set_cb_threshold(&s.program_id, &Some(10u8));
-        
+
         // Reset to None
         s.client.set_cb_threshold(&s.program_id, &None);
-        
+
         let program_data = get_program_data(&s.env, &s.program_id);
         assert_eq!(program_data.circuit_breaker_threshold, None);
     }
@@ -151,7 +148,7 @@ mod test {
     fn test_threshold_minimum_valid() {
         let s = setup();
         s.client.set_cb_threshold(&s.program_id, &Some(1u8));
-        
+
         let program_data = get_program_data(&s.env, &s.program_id);
         assert_eq!(program_data.circuit_breaker_threshold, Some(1));
     }
@@ -161,7 +158,7 @@ mod test {
     fn test_threshold_maximum_valid() {
         let s = setup();
         s.client.set_cb_threshold(&s.program_id, &Some(100u8));
-        
+
         let program_data = get_program_data(&s.env, &s.program_id);
         assert_eq!(program_data.circuit_breaker_threshold, Some(100));
     }
@@ -174,9 +171,9 @@ mod test {
     #[test]
     fn test_set_threshold_emits_event() {
         let s = setup();
-        
+
         s.client.set_cb_threshold(&s.program_id, &Some(10u8));
-        
+
         assert!(
             has_event_topic(&s.env, symbol_short!("CbThrSet"), symbol_short!("CbThrSet")),
             "CB_THRESHOLD_SET event must be emitted when threshold is set"
@@ -187,13 +184,13 @@ mod test {
     #[test]
     fn test_event_contains_threshold_values() {
         let s = setup();
-        
+
         // First set: previous is None
         s.client.set_cb_threshold(&s.program_id, &Some(10u8));
-        
+
         // Second set: previous is Some(10)
         s.client.set_cb_threshold(&s.program_id, &Some(20u8));
-        
+
         // Verify events were emitted
         let events = s.env.events().all();
         let mut threshold_set_count = 0;
@@ -206,7 +203,10 @@ mod test {
                 }
             }
         }
-        assert_eq!(threshold_set_count, 2, "Should emit 2 CB_THRESHOLD_SET events");
+        assert_eq!(
+            threshold_set_count, 2,
+            "Should emit 2 CB_THRESHOLD_SET events"
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -219,10 +219,10 @@ mod test {
     fn test_unauthorized_cannot_set_threshold() {
         let s = setup();
         let unauthorized = Address::generate(&s.env);
-        
+
         s.env.mock_all_auths(); // Mock all auths except the specific one we want to fail
         s.env.budget().reset_unlimited();
-        
+
         // Try to set threshold as unauthorized user
         // This should fail because require_auth is called on authorized_payout_key
         s.client.set_cb_threshold(&s.program_id, &Some(10u8));
@@ -236,15 +236,18 @@ mod test {
     #[test]
     fn test_circuit_breaker_uses_custom_threshold() {
         let s = setup();
-        
+
         // Set custom threshold to 5
         s.client.set_cb_threshold(&s.program_id, &Some(5u8));
-        
+
         let program_data = get_program_data(&s.env, &s.program_id);
-        let threshold = program_data.circuit_breaker_threshold.map(|t| t as u32).unwrap_or(3);
-        
+        let threshold = program_data
+            .circuit_breaker_threshold
+            .map(|t| t as u32)
+            .unwrap_or(3);
+
         assert_eq!(threshold, 5);
-        
+
         // Record failures up to threshold
         s.env.as_contract(&s.client.address, || {
             for i in 0..threshold {
@@ -256,7 +259,7 @@ mod test {
                     program_data.circuit_breaker_threshold.map(|t| t as u32),
                 );
             }
-            
+
             // Circuit should be open after threshold failures
             assert_eq!(
                 error_recovery::get_state(&s.env),
@@ -271,12 +274,15 @@ mod test {
     #[test]
     fn test_circuit_breaker_uses_default_threshold() {
         let s = setup();
-        
+
         let program_data = get_program_data(&s.env, &s.program_id);
-        let threshold = program_data.circuit_breaker_threshold.map(|t| t as u32).unwrap_or(3);
-        
+        let threshold = program_data
+            .circuit_breaker_threshold
+            .map(|t| t as u32)
+            .unwrap_or(3);
+
         assert_eq!(threshold, 3);
-        
+
         // Record failures up to default threshold
         s.env.as_contract(&s.client.address, || {
             for i in 0..threshold {
@@ -288,7 +294,7 @@ mod test {
                     program_data.circuit_breaker_threshold.map(|t| t as u32),
                 );
             }
-            
+
             // Circuit should be open after 3 failures
             assert_eq!(
                 error_recovery::get_state(&s.env),
