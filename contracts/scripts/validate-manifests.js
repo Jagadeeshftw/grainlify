@@ -27,9 +27,9 @@ function formatError(error) {
     ? `required property '${error.params.missingProperty}'`
     : error.keyword;
   const expected = error.keyword === 'enum'
-    ? ` Allowed values: ${error.params.allowedValues.join(', ')}.`
+    ? `Allowed values: ${error.params.allowedValues.join(', ')}`
     : '';
-  return `${location}: ${rule} - ${error.message}.${expected}`;
+  return `${location}: ${rule}${expected ? ` - ${expected}` : ''}`;
 }
 
 function loadValidator() {
@@ -78,12 +78,19 @@ function getCrateName(cargoTomlPath) {
   return match ? match[1] : null;
 }
 
+function parseJsonFile(filePath) {
+  const buffer = fs.readFileSync(filePath);
+  const encoding = buffer[0] === 0xff && buffer[1] === 0xfe ? 'utf16le' : 'utf8';
+  const content = buffer.toString(encoding).replace(/^\uFEFF/, '');
+  return JSON.parse(content);
+}
+
 function validateManifest(manifestPath, validate) {
   let data;
   try {
-    data = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    data = parseJsonFile(manifestPath);
   } catch (error) {
-    return { valid: false, errors: [`/: parse error - ${error.message}`] };
+    return { valid: false, errors: [`JSON parse error: ${error.message}`] };
   }
 
   if (validate(data)) {
@@ -140,9 +147,11 @@ function run() {
   for (const dir of deployableDirs) {
     const crateName = getCrateName(path.join(dir, 'Cargo.toml'));
     if (!crateName) continue;
+    const manifestCrateNames = [crateName, crateName.replace(/^soroban-/, '')]
+      .map(name => name.replace(/_/g, '-'));
     const hasManifest = manifestPaths.some(m => {
-      const basename = path.basename(m);
-      return path.dirname(m) === dir || basename.includes(crateName) || basename.includes(crateName.replace(/_/g, '-'));
+        const basename = path.basename(m);
+        return manifestCrateNames.some(name => basename.includes(name));
     });
     if (!hasManifest) {
       log('red', `Deployable crate '${crateName}' at ${dir} is missing a manifest.`);
@@ -178,3 +187,4 @@ module.exports = {
   run,
   validateManifest,
 };
+

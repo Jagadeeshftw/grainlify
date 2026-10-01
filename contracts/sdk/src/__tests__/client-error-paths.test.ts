@@ -22,6 +22,7 @@ import { Keypair } from '@stellar/stellar-sdk';
  
 const VALID_ADDRESS = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 const VALID_ADDRESS_2 = 'GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB';
+const TOKEN_CONTRACT_ID = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 const CONTRACT_ID = 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC';
 const RPC_URL = 'https://soroban-testnet.stellar.org';
 const PASSPHRASE = 'Test SDF Network ; September 2015';
@@ -187,7 +188,7 @@ describe('Contract errors through ProgramEscrowClient methods', () => {
         await client.initProgram(
           'my-program',
           VALID_ADDRESS,
-          VALID_ADDRESS_2,
+          TOKEN_CONTRACT_ID,
           keypair,
         );
         fail('Expected ContractError');

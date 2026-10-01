@@ -12,18 +12,23 @@ export async function fullLifecycleExample(
     tokenAddress: string
 ) {
     console.log('--- Step 1: Initialize Program ---');
-    const initData = await client.initProgram(programId, authorizedPayoutKey, tokenAddress, sourceKeypair);
+    const initData = await client.initProgram(
+        programId,
+        authorizedPayoutKey,
+        tokenAddress,
+        sourceKeypair,
+        50000000n
+    );
     console.log('Program initialized:', initData.program_id);
 
-    console.log('--- Step 2: Lock Funds ---');
-    await client.lockProgramFunds(50000000n, sourceKeypair);
-    console.log('Funds locked.');
+    console.log('--- Step 2: Publish Program ---');
+    await client.publishProgram(programId, sourceKeypair.publicKey(), sourceKeypair);
+    console.log('Program published.');
 
     console.log('--- Step 3: Batch Payout ---');
-    const recipients = [
-        'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
-        'GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
-    ];
+    // Both recipients are valid, funded network accounts supplied by the
+    // caller. This keeps the example runnable on an actual deployment.
+    const recipients = [sourceKeypair.publicKey(), sourceKeypair.publicKey()];
     const amounts = [10000000n, 15000000n];
     await client.batchPayout(recipients, amounts, sourceKeypair);
     console.log('Batch payout executed.');

@@ -1,0 +1,115 @@
+name: Smoke Deploy
+
+on:
+  schedule:
+    # Stated cadence: every day at 03:17 UTC.
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'scripts/smoke-deploy.sh'
+      - 'scripts/release-wasm.sh'
+      - 'scripts/test_upgrade_contract.sh'
+      - '.github/workflows/smoke-deploy.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  smoke-deploy:
+    name: Smoke deploy (all deployable artifacts)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: smoke-deploy-${{ runner.os }}-${{ hashFiles('**\/Cargo.lock') }}
+          restore-keys: |
+            smoke-deploy-${{ runner.os }}-
+
+      - name: Run smoke deploy
+        id: smoke
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p smoke-out
+          # Run the smoke deploy and tee its full output so a failure is
+          # diagnosable from the CI log alone.
+          ./scripts/smoke-deploy.sh 2>&1 | tee smoke-out/smoke-deploy.log
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify explicit pass condition
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG=smoke-out/smoke-deploy.log
+          echo "::group::Smoke deploy output"
+          cat "$LOG"
+          echo "::endgroup::"
+
+          # Pass condition (explicit, not just exit code):
+          #   1. The script must emit a machine-readable summary line
+          #      "SMOKE_DEPLOY_RESULT: PASS".
+          #   2. Every deployable artifact in the inventory must appear in a
+          #      "SMOKE_DEPLOY_ARTIFACT: <name> OK" line.
+          #   3. No "SMOKE_DEPLOY_ARTIFACT: <name> FAIL" line may be present.
+          #   4. The script must exit 0.
+          exit_code="${{ steps.smoke.outputs.exit_code }}"
+          failed=0
+
+          if ! grep -q '^SMOKE_DEPLOY_RESULT: PASS$' "$LOG"; then
+            echo "::error::Smoke deploy did not report a PASS summary line."
+            failed=1
+          fi
+
+          if grep -q '^SMOKE_DEPLOY_ARTIFACT: .* FAIL$' "$LOG"; then
+            echo "::error::Smoke deploy reported failed artifact(s):"
+            grep '^SMOKE_DEPLOY_ARTIFACT: .* FAIL$' "$LOG" | sed 's/^/:  /'
+            failed=1
+          fi
+
+          if ! grep -q '^SMOKE_DEPLOY_ARTIFACT: .* OK$' "$LOG"; then
+            echo "::error::Smoke deploy reported no successful deployable artifacts."
+            failed=1
+          fi
+
+          if [ "$exit_code" != "0" ]; then
+            echo "::error::Smoke deploy exited with code $exit_code."
+            failed=1
+          fi
+
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::Smoke deploy pass condition not met. See the log above for the failing artifact and reason."
+            exit 1
+          fi
+
+          echo "Smoke deploy passed: all deployable artifacts deployed and verified."
+
+      - name: Upload smoke deploy log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-deploy-log
+          path: smoke-out/smoke-deploy.log
+          if-no-files-found: warn

@@ -9,12 +9,12 @@ There are **three Cargo workspaces** in two Soroban contract trees. Do not choos
 | Change                                                                  | Make it here                               | Notes                                                                                                                                                                   |
 | ----------------------------------------------------------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Production bounty escrow behavior, tests, or deployable escrow WASM     | `contracts/bounty_escrow/contracts/escrow` | Authoritative escrow; package `bounty-escrow`, SDK 21.7.7, workspace root `contracts/bounty_escrow`. This alone produces the deployable `bounty_escrow.wasm`.           |
-| Production program funds, payouts, recovery, or payout API              | `contracts/program-escrow`                 | Authoritative SDK 21.7.7 program-escrow.                                                                                                                                |
+| Production program funds, payouts, recovery, or payout API              | `contracts/program-escrow`                 | Authoritative program escrow; package `program-escrow`, SDK 21.7.7. This alone produces the deployable `program_escrow.wasm`.                                           |
 | Shared contract types, governance, upgrade, storage, or feature support | `contracts/grainlify-core`                 | Shared by production contracts and facades.                                                                                                                             |
 | Read-only program registry/query API                                    | `contracts/view-facade`                    | Program-focused registry facade. Keep mirrored ABI types synchronized.                                                                                                  |
 | Read-only bounty summaries and portfolio API                            | `contracts/escrow-view-facade`             | Bounty/program query facade; update its local bindings when a canonical contract type changes.                                                                          |
 | Supporting Rust utility library/CLI or root contract tooling            | `contracts/`                               | This is also its own workspace and root package, not just a directory containing the other crates.                                                                      |
-| Protocol-23 experiment, migration work, or stream fixture               | `soroban/contracts/*`                      | Separate SDK 23.4.1 workspace. Its `escrow` and `program-escrow` are distinct crates; `soroban/contracts/escrow` is superseded/reference-only and must not be deployed. |
+| Protocol-23 experiment, migration work, or stream fixture               | `soroban/contracts/*`                      | Separate SDK 23.4.1 workspace. Both its `escrow` and `program-escrow` crates are superseded/reference-only and must not be deployed.                                    |
 | TypeScript client SDK                                                   | `contracts/sdk`                            | Separate npm package; use its own lockfile and CI commands below.                                                                                                       |
 | Repository-wide architecture, security, deployment, or contributor docs | `docs/` or the matching root guide         | Keep operational facts aligned with the owning code/workspace.                                                                                                          |
 
@@ -22,7 +22,7 @@ There are **three Cargo workspaces** in two Soroban contract trees. Do not choos
 
 `contracts/` is the production contract tree and currently uses the exact Soroban SDK pin `=21.7.7` (protocol 21). It contains both the `contracts` Cargo workspace and the nested `contracts/bounty_escrow` workspace; the nested workspace is excluded from the outer workspace. `soroban/` is an independent protocol-23 tree pinned to `=23.4.1`. These two SDK majors are an intentional, owned migration exception—not permission to add another version. **Never add a Cargo path dependency across these trees.** Read [contracts/SDK_COMPATIBILITY.md](contracts/SDK_COMPATIBILITY.md) before changing SDK pins.
 
-The names `escrow` and `program-escrow` are not sufficient to establish authority. In particular, only `contracts/bounty_escrow/contracts/escrow` is the deployable bounty escrow; `soroban/contracts/escrow` is not. See [the escrow authority note](docs/contracts/escrow-implementation-authority.md) and [DEPLOYABLE_ARTIFACTS.md](DEPLOYABLE_ARTIFACTS.md).
+The names `escrow` and `program-escrow` are not sufficient to establish authority. In particular, only `contracts/bounty_escrow/contracts/escrow` is the deployable bounty escrow; `soroban/contracts/escrow` is not. Likewise, only `contracts/program-escrow` is the deployable program escrow; `soroban/contracts/program-escrow` is not, and the two are not interchangeable — the soroban crate is a program registry/search contract with no payout logic, while the authoritative crate has no registry/search surface. See [the escrow authority note](docs/contracts/escrow-implementation-authority.md), [the program-escrow authority note](docs/contracts/program-escrow-implementation-authority.md), and [DEPLOYABLE_ARTIFACTS.md](DEPLOYABLE_ARTIFACTS.md).
 
 ## Local setup
 
@@ -73,7 +73,7 @@ cargo test -p grainlify-stream --locked
 cargo build -p soroban-program-escrow --target wasm32-unknown-unknown --release --locked
 ```
 
-The deployable `soroban-program-escrow.wasm` must also be at most 131072 bytes; the workflow checks this after the build.
+The resulting `soroban_program_escrow.wasm` must also be at most 131072 bytes; the workflow checks this after the build. Note that `soroban-program-escrow` is superseded and **not deployable** — this gate only catches size regressions in a crate that is still tested. The deployable program escrow is `contracts/program-escrow`.
 
 ### Other CI gates
 

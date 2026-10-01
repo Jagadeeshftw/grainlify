@@ -15,5 +15,10 @@
     "types": ["jest", "node"]
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "src/__tests__/smoke.test.ts"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/__tests__/smoke.test.ts",
+    "src/__tests__/examples.e2e.test.ts"
+  ]
 }

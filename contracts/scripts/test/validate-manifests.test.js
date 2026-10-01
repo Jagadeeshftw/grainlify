@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
@@ -23,6 +24,20 @@ test('accepts every production manifest', () => {
   for (const name of ['bounty-escrow-manifest.json', 'grainlify-core-manifest.json', 'program-escrow-manifest.json']) {
     const result = validateManifest(path.join(__dirname, '..', '..', name), validate);
     assert.equal(result.valid, true, `${name}: ${result.errors.join('; ')}`);
+  }
+});
+
+test('accepts UTF-16LE encoded manifests', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'grainlify-manifest-'));
+  const manifestPath = path.join(tempDir, 'manifest.json');
+
+  try {
+    const manifest = readJson(fixture('valid-minimal.json'));
+    fs.writeFileSync(manifestPath, `\uFEFF${JSON.stringify(manifest)}`, 'utf16le');
+    const result = validateManifest(manifestPath, validate);
+    assert.equal(result.valid, true, result.errors.join('; '));
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
 
