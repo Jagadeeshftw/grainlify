@@ -3,9 +3,41 @@
 > **Crate**: `soroban-program-escrow` (`soroban/contracts/program-escrow`)  
 > **Note on Disambiguation**: This crate is the lightweight Soroban workspace implementation (`soroban-program-escrow`). The authoritative, full-featured deployable program escrow contract is `contracts/program-escrow` (`program-escrow`).
 
+## `soroban-program-escrow` — superseded
+
+> ## SUPERSEDED — DO NOT DEPLOY
+>
+> This crate (`soroban/contracts/program-escrow`, package `soroban-program-escrow`,
+> artifact `soroban_program_escrow.wasm`) registers programs and serves indexed,
+> cursor-paginated search over them, with labels, jurisdiction rules, and
+> ownership transfer.
+>
+> The authoritative program escrow implementation is
+> [`contracts/program-escrow`](../../../contracts/program-escrow/README.md)
+> (package `program-escrow`, artifact `program_escrow.wasm`). It is the **only**
+> program escrow that may be deployed.
+>
+> This crate is retained for reference only. It is not part of the deployable
+> artifact inventory and is never deployed to testnet or mainnet.
+
+See [`docs/contracts/program-escrow-implementation-authority.md`](../../../docs/contracts/program-escrow-implementation-authority.md)
+for the full authority record, evidence, and the deployable artifact inventory.
+
+### Not a drop-in replacement for the authoritative crate
+
+These two crates are **not** competing implementations of one feature set. This
+crate has no payout, release-schedule, dispute, pause, or fee logic; the
+authoritative crate has no registry/search surface. Do not assume an entrypoint
+exists in one because it exists in the other, and never join them with a Cargo
+path dependency across the SDK-21/SDK-23 boundary.
+
+If the registry/search capability is ever needed in production, it must be
+implemented or ported into `contracts/program-escrow` and added to that crate's
+manifest — not deployed from this tree.
+
 ## Crate, deployment, and relationships
 
-This SDK 23 Soroban contract registers programs and provides indexed, cursor-based search, labels, jurisdiction rules, and ownership controls. No network deployment or contract ID is recorded in this repository.
+This SDK 23 Soroban contract registers programs and provides indexed, cursor-based search, labels, jurisdiction rules, and ownership controls. It is superseded and never deployed; no network deployment or contract ID is recorded in this repository, and `Cargo.toml` declares `publish = false`.
 
 - Depends on: no other in-repository crate. It inherits soroban-sdk 23.4.1 and ethnum from the [Soroban workspace](../../README.md) and uses a token contract at runtime.
 - Depended on by: no in-repository Cargo package declares a dependency on this crate.

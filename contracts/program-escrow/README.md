@@ -6,7 +6,7 @@ This is the authoritative, deployable SDK 21 program fund and payout contract. I
 
 - Depends on: [grainlify-core](../grainlify-core/README.md) through Cargo, plus soroban-sdk 21.7.7 and ethnum; it calls a configured token contract at runtime.
 - Depended on by: [view-facade](../view-facade/README.md) and [escrow-view-facade](../escrow-view-facade/README.md) both declare Cargo path dependencies and query its ABI.
-- Same-name distinction: [soroban/contracts/program-escrow](../../soroban/contracts/program-escrow/README.md) is the separate SDK 23 program registry and search implementation. The two crates are not Cargo dependencies of each other.
+- Same-name distinction: [soroban/contracts/program-escrow](../../soroban/contracts/program-escrow/README.md) is the separate SDK 23 program registry and search implementation. It is **superseded and never deployed**. The two crates are not Cargo dependencies of each other and are not interchangeable: that crate has no payout logic, and this one has no registry/search surface. See [the program-escrow authority record](../../docs/contracts/program-escrow-implementation-authority.md).
 
 A Soroban smart contract for managing program-level escrow funds for hackathons and grant programs. This contract handles prize pools, tracks balances, and enables automated batch payouts to multiple contributors.
 

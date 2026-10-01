@@ -5,7 +5,7 @@ This repository contains Grainlify's Stellar Soroban smart contracts and their s
 ## Contract workspaces
 
 - `contracts/` contains the primary contract packages, SDK, manifests, and contract-focused documentation.
-- `soroban/` contains the Soroban workspace and its program-escrow and stream contracts; its `escrow` crate is superseded (reference/parity only).
+- `soroban/` contains the Soroban workspace and its program-escrow and stream contracts; its `escrow` and `program-escrow` crates are superseded (reference only) and no member of that workspace is deployable.
 - `benchmarks/` contains contract performance baselines and thresholds.
 - `scripts/` and `fix/` contain contract validation, testing, upgrade, and maintenance utilities.
 
@@ -24,12 +24,20 @@ The deployment status in each README reflects evidence recorded in this reposito
 | [contracts/view-facade](contracts/view-facade/README.md) | Registry and program read facade |
 | [soroban](soroban/README.md) | SDK 23 workspace |
 | [soroban/contracts/escrow](soroban/contracts/escrow/README.md) | Separate SDK 23 bounty-style escrow |
-| [soroban/contracts/program-escrow](soroban/contracts/program-escrow/README.md) | Separate SDK 23 program registry and search |
+| [soroban/contracts/program-escrow](soroban/contracts/program-escrow/README.md) | Separate SDK 23 program registry and search (superseded, not deployed) |
 | [soroban/contracts/stream](soroban/contracts/stream/README.md) | Gas regression test fixtures |
 > **Escrow authority:** the deployed escrow contract is
 > `contracts/bounty_escrow/contracts/escrow` (`bounty_escrow.wasm`). The
 > `soroban/contracts/escrow` crate is superseded and is never deployed. See
 > [`docs/contracts/escrow-implementation-authority.md`](docs/contracts/escrow-implementation-authority.md).
+>
+> **Program-escrow authority:** the deployable program escrow is
+> `contracts/program-escrow` (`program_escrow.wasm`). The
+> `soroban/contracts/program-escrow` crate is superseded and is never deployed;
+> it is a program registry/search contract, not a payout contract, so the two
+> are not interchangeable. See
+> [`docs/contracts/program-escrow-implementation-authority.md`](docs/contracts/program-escrow-implementation-authority.md).
+
 ## System Documentation
 
 The following documents describe the current architecture and behavior of the system:

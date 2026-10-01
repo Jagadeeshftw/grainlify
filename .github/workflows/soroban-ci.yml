@@ -9,14 +9,21 @@ name: Soroban Workspace CI
 # every other workflow filters on `contracts/**`. This workflow brings the
 # workspace — in particular the `grainlify-stream` fixture crate — under the
 # same rustfmt / clippy / `cargo test` gates as the rest of the repository and
-# builds + size-checks its deployable wasm. There is no `continue-on-error`:
+# builds + size-checks its wasm. There is no `continue-on-error`:
 # a failing test fails the job.
 #
 # Note on the wasm gate: `grainlify-stream` is a `testutils`-only, host-side
-# helper crate with no `crate-type`, so it cannot produce a deployable wasm
-# (see the artifact inventory comment in build-reproducibility.yml). The
-# deployable member of this workspace, `soroban-program-escrow`, is therefore
-# what is built and size-checked below.
+# helper crate with no `crate-type`, so it cannot produce a wasm (see the
+# artifact inventory comment in build-reproducibility.yml). The only cdylib
+# member of this workspace that is built here, `soroban-program-escrow`, is
+# therefore what is size-checked below.
+#
+# `soroban-program-escrow` is SUPERSEDED and is not deployable — the gate below
+# exists only to catch size regressions in a crate that is still tested. The
+# deployable program escrow is `contracts/program-escrow` (`program_escrow.wasm`);
+# see docs/contracts/program-escrow-implementation-authority.md. Likewise
+# `soroban/contracts/escrow` is superseded; see
+# docs/contracts/escrow-implementation-authority.md.
 # ─────────────────────────────────────────────────────────────────────────────
 on:
   push:
@@ -78,10 +85,10 @@ jobs:
           python3 scripts/check-program-escrow-no-traps.py
           --fixture scripts/tests/fixtures/soroban_program_escrow_unwrap_trap.rs
           --expect-fail
-      - name: Build deployable wasm (soroban-program-escrow)
+      - name: Build wasm (soroban-program-escrow, superseded — not deployable)
         run: cargo build -p soroban-program-escrow --target wasm32-unknown-unknown --release --locked
 
-      - name: Check deployable wasm size
+      - name: Check wasm size (regression gate, not a deployable artifact)
         run: |
           set -euo pipefail
           file="target/wasm32-unknown-unknown/release/soroban_program_escrow.wasm"
@@ -97,7 +104,7 @@ jobs:
             exit 1
           fi
 
-      - name: Upload deployable wasm
+      - name: Upload wasm (superseded crate — not deployable)
         uses: actions/upload-artifact@v4
         with:
           name: soroban-wasm

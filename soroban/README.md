@@ -2,7 +2,7 @@
 
 ## Workspace and deployment status
 
-This Cargo workspace groups [escrow](contracts/escrow/README.md), [program-escrow](contracts/program-escrow/README.md), and [grainlify-stream](contracts/stream/README.md). The workspace manifest itself is not a deployable contract. No live deployment IDs for its contract members are recorded here; the environment example configures testnet access, not deployment.
+This Cargo workspace groups [escrow](contracts/escrow/README.md), [program-escrow](contracts/program-escrow/README.md), and [grainlify-stream](contracts/stream/README.md). The workspace manifest itself is not a deployable contract. **No member of this workspace is deployable**: `escrow` and `program-escrow` are both superseded (see the authority notices below), and `grainlify-stream` is a `testutils`-only host-side fixture with no `crate-type`. No live deployment IDs for its contract members are recorded here; the environment example configures testnet access, not deployment.
 
 ## Crate relationships
 
@@ -20,6 +20,13 @@ It follows **multi-crate workspace best practices** with separate directories fo
 > implementation is `contracts/bounty_escrow/contracts/escrow`
 > (`bounty_escrow.wasm`). See
 > [`docs/contracts/escrow-implementation-authority.md`](../docs/contracts/escrow-implementation-authority.md).
+
+> **Program-escrow authority:** the `program-escrow` crate below is
+> **superseded** and is kept for reference only; it is not deployed. The
+> authoritative, deployable program escrow is `contracts/program-escrow`
+> (`program_escrow.wasm`). The two are not interchangeable — this workspace's
+> crate is a program registry/search contract with no payout logic. See
+> [`docs/contracts/program-escrow-implementation-authority.md`](../docs/contracts/program-escrow-implementation-authority.md).
 
 ---
 
