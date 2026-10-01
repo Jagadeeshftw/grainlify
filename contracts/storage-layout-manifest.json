@@ -1,11 +1,14 @@
 {
   "format": 1,
-  "policy": "Snapshots are reviewed artifacts. A persistent key or value-type change requires a format bump and a migration note. Snapshots that declare a type_layout_source also pin the declared encoding of every #[contracttype] type in that source; a field addition/removal/reorder/retype fails CI until the schema version, migration note and fixture are updated.",
+  "policy": "Snapshots are reviewed artifacts. A persistent key or value-type change requires a format bump and a migration note. Snapshots that declare a type_layout_source (or type_layout_sources) also pin the declared encoding of every #[contracttype] type in that source; a field addition/removal/reorder/retype fails CI until the schema version, migration note and fixture are updated. Soroban workspace contracts under soroban/contracts/* are covered by soroban-* snapshots; regenerate them with contracts/scripts/gen_storage_layout_types.py.",
   "contracts": [
     { "package": "grainlify-core", "manifest": "contracts/grainlify-core/Cargo.toml", "snapshot": "contracts/storage-layout/grainlify-core.json", "persistent": true },
     { "package": "program-escrow", "manifest": "contracts/program-escrow/Cargo.toml", "snapshot": "contracts/storage-layout/program-escrow.json", "persistent": true },
     { "package": "view-facade", "manifest": "contracts/view-facade/Cargo.toml", "snapshot": "contracts/storage-layout/view-facade.json", "persistent": false },
     { "package": "escrow-view-facade", "manifest": "contracts/escrow-view-facade/Cargo.toml", "snapshot": "contracts/storage-layout/escrow-view-facade.json", "persistent": false },
-    { "package": "bounty-escrow", "manifest": "contracts/bounty_escrow/contracts/escrow/Cargo.toml", "snapshot": "contracts/storage-layout/bounty-escrow.json", "persistent": true }
+    { "package": "bounty-escrow", "manifest": "contracts/bounty_escrow/contracts/escrow/Cargo.toml", "snapshot": "contracts/storage-layout/bounty-escrow.json", "persistent": true },
+    { "package": "soroban-escrow", "manifest": "soroban/contracts/escrow/Cargo.toml", "snapshot": "contracts/storage-layout/soroban-escrow.json", "persistent": true },
+    { "package": "soroban-program-escrow", "manifest": "soroban/contracts/program-escrow/Cargo.toml", "snapshot": "contracts/storage-layout/soroban-program-escrow.json", "persistent": true },
+    { "package": "soroban-stream", "manifest": "soroban/contracts/stream/Cargo.toml", "snapshot": "contracts/storage-layout/soroban-stream.json", "persistent": false }
   ]
 }

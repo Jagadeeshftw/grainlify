@@ -90,6 +90,52 @@
       "xdr_sha256": "20493e706b208c8a2f1a495b581c1aa466a67c1ff5885ac6cbf3360f4f4953e9"
     },
     {
+      "type": "FeeConfigUpdatedEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "admin",
+          "Address"
+        ],
+        [
+          "lock_fee_rate",
+          "i128"
+        ],
+        [
+          "payout_fee_rate",
+          "i128"
+        ],
+        [
+          "lock_fixed_fee",
+          "i128"
+        ],
+        [
+          "payout_fixed_fee",
+          "i128"
+        ],
+        [
+          "fee_recipient",
+          "Address"
+        ],
+        [
+          "fee_enabled",
+          "bool"
+        ],
+        [
+          "insurance_reserve_bps",
+          "u32"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
       "type": "FeeCollectedEvent",
       "kind": "struct",
       "encoding": [
@@ -1768,7 +1814,8 @@
         "DelegateMetaRateLimit(String)",
         "InsuranceReserve",
         "LifecycleTimeline(String)",
-        "ProgramAccessSignal(String)"
+        "ProgramAccessSignal(String)",
+        "MetadataFacetIndex(Symbol, String)"
       ]
     },
     {

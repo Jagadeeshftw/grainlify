@@ -1,0 +1,411 @@
+{
+  "format": 1,
+  "package": "soroban-program-escrow",
+  "schema_version": 1,
+  "type_layout_source": "soroban/contracts/program-escrow/src/lib.rs",
+  "type_layout_policy": "Every #[contracttype] type declared in type_layout_source must appear here with its declared encoding. Adding, removing, reordering or retyping a field changes the encoding and must be accompanied by a STORAGE_SCHEMA_VERSION bump and a migration note. Regenerate: python3 contracts/scripts/gen_storage_layout_types.py contracts/storage-layout/soroban-program-escrow.json",
+  "persistent_keys": [
+    {
+      "name": "Admin",
+      "type": "Address"
+    },
+    {
+      "name": "Token",
+      "type": "Address"
+    },
+    {
+      "name": "ProgramIndex",
+      "type": "Vec<u64>"
+    },
+    {
+      "name": "DeprecationState",
+      "type": "DeprecationState"
+    },
+    {
+      "name": "LabelConfig",
+      "type": "LabelConfig"
+    },
+    {
+      "name": "ReentrancyGuard",
+      "type": "u32"
+    },
+    {
+      "name": "PendingAdmin",
+      "type": "Address"
+    },
+    {
+      "name": "CallbackDepth",
+      "type": "u32"
+    }
+  ],
+  "type_layouts": [
+    {
+      "type": "ProgramStatus",
+      "kind": "enum",
+      "encoding": [
+        "Active",
+        "Completed",
+        "Cancelled"
+      ]
+    },
+    {
+      "type": "ProgramJurisdictionConfig",
+      "kind": "struct",
+      "encoding": [
+        [
+          "tag",
+          "Option<String>"
+        ],
+        [
+          "requires_kyc",
+          "bool"
+        ],
+        [
+          "max_funding",
+          "Option<i128>"
+        ],
+        [
+          "registration_paused",
+          "bool"
+        ]
+      ]
+    },
+    {
+      "type": "OptionalJurisdiction",
+      "kind": "enum",
+      "encoding": [
+        "None",
+        "Some(ProgramJurisdictionConfig)"
+      ]
+    },
+    {
+      "type": "Program",
+      "kind": "struct",
+      "encoding": [
+        [
+          "admin",
+          "Address"
+        ],
+        [
+          "payout_key",
+          "Address"
+        ],
+        [
+          "name",
+          "String"
+        ],
+        [
+          "total_funding",
+          "i128"
+        ],
+        [
+          "status",
+          "ProgramStatus"
+        ],
+        [
+          "jurisdiction",
+          "OptionalJurisdiction"
+        ],
+        [
+          "labels",
+          "Vec<String>"
+        ]
+      ]
+    },
+    {
+      "type": "ProgramRegistrationItem",
+      "kind": "struct",
+      "encoding": [
+        [
+          "program_id",
+          "u64"
+        ],
+        [
+          "admin",
+          "Address"
+        ],
+        [
+          "name",
+          "String"
+        ],
+        [
+          "total_funding",
+          "i128"
+        ]
+      ]
+    },
+    {
+      "type": "DeprecationState",
+      "kind": "struct",
+      "encoding": [
+        [
+          "deprecated",
+          "bool"
+        ],
+        [
+          "migration_target",
+          "Option<Address>"
+        ]
+      ]
+    },
+    {
+      "type": "ProgramRegistrationWithJurisdictionItem",
+      "kind": "struct",
+      "encoding": [
+        [
+          "program_id",
+          "u64"
+        ],
+        [
+          "admin",
+          "Address"
+        ],
+        [
+          "name",
+          "String"
+        ],
+        [
+          "total_funding",
+          "i128"
+        ],
+        [
+          "juris_tag",
+          "Option<String>"
+        ],
+        [
+          "juris_requires_kyc",
+          "bool"
+        ],
+        [
+          "juris_max_funding",
+          "Option<i128>"
+        ],
+        [
+          "juris_registration_paused",
+          "bool"
+        ],
+        [
+          "jurisdiction",
+          "OptionalJurisdiction"
+        ],
+        [
+          "kyc_attested",
+          "Option<bool>"
+        ]
+      ]
+    },
+    {
+      "type": "ProgramRegisteredEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "program_id",
+          "u64"
+        ],
+        [
+          "admin",
+          "Address"
+        ],
+        [
+          "total_funding",
+          "i128"
+        ],
+        [
+          "jurisdiction_tag",
+          "Option<String>"
+        ],
+        [
+          "requires_kyc",
+          "bool"
+        ],
+        [
+          "max_funding",
+          "Option<i128>"
+        ],
+        [
+          "registration_paused",
+          "bool"
+        ],
+        [
+          "labels",
+          "Vec<String>"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "ProgramRegistryEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "program_id",
+          "u64"
+        ],
+        [
+          "admin",
+          "Address"
+        ],
+        [
+          "payout_key",
+          "Address"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "LabelConfig",
+      "kind": "struct",
+      "encoding": [
+        [
+          "restricted",
+          "bool"
+        ],
+        [
+          "allowed_labels",
+          "Vec<String>"
+        ]
+      ]
+    },
+    {
+      "type": "ProgramLabelsUpdatedEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "program_id",
+          "u64"
+        ],
+        [
+          "actor",
+          "Address"
+        ],
+        [
+          "labels",
+          "Vec<String>"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "LabelConfigUpdatedEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "admin",
+          "Address"
+        ],
+        [
+          "restricted",
+          "bool"
+        ],
+        [
+          "allowed_labels",
+          "Vec<String>"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "DataKey",
+      "kind": "enum",
+      "encoding": [
+        "Admin",
+        "Token",
+        "Program(u64)",
+        "ProgramJurisdiction(u64)",
+        "ProgramIndex",
+        "DeprecationState",
+        "LabelConfig",
+        "ReentrancyGuard",
+        "PendingAdmin",
+        "ProgramPendingAdmin(u64)",
+        "CallbackDepth"
+      ]
+    },
+    {
+      "type": "ProgramSearchCriteria",
+      "kind": "struct",
+      "encoding": [
+        [
+          "status_filter",
+          "u32"
+        ],
+        [
+          "admin",
+          "Option<Address>"
+        ]
+      ]
+    },
+    {
+      "type": "ProgramRecord",
+      "kind": "struct",
+      "encoding": [
+        [
+          "program_id",
+          "u64"
+        ],
+        [
+          "admin",
+          "Address"
+        ],
+        [
+          "name",
+          "String"
+        ],
+        [
+          "total_funding",
+          "i128"
+        ],
+        [
+          "status",
+          "ProgramStatus"
+        ]
+      ]
+    },
+    {
+      "type": "ProgramPage",
+      "kind": "struct",
+      "encoding": [
+        [
+          "records",
+          "Vec<ProgramRecord>"
+        ],
+        [
+          "next_cursor",
+          "Option<u64>"
+        ],
+        [
+          "has_more",
+          "bool"
+        ]
+      ]
+    }
+  ]
+}

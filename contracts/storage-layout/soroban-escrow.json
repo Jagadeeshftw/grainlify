@@ -1,0 +1,432 @@
+{
+  "format": 1,
+  "package": "soroban-escrow",
+  "schema_version": 1,
+  "type_layout_sources": [
+    "soroban/contracts/escrow/src/lib.rs",
+    "soroban/contracts/escrow/src/identity.rs"
+  ],
+  "type_layout_policy": "Every #[contracttype] type declared in type_layout_sources must appear here with its declared encoding. Adding, removing, reordering or retyping a field changes the encoding and must be accompanied by a STORAGE_SCHEMA_VERSION bump and a migration note. Regenerate: python3 contracts/scripts/gen_storage_layout_types.py contracts/storage-layout/soroban-escrow.json",
+  "persistent_keys": [
+    {
+      "name": "Admin",
+      "type": "Address"
+    },
+    {
+      "name": "Token",
+      "type": "Address"
+    },
+    {
+      "name": "EscrowIndex",
+      "type": "Vec<u64>"
+    },
+    {
+      "name": "LabelConfig",
+      "type": "LabelConfig"
+    },
+    {
+      "name": "TierLimits",
+      "type": "TierLimits"
+    },
+    {
+      "name": "RiskThresholds",
+      "type": "RiskThresholds"
+    },
+    {
+      "name": "ReentrancyGuard",
+      "type": "u32"
+    }
+  ],
+  "type_layouts": [
+    {
+      "type": "EscrowStatus",
+      "kind": "enum",
+      "encoding": [
+        "Locked",
+        "Released",
+        "Refunded"
+      ]
+    },
+    {
+      "type": "Escrow",
+      "kind": "struct",
+      "encoding": [
+        [
+          "depositor",
+          "Address"
+        ],
+        [
+          "amount",
+          "i128"
+        ],
+        [
+          "remaining_amount",
+          "i128"
+        ],
+        [
+          "status",
+          "EscrowStatus"
+        ],
+        [
+          "deadline",
+          "u64"
+        ],
+        [
+          "jurisdiction",
+          "OptionalJurisdiction"
+        ],
+        [
+          "labels",
+          "Vec<String>"
+        ],
+        [
+          "delegate",
+          "Option<Address>"
+        ],
+        [
+          "delegate_permissions",
+          "u32"
+        ],
+        [
+          "metadata",
+          "Option<String>"
+        ]
+      ]
+    },
+    {
+      "type": "LabelConfig",
+      "kind": "struct",
+      "encoding": [
+        [
+          "restricted",
+          "bool"
+        ],
+        [
+          "allowed_labels",
+          "Vec<String>"
+        ]
+      ]
+    },
+    {
+      "type": "EscrowLabelsUpdatedEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "bounty_id",
+          "u64"
+        ],
+        [
+          "actor",
+          "Address"
+        ],
+        [
+          "labels",
+          "Vec<String>"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "LabelConfigUpdatedEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "admin",
+          "Address"
+        ],
+        [
+          "restricted",
+          "bool"
+        ],
+        [
+          "allowed_labels",
+          "Vec<String>"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "EscrowLabelRecord",
+      "kind": "struct",
+      "encoding": [
+        [
+          "bounty_id",
+          "u64"
+        ],
+        [
+          "depositor",
+          "Address"
+        ],
+        [
+          "amount",
+          "i128"
+        ],
+        [
+          "remaining_amount",
+          "i128"
+        ],
+        [
+          "status",
+          "EscrowStatus"
+        ],
+        [
+          "deadline",
+          "u64"
+        ],
+        [
+          "labels",
+          "Vec<String>"
+        ]
+      ]
+    },
+    {
+      "type": "EscrowLabelPage",
+      "kind": "struct",
+      "encoding": [
+        [
+          "records",
+          "Vec<EscrowLabelRecord>"
+        ],
+        [
+          "next_cursor",
+          "Option<u64>"
+        ],
+        [
+          "has_more",
+          "bool"
+        ]
+      ]
+    },
+    {
+      "type": "EscrowJurisdictionConfig",
+      "kind": "struct",
+      "encoding": [
+        [
+          "tag",
+          "Option<String>"
+        ],
+        [
+          "requires_kyc",
+          "bool"
+        ],
+        [
+          "enforce_identity_limits",
+          "bool"
+        ],
+        [
+          "lock_paused",
+          "bool"
+        ],
+        [
+          "release_paused",
+          "bool"
+        ],
+        [
+          "refund_paused",
+          "bool"
+        ],
+        [
+          "max_lock_amount",
+          "Option<i128>"
+        ]
+      ]
+    },
+    {
+      "type": "EscrowDelegateSetEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "bounty_id",
+          "u64"
+        ],
+        [
+          "delegate",
+          "Address"
+        ],
+        [
+          "permissions",
+          "u32"
+        ],
+        [
+          "updated_by",
+          "Address"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "OptionalJurisdiction",
+      "kind": "enum",
+      "encoding": [
+        "None",
+        "Some(EscrowJurisdictionConfig)"
+      ]
+    },
+    {
+      "type": "EscrowDelegateRevokedEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "bounty_id",
+          "u64"
+        ],
+        [
+          "revoked_by",
+          "Address"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "EscrowMetadataUpdatedEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "bounty_id",
+          "u64"
+        ],
+        [
+          "updated_by",
+          "Address"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "DataKey",
+      "kind": "enum",
+      "encoding": [
+        "Admin",
+        "Token",
+        "Escrow(u64)",
+        "EscrowIndex",
+        "LabelConfig",
+        "AddressIdentity(Address)",
+        "AuthorizedIssuer(Address)",
+        "TierLimits",
+        "RiskThresholds",
+        "ReentrancyGuard",
+        "EscrowJurisdiction(u64)",
+        "PendingAdmin",
+        "EscrowPendingDepositor(u64)"
+      ]
+    },
+    {
+      "type": "IdentityTier",
+      "kind": "enum",
+      "encoding": [
+        "Unverified",
+        "Basic",
+        "Verified",
+        "Premium"
+      ]
+    },
+    {
+      "type": "IdentityClaim",
+      "kind": "struct",
+      "encoding": [
+        [
+          "address",
+          "Address"
+        ],
+        [
+          "tier",
+          "IdentityTier"
+        ],
+        [
+          "risk_score",
+          "u32"
+        ],
+        [
+          "expiry",
+          "u64"
+        ],
+        [
+          "issuer",
+          "Address"
+        ]
+      ]
+    },
+    {
+      "type": "AddressIdentity",
+      "kind": "struct",
+      "encoding": [
+        [
+          "tier",
+          "IdentityTier"
+        ],
+        [
+          "risk_score",
+          "u32"
+        ],
+        [
+          "expiry",
+          "u64"
+        ],
+        [
+          "last_updated",
+          "u64"
+        ]
+      ]
+    },
+    {
+      "type": "TierLimits",
+      "kind": "struct",
+      "encoding": [
+        [
+          "unverified_limit",
+          "i128"
+        ],
+        [
+          "basic_limit",
+          "i128"
+        ],
+        [
+          "verified_limit",
+          "i128"
+        ],
+        [
+          "premium_limit",
+          "i128"
+        ]
+      ]
+    },
+    {
+      "type": "RiskThresholds",
+      "kind": "struct",
+      "encoding": [
+        [
+          "high_risk_threshold",
+          "u32"
+        ],
+        [
+          "high_risk_multiplier",
+          "u32"
+        ]
+      ]
+    }
+  ]
+}
