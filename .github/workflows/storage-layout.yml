@@ -4,13 +4,17 @@ on:
   pull_request:
     paths:
       - "contracts/**"
+      - "soroban/**"
       - "scripts/verify-storage-layout-manifest.py"
+      - "contracts/scripts/**"
       - ".github/workflows/storage-layout.yml"
   push:
     branches: [main, develop, master]
     paths:
       - "contracts/**"
+      - "soroban/**"
       - "scripts/verify-storage-layout-manifest.py"
+      - "contracts/scripts/**"
       - ".github/workflows/storage-layout.yml"
 
 env:
@@ -32,7 +36,12 @@ jobs:
       - name: validate snapshots and contracttype encodings
         run: python3 scripts/verify-storage-layout-manifest.py
       - name: program-escrow package exists
-        run: test -f "$GITHUB_WORKSPACE/contracts/program-escrow/STORAGE_LAYOUT.md"
-      - name: program-escrow storage layout doc exists
         run: test -f contracts/program-escrow/STORAGE_LAYOUT.md
-        run: test -f "${{ github.workspace }}/contracts/program-escrow/STORAGE_LAYOUT.md"
+      - name: soroban escrow snapshot exists
+        run: test -f contracts/storage-layout/soroban-escrow.json
+      - name: soroban program-escrow snapshot exists
+        run: test -f contracts/storage-layout/soroban-program-escrow.json
+      - name: soroban stream snapshot exists
+        run: test -f contracts/storage-layout/soroban-stream.json
+      - name: soroban persisted types covered by manifests
+        run: python3 scripts/verify-storage-layout-manifest.py --require-soroban

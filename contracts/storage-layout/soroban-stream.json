@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "package": "soroban-stream",
+  "schema_version": 1,
+  "type_layout_policy": "grainlify-stream is a gas-regression fixture crate. It declares no #[contracttype] persisted types, so the type_layouts fixture is intentionally empty. If contracttype types are added they must be recorded here via gen_storage_layout_types.py.",
+  "persistent_keys": [],
+  "type_layouts": []
+}
