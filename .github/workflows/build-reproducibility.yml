@@ -53,6 +53,7 @@ on:
       - "soroban/**/*.toml"
       - ".github/workflows/build-reproducibility.yml"
       - "scripts/verify-wasm-artifacts.sh"
+      - "rust-toolchain.toml"
   pull_request:
     branches: [master, main]
     paths:
@@ -62,6 +63,7 @@ on:
       - "soroban/**/*.toml"
       - ".github/workflows/build-reproducibility.yml"
       - "scripts/verify-wasm-artifacts.sh"
+      - "rust-toolchain.toml"
   workflow_dispatch:
 
 env:
@@ -81,11 +83,10 @@ jobs:
       - name: Verify Wasm Inventory
         run: python3 scripts/check_inventory.py
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.88.0
-          targets: wasm32-unknown-unknown
+      # rust-toolchain.toml (repository root) pins the compiler, the components
+      # and both wasm targets; rustup installs it on first use.
+      - name: Use the pinned Rust toolchain
+        run: rustc -vV && cargo -V
 
       - name: Capture compiler and SDK versions
         run: |
@@ -138,11 +139,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.88.0
-          targets: wasm32-unknown-unknown
+      # rust-toolchain.toml (repository root) pins the compiler, the components
+      # and both wasm targets; rustup installs it on first use.
+      - name: Use the pinned Rust toolchain
+        run: rustc -vV && cargo -V
 
       - name: Cache Cargo registry (download cache only)
         uses: actions/cache@v4
@@ -245,11 +245,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.88.0
-          targets: wasm32-unknown-unknown
+      # rust-toolchain.toml (repository root) pins the compiler, the components
+      # and both wasm targets; rustup installs it on first use.
+      - name: Use the pinned Rust toolchain
+        run: rustc -vV && cargo -V
 
       - name: Cache Cargo registry (download cache only)
         uses: actions/cache@v4
@@ -322,11 +321,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.88.0
-          targets: wasm32-unknown-unknown
+      # rust-toolchain.toml (repository root) pins the compiler, the components
+      # and both wasm targets; rustup installs it on first use.
+      - name: Use the pinned Rust toolchain
+        run: rustc -vV && cargo -V
 
       - name: Cache Cargo registry (download cache only)
         uses: actions/cache@v4

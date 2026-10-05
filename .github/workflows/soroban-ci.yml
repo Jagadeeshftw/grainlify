@@ -31,11 +31,13 @@ on:
     paths:
       - "soroban/**"
       - ".github/workflows/soroban-ci.yml"
+      - "rust-toolchain.toml"
   pull_request:
     branches: [master, main]
     paths:
       - "soroban/**"
       - ".github/workflows/soroban-ci.yml"
+      - "rust-toolchain.toml"
   workflow_dispatch:
 
 env:
@@ -51,11 +53,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-          components: rustfmt, clippy
+      # rust-toolchain.toml (repository root) pins the compiler, the components
+      # and both wasm targets; rustup installs it on first use.
+      - name: Use the pinned Rust toolchain
+        run: rustc -vV && cargo -V
 
       - name: Cache Cargo
         uses: actions/cache@v4

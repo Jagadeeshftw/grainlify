@@ -28,10 +28,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Provision stable rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32v1-none, wasm32-unknown-unknown
+      # rust-toolchain.toml (repository root) pins the compiler, the components
+      # and both wasm targets; rustup installs it on first use.
+      - name: Use the pinned Rust toolchain
+        run: rustc -vV && cargo -V
 
       - name: Cargo cache
         uses: actions/cache@v4

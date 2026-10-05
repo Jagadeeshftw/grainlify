@@ -22,7 +22,7 @@ Why two trees exist at all is explained in the [root README](../README.md#contra
 ## Pinning
 
 - Toolchain: Soroban SDK **`21.7.7`** (exact pin in every crate manifest and `bounty_escrow/Cargo.toml` workspace dependency).
-- `rust-toolchain.toml` pins the Rust toolchain used by CI.
+- Rust compiler: the single [`rust-toolchain.toml`](../rust-toolchain.toml) at the repository root, which also covers `contracts/bounty_escrow/` and `soroban/`. There is deliberately no per-workspace toolchain file.
 
 ## Validation
 

@@ -9,6 +9,7 @@ on:
       - "contracts/grainlify-core/src/governance.rs"
       - "contracts/program-escrow/src/error_recovery.rs"
       - ".github/workflows/sdk-ci.yml"
+      - "rust-toolchain.toml"
   pull_request:
     branches: [main, master, develop]
     paths:
@@ -17,6 +18,7 @@ on:
       - "contracts/grainlify-core/src/governance.rs"
       - "contracts/program-escrow/src/error_recovery.rs"
       - ".github/workflows/sdk-ci.yml"
+      - "rust-toolchain.toml"
 
 jobs:
   sdk:
@@ -53,9 +55,10 @@ jobs:
       - name: Install SDK dependencies
         working-directory: contracts/sdk
         run: npm ci
-      - uses: dtolnay/rust-toolchain@1.85.1
-        with:
-          targets: wasm32-unknown-unknown
+      # rust-toolchain.toml (repository root) pins the compiler, the components
+      # and both wasm targets; rustup installs it on first use.
+      - name: Use the pinned Rust toolchain
+        run: rustc -vV && cargo -V
       - name: Start ephemeral Stellar network
         uses: stellar/quickstart@main
         with:

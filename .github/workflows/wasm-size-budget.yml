@@ -8,6 +8,7 @@ on:
       - ".github/wasm-budgets.json"
       - ".github/workflows/wasm-size-budget.yml"
       - "scripts/check-wasm-budgets.sh"
+      - "rust-toolchain.toml"
   pull_request:
     branches: [master, main]
     paths:
@@ -15,10 +16,10 @@ on:
       - ".github/wasm-budgets.json"
       - ".github/workflows/wasm-size-budget.yml"
       - "scripts/check-wasm-budgets.sh"
+      - "rust-toolchain.toml"
 
 env:
   CARGO_TERM_COLOR: always
-  RUST_TOOLCHAIN: 1.88.0
 
 jobs:
   wasm-size-budget:
@@ -29,11 +30,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.88.0
-          targets: wasm32-unknown-unknown
+      # rust-toolchain.toml (repository root) pins the compiler, the components
+      # and both wasm targets; rustup installs it on first use. The budgets in
+      # .github/wasm-budgets.json were recorded with that compiler.
+      - name: Use the pinned Rust toolchain
+        run: rustc -vV && cargo -V
 
       - name: Cache cargo registry & build
         uses: actions/cache@v4

@@ -9,6 +9,7 @@ on:
       - "scripts/check-program-escrow-no-traps.py"
       - "scripts/tests/fixtures/program_escrow_unwrap_trap.rs"
       - ".github/workflows/contracts-ci.yml"
+      - "rust-toolchain.toml"
   pull_request:
     branches: [master, main]
     paths:
@@ -17,6 +18,7 @@ on:
       - "scripts/check-program-escrow-no-traps.py"
       - "scripts/tests/fixtures/program_escrow_unwrap_trap.rs"
       - ".github/workflows/contracts-ci.yml"
+      - "rust-toolchain.toml"
 
 env:
   CARGO_TERM_COLOR: always
@@ -56,8 +58,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      # rust-toolchain.toml (repository root) pins the compiler, the components
+      # and both wasm targets; rustup installs it on first use.
+      - name: Use the pinned Rust toolchain
+        run: rustc -vV && cargo -V
 
       - name: Cache Cargo
         uses: actions/cache@v4
@@ -125,11 +129,10 @@ jobs:
       - name: Verify Wasm Inventory
         run: python3 scripts/check_inventory.py
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32v1-none, wasm32-unknown-unknown
-          components: clippy
+      # rust-toolchain.toml (repository root) pins the compiler, the components
+      # and both wasm targets; rustup installs it on first use.
+      - name: Use the pinned Rust toolchain
+        run: rustc -vV && cargo -V
 
       # Cache only the Cargo registry/git caches and the workspace target dir
       # (keyed on the lockfile). Toolchain binaries in ~/.cargo/bin are NOT
@@ -183,8 +186,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      # rust-toolchain.toml (repository root) pins the compiler, the components
+      # and both wasm targets; rustup installs it on first use.
+      - name: Use the pinned Rust toolchain
+        run: rustc -vV && cargo -V
 
       - name: Cache Cargo
         uses: actions/cache@v4
@@ -223,10 +228,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
+      # rust-toolchain.toml (repository root) pins the compiler, the components
+      # and both wasm targets; rustup installs it on first use.
+      - name: Use the pinned Rust toolchain
+        run: rustc -vV && cargo -V
 
       - name: Cache Cargo (feature matrix)
         uses: actions/cache@v4
@@ -257,11 +262,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-          components: rustfmt, clippy
+      # rust-toolchain.toml (repository root) pins the compiler, the components
+      # and both wasm targets; rustup installs it on first use.
+      - name: Use the pinned Rust toolchain
+        run: rustc -vV && cargo -V
 
       - name: Cache Cargo (grainlify-core)
         uses: actions/cache@v4
@@ -302,11 +306,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown, wasm32v1-none
-          components: rustfmt, clippy
+      # rust-toolchain.toml (repository root) pins the compiler, the components
+      # and both wasm targets; rustup installs it on first use.
+      - name: Use the pinned Rust toolchain
+        run: rustc -vV && cargo -V
 
       - name: Cache Cargo
         uses: actions/cache@v4

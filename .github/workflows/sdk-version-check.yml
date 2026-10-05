@@ -10,6 +10,7 @@ on:
       - "contracts/SDK_COMPATIBILITY.md"
       - "contracts/grainlify-core/tests/test_sdk_pin_consistency.rs"
       - ".github/workflows/sdk-version-check.yml"
+      - "rust-toolchain.toml"
   push:
     branches: [main, develop, master]
     paths:
@@ -19,6 +20,7 @@ on:
       - "contracts/SDK_COMPATIBILITY.md"
       - "contracts/grainlify-core/tests/test_sdk_pin_consistency.rs"
       - ".github/workflows/sdk-version-check.yml"
+      - "rust-toolchain.toml"
 
 env:
   CARGO_TERM_COLOR: always
@@ -29,9 +31,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32v1-none, wasm32-unknown-unknown
+      # rust-toolchain.toml (repository root) pins the compiler, the components
+      # and both wasm targets; rustup installs it on first use.
+      - name: Use the pinned Rust toolchain
+        run: rustc -vV && cargo -V
       - name: SDK pin gate
         run: ./scripts/check_sdk_versions.sh
       - name: Pin guardrail test

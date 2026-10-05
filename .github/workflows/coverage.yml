@@ -20,6 +20,7 @@ on:
       - "scripts/run_contract_coverage.sh"
       - "scripts/check-coverage-thresholds.sh"
       - ".github/workflows/coverage.yml"
+      - "rust-toolchain.toml"
   pull_request:
     branches: [master, main]
     paths:
@@ -29,13 +30,12 @@ on:
       - "scripts/run_contract_coverage.sh"
       - "scripts/check-coverage-thresholds.sh"
       - ".github/workflows/coverage.yml"
+      - "rust-toolchain.toml"
 
 env:
   CARGO_TERM_COLOR: always
-  # Pin the toolchain so a new stable rustc cannot move the measured numbers
-  # underneath an already-recorded baseline. RUSTFLAGS is deliberately left
-  # unset: cargo-llvm-cov supplies its own -Cinstrument-coverage flags.
-  RUST_TOOLCHAIN: stable
+  # RUSTFLAGS is deliberately left unset: cargo-llvm-cov supplies its own
+  # -Cinstrument-coverage flags.
 
 permissions:
   contents: read
@@ -47,12 +47,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # llvm-tools-preview supplies llvm-profdata/llvm-cov, which
-      # source-based coverage needs at report time.
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: llvm-tools-preview
+      # llvm-tools-preview (llvm-profdata/llvm-cov, which source-based coverage
+      # needs at report time) is one of the components in rust-toolchain.toml,
+      # so rustup installs it here on first use.
+      - name: Use the pinned Rust toolchain
+        run: rustc -vV && cargo -V
 
       # Prebuilt binary, so this does not spend CI minutes compiling the tool.
       - name: Install cargo-llvm-cov

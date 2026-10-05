@@ -26,7 +26,7 @@ The names `escrow` and `program-escrow` are not sufficient to establish authorit
 
 ## Local setup
 
-Install Rust stable with `rustfmt` and `clippy`, plus both WebAssembly targets used in CI. The formatting workflow pins Rust 1.96.1; some reproducibility and size jobs pin 1.88.0. Install Python 3, Node.js 20/npm, and `jq`; Rust wasm checks require `wasm32-unknown-unknown` (and CI also installs `wasm32v1-none`). For coverage, install `llvm-tools-preview` and `cargo-llvm-cov`. The commands assume Bash, `git`, `rustup`, `cargo`, `python3`, `npm`, `jq`, and (for the separate legacy manifest-schema workflow) `ajv` are available.
+One Rust toolchain is pinned for the whole repository in [`rust-toolchain.toml`](rust-toolchain.toml) at the root. It applies to all three Cargo workspaces and to every CI job, and rustup installs that compiler with its `rustfmt`, `clippy` and `llvm-tools-preview` components and the `wasm32-unknown-unknown` and `wasm32v1-none` targets the first time you run `cargo` anywhere inside the checkout — no separate `rustup` step. Do not add a per-workspace toolchain file or a version inside a workflow: edit the root pin instead, and treat that edit as a reviewed change, because deployable wasm output is compiler-version specific and a bump also re-baselines `.github/wasm-budgets.json`. Install Python 3, Node.js 20/npm, and `jq`; for coverage, install `cargo-llvm-cov`. The commands assume Bash, `git`, `rustup`, `cargo`, `python3`, `npm`, `jq`, and (for the separate legacy manifest-schema workflow) `ajv` are available.
 
 ## Reproduce CI locally
 
@@ -34,17 +34,17 @@ Run the gates relevant to the files you changed. For a full repository pass, run
 
 ### Formatting (all three workspaces)
 
-CI runs Rustfmt 1.96.1 against each workspace:
+CI runs the pinned Rustfmt against each workspace:
 
 ```bash
-(cd contracts && cargo +1.96.1 fmt --all -- --check)
-(cd contracts/bounty_escrow && cargo +1.96.1 fmt --all -- --check)
-(cd soroban && cargo +1.96.1 fmt --all -- --check)
+(cd contracts && cargo fmt --all -- --check)
+(cd contracts/bounty_escrow && cargo fmt --all -- --check)
+(cd soroban && cargo fmt --all -- --check)
 ```
 
 ### Smart-contract CI (`contracts-ci.yml`)
 
-CI uses stable Rust, installs `wasm32v1-none` and `wasm32-unknown-unknown` plus Clippy, and runs these checks:
+CI uses the pinned toolchain and runs these checks:
 
 ```bash
 python3 scripts/check_inventory.py
@@ -63,7 +63,7 @@ bash contracts/scripts/ci-grainlify-core.sh
 
 ### Soroban workspace CI (`soroban-ci.yml`)
 
-Run these from `soroban/` (CI installs stable Rust, rustfmt, Clippy, and `wasm32-unknown-unknown`):
+Run these from `soroban/` (CI uses the pinned toolchain, which supplies rustfmt, Clippy and both wasm targets):
 
 ```bash
 cd soroban
@@ -100,12 +100,12 @@ test -f contracts/program-escrow/STORAGE_LAYOUT.md
 # Contract manifests and their Node tests
 npm test --prefix contracts
 
-# Wasm budgets: use the same pinned compiler as this workflow (Rust 1.88.0)
-cargo +1.88.0 build --manifest-path contracts/bounty_escrow/Cargo.toml --workspace --target wasm32-unknown-unknown --release --locked
-cargo +1.88.0 build --manifest-path contracts/grainlify-core/Cargo.toml --target wasm32-unknown-unknown --release --locked
-cargo +1.88.0 build --manifest-path contracts/program-escrow/Cargo.toml --target wasm32-unknown-unknown --release --locked
-cargo +1.88.0 build --manifest-path contracts/escrow-view-facade/Cargo.toml --target wasm32-unknown-unknown --release --locked
-cargo +1.88.0 build --manifest-path contracts/view-facade/Cargo.toml --target wasm32-unknown-unknown --release --locked
+# Wasm budgets: the root rust-toolchain.toml pins the same compiler this workflow uses
+cargo build --manifest-path contracts/bounty_escrow/Cargo.toml --workspace --target wasm32-unknown-unknown --release --locked
+cargo build --manifest-path contracts/grainlify-core/Cargo.toml --target wasm32-unknown-unknown --release --locked
+cargo build --manifest-path contracts/program-escrow/Cargo.toml --target wasm32-unknown-unknown --release --locked
+cargo build --manifest-path contracts/escrow-view-facade/Cargo.toml --target wasm32-unknown-unknown --release --locked
+cargo build --manifest-path contracts/view-facade/Cargo.toml --target wasm32-unknown-unknown --release --locked
 bash scripts/check-wasm-budgets.sh
 
 # Program-escrow reentrancy smoke gate

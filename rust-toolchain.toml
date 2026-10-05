@@ -1,0 +1,14 @@
+# Repository-wide Rust toolchain pin for all three Cargo workspaces
+# (`contracts/`, `contracts/bounty_escrow/`, `soroban/`) and for every CI job.
+# This is the only file that names a compiler version; change it here, not in a
+# workflow. rustup resolves it for any command run inside the repository and
+# installs the listed components and targets on first use.
+#
+# 1.88.0 is the channel the deployable wasm artifacts were built and measured
+# with (`.github/wasm-budgets.json`, the two-pass reproducibility gate). wasm
+# output is compiler-version specific, so moving this line is a reviewed change
+# that also re-baselines the wasm budgets.
+[toolchain]
+channel = "1.88.0"
+components = ["rustfmt", "clippy", "llvm-tools-preview"]
+targets = ["wasm32-unknown-unknown", "wasm32v1-none"]

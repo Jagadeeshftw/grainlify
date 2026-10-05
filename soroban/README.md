@@ -57,11 +57,13 @@ Follow these steps to set up the development environment:
 
 ## 1. Install Rust and Soroban CLI
 
-### Install latest Rust toolchain
-```bash
-rustup install stable
-rustup default stable
-```
+### Rust toolchain
+
+No action is needed for Rust: the repository pins one compiler in
+[`rust-toolchain.toml`](../rust-toolchain.toml) at the root, and rustup
+installs it with its components and wasm targets the first time you run
+`cargo` in this checkout. Setting a global default (`rustup default stable`)
+does not override it inside the repository.
 
 ## Jurisdiction Segmentation
 

@@ -6,12 +6,14 @@ on:
       - "contracts/**"
       - "scripts/verify-storage-layout-manifest.py"
       - ".github/workflows/storage-layout.yml"
+      - "rust-toolchain.toml"
   push:
     branches: [main, develop, master]
     paths:
       - "contracts/**"
       - "scripts/verify-storage-layout-manifest.py"
       - ".github/workflows/storage-layout.yml"
+      - "rust-toolchain.toml"
 
 env:
   CARGO_TERM_COLOR: always
@@ -22,9 +24,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32v1-none, wasm32-unknown-unknown
+      # rust-toolchain.toml (repository root) pins the compiler, the components
+      # and both wasm targets; rustup installs it on first use.
+      - name: Use the pinned Rust toolchain
+        run: rustc -vV && cargo -V
       - name: test_storage_layout
         run: |
           cd contracts/grainlify-core
@@ -35,4 +38,3 @@ jobs:
         run: test -f "$GITHUB_WORKSPACE/contracts/program-escrow/STORAGE_LAYOUT.md"
       - name: program-escrow storage layout doc exists
         run: test -f contracts/program-escrow/STORAGE_LAYOUT.md
-        run: test -f "${{ github.workspace }}/contracts/program-escrow/STORAGE_LAYOUT.md"
