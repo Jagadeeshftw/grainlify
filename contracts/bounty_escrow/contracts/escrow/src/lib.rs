@@ -1971,7 +1971,9 @@ mod escrow_status_transition_tests {
             let depositor = Address::generate(&env);
             let contributor = Address::generate(&env);
 
-            let token_id = env.register_stellar_asset_contract_v2(admin.clone()).address();
+            let token_id = env
+                .register_stellar_asset_contract_v2(admin.clone())
+                .address();
             let token_admin = token::StellarAssetClient::new(&env, &token_id);
 
             let contract_id = env.register_contract(None, BountyEscrowContract);
