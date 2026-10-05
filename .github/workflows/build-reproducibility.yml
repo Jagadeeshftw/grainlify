@@ -267,14 +267,13 @@ jobs:
           cargo build \
             --manifest-path ${{ matrix.manifest }} \
             --target wasm32-unknown-unknown \
-            --release
+            --release \
+            --locked
           mkdir -p /tmp/pass1
           cp ${{ matrix.target_dir }}/wasm32-unknown-unknown/release/${{ matrix.expected_wasm }} /tmp/pass1/
           sha256sum /tmp/pass1/${{ matrix.expected_wasm }} > /tmp/pass1.sha256
           echo "Pass 1 checksum:"
           cat /tmp/pass1.sha256
-            --release \
-            --locked
 
       - name: Pass 2 — Clean and Rebuild ${{ matrix.name }}
         run: |
@@ -282,7 +281,8 @@ jobs:
           cargo build \
             --manifest-path ${{ matrix.manifest }} \
             --target wasm32-unknown-unknown \
-            --release
+            --release \
+            --locked
           mkdir -p /tmp/pass2
           cp ${{ matrix.target_dir }}/wasm32-unknown-unknown/release/${{ matrix.expected_wasm }} /tmp/pass2/
           sha256sum /tmp/pass2/${{ matrix.expected_wasm }} > /tmp/pass2.sha256
