@@ -377,6 +377,8 @@ mod test_program_payouts;
 mod test_program_queries;
 #[cfg(test)]
 mod test_support;
+#[cfg(test)]
+mod test_set_paused_idempotency;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Read-only mode types (referenced by test_read_only_mode.rs)
@@ -3245,6 +3247,18 @@ impl ProgramEscrowContract {
     /// pause modes being set to `true` in this call will be automatically cleared by the
     /// guard logic. Pass `None` for permanent (manual-only) pause.
     /// Toggles pause state for specific operations.
+    ///
+    /// # Idempotency (safe to retry)
+    /// Submitting the same call twice in a row, e.g. a client retry after a
+    /// timeout, is safe:
+    /// - **State:** the second call leaves `PauseFlags` exactly as the first did;
+    ///   `paused_at` keeps the first call's timestamp.
+    /// - **Not refused:** a repeat call neither panics nor returns an error.
+    /// - **Events:** every call re-emits `PauseStateChanged` and
+    ///   `PauseStateChangedV2` for each mode passed, each with a fresh
+    ///   `receipt_id`; on a repeat, `previous_paused == paused`. Consumers must
+    ///   deduplicate on state, not on event count.
+    /// - **Tokens:** this function never moves tokens; balances are unaffected.
     pub fn set_paused(
         env: Env,
         lock: Option<bool>,
