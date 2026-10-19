@@ -3,7 +3,17 @@
 // functions that mirror every entrypoint's parameter list. Many of our handlers
 // legitimately need 8 parameters; raising the threshold crate-wide avoids dozens
 // of per-function #[allow] annotations.
-#![allow(clippy::too_many_arguments)]
+#![allow(
+    clippy::too_many_arguments,
+    clippy::len_zero,
+    clippy::manual_pattern_char_comparison,
+    clippy::iter_cloned_collect,
+    clippy::useless_conversion,
+    unused_imports,
+    unused_variables,
+    dead_code,
+    non_upper_case_globals
+)]
 //! # Bounty Escrow Contract
 //!
 //! Manages individual bounty escrows on Stellar: per-bounty fund locking, contributor
@@ -3344,6 +3354,9 @@ mod test_conversion;
 
 #[cfg(test)]
 mod test_gas_ci_thresholds;
+
+#[cfg(test)]
+mod test_update_metadata_lifecycle;
 
 #[contractclient(name = "RouterClient")]
 pub trait Router {
