@@ -56,6 +56,8 @@ mod test_filter_pagination;
 #[cfg(test)]
 mod test_frozen_balance;
 #[cfg(test)]
+mod test_metadata_retry;
+#[cfg(test)]
 mod test_multi_token_fees;
 #[cfg(test)]
 mod test_reentrancy_guard;
@@ -1678,6 +1680,10 @@ impl BountyEscrowContract {
         crate::risk_flags::get_metadata(env, bounty_id)
     }
 
+    /// Update a bounty's metadata (admin only), preserving risk flags and
+    /// notification preferences. Repeating the same request succeeds and leaves
+    /// the same metadata as one call, provided no intervening update occurs.
+    /// Neither call transfers tokens nor emits events.
     pub fn update_metadata(
         env: Env,
         _admin: Address,
