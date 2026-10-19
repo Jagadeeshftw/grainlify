@@ -1698,6 +1698,172 @@ impl BountyEscrowContract {
         )
     }
 
+    // Boundary coverage for `update_metadata` numeric/time arguments.
+    //
+    // Pins zero, one, the maximum accepted value, and one past it so that
+    // arithmetic changes in the metadata path fail loudly instead of silently
+    // drifting. Every refusal must be a typed `Error`, never a panic.
+    #[cfg(test)]
+    mod update_metadata_boundary_tests {
+        use super::*;
+        use soroban_sdk::{
+            testutils::{Address as _, Ledger},
+            token, Address, Bytes, Env, String,
+        };
+
+        fn setup() -> (
+            Env,
+            BountyEscrowContractClient<'static>,
+            Address,
+            Address,
+        ) {
+            let env = Env::default();
+            env.mock_all_auths();
+            let admin = Address::generate(&env);
+            let depositor = Address::generate(&env);
+            let token_id = env
+                .register_stellar_asset_contract_v2(admin.clone())
+                .address();
+            let contract_id = env.register_contract(None, BountyEscrowContract);
+            let client = BountyEscrowContractClient::new(&env, &contract_id);
+            client.init(&admin, &token_id);
+            (env, client, admin, depositor)
+        }
+
+        fn seed_escrow(
+            env: &Env,
+            client: &BountyEscrowContractClient<'static>,
+            depositor: &Address,
+            bounty_id: u64,
+        ) {
+            let token_id = client.get_escrow_info(&bounty_id);
+            let _ = token_id;
+            let deadline = env.ledger().timestamp() + 1_000;
+            client.lock_funds(depositor, &bounty_id, &1_i128, &deadline);
+        }
+
+        fn bounty_type(env: &Env) -> String {
+            String::from_str(env, "bug_fix")
+        }
+
+        #[test]
+        fn zero_repo_and_issue_ids_are_accepted() {
+            let (env, client, admin, depositor) = setup();
+            let bounty_id = 1_u64;
+            seed_escrow(&env, &client, &depositor, bounty_id);
+            let md = client.update_metadata(
+                &admin,
+                &bounty_id,
+                &0_u64,
+                &0_u64,
+                &bounty_type(&env),
+                &None,
+            );
+            assert_eq!(md.repo_id, 0);
+            assert_eq!(md.issue_id, 0);
+        }
+
+        #[test]
+        fn one_repo_and_issue_ids_are_accepted() {
+            let (env, client, admin, depositor) = setup();
+            let bounty_id = 2_u64;
+            seed_escrow(&env, &client, &depositor, bounty_id);
+            let md = client.update_metadata(
+                &admin,
+                &bounty_id,
+                &1_u64,
+                &1_u64,
+                &bounty_type(&env),
+                &None,
+            );
+            assert_eq!(md.repo_id, 1);
+            assert_eq!(md.issue_id, 1);
+        }
+
+        #[test]
+        fn max_u64_repo_and_issue_ids_are_accepted() {
+            let (env, client, admin, depositor) = setup();
+            let bounty_id = 3_u64;
+            seed_escrow(&env, &client, &depositor, bounty_id);
+            let md = client.update_metadata(
+                &admin,
+                &bounty_id,
+                &u64::MAX,
+                &u64::MAX,
+                &bounty_type(&env),
+                &None,
+            );
+            assert_eq!(md.repo_id, u64::MAX);
+            assert_eq!(md.issue_id, u64::MAX);
+        }
+
+        #[test]
+        fn max_u64_bounty_id_is_refused_with_typed_error() {
+            let (env, client, admin, _depositor) = setup();
+            // No escrow exists at u64::MAX; the call must refuse with a typed
+            // error rather than panicking on arithmetic.
+            let res = client.try_update_metadata(
+                &admin,
+                &u64::MAX,
+                &0_u64,
+                &0_u64,
+                &bounty_type(&env),
+                &None,
+            );
+            assert!(res.is_err(), "expected typed error for missing escrow");
+            let err = res.unwrap_err().unwrap();
+            assert_eq!(err, Error::BountyNotFound);
+        }
+
+        #[test]
+        fn zero_bounty_id_is_refused_with_typed_error() {
+            let (env, client, admin, _depositor) = setup();
+            let res = client.try_update_metadata(
+                &admin,
+                &0_u64,
+                &0_u64,
+                &0_u64,
+                &bounty_type(&env),
+                &None,
+            );
+            assert!(res.is_err(), "expected typed error for missing escrow");
+            let err = res.unwrap_err().unwrap();
+            assert_eq!(err, Error::BountyNotFound);
+        }
+
+        #[test]
+        fn reference_hash_boundaries_do_not_panic() {
+            let (env, client, admin, depositor) = setup();
+            let bounty_id = 4_u64;
+            seed_escrow(&env, &client, &depositor, bounty_id);
+
+            // Empty hash.
+            let empty = Bytes::new(&env);
+            let md = client.update_metadata(
+                &admin,
+                &bounty_id,
+                &0_u64,
+                &0_u64,
+                &bounty_type(&env),
+                &Some(empty.clone()),
+            );
+            assert_eq!(md.reference_hash, Some(empty));
+
+            // Single-byte hash.
+            let mut one = Bytes::new(&env);
+            one.push_back(0x01);
+            let md = client.update_metadata(
+                &admin,
+                &bounty_id,
+                &0_u64,
+                &0_u64,
+                &bounty_type(&env),
+                &Some(one.clone()),
+            );
+            assert_eq!(md.reference_hash, Some(one));
+        }
+    }
+
     pub fn get_risk_flags_schema_version(env: Env) -> u32 {
         crate::risk_flags::get_risk_flags_schema_version(env)
     }
