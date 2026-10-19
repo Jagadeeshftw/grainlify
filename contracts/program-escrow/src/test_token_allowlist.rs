@@ -192,7 +192,7 @@ fn test_add_multiple_tokens() {
 }
 
 #[test]
-#[should_panic(expected = "Token already on allowlist")]
+#[should_panic(expected = "Error(Contract, #1101)")] // ContractError::TokenAlreadyAllowed
 fn test_add_duplicate_token_panics() {
     let env = Env::default();
     let (client, _admin) = setup_contract(&env);
@@ -273,7 +273,7 @@ fn test_remove_one_of_many_tokens() {
 }
 
 #[test]
-#[should_panic(expected = "Token not in allowlist")]
+#[should_panic(expected = "Error(Contract, #1100)")] // ContractError::TokenNotAllowed
 fn test_remove_absent_token_panics() {
     let env = Env::default();
     let (client, _admin) = setup_contract(&env);
@@ -862,7 +862,7 @@ fn test_decimals_stored_independently_per_token() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
-#[should_panic(expected = "Decimals exceed maximum (18)")]
+#[should_panic(expected = "Error(Contract, #14)")] // ContractError::InvalidState
 fn test_add_token_decimals_above_max_panics() {
     let env = Env::default();
     let (client, _) = setup_contract(&env);
@@ -889,7 +889,7 @@ fn test_add_token_with_zero_decimals_succeeds() {
 }
 
 #[test]
-#[should_panic(expected = "Token already on allowlist")]
+#[should_panic(expected = "Error(Contract, #1101)")] // ContractError::TokenAlreadyAllowed
 fn test_add_token_with_decimals_duplicate_panics() {
     let env = Env::default();
     let (client, _) = setup_contract(&env);
@@ -1087,7 +1087,7 @@ fn last_allowlist_event(env: &Env) -> TokenAllowlistUpdatedEvent {
 /// the canonical record, so a "remove" that changes nothing is a caller error,
 /// not a silent no-op.
 #[test]
-#[should_panic(expected = "Token not in allowlist")]
+#[should_panic(expected = "Error(Contract, #1100)")] // ContractError::TokenNotAllowed
 fn test_remove_same_token_twice_panics() {
     let env = Env::default();
     let (client, _admin) = setup_contract(&env);
@@ -1123,7 +1123,7 @@ fn test_duplicate_remove_is_error_and_leaves_state_canonical() {
 /// A duplicate add that carries a *different* decimal scale is rejected as an
 /// immutability violation — it is never treated as an in-place update.
 #[test]
-#[should_panic(expected = "Token decimals are immutable")]
+#[should_panic(expected = "Error(Contract, #14)")] // ContractError::InvalidState
 fn test_duplicate_add_with_different_decimals_is_rejected() {
     let env = Env::default();
     let (client, _admin) = setup_contract(&env);

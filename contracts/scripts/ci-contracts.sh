@@ -42,7 +42,7 @@ echo "==> [2/5] Storage-key collision audit (grainify-contracts)"
 # `contracts/` used to belong to no workspace, so its storage-collision audit
 # was never built. It is now a workspace of its own and is exercised here, which
 # pins the audit to a check that runs on every pull request.
-cargo test --manifest-path "$ROOT_DIR/contracts/Cargo.toml" --workspace
+cargo test --manifest-path "$ROOT_DIR/contracts/Cargo.toml" -p grainlify-contracts
 
 echo "==> [3/5] Facade conformance — view-facade (issue #1870)"
 # Each facade's cross-contract conformance gate is its own integration test

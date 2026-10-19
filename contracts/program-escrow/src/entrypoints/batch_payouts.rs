@@ -475,6 +475,12 @@ impl ProgramEscrowContract {
     /// * `"New key must differ from current key"` — self-rotation attempt.
     /// * `"Invalid nonce"` — `expected_nonce` does not match the stored nonce.
     /// * `"Unauthorized"` — caller is neither the current payout key nor admin.
+    ///
+    /// # Idempotency
+    /// Calling twice with the same `expected_nonce` is refused: the first call
+    /// increments the stored nonce, so the second call panics `"Invalid nonce"`
+    /// before any state change. A retry must read the new nonce via
+    /// [`get_rotation_nonce`] and supply a fresh `new_key`.
     pub fn rotate_payout_key(
         env: Env,
         program_id: String,
