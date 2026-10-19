@@ -321,6 +321,9 @@ pub use reputation::{
 mod test_granular_pause;
 
 #[cfg(test)]
+mod test_pause_boundaries;
+
+#[cfg(test)]
 #[cfg(any())] // pre-existing breakage: uses Val, std
 mod test_reputation;
 
