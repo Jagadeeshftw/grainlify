@@ -3316,6 +3316,8 @@ mod escrow_status_transition_tests {
 mod test_admin_invalid_identifiers;
 #[cfg(test)]
 mod test_deadline_variants;
+#[cfg(test)]
+mod test_refund_boundaries;
 // #[cfg(test)] mod test_dry_run_simulation;
 #[cfg(test)]
 mod test_e2e_upgrade_with_pause;
