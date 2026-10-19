@@ -8120,6 +8120,9 @@ mod test_insurance_reserve;
 #[cfg(test)]
 #[cfg(any())]
 mod rbac_tests;
+
+#[cfg(test)]
+mod test_set_paused_auth;
 // Pre-existing breakage: receipt storage path incomplete / CB enforcement suite
 // out of sync with current guard ordering. Keep gated until repaired upstream.
 #[cfg(test)]
