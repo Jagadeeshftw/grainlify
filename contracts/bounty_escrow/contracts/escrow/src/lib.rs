@@ -1904,6 +1904,8 @@ mod test;
 // #[cfg(test)] mod test_invariants;
 #[cfg(test)]
 mod test_lifecycle;
+#[cfg(test)]
+mod test_metadata;
 // #[cfg(test)] mod test_metadata_tagging; // pre-existing breakage: depends on query/metadata/analytics API never implemented (see #1975 CI)
 // #[cfg(test)] mod test_partial_payout_rounding;
 // #[cfg(test)] mod test_participant_filter_mode;
