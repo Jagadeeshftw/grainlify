@@ -781,3 +781,188 @@ impl ProgramEscrowContract {
     }
 
 }
+
+#[cfg(test)]
+mod set_paused_lifecycle_tests {
+    use super::*;
+    use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::{Env, String};
+
+    fn setup() -> (Env, ProgramEscrowContractClient<'static>, Address) {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, ProgramEscrowContract);
+        let client = ProgramEscrowContractClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        client.initialize(&admin);
+        (env, client, admin)
+    }
+
+    fn assert_terminal(flags: &PauseFlags) {
+        assert!(!flags.lock_paused);
+        assert!(!flags.release_paused);
+        assert!(!flags.refund_paused);
+        assert_eq!(flags.paused_at, 0);
+        assert!(flags.pause_reason.is_none());
+        assert!(flags.lock_unpause_at.is_none());
+        assert!(flags.release_unpause_at.is_none());
+        assert!(flags.refund_unpause_at.is_none());
+    }
+
+    // State: Unpaused (initial / terminal)
+    #[test]
+    fn set_paused_from_unpaused_state_noop_keeps_terminal() {
+        let (env, client, _admin) = setup();
+        env.ledger().set_timestamp(100);
+
+        client.set_paused(&None, &None, &None, &None, &None);
+
+        let flags = client.get_pause_flags();
+        assert_terminal(&flags);
+    }
+
+    // State: Unpaused -> LockPaused
+    #[test]
+    fn set_paused_from_unpaused_to_lock_paused() {
+        let (env, client, _admin) = setup();
+        env.ledger().set_timestamp(100);
+
+        client.set_paused(
+            &Some(true),
+            &None,
+            &None,
+            &Some(String::from_str(&env, "lock")),
+            &None,
+        );
+
+        let flags = client.get_pause_flags();
+        assert!(flags.lock_paused);
+        assert!(!flags.release_paused);
+        assert!(!flags.refund_paused);
+        assert_eq!(flags.paused_at, 100);
+        assert_eq!(flags.pause_reason, Some(String::from_str(&env, "lock")));
+    }
+
+    // State: Unpaused -> ReleasePaused
+    #[test]
+    fn set_paused_from_unpaused_to_release_paused() {
+        let (env, client, _admin) = setup();
+        env.ledger().set_timestamp(200);
+
+        client.set_paused(&None, &Some(true), &None, &None, &None);
+
+        let flags = client.get_pause_flags();
+        assert!(!flags.lock_paused);
+        assert!(flags.release_paused);
+        assert!(!flags.refund_paused);
+        assert_eq!(flags.paused_at, 200);
+    }
+
+    // State: Unpaused -> RefundPaused
+    #[test]
+    fn set_paused_from_unpaused_to_refund_paused() {
+        let (env, client, _admin) = setup();
+        env.ledger().set_timestamp(300);
+
+        client.set_paused(&None, &None, &Some(true), &None, &None);
+
+        let flags = client.get_pause_flags();
+        assert!(!flags.lock_paused);
+        assert!(!flags.release_paused);
+        assert!(flags.refund_paused);
+        assert_eq!(flags.paused_at, 300);
+    }
+
+    // State: LockPaused -> AllPaused
+    #[test]
+    fn set_paused_from_lock_paused_to_all_paused() {
+        let (env, client, _admin) = setup();
+        env.ledger().set_timestamp(400);
+
+        client.set_paused(&Some(true), &None, &None, &None, &None);
+        env.ledger().set_timestamp(500);
+        client.set_paused(&Some(true), &Some(true), &Some(true), &None, &None);
+
+        let flags = client.get_pause_flags();
+        assert!(flags.lock_paused);
+        assert!(flags.release_paused);
+        assert!(flags.refund_paused);
+        // paused_at preserved from first pause.
+        assert_eq!(flags.paused_at, 400);
+    }
+
+    // State: AllPaused -> Unpaused (terminal)
+    #[test]
+    fn set_paused_from_all_paused_to_terminal_unpaused() {
+        let (env, client, _admin) = setup();
+        env.ledger().set_timestamp(600);
+
+        client.set_paused(
+            &Some(true),
+            &Some(true),
+            &Some(true),
+            &Some(String::from_str(&env, "all")),
+            &None,
+        );
+        client.set_paused(&Some(false), &Some(false), &Some(false), &None, &None);
+
+        let flags = client.get_pause_flags();
+        assert_terminal(&flags);
+    }
+
+    // State: Terminal (unpaused) — refused/no-op call must not mutate.
+    #[test]
+    fn set_paused_from_terminal_state_refused_call_does_not_mutate() {
+        let (env, client, _admin) = setup();
+        env.ledger().set_timestamp(700);
+
+        // Drive to terminal via pause then unpause.
+        client.set_paused(&Some(true), &None, &None, &None, &None);
+        client.set_paused(&Some(false), &None, &None, &None, &None);
+        let before = client.get_pause_flags();
+        assert_terminal(&before);
+
+        // No-op call: all None. Must not mutate terminal record.
+        client.set_paused(&None, &None, &None, &None, &None);
+
+        let after = client.get_pause_flags();
+        assert_terminal(&after);
+        assert_eq!(after.paused_at, before.paused_at);
+        assert_eq!(after.pause_reason, before.pause_reason);
+    }
+
+    // State: LockPaused with unpause_at — clearing lock returns to terminal.
+    #[test]
+    fn set_paused_from_lock_paused_with_ttl_to_terminal() {
+        let (env, client, _admin) = setup();
+        env.ledger().set_timestamp(800);
+
+        client.set_paused(&Some(true), &None, &None, &None, &Some(900));
+        let paused = client.get_pause_flags();
+        assert!(paused.lock_paused);
+        assert_eq!(paused.lock_unpause_at, Some(900));
+
+        client.set_paused(&Some(false), &None, &None, &None, &None);
+        let flags = client.get_pause_flags();
+        assert_terminal(&flags);
+    }
+
+    // State: Unpaused — reason-only call must not flip pause flags.
+    #[test]
+    fn set_paused_from_unpaused_reason_only_does_not_pause() {
+        let (env, client, _admin) = setup();
+        env.ledger().set_timestamp(1000);
+
+        client.set_paused(
+            &None,
+            &None,
+            &None,
+            &Some(String::from_str(&env, "note")),
+            &None,
+        );
+
+        let flags = client.get_pause_flags();
+        // No flags set -> any_paused false -> reason cleared, terminal preserved.
+        assert_terminal(&flags);
+    }
+}
