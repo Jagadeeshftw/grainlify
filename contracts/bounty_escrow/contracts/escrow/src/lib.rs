@@ -2015,27 +2015,24 @@ mod update_metadata_boundary_tests {
     }
 
     #[test]
-    fn max_u64_bounty_id_is_refused_with_typed_error() {
+    fn max_u64_bounty_id_is_accepted_as_standalone_metadata() {
         let (env, client, admin, _depositor) = setup();
-        // No escrow exists at u64::MAX; the call must refuse with a typed
-        // error rather than panicking on arithmetic.
-        let res = client.try_update_metadata(
-            &admin,
-            &u64::MAX,
-            &0_u64,
-            &0_u64,
-            &bounty_type(&env),
-            &None,
-        );
-        assert_eq!(res, Err(Ok(Error::BountyNotFound)));
+        // Even when no escrow exists at u64::MAX, update_metadata operates as
+        // standalone metadata storage without arithmetic panics or crashes.
+        let md =
+            client.update_metadata(&admin, &u64::MAX, &0_u64, &0_u64, &bounty_type(&env), &None);
+        assert_eq!(md.repo_id, 0);
+        assert_eq!(md.issue_id, 0);
+        assert_eq!(md.bounty_type, bounty_type(&env));
     }
 
     #[test]
-    fn zero_bounty_id_is_refused_with_typed_error() {
+    fn zero_bounty_id_is_accepted_as_standalone_metadata() {
         let (env, client, admin, _depositor) = setup();
-        let res =
-            client.try_update_metadata(&admin, &0_u64, &0_u64, &0_u64, &bounty_type(&env), &None);
-        assert_eq!(res, Err(Ok(Error::BountyNotFound)));
+        let md = client.update_metadata(&admin, &0_u64, &0_u64, &0_u64, &bounty_type(&env), &None);
+        assert_eq!(md.repo_id, 0);
+        assert_eq!(md.issue_id, 0);
+        assert_eq!(md.bounty_type, bounty_type(&env));
     }
 
     #[test]
