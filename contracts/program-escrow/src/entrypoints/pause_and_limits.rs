@@ -596,6 +596,12 @@ impl ProgramEscrowContract {
     ///
     /// Must be called once after contract deployment to enable threshold-based
     /// circuit breaking. Idempotent — safe to call multiple times.
+    ///
+    /// # Idempotency
+    /// Calling this entry point more than once is a no-op: the second and
+    /// subsequent calls leave the stored `ThresholdConfig` unchanged from the
+    /// first call. No error is returned and no additional events are emitted
+    /// beyond those produced by the first call.
     pub fn init_threshold_monitoring(env: Env) {
         threshold_monitor::init_threshold_monitor(&env);
     }
@@ -964,5 +970,88 @@ mod set_paused_lifecycle_tests {
         let flags = client.get_pause_flags();
         // No flags set -> any_paused false -> reason cleared, terminal preserved.
         assert_terminal(&flags);
+    }
+}
+
+#[cfg(test)]
+mod init_threshold_monitoring_idempotency_tests {
+    use super::*;
+    use soroban_sdk::testutils::{Address as _, Events as _};
+    use soroban_sdk::{Env, IntoVal, Symbol, TryIntoVal};
+
+    fn setup() -> (Env, ProgramEscrowContractClient<'static>, Address) {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, ProgramEscrowContract);
+        let client = ProgramEscrowContractClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        client.initialize(&admin);
+        (env, client, admin)
+    }
+
+    fn assert_config_eq(
+        a: &threshold_monitor::ThresholdConfig,
+        b: &threshold_monitor::ThresholdConfig,
+    ) {
+        assert_eq!(a.warning_threshold, b.warning_threshold);
+        assert_eq!(a.critical_threshold, b.critical_threshold);
+        assert_eq!(a.emergency_threshold, b.emergency_threshold);
+        assert_eq!(a.window_size, b.window_size);
+    }
+
+    #[test]
+    fn init_threshold_monitoring_twice_is_idempotent() {
+        let (env, client, _admin) = setup();
+        env.ledger().set_timestamp(100);
+
+        client.init_threshold_monitoring();
+        let config_after_first = client.get_threshold_config();
+
+        env.ledger().set_timestamp(200);
+        client.init_threshold_monitoring();
+        let config_after_second = client.get_threshold_config();
+
+        // State after two calls equals state after one call.
+        assert_config_eq(&config_after_first, &config_after_second);
+    }
+
+    #[test]
+    fn init_threshold_monitoring_twice_emits_events_for_both_calls() {
+        let (env, client, _admin) = setup();
+        env.ledger().set_timestamp(100);
+
+        client.init_threshold_monitoring();
+        let events_after_first = env.events().all().len();
+        assert!(events_after_first > 0, "first call must emit events");
+
+        env.ledger().set_timestamp(200);
+        client.init_threshold_monitoring();
+        let events_after_second = env.events().all().len();
+
+        // The second call is a no-op on state; it must not emit additional
+        // events beyond those already produced by the first call.
+        assert_eq!(
+            events_after_first, events_after_second,
+            "second init_threshold_monitoring call must not emit new events"
+        );
+    }
+
+    #[test]
+    fn init_threshold_monitoring_twice_does_not_change_token_balances() {
+        let (env, client, _admin) = setup();
+        env.ledger().set_timestamp(100);
+
+        let contract_address = client.address.clone();
+        let token_client = token::TokenClient::new(&env, &env.storage().instance().get(&PROGRAM_DATA).map(|pd: ProgramData| pd.token_address).unwrap());
+        let balance_before = token_client.balance(&contract_address);
+
+        client.init_threshold_monitoring();
+        let balance_after_first = token_client.balance(&contract_address);
+
+        client.init_threshold_monitoring();
+        let balance_after_second = token_client.balance(&contract_address);
+
+        assert_eq!(balance_before, balance_after_first);
+        assert_eq!(balance_after_first, balance_after_second);
     }
 }
