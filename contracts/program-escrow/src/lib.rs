@@ -379,9 +379,9 @@ mod test_program_payouts;
 #[cfg(any())] // pre-existing breakage: query_schedules_by_status no longer exposed
 mod test_program_queries;
 #[cfg(test)]
-mod test_support;
-#[cfg(test)]
 mod test_set_paused_idempotency;
+#[cfg(test)]
+mod test_support;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Read-only mode types (referenced by test_read_only_mode.rs)
@@ -1801,13 +1801,13 @@ impl ProgramEscrowContract {
         let mut cfg = Self::get_fee_config_internal(&env);
 
         if let Some(r) = lock_fee_rate {
-            if r > MAX_FEE_RATE {
+            if r < 0 || r > MAX_FEE_RATE {
                 panic_with_error!(&env, &ContractError::InvalidFeeRate);
             }
             cfg.lock_fee_rate = r;
         }
         if let Some(r) = payout_fee_rate {
-            if r > MAX_FEE_RATE {
+            if r < 0 || r > MAX_FEE_RATE {
                 panic_with_error!(&env, &ContractError::InvalidFeeRate);
             }
             cfg.payout_fee_rate = r;
