@@ -324,6 +324,9 @@ mod test_granular_pause;
 mod test_pause_boundaries;
 
 #[cfg(test)]
+mod test_rotate_payout_key_boundaries;
+
+#[cfg(test)]
 #[cfg(any())] // pre-existing breakage: uses Val, std
 mod test_reputation;
 
