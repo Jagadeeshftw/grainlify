@@ -798,6 +798,14 @@ impl ProgramEscrowContract {
         false
     }
 
+    /// Returns the maximum number of tokens that may be stored on the allowlist.
+    ///
+    /// This is the boundary value accepted by the allowlist; adding one more
+    /// token past this limit is refused with `"Token allowlist capacity exceeded"`.
+    pub fn max_allowed_tokens(_env: Env) -> u32 {
+        MAX_ALLOWED_TOKENS
+    }
+
     /// Returns the full token allowlist as plain addresses (V1-compatible).
     pub fn get_allowed_tokens(env: Env) -> soroban_sdk::Vec<Address> {
         Self::get_token_allowlist_internal(&env)
