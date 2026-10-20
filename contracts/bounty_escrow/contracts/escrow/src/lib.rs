@@ -1994,6 +1994,11 @@ impl BountyEscrowContract {
         crate::lock::batch_lock(env, items)
     }
 
+    /// Locks funds from parallel arrays.
+    ///
+    /// Retrying a successful call with the same bounty IDs is safe: the retry
+    /// is rejected with [`Error::BountyExists`] before transferring tokens or
+    /// emitting lock events.
     pub fn batch_lock_funds_soa(
         env: Env,
         bounty_ids: Vec<u64>,
