@@ -1,0 +1,38 @@
+{
+  "$schema": "./contract-manifest-schema.json",
+  "contract_name": "ViewFacade",
+  "contract_purpose": "View Facade",
+  "version": {
+    "current": "1.0.0",
+    "schema": "1.0.0",
+    "history": [
+      {
+        "version": "1.0.0",
+        "release_date": "2024-01-01",
+        "changes": [
+          "Initial release"
+        ]
+      }
+    ]
+  },
+  "entrypoints": {
+    "public": [],
+    "admin": [],
+    "view": []
+  },
+  "configuration": {
+    "initialization": {
+      "required_parameters": [],
+      "admin_role": "none"
+    },
+    "parameters": []
+  },
+  "behaviors": {
+    "authorization": {
+      "model": "None",
+      "details": "None"
+    },
+    "security_features": [],
+    "access_control": []
+  }
+}
