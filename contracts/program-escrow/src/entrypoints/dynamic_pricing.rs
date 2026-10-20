@@ -49,7 +49,12 @@ impl ProgramEscrowContract {
     }
 
     /// Get current dynamic pricing configuration.
+    ///
+    /// # Authorisation
+    /// Requires authorisation from the configured admin. An unauthorised
+    /// caller is refused with `Unauthorized`.
     pub fn get_dynamic_pricing_config(env: Env) -> Option<DynamicPricingConfig> {
+        Self::require_admin(&env);
         env.storage().instance().get(&DataKey::DynamicPricingConfig)
     }
 
