@@ -1945,6 +1945,7 @@ mod update_metadata_boundary_tests {
         let contract_id = env.register_contract(None, BountyEscrowContract);
         let client = BountyEscrowContractClient::new(&env, &contract_id);
         client.init(&admin, &token_id);
+        token::StellarAssetClient::new(&env, &token_id).mint(&depositor, &1_000_000_i128);
         (env, client, admin, depositor)
     }
 
@@ -1954,8 +1955,6 @@ mod update_metadata_boundary_tests {
         depositor: &Address,
         bounty_id: u64,
     ) {
-        let token_id = client.get_escrow_info(&bounty_id);
-        let _ = token_id;
         let deadline = env.ledger().timestamp() + 1_000;
         client.lock_funds(depositor, &bounty_id, &1_i128, &deadline);
     }
@@ -2028,9 +2027,7 @@ mod update_metadata_boundary_tests {
             &bounty_type(&env),
             &None,
         );
-        assert!(res.is_err(), "expected typed error for missing escrow");
-        let err = res.unwrap_err().unwrap();
-        assert_eq!(err, Error::BountyNotFound);
+        assert_eq!(res, Ok(Err(Ok(Error::BountyNotFound))));
     }
 
     #[test]
@@ -2038,9 +2035,7 @@ mod update_metadata_boundary_tests {
         let (env, client, admin, _depositor) = setup();
         let res =
             client.try_update_metadata(&admin, &0_u64, &0_u64, &0_u64, &bounty_type(&env), &None);
-        assert!(res.is_err(), "expected typed error for missing escrow");
-        let err = res.unwrap_err().unwrap();
-        assert_eq!(err, Error::BountyNotFound);
+        assert_eq!(res, Ok(Err(Ok(Error::BountyNotFound))));
     }
 
     #[test]
