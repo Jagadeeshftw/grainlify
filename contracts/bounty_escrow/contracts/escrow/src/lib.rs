@@ -94,6 +94,8 @@ mod test_deterministic_event_ordering;
 mod test_event_payload_fixtures;
 #[cfg(test)]
 mod test_event_schema;
+#[cfg(test)]
+mod test_simulate_payout_auth;
 
 // Dispatcher only needs the contract macros and basic SDK types;
 // all event/type imports are in the individual feature modules.
