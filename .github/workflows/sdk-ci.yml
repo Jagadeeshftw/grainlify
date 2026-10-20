@@ -74,10 +74,12 @@ jobs:
             --manifest-path contracts/program-escrow/Cargo.toml \
             --target wasm32-unknown-unknown \
             --release
-          secret="$(stellar keys generate --as-secret e2e | grep -Eo 'S[A-Z2-7]{55}' | tail -n 1)"
+          stellar keys generate e2e
+          secret="$(stellar keys show e2e 2>/dev/null || stellar keys secret e2e)"
           test -n "$secret"
           echo "::add-mask::$secret"
-          public_key="$(node -e "process.stdout.write(require('./contracts/sdk/node_modules/@stellar/stellar-sdk').Keypair.fromSecret(process.argv[1]).publicKey())" "$secret")"
+          public_key="$(stellar keys address e2e)"
+          test -n "$public_key"
           curl -fsS "http://localhost:8000/friendbot?addr=$public_key" >/dev/null
           deployment_output="$(stellar contract deploy \
             --wasm contracts/program-escrow/target/wasm32-unknown-unknown/release/program_escrow.wasm \
