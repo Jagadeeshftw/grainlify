@@ -13,10 +13,7 @@
 
 use crate::errors::ContractError;
 use crate::{DataKey, ProgramEscrowContract, ProgramEscrowContractClient};
-use soroban_sdk::{
-    testutils::Address as _,
-    token, Address, Env, String,
-};
+use soroban_sdk::{testutils::Address as _, token, Address, Env, String};
 
 fn make_client(env: &Env) -> (ProgramEscrowContractClient<'static>, Address) {
     let contract_id = env.register_contract(None, ProgramEscrowContract);
@@ -83,7 +80,10 @@ fn test_rotate_payout_key_accepts_nonce_zero() {
 
     let new_key = Address::generate(&env);
     let result = client.try_rotate_payout_key(&program_id, &payout_key, &new_key, &0);
-    assert!(result.is_ok(), "rotation with expected_nonce=0 must succeed");
+    assert!(
+        result.is_ok(),
+        "rotation with expected_nonce=0 must succeed"
+    );
 
     let data = result.unwrap().unwrap();
     assert_eq!(data.authorized_payout_key, new_key);
@@ -115,7 +115,10 @@ fn test_rotate_payout_key_accepts_nonce_one() {
 
     let new_key = Address::generate(&env);
     let result = client.try_rotate_payout_key(&program_id, &payout_key, &new_key, &1);
-    assert!(result.is_ok(), "rotation with expected_nonce=1 must succeed");
+    assert!(
+        result.is_ok(),
+        "rotation with expected_nonce=1 must succeed"
+    );
 
     let data = result.unwrap().unwrap();
     assert_eq!(data.authorized_payout_key, new_key);
@@ -147,7 +150,8 @@ fn test_rotate_payout_key_accepts_max_accepted_nonce() {
     assert_eq!(client.get_rotation_nonce(&program_id), max_accepted_nonce);
 
     let new_key = Address::generate(&env);
-    let result = client.try_rotate_payout_key(&program_id, &payout_key, &new_key, &max_accepted_nonce);
+    let result =
+        client.try_rotate_payout_key(&program_id, &payout_key, &new_key, &max_accepted_nonce);
     assert!(
         result.is_ok(),
         "rotation with max accepted nonce (u64::MAX - 1) must succeed"
@@ -181,7 +185,8 @@ fn test_rotate_payout_key_refuses_one_past_max_and_mismatched_nonces() {
     let max_accepted_nonce = u64::MAX - 1;
     set_stored_nonce(&env, &contract_id, &program_id, max_accepted_nonce);
     let one_past_max = max_accepted_nonce + 1; // u64::MAX
-    let result_past = client.try_rotate_payout_key(&program_id, &payout_key, &new_key, &one_past_max);
+    let result_past =
+        client.try_rotate_payout_key(&program_id, &payout_key, &new_key, &one_past_max);
     match result_past {
         Err(Ok(err)) => assert_eq!(
             err.get_code(),
@@ -193,7 +198,8 @@ fn test_rotate_payout_key_refuses_one_past_max_and_mismatched_nonces() {
 
     // Case 3: Same key check also refuses with typed error ContractError::InvalidState without panicking.
     let current_key = payout_key.clone();
-    let result_same_key = client.try_rotate_payout_key(&program_id, &payout_key, &current_key, &max_accepted_nonce);
+    let result_same_key =
+        client.try_rotate_payout_key(&program_id, &payout_key, &current_key, &max_accepted_nonce);
     match result_same_key {
         Err(Ok(err)) => assert_eq!(
             err.get_code(),
@@ -205,7 +211,12 @@ fn test_rotate_payout_key_refuses_one_past_max_and_mismatched_nonces() {
 
     // Case 4: Unauthorized caller refuses with typed error ContractError::Unauthorized.
     let unauthorized_caller = Address::generate(&env);
-    let result_unauth = client.try_rotate_payout_key(&program_id, &unauthorized_caller, &new_key, &max_accepted_nonce);
+    let result_unauth = client.try_rotate_payout_key(
+        &program_id,
+        &unauthorized_caller,
+        &new_key,
+        &max_accepted_nonce,
+    );
     match result_unauth {
         Err(Ok(err)) => assert_eq!(
             err.get_code(),

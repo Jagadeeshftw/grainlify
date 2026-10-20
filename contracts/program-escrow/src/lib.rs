@@ -382,9 +382,9 @@ mod test_program_payouts;
 #[cfg(any())] // pre-existing breakage: query_schedules_by_status no longer exposed
 mod test_program_queries;
 #[cfg(test)]
-mod test_support;
-#[cfg(test)]
 mod test_set_paused_idempotency;
+#[cfg(test)]
+mod test_support;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Read-only mode types (referenced by test_read_only_mode.rs)
