@@ -2027,7 +2027,7 @@ mod update_metadata_boundary_tests {
             &bounty_type(&env),
             &None,
         );
-        assert_eq!(res, Ok(Err(Ok(Error::BountyNotFound))));
+        assert_eq!(res, Err(Ok(Error::BountyNotFound)));
     }
 
     #[test]
@@ -2035,7 +2035,7 @@ mod update_metadata_boundary_tests {
         let (env, client, admin, _depositor) = setup();
         let res =
             client.try_update_metadata(&admin, &0_u64, &0_u64, &0_u64, &bounty_type(&env), &None);
-        assert_eq!(res, Ok(Err(Ok(Error::BountyNotFound))));
+        assert_eq!(res, Err(Ok(Error::BountyNotFound)));
     }
 
     #[test]
