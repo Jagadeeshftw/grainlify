@@ -75,10 +75,10 @@ jobs:
             --target wasm32-unknown-unknown \
             --release
           stellar keys generate e2e
-          secret="$(stellar keys show e2e 2>/dev/null || stellar keys secret e2e)"
+          secret="$(stellar keys secret e2e)"
           test -n "$secret"
           echo "::add-mask::$secret"
-          public_key="$(stellar keys address e2e)"
+          public_key="$(stellar keys public-key e2e)"
           test -n "$public_key"
           curl -fsS "http://localhost:8000/friendbot?addr=$public_key" >/dev/null
           deployment_output="$(stellar contract deploy \
