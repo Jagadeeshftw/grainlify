@@ -26,9 +26,10 @@ export async function fullLifecycleExample(
     console.log('Program published.');
 
     console.log('--- Step 3: Batch Payout ---');
-    // Both recipients are valid, funded network accounts supplied by the
-    // caller. This keeps the example runnable on an actual deployment.
-    const recipients = [sourceKeypair.publicKey(), sourceKeypair.publicKey()];
+    // Recipients must be distinct accounts because the batch payout contract
+    // validates against duplicate recipients in a batch.
+    const secondRecipient = Keypair.random().publicKey();
+    const recipients = [sourceKeypair.publicKey(), secondRecipient];
     const amounts = [10000000n, 15000000n];
     await client.batchPayout(recipients, amounts, sourceKeypair);
     console.log('Batch payout executed.');
