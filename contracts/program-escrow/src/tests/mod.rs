@@ -31,6 +31,9 @@ mod cross_entrypoint_idempotency_tests;
 mod delegate_metadata_dos_tests;
 
 #[cfg(test)]
+mod rotate_payout_key_lifecycle_tests;
+
+#[cfg(test)]
 #[cfg(any())]
 // pre-existing breakage: imports DELEGATE_PERMISSION_PAYOUT, which is not in the crate root
 mod delegate_revocation_propagation_tests;
