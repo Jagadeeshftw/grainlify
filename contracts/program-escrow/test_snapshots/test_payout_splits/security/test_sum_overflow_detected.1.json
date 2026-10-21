@@ -326,6 +326,12 @@
                             },
                             {
                               "key": {
+                                "symbol": "circuit_breaker_threshold"
+                              },
+                              "val": "void"
+                            },
+                            {
+                              "key": {
                                 "symbol": "delegate"
                               },
                               "val": "void"
@@ -336,6 +342,18 @@
                               },
                               "val": {
                                 "u32": 0
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "fot_router"
+                              },
+                              "val": {
+                                "vec": [
+                                  {
+                                    "symbol": "None"
+                                  }
+                                ]
                               }
                             },
                             {

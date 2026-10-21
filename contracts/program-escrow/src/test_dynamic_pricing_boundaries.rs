@@ -3,8 +3,7 @@
 use soroban_sdk::{testutils::Address as _, Address, Env};
 
 use crate::{
-    errors::ContractError, DynamicPricingConfig, ProgramEscrowContract,
-    ProgramEscrowContractClient,
+    errors::ContractError, DynamicPricingConfig, ProgramEscrowContract, ProgramEscrowContractClient,
 };
 
 fn setup_client(env: &Env) -> ProgramEscrowContractClient<'static> {

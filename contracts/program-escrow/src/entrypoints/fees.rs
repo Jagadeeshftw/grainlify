@@ -170,13 +170,13 @@ impl ProgramEscrowContract {
         let mut cfg = Self::get_fee_config_internal(&env);
 
         if let Some(r) = lock_fee_rate {
-            if r > MAX_FEE_RATE {
+            if r < 0 || r > MAX_FEE_RATE {
                 panic_with_error!(&env, &ContractError::InvalidFeeRate);
             }
             cfg.lock_fee_rate = r;
         }
         if let Some(r) = payout_fee_rate {
-            if r > MAX_FEE_RATE {
+            if r < 0 || r > MAX_FEE_RATE {
                 panic_with_error!(&env, &ContractError::InvalidFeeRate);
             }
             cfg.payout_fee_rate = r;

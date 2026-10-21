@@ -1,0 +1,18 @@
+{
+  "default_branch": "master",
+  "branches": [
+    "fix/issue-1995-cover-the-authorisation-path-of-get-dynamic",
+    "master",
+    "origin"
+  ],
+  "parent": {
+    "fix/issue-1995-cover-the-authorisation-path-of-get-dynamic": "master",
+    "master": null,
+    "origin": "master"
+  },
+  "order": [
+    "master",
+    "fix/issue-1995-cover-the-authorisation-path-of-get-dynamic",
+    "origin"
+  ]
+}

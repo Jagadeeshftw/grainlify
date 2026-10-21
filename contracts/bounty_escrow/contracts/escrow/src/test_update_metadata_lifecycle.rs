@@ -428,21 +428,17 @@ fn test_update_metadata_driving_released_terminal_state_preserves_existing_risk_
     let initial_flags = RISK_FLAG_HIGH_RISK | RISK_FLAG_RESTRICTED;
     let initial_prefs = NOTIFY_ON_LOCK | NOTIFY_ON_RELEASE;
     setup.env.as_contract(&setup.contract_id, || {
-        setup
-            .env
-            .storage()
-            .persistent()
-            .set(
-                &DataKey::Metadata(bounty_id),
-                &EscrowMetadata {
-                    repo_id: 999,
-                    issue_id: 888,
-                    bounty_type: String::from_str(&setup.env, "old_type"),
-                    risk_flags: initial_flags,
-                    notification_prefs: initial_prefs,
-                    reference_hash: None,
-                },
-            );
+        setup.env.storage().persistent().set(
+            &DataKey::Metadata(bounty_id),
+            &EscrowMetadata {
+                repo_id: 999,
+                issue_id: 888,
+                bounty_type: String::from_str(&setup.env, "old_type"),
+                risk_flags: initial_flags,
+                notification_prefs: initial_prefs,
+                reference_hash: None,
+            },
+        );
     });
 
     let repo_id = 2001;
@@ -500,21 +496,17 @@ fn test_update_metadata_driving_refunded_terminal_state_preserves_existing_risk_
     let initial_flags = RISK_FLAG_UNDER_REVIEW | RISK_FLAG_DEPRECATED;
     let initial_prefs = NOTIFY_ON_DISPUTE | NOTIFY_ON_EXPIRATION;
     setup.env.as_contract(&setup.contract_id, || {
-        setup
-            .env
-            .storage()
-            .persistent()
-            .set(
-                &DataKey::Metadata(bounty_id),
-                &EscrowMetadata {
-                    repo_id: 111,
-                    issue_id: 222,
-                    bounty_type: String::from_str(&setup.env, "old_type_2"),
-                    risk_flags: initial_flags,
-                    notification_prefs: initial_prefs,
-                    reference_hash: None,
-                },
-            );
+        setup.env.storage().persistent().set(
+            &DataKey::Metadata(bounty_id),
+            &EscrowMetadata {
+                repo_id: 111,
+                issue_id: 222,
+                bounty_type: String::from_str(&setup.env, "old_type_2"),
+                risk_flags: initial_flags,
+                notification_prefs: initial_prefs,
+                reference_hash: None,
+            },
+        );
     });
 
     let repo_id = 4001;
@@ -586,12 +578,9 @@ fn test_update_metadata_driving_natural_lifecycle_refund_progression() {
     assert_eq!(setup.client.get_escrow_info(&bounty_id), locked_escrow);
 
     // 2. Transition to PartiallyRefunded state
-    setup.client.approve_refund(
-        &bounty_id,
-        &5_000,
-        &setup.depositor,
-        &RefundMode::Partial,
-    );
+    setup
+        .client
+        .approve_refund(&bounty_id, &5_000, &setup.depositor, &RefundMode::Partial);
     setup.client.refund(&bounty_id);
     let partial_escrow = setup.client.get_escrow_info(&bounty_id);
     assert_eq!(partial_escrow.status, EscrowStatus::PartiallyRefunded);
@@ -964,11 +953,7 @@ fn test_update_metadata_driving_all_states_matrix() {
         match result {
             Ok(Ok(meta)) => {
                 assert_eq!(meta.repo_id, repo_id, "{}: repo_id mismatch", case.label);
-                assert_eq!(
-                    meta.issue_id, issue_id,
-                    "{}: issue_id mismatch",
-                    case.label
-                );
+                assert_eq!(meta.issue_id, issue_id, "{}: issue_id mismatch", case.label);
                 assert_eq!(
                     meta.bounty_type, bounty_type,
                     "{}: bounty_type mismatch",
@@ -984,11 +969,13 @@ fn test_update_metadata_driving_all_states_matrix() {
                 assert!(
                     case.is_terminal,
                     "{}: Non-terminal state unexpectedly refused: {:?}",
-                    case.label,
-                    err
+                    case.label, err
                 );
             }
-            other => panic!("{}: Unexpected panic or invoke error: {:?}", case.label, other),
+            other => panic!(
+                "{}: Unexpected panic or invoke error: {:?}",
+                case.label, other
+            ),
         }
 
         // The record in storage must never be mutated

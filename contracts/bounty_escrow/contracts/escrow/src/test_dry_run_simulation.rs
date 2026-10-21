@@ -1,3 +1,4 @@
+
 //! Tests for dry-run simulation entrypoints (Issue #567).
 //!
 //! Each test verifies that the simulation function returns the same
@@ -374,4 +375,72 @@ fn test_dry_run_refund_with_pending_claim_fails() {
 
     assert!(!result.success);
     assert_eq!(result.error_code, Error::ClaimPending as u32);
+}
+
+// ===========================================================================
+// simulate_payout authorisation
+// ===========================================================================
+
+#[test]
+fn test_simulate_payout_unauthorised_caller_refused() {
+    let s = SimSetup::new();
+    let deadline = s.env.ledger().timestamp() + 5_000;
+
+    s.escrow.lock_funds(&s.depositor, &1_u64, &1_000, &deadline);
+
+    // Drop the blanket auth mock so the unauthorised caller is actually
+    // rejected by the contract's `require_auth`.
+    s.env.set_auths(&[]);
+
+    let stranger = Address::generate(&s.env);
+    let result = s.escrow.try_simulate_payout(&1_u64, &stranger);
+
+    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+}
+
+#[test]
+fn test_simulate_payout_unauthorised_caller_does_not_mutate_state() {
+    let s = SimSetup::new();
+    let deadline = s.env.ledger().timestamp() + 5_000;
+
+    s.escrow.lock_funds(&s.depositor, &1_u64, &1_000, &deadline);
+    let info_before = s.escrow.get_escrow_info(&1_u64);
+    let depositor_before = s.token.balance(&s.depositor);
+    let contract_before = s.token.balance(&s.escrow.address);
+
+    s.env.set_auths(&[]);
+
+    let stranger = Address::generate(&s.env);
+    let result = s.escrow.try_simulate_payout(&1_u64, &stranger);
+    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+
+    let info_after = s.escrow.get_escrow_info(&1_u64);
+    assert_eq!(info_after.status, info_before.status);
+    assert_eq!(info_after.remaining_amount, info_before.remaining_amount);
+    assert_eq!(info_after.amount, info_before.amount);
+    assert_eq!(s.token.balance(&s.depositor), depositor_before);
+    assert_eq!(s.token.balance(&s.escrow.address), contract_before);
+}
+
+#[test]
+fn test_simulate_payout_authorised_caller_succeeds() {
+    let s = SimSetup::new();
+    let deadline = s.env.ledger().timestamp() + 5_000;
+
+    s.escrow.lock_funds(&s.depositor, &1_u64, &1_000, &deadline);
+
+    // Only the depositor is authorised for this escrow.
+    s.env.set_auths(&[]);
+    s.env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &s.depositor,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &s.escrow.address,
+            fn_name: "simulate_payout",
+            args: (&1_u64, &s.depositor).into_val(&s.env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    let result = s.escrow.try_simulate_payout(&1_u64, &s.depositor);
+    assert_eq!(result, Ok(Ok(())));
 }
