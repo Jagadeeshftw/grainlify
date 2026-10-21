@@ -2,6 +2,7 @@
 
 extern crate std;
 
+use soroban_sdk::testutils::MockAuth;
 use soroban_sdk::{testutils::Address as _, token, Address, Env, Vec};
 
 use crate::{BountyEscrowContract, BountyEscrowContractClient, LockFundsItem};
@@ -116,4 +117,113 @@ fn benchmark_lock_soa_vs_aos() {
         soa_cpu,
         aos_cpu
     );
+}
+
+// ============================================================================
+// Authorisation coverage for batch_lock_funds_soa
+// ============================================================================
+
+fn build_soa_batch(
+    ctx: &Ctx,
+    depositor: &Address,
+    batch_size: u32,
+) -> (Vec<u64>, Vec<Address>, Vec<i128>, Vec<u64>) {
+    let mut bounty_ids = Vec::new(&ctx.env);
+    let mut depositors = Vec::new(&ctx.env);
+    let mut amounts = Vec::new(&ctx.env);
+    let mut deadlines = Vec::new(&ctx.env);
+
+    for i in 1..=batch_size as u64 {
+        bounty_ids.push_back(i);
+        depositors.push_back(depositor.clone());
+        amounts.push_back(AMOUNT);
+        deadlines.push_back(ctx.env.ledger().timestamp() + DEADLINE_OFFSET);
+    }
+
+    (bounty_ids, depositors, amounts, deadlines)
+}
+
+#[test]
+fn batch_lock_funds_soa_unauthorised_caller_is_refused() {
+    let ctx = setup();
+    let depositor = Address::generate(&ctx.env);
+    mint(&ctx, &depositor, AMOUNT);
+
+    let (bounty_ids, depositors, amounts, deadlines) = build_soa_batch(&ctx, &depositor, 1);
+
+    // Do not authorise the depositor: the entry point must refuse the call.
+    ctx.env.set_auths(&[]);
+
+    let result = ctx.client.try_batch_lock_funds_soa(
+        &bounty_ids,
+        &depositors,
+        &amounts,
+        &deadlines,
+    );
+
+    assert_eq!(
+        result,
+        Err(Ok(soroban_sdk::Error::from_contract_error(
+            crate::Error::Unauthorized as u32
+        ))),
+        "unauthorised caller must be refused with Error::Unauthorized"
+    );
+}
+
+#[test]
+fn batch_lock_funds_soa_unauthorised_caller_does_not_mutate_state() {
+    let ctx = setup();
+    let depositor = Address::generate(&ctx.env);
+    mint(&ctx, &depositor, AMOUNT);
+
+    let (bounty_ids, depositors, amounts, deadlines) = build_soa_batch(&ctx, &depositor, 1);
+
+    ctx.env.set_auths(&[]);
+
+    let result = ctx.client.try_batch_lock_funds_soa(
+        &bounty_ids,
+        &depositors,
+        &amounts,
+        &deadlines,
+    );
+    assert!(result.is_err(), "unauthorised call must fail");
+
+    // The refused call must not have created the escrow entry.
+    assert!(
+        ctx.client.try_get_escrow_info(&bounty_ids.get(0).unwrap()).is_err(),
+        "refused call must not mutate escrow state"
+    );
+}
+
+#[test]
+fn batch_lock_funds_soa_authorised_caller_still_succeeds() {
+    let ctx = setup();
+    let depositor = Address::generate(&ctx.env);
+    mint(&ctx, &depositor, AMOUNT);
+
+    let (bounty_ids, depositors, amounts, deadlines) = build_soa_batch(&ctx, &depositor, 1);
+
+    // Authorise only the depositor for this invocation.
+    ctx.env.mock_auths(&[MockAuth {
+        address: &depositor,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &ctx.client.address,
+            fn_name: "batch_lock_funds_soa",
+            args: (
+                bounty_ids.clone(),
+                depositors.clone(),
+                amounts.clone(),
+                deadlines.clone(),
+            )
+                .into_val(&ctx.env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    ctx.client
+        .batch_lock_funds_soa(&bounty_ids, &depositors, &amounts, &deadlines);
+
+    let info = ctx.client.get_escrow_info(&bounty_ids.get(0).unwrap());
+    assert_eq!(info.amount, AMOUNT);
+    assert_eq!(info.depositor, depositor);
 }

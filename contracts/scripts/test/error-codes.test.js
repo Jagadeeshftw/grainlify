@@ -22,7 +22,7 @@ const { pathToFileURL } = require('node:url');
 
 const HERE = __dirname;
 const SCRIPT = path.resolve(HERE, '..', 'check-error-codes.mjs');
-const REPO_ROOT = process.env.ERROR_CODES_ROOT || path.resolve(HERE, '..', '..');
+const REPO_ROOT = process.env.ERROR_CODES_ROOT || path.resolve(HERE, '..', '..', '..');
 const FIXTURE = process.env.ERROR_CODES_FIXTURE || path.resolve(HERE, '..', 'error-codes.json');
 
 /** Run the gate. Returns the spawn result so each case can assert on status and output. */
