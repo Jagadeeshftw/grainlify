@@ -324,6 +324,9 @@ mod test_granular_pause;
 mod test_pause_boundaries;
 
 #[cfg(test)]
+mod test_rotate_payout_key_boundaries;
+
+#[cfg(test)]
 #[cfg(any())] // pre-existing breakage: uses Val, std
 mod test_reputation;
 
@@ -379,9 +382,9 @@ mod test_program_payouts;
 #[cfg(any())] // pre-existing breakage: query_schedules_by_status no longer exposed
 mod test_program_queries;
 #[cfg(test)]
-mod test_support;
-#[cfg(test)]
 mod test_set_paused_idempotency;
+#[cfg(test)]
+mod test_support;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Read-only mode types (referenced by test_read_only_mode.rs)
@@ -1801,13 +1804,13 @@ impl ProgramEscrowContract {
         let mut cfg = Self::get_fee_config_internal(&env);
 
         if let Some(r) = lock_fee_rate {
-            if r > MAX_FEE_RATE {
+            if r < 0 || r > MAX_FEE_RATE {
                 panic_with_error!(&env, &ContractError::InvalidFeeRate);
             }
             cfg.lock_fee_rate = r;
         }
         if let Some(r) = payout_fee_rate {
-            if r > MAX_FEE_RATE {
+            if r < 0 || r > MAX_FEE_RATE {
                 panic_with_error!(&env, &ContractError::InvalidFeeRate);
             }
             cfg.payout_fee_rate = r;
@@ -4982,6 +4985,15 @@ impl ProgramEscrowContract {
     }
 
     /// Returns `true` if `token` is on the allowlist or the list is empty.
+    ///
+    /// # Repeat calls
+    /// This is a pure read-only view. It performs no storage writes, moves no
+    /// tokens, requires no auth and emits no events. Calling it twice in a row
+    /// (for example when a client retries after a timeout) therefore leaves the
+    /// contract in exactly the same state as calling it once, and both calls
+    /// return the same value until the allowlist itself is changed by
+    /// `add_allowed_token`, `add_allowed_token_with_decimals` or
+    /// `remove_allowed_token`. The second call is never refused.
     pub fn is_token_allowed(env: Env, token: Address) -> bool {
         let v2 = Self::get_token_allowlist_v2_internal(&env);
         if v2.is_empty() {
@@ -8112,6 +8124,8 @@ impl ProgramEscrowContract {
 mod test_dynamic_pricing;
 #[cfg(test)]
 mod test_dynamic_pricing_boundaries;
+#[cfg(test)]
+mod test_is_token_allowed_idempotent;
 #[cfg(any())] // pre-existing breakage: #[test] inside impl blocks
 mod test_pagination;
 #[cfg(test)]
@@ -8154,7 +8168,6 @@ mod test_circuit_breaker_enforcement;
 #[cfg(any())]
 mod test_event_ordering;
 #[cfg(test)]
-#[cfg(any())]
 mod test_rbac;
 
 #[cfg(test)]
