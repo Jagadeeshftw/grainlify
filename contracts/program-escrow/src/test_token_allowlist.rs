@@ -20,6 +20,10 @@
 //! - Update hardening: duplicate remove, immutable-scale re-add, stale-admin
 //!   rejection after rotation, and payout on a program whose token was later
 //!   de-listed (grandfathered — enforcement is at `init_program` only)
+//! - `is_token_allowed`: lifecycle-state coverage (issue #1989) — unconfigured,
+//!   legacy V1-only, active, partially delisted, stale-V1, cleared (terminal),
+//!   and re-listed states, each asserted as a value / typed result and proven
+//!   non-mutating
 
 #![cfg(test)]
 
@@ -1349,4 +1353,359 @@ fn test_adding_token_after_init_does_not_affect_existing_program() {
     client.single_payout(&recipient, &250, &None);
     assert_eq!(token::Client::new(&env, &token).balance(&recipient), 250);
     assert_eq!(token_decimals(&client, &token), Some(7u32));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 22. `is_token_allowed` lifecycle-state coverage (issue #1989)
+//
+// `is_token_allowed` is a pure view over the token-allowlist record. The
+// record moves through the following states, and each one answers
+// differently:
+//
+//   * Unconfigured       — neither the V1 nor the V2 key has ever been
+//                          written; an empty list means enforcement is off,
+//                          so any token is "allowed".
+//   * Legacy V1-only     — a pre-v2.5 deployment: only
+//                          `DataKey::TokenAllowlist` exists and the V2
+//                          reader must promote those entries.
+//   * Active             — the V2 list is non-empty and authoritative.
+//   * Partially delisted — a token was removed while others remain listed,
+//                          so enforcement is still on.
+//   * Stale V1           — a V1 entry that the (authoritative) V2 list does
+//                          not contain; it must not be allowed.
+//   * Cleared (terminal) — the last token was removed, the list is empty
+//                          again and enforcement is off.
+//   * Re-listed          — a token removed earlier is added back, re-enabling
+//                          enforcement for everyone else.
+//
+// Every test below names the state it drives, asserts the outcome as a
+// value (and through the typed `try_` result) rather than a panic, and
+// asserts — via a storage fingerprint — that the lookup itself never
+// mutates the record, including in the terminal states.
+// ─────────────────────────────────────────────────────────────────────────────
+
+use crate::{DataKey, TOKEN_ALLOWLIST_V2};
+use soroban_sdk::Vec;
+
+/// A fingerprint of every storage slot `is_token_allowed` reads, plus the
+/// per-token decimal slots the test cares about. Two fingerprints that
+/// compare equal prove the view call did not write anything.
+#[derive(Debug, PartialEq, Eq)]
+struct AllowlistFingerprint {
+    /// Whether the canonical V2 key (`TOKEN_ALLOWLIST_V2`) is present.
+    v2_written: bool,
+    /// V2 entries, in storage order, as `(token, decimals)`.
+    v2_entries: Vec<(Address, u32)>,
+    /// Legacy V1 entries, in storage order.
+    v1_entries: Vec<Address>,
+    /// Per-token decimal scales actually stored, for the queried tokens.
+    decimals: Vec<(Address, u32)>,
+    /// Written allowlist storage schema version (0 when never written).
+    schema_version: u32,
+}
+
+/// Read every allowlist slot straight from instance storage so a test can
+/// prove a lookup left the record untouched.
+fn allowlist_fingerprint(
+    env: &Env,
+    client: &ProgramEscrowContractClient,
+    tokens: &[Address],
+) -> AllowlistFingerprint {
+    env.as_contract(&client.address, || {
+        let stored_v2: Option<Vec<AllowedTokenEntry>> =
+            env.storage().instance().get(&TOKEN_ALLOWLIST_V2);
+        let v2_written = stored_v2.is_some();
+        let mut v2_entries: Vec<(Address, u32)> = Vec::new(env);
+        if let Some(v2) = stored_v2 {
+            for entry in v2.iter() {
+                v2_entries.push_back((entry.token, entry.decimals));
+            }
+        }
+
+        let v1: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&DataKey::TokenAllowlist)
+            .unwrap_or_else(|| Vec::new(env));
+        let mut v1_entries: Vec<Address> = Vec::new(env);
+        for token in v1.iter() {
+            v1_entries.push_back(token);
+        }
+
+        let mut decimals: Vec<(Address, u32)> = Vec::new(env);
+        for token in tokens {
+            let scale: Option<u32> = env
+                .storage()
+                .instance()
+                .get(&DataKey::TokenDecimals(token.clone()));
+            if let Some(scale) = scale {
+                decimals.push_back((token.clone(), scale));
+            }
+        }
+
+        let schema_version: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TokenAllowlistSchemaVersion)
+            .unwrap_or(0u32);
+
+        AllowlistFingerprint {
+            v2_written,
+            v2_entries,
+            v1_entries,
+            decimals,
+            schema_version,
+        }
+    })
+}
+
+/// Recreate the pre-v2.5 storage shape: a V1 address list with no V2
+/// counterpart and no decimal scales.
+fn write_legacy_v1_allowlist(env: &Env, client: &ProgramEscrowContractClient, tokens: &[Address]) {
+    env.as_contract(&client.address, || {
+        let mut v1: Vec<Address> = Vec::new(env);
+        for token in tokens {
+            v1.push_back(token.clone());
+        }
+        env.storage().instance().set(&DataKey::TokenAllowlist, &v1);
+    });
+}
+
+/// Assert the outcome as a value and through the typed `try_` result —
+/// never as a panic.
+fn assert_is_token_allowed(client: &ProgramEscrowContractClient, token: &Address, expected: bool) {
+    assert_eq!(
+        client.try_is_token_allowed(token),
+        Ok(Ok(expected)),
+        "is_token_allowed must surface a typed Ok(bool)"
+    );
+    if expected {
+        assert!(client.is_token_allowed(token));
+    } else {
+        assert!(!client.is_token_allowed(token));
+    }
+}
+
+/// State: unconfigured — no allowlist record has ever been written, so the
+/// list reads as empty, enforcement is off, and any token is allowed.
+#[test]
+fn test_is_token_allowed_from_unconfigured_state_allows_any_token() {
+    let env = Env::default();
+    let (client, _admin) = setup_contract(&env);
+    let token = make_token(&env);
+
+    let before = allowlist_fingerprint(&env, &client, &[token.clone()]);
+    assert_is_token_allowed(&client, &token, true);
+    assert_eq!(
+        before,
+        allowlist_fingerprint(&env, &client, &[token]),
+        "a lookup in the unconfigured state must not write the record"
+    );
+}
+
+/// State: legacy V1-only — a pre-v2.5 deployment where only the V1 address
+/// list exists; a listed token must be allowed through the V1 promotion path.
+#[test]
+fn test_is_token_allowed_from_legacy_v1_only_state_allows_listed_token() {
+    let env = Env::default();
+    let (client, _admin) = setup_contract(&env);
+    let legacy = make_token(&env);
+    write_legacy_v1_allowlist(&env, &client, &[legacy.clone()]);
+
+    let before = allowlist_fingerprint(&env, &client, &[legacy.clone()]);
+    assert_is_token_allowed(&client, &legacy, true);
+    assert_eq!(
+        before,
+        allowlist_fingerprint(&env, &client, &[legacy]),
+        "a lookup in the legacy V1-only state must not write the record"
+    );
+}
+
+/// State: legacy V1-only — a token that is not in the legacy V1 list must be
+/// refused even though no V2 record exists.
+#[test]
+fn test_is_token_allowed_from_legacy_v1_only_state_refuses_unlisted_token() {
+    let env = Env::default();
+    let (client, _admin) = setup_contract(&env);
+    let listed = make_token(&env);
+    let unlisted = make_token(&env);
+    write_legacy_v1_allowlist(&env, &client, &[listed.clone()]);
+
+    let before = allowlist_fingerprint(&env, &client, &[listed.clone(), unlisted.clone()]);
+    assert_is_token_allowed(&client, &unlisted, false);
+    assert_eq!(
+        before,
+        allowlist_fingerprint(&env, &client, &[listed, unlisted]),
+        "a refused lookup must not write the record"
+    );
+}
+
+/// State: active — the V2 list is non-empty and the token is listed.
+#[test]
+fn test_is_token_allowed_from_active_state_allows_listed_token() {
+    let env = Env::default();
+    let (client, _admin) = setup_contract(&env);
+    let token = make_token(&env);
+    client.add_allowed_token_with_decimals(&token, &6u32);
+
+    let before = allowlist_fingerprint(&env, &client, &[token.clone()]);
+    assert_is_token_allowed(&client, &token, true);
+    assert_eq!(
+        before,
+        allowlist_fingerprint(&env, &client, &[token]),
+        "a lookup in the active state must not write the record"
+    );
+}
+
+/// State: active — the V2 list is non-empty and the token is not listed, so
+/// the lookup must refuse it.
+#[test]
+fn test_is_token_allowed_from_active_state_refuses_unlisted_token() {
+    let env = Env::default();
+    let (client, _admin) = setup_contract(&env);
+    let listed = make_token(&env);
+    let unlisted = make_token(&env);
+    client.add_allowed_token_with_decimals(&listed, &6u32);
+
+    let before = allowlist_fingerprint(&env, &client, &[listed.clone(), unlisted.clone()]);
+    assert_is_token_allowed(&client, &unlisted, false);
+    assert_eq!(
+        before,
+        allowlist_fingerprint(&env, &client, &[listed, unlisted]),
+        "a refused lookup must not write the record"
+    );
+}
+
+/// State: partially delisted — one token was removed while another remains
+/// listed, so enforcement is still on: only the removed token is refused.
+#[test]
+fn test_is_token_allowed_from_partially_delisted_state_refuses_only_the_removed_token() {
+    let env = Env::default();
+    let (client, _admin) = setup_contract(&env);
+    let removed = make_token(&env);
+    let kept = make_token(&env);
+    client.add_allowed_token_with_decimals(&removed, &6u32);
+    client.add_allowed_token_with_decimals(&kept, &6u32);
+    client.remove_allowed_token(&removed);
+
+    let before = allowlist_fingerprint(&env, &client, &[removed.clone(), kept.clone()]);
+    assert_is_token_allowed(&client, &removed, false);
+    assert_is_token_allowed(&client, &kept, true);
+    assert_eq!(
+        before,
+        allowlist_fingerprint(&env, &client, &[removed, kept]),
+        "lookups in the partially delisted state must not write the record"
+    );
+}
+
+/// State: stale V1 — a legacy V1 entry that the authoritative V2 list does
+/// not contain must not be allowed.
+#[test]
+fn test_is_token_allowed_from_stale_v1_state_refuses_entry_missing_from_v2() {
+    let env = Env::default();
+    let (client, _admin) = setup_contract(&env);
+    let active = make_token(&env);
+    let stale = make_token(&env);
+
+    // V2 is written first and becomes the canonical membership record.
+    client.add_allowed_token_with_decimals(&active, &6u32);
+    // A leftover V1 entry that never made it into V2 (partial migration).
+    write_legacy_v1_allowlist(&env, &client, &[stale.clone(), active.clone()]);
+
+    let before = allowlist_fingerprint(&env, &client, &[stale.clone(), active.clone()]);
+    assert_is_token_allowed(&client, &stale, false);
+    assert_is_token_allowed(&client, &active, true);
+    assert_eq!(
+        before,
+        allowlist_fingerprint(&env, &client, &[stale, active]),
+        "lookups in the stale-V1 state must not write the record"
+    );
+}
+
+/// State: cleared (terminal) — the last token was removed, so the list is
+/// empty again, enforcement is off, and any token reads as allowed.
+#[test]
+fn test_is_token_allowed_from_cleared_terminal_state_allows_any_token() {
+    let env = Env::default();
+    let (client, _admin) = setup_contract(&env);
+    let token = make_token(&env);
+    let fresh = make_token(&env);
+
+    client.add_allowed_token_with_decimals(&token, &6u32);
+    client.remove_allowed_token(&token);
+
+    let before = allowlist_fingerprint(&env, &client, &[token.clone(), fresh.clone()]);
+    // The de-listed token itself reads as allowed again: an empty list
+    // means enforcement is off for everyone.
+    assert_is_token_allowed(&client, &token, true);
+    assert_is_token_allowed(&client, &fresh, true);
+    assert_eq!(
+        before,
+        allowlist_fingerprint(&env, &client, &[token, fresh]),
+        "a lookup in the cleared terminal state must not resurrect the record"
+    );
+}
+
+/// State: re-listed — a token removed earlier is added back, so it is
+/// allowed again and enforcement is back on for every other token.
+#[test]
+fn test_is_token_allowed_from_relisted_state_allows_token_again() {
+    let env = Env::default();
+    let (client, _admin) = setup_contract(&env);
+    let token = make_token(&env);
+    let other = make_token(&env);
+
+    client.add_allowed_token_with_decimals(&token, &6u32);
+    client.remove_allowed_token(&token); // cleared (terminal) state
+    assert_is_token_allowed(&client, &token, true);
+
+    client.add_allowed_token_with_decimals(&token, &6u32); // re-listed
+    let before = allowlist_fingerprint(&env, &client, &[token.clone(), other.clone()]);
+    assert_is_token_allowed(&client, &token, true);
+    assert_is_token_allowed(&client, &other, false);
+    assert_eq!(
+        before,
+        allowlist_fingerprint(&env, &client, &[token, other]),
+        "lookups in the re-listed state must not write the record"
+    );
+}
+
+/// State: terminal — both terminal shapes of the record (a de-listed token
+/// while the list stays non-empty, and the fully cleared list) must answer
+/// without mutating a single slot, even for lookups they refuse.
+#[test]
+fn test_is_token_allowed_terminal_states_are_not_mutated_by_refused_lookups() {
+    let env = Env::default();
+    let (client, _admin) = setup_contract(&env);
+    let token = make_token(&env);
+    let sentinel = make_token(&env);
+    let fresh = make_token(&env);
+
+    client.add_allowed_token_with_decimals(&token, &6u32);
+    client.add_allowed_token(&sentinel);
+    client.remove_allowed_token(&token); // token is now in a terminal state
+
+    let delisted = allowlist_fingerprint(&env, &client, &[token.clone(), sentinel.clone()]);
+    assert_is_token_allowed(&client, &token, false); // refused lookup
+    assert_is_token_allowed(&client, &token, false); // repeated lookup
+    assert_eq!(
+        delisted,
+        allowlist_fingerprint(&env, &client, &[token.clone(), sentinel.clone()]),
+        "a refused lookup on a de-listed token must not mutate the record"
+    );
+
+    client.remove_allowed_token(&sentinel); // list is now cleared (terminal)
+
+    let cleared = allowlist_fingerprint(
+        &env,
+        &client,
+        &[token.clone(), sentinel.clone(), fresh.clone()],
+    );
+    assert_is_token_allowed(&client, &token, true);
+    assert_is_token_allowed(&client, &fresh, true);
+    assert_eq!(
+        cleared,
+        allowlist_fingerprint(&env, &client, &[token, sentinel, fresh]),
+        "lookups on the cleared terminal record must not mutate it"
+    );
 }
