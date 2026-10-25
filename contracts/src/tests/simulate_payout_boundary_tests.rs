@@ -116,10 +116,10 @@ fn boundary_gross_amount_one_no_warning() {
     let result = facade.simulate_payout("boundary-prog", vec![r("ADDR-ONE", 1)]);
 
     assert!(
-        !result.warnings.iter().any(|w| matches!(
-            w,
-            Warning::ZeroAmountRecipient { .. }
-        )),
+        !result
+            .warnings
+            .iter()
+            .any(|w| matches!(w, Warning::ZeroAmountRecipient { .. })),
         "gross=1 must not trigger ZeroAmountRecipient"
     );
 }
@@ -133,7 +133,10 @@ fn boundary_gross_amount_one_fee_floors_to_zero() {
     let facade = ViewFacade::new(&s);
     let result = facade.simulate_payout("boundary-prog", vec![r("ADDR", 1)]);
     let entry = &result.net_amounts[0];
-    assert_eq!(entry.fee, 0, "fee must floor to 0 for gross=1 at any rate ≤ MAX");
+    assert_eq!(
+        entry.fee, 0,
+        "fee must floor to 0 for gross=1 at any rate ≤ MAX"
+    );
     assert_eq!(entry.net_amount, 1);
 }
 
@@ -430,7 +433,10 @@ fn boundary_combined_zero_gross_and_over_max_rate() {
     assert!(result.warnings.contains(&Warning::ZeroAmountRecipient {
         address: "ADDR".into()
     }));
-    assert_eq!(result.net_amounts[0].fee + result.net_amounts[0].net_amount, 0);
+    assert_eq!(
+        result.net_amounts[0].fee + result.net_amounts[0].net_amount,
+        0
+    );
 }
 
 /// gross_amount = u128::MAX AND fee_rate_bp = 0
