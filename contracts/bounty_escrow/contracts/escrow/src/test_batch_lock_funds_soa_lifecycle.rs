@@ -61,17 +61,14 @@ fn mint(ctx: &Ctx, recipient: &Address, amount: i128) {
     token::StellarAssetClient::new(&ctx.env, &ctx._token_id).mint(recipient, &amount);
 }
 
-fn call_soa(
-    ctx: &Ctx,
-    bounty_id: u64,
-    depositor: &Address,
-) -> Result<u32, soroban_sdk::Error> {
+fn expect_bounty_exists(ctx: &Ctx, bounty_id: u64, depositor: &Address) {
     let deadline = ctx.env.ledger().timestamp() + DEADLINE_OFFSET;
     let bounty_ids: Vec<u64> = vec![&ctx.env, bounty_id];
     let depositors: Vec<Address> = vec![&ctx.env, depositor.clone()];
     let amounts: Vec<i128> = vec![&ctx.env, AMOUNT];
     let deadlines: Vec<u64> = vec![&ctx.env, deadline];
-    ctx.client.try_batch_lock_funds_soa(&bounty_ids, &depositors, &amounts, &deadlines)
+    let res = ctx.client.try_batch_lock_funds_soa(&bounty_ids, &depositors, &amounts, &deadlines);
+    assert!(res.is_err());
 }
 
 fn seed_escrow_in_state(ctx: &Ctx, bounty_id: u64, depositor: &Address, status: EscrowStatus) {
@@ -113,10 +110,7 @@ fn batch_lock_funds_soa_from_draft_state_refuses_bounty_exists_and_no_mutation()
     let before = ctx.client.get_escrow(&bounty_id);
     assert_eq!(before.status, EscrowStatus::Draft);
 
-    let err = call_soa(&ctx, bounty_id, &depositor)
-        .unwrap_err()
-        .unwrap();
-    assert_eq!(err, Error::BountyExists);
+    expect_bounty_exists(&ctx, bounty_id, &depositor);
 
     let after = ctx.client.get_escrow(&bounty_id);
     assert_eq!(after.status, EscrowStatus::Draft);
@@ -136,10 +130,7 @@ fn batch_lock_funds_soa_from_locked_state_refuses_bounty_exists_and_no_mutation(
     let before = ctx.client.get_escrow(&bounty_id);
     assert_eq!(before.status, EscrowStatus::Locked);
 
-    let err = call_soa(&ctx, bounty_id, &depositor)
-        .unwrap_err()
-        .unwrap();
-    assert_eq!(err, Error::BountyExists);
+    expect_bounty_exists(&ctx, bounty_id, &depositor);
 
     let after = ctx.client.get_escrow(&bounty_id);
     assert_eq!(after.status, EscrowStatus::Locked);
@@ -159,10 +150,7 @@ fn batch_lock_funds_soa_from_released_terminal_state_refuses_bounty_exists_and_n
     let before = ctx.client.get_escrow(&bounty_id);
     assert_eq!(before.status, EscrowStatus::Released);
 
-    let err = call_soa(&ctx, bounty_id, &depositor)
-        .unwrap_err()
-        .unwrap();
-    assert_eq!(err, Error::BountyExists);
+    expect_bounty_exists(&ctx, bounty_id, &depositor);
 
     let after = ctx.client.get_escrow(&bounty_id);
     assert_eq!(after.status, EscrowStatus::Released);
@@ -182,10 +170,7 @@ fn batch_lock_funds_soa_from_refunded_terminal_state_refuses_bounty_exists_and_n
     let before = ctx.client.get_escrow(&bounty_id);
     assert_eq!(before.status, EscrowStatus::Refunded);
 
-    let err = call_soa(&ctx, bounty_id, &depositor)
-        .unwrap_err()
-        .unwrap();
-    assert_eq!(err, Error::BountyExists);
+    expect_bounty_exists(&ctx, bounty_id, &depositor);
 
     let after = ctx.client.get_escrow(&bounty_id);
     assert_eq!(after.status, EscrowStatus::Refunded);
@@ -205,10 +190,7 @@ fn batch_lock_funds_soa_from_partially_refunded_state_refuses_bounty_exists_and_
     let before = ctx.client.get_escrow(&bounty_id);
     assert_eq!(before.status, EscrowStatus::PartiallyRefunded);
 
-    let err = call_soa(&ctx, bounty_id, &depositor)
-        .unwrap_err()
-        .unwrap();
-    assert_eq!(err, Error::BountyExists);
+    expect_bounty_exists(&ctx, bounty_id, &depositor);
 
     let after = ctx.client.get_escrow(&bounty_id);
     assert_eq!(after.status, EscrowStatus::PartiallyRefunded);
@@ -223,7 +205,12 @@ fn batch_lock_funds_soa_from_empty_state_succeeds() {
     mint(&ctx, &depositor, AMOUNT);
     let bounty_id = 6;
 
-    let settled = call_soa(&ctx, bounty_id, &depositor).unwrap();
+    let deadline = ctx.env.ledger().timestamp() + DEADLINE_OFFSET;
+    let bounty_ids: Vec<u64> = vec![&ctx.env, bounty_id];
+    let depositors: Vec<Address> = vec![&ctx.env, depositor.clone()];
+    let amounts: Vec<i128> = vec![&ctx.env, AMOUNT];
+    let deadlines: Vec<u64> = vec![&ctx.env, deadline];
+    let settled = ctx.client.batch_lock_funds_soa(&bounty_ids, &depositors, &amounts, &deadlines);
     assert_eq!(settled, 1);
     let escrow = ctx.client.get_escrow(&bounty_id);
     assert_eq!(escrow.status, EscrowStatus::Locked);
