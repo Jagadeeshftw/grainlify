@@ -19,10 +19,7 @@
 
 #![cfg(test)]
 
-use soroban_sdk::{
-    testutils::Address as _,
-    token, vec, Address, Env, Vec,
-};
+use soroban_sdk::{testutils::Address as _, token, vec, Address, Env, Vec};
 
 use crate::{BountyEscrowContract, BountyEscrowContractClient, Error};
 

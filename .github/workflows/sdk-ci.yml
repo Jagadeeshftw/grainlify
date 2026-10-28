@@ -53,14 +53,35 @@ jobs:
       - name: Install SDK dependencies
         working-directory: contracts/sdk
         run: npm ci
+      # wasm32v1-none, not wasm32-unknown-unknown: since Rust 1.82 the latter
+      # emits reference-types/multi-value, which the Soroban host can't load.
       - uses: dtolnay/rust-toolchain@1.85.1
         with:
-          targets: wasm32-unknown-unknown
+          targets: wasm32v1-none
+      # program_escrow.wasm (~370 KB) is larger than the 128 KiB contract size
+      # cap of the default (testnet-like) limits, which makes the upload fail
+      # with `HostError: Error(Context, InternalError)`. stellar/quickstart's
+      # action exposes no limits input, so run the image directly with
+      # `--limits unlimited`.
       - name: Start ephemeral Stellar network
-        uses: stellar/quickstart@main
-        with:
-          network: local
-          enable: core,horizon,rpc
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name stellar -p 8000:8000 stellar/quickstart:latest \
+            --local --limits unlimited --enable core,horizon,rpc
+          for _ in $(seq 1 120); do
+            if curl -fsS -X POST http://localhost:8000/rpc \
+                 -H 'Content-Type: application/json' \
+                 -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' \
+                 | grep -q '"healthy"'; then
+              echo "Stellar quickstart is ready"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::Stellar quickstart did not become healthy in time"
+          docker logs stellar | tail -n 200
+          exit 1
       - name: Install Stellar CLI
         uses: stellar/stellar-cli@v23.0.1
       - name: Configure local network and deploy ProgramEscrow
@@ -72,7 +93,7 @@ jobs:
             --network-passphrase 'Standalone Network ; February 2017'
           cargo build \
             --manifest-path contracts/program-escrow/Cargo.toml \
-            --target wasm32-unknown-unknown \
+            --target wasm32v1-none \
             --release
           stellar keys generate e2e
           secret="$(stellar keys secret e2e)"
@@ -80,12 +101,23 @@ jobs:
           echo "::add-mask::$secret"
           public_key="$(stellar keys public-key e2e)"
           test -n "$public_key"
-          curl -fsS "http://localhost:8000/friendbot?addr=$public_key" >/dev/null
+          # Friendbot can lag RPC health by a few seconds on a fresh network.
+          curl -fsS --retry 12 --retry-delay 5 --retry-all-errors \
+            "http://localhost:8000/friendbot?addr=$public_key" >/dev/null
+          # program-escrow is a member of the contracts/ workspace, so its
+          # artifact lands in contracts/target/, not the crate's own target/.
+          wasm=contracts/target/wasm32v1-none/release/program_escrow.wasm
+          test -f "$wasm" || { echo "::error::$wasm not found"; exit 1; }
+          echo "program_escrow.wasm: $(stat -c %s "$wasm") bytes"
+          # Capture the exit status without letting `set -e` abort before the
+          # CLI's error output is printed.
+          deploy_status=0
           deployment_output="$(stellar contract deploy \
-            --wasm contracts/program-escrow/target/wasm32-unknown-unknown/release/program_escrow.wasm \
+            --wasm "$wasm" \
             --source-account e2e \
-            --network local 2>&1)"
+            --network local 2>&1)" || deploy_status=$?
           printf '%s\n' "$deployment_output"
+          test "$deploy_status" -eq 0
           contract_id="$(printf '%s\n' "$deployment_output" | grep -Eo 'C[A-Z2-7]{55}' | tail -n 1)"
           test -n "$contract_id"
           token_address="$(stellar contract id asset --asset native --network local)"

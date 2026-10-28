@@ -298,7 +298,10 @@ fn test_rbac_rotation_authorization_full_path() {
     // Verify authorized caller can rotate successfully
     let nonce = client.get_rotation_nonce(&program_id);
     let data = client.rotate_payout_key(&program_id, &payout_key, &new_key, &nonce);
-    assert_eq!(data.authorized_payout_key, new_key, "authorized rotation should succeed");
+    assert_eq!(
+        data.authorized_payout_key, new_key,
+        "authorized rotation should succeed"
+    );
 
     // Verify state changed as expected
     assert_ne!(
@@ -306,7 +309,8 @@ fn test_rbac_rotation_authorization_full_path() {
         "authorized rotation should change the payout key"
     );
     assert_eq!(
-        initial_nonce + 1, client.get_rotation_nonce(&program_id),
+        initial_nonce + 1,
+        client.get_rotation_nonce(&program_id),
         "authorized rotation should increment the nonce"
     );
 
