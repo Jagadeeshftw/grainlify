@@ -597,12 +597,18 @@ impl ProgramEscrowContract {
     /// Must be called once after contract deployment to enable threshold-based
     /// circuit breaking. Idempotent — safe to call multiple times.
     ///
-    /// # Idempotency
-    /// Calling this entry point more than once is a no-op: the second and
-    /// subsequent calls leave the stored `ThresholdConfig` unchanged from the
-    /// first call. No error is returned and no additional events are emitted
-    /// beyond those produced by the first call.
+    /// # Authorization
+    ///
+    /// Only the contract admin may call this entrypoint.
     pub fn init_threshold_monitoring(env: Env) {
+        // Only admin can initialize threshold monitoring
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .unwrap_or_else(|| panic_with_error!(&env, &ContractError::ProgramInitFailed));
+        admin.require_auth();
+
         threshold_monitor::init_threshold_monitor(&env);
     }
 
