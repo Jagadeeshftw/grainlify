@@ -49,6 +49,13 @@ impl ProgramEscrowContract {
     }
 
     /// Get current dynamic pricing configuration.
+    ///
+    /// # Idempotency
+    /// This entry point is a pure read: it does not mutate storage, does not
+    /// move tokens, and does not emit events. Calling it twice in a row (e.g.
+    /// when a client retries after a timeout) therefore leaves exactly the
+    /// same state as calling it once, and both calls return the same value.
+    /// No typed error is produced on repeat calls.
     pub fn get_dynamic_pricing_config(env: Env) -> Option<DynamicPricingConfig> {
         env.storage().instance().get(&DataKey::DynamicPricingConfig)
     }

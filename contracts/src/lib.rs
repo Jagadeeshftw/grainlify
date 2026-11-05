@@ -350,6 +350,22 @@ impl<'a> ViewFacade<'a> {
 
     /// Returns `true` when the circuit breaker is open (payouts suspended).
     ///
+    /// # Repeat calls
+    ///
+    /// Calling this entrypoint **twice leaves the same state as calling it
+    /// once**. The chosen behaviour is idempotence, not refusal: a repeat call
+    /// is *not* rejected with a typed error, because this is a pure read that
+    /// returns `bool` — there is no state to double-apply. A client that times
+    /// out and retries therefore gets the live breaker state a second time,
+    /// with the same result as the first call whenever `Storage` is unchanged.
+    ///
+    /// Per call, repeatedly or not, the entrypoint:
+    ///
+    /// - reads [`Storage::is_circuit_open`] and returns its value,
+    /// - writes no state,
+    /// - transfers no tokens (escrow balances are untouched),
+    /// - emits no events.
+    ///
     /// # Security
     ///
     /// Read-only. No authentication required.

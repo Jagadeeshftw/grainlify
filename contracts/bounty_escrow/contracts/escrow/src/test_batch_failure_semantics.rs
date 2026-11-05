@@ -54,8 +54,9 @@
 #![cfg(test)]
 
 use soroban_sdk::{
-    testutils::{Address as _, Ledger, LedgerInfo},
-    token, vec, Address, Env, Vec,
+    symbol_short,
+    testutils::{Address as _, Events, Ledger, LedgerInfo},
+    token, vec, Address, Env, IntoVal, Symbol, Vec,
 };
 
 use crate::{
@@ -76,6 +77,7 @@ const DEADLINE_OFFSET: u64 = 3_600;
 struct Ctx<'a> {
     env: Env,
     client: BountyEscrowContractClient<'a>,
+    contract_id: Address,
     token_id: Address,
     token_admin: Address,
 }
@@ -96,6 +98,7 @@ fn setup() -> Ctx<'static> {
     Ctx {
         env,
         client,
+        contract_id,
         token_id,
         token_admin,
     }
@@ -155,6 +158,24 @@ fn assert_count_is_all_items(submitted: usize, settled: u32, entry_point: &str) 
          either every element settled or none",
         entry_point, settled, submitted
     );
+}
+
+fn batch_lock_event_symbols(ctx: &Ctx) -> Vec<Symbol> {
+    let mut events = Vec::new(&ctx.env);
+    for event in ctx.env.events().all().iter() {
+        if event.0 != ctx.contract_id {
+            continue;
+        }
+        let topics = event.1;
+        if topics.is_empty() {
+            continue;
+        }
+        let topic: Symbol = topics.get(0).unwrap().into_val(&ctx.env);
+        if topic == symbol_short!("f_lock") || topic == symbol_short!("b_lock") {
+            events.push_back(topic);
+        }
+    }
+    events
 }
 
 // ===========================================================================
@@ -289,6 +310,44 @@ fn fully_successful_batch_settles_every_element_on_every_entry_point() {
             "every element of a successful SoA release batch must have paid out"
         );
     }
+}
+
+/// Retrying the same SoA lock returns `BountyExists`: no second transfer or
+/// lock event is produced, and the first call's state remains unchanged.
+#[test]
+fn batch_lock_funds_soa_rejects_retry_without_reapplying_effects() {
+    let ctx = setup();
+    let depositor = funded_depositor(&ctx, 1);
+    let bounty_ids = vec![&ctx.env, 41u64];
+    let depositors = vec![&ctx.env, depositor.clone()];
+    let amounts = vec![&ctx.env, AMOUNT];
+    let deadlines = vec![&ctx.env, ctx.env.ledger().timestamp() + DEADLINE_OFFSET];
+    let token = token::Client::new(&ctx.env, &ctx.token_id);
+
+    assert_eq!(
+        ctx.client
+            .batch_lock_funds_soa(&bounty_ids, &depositors, &amounts, &deadlines),
+        1
+    );
+    assert_eq!(token.balance(&depositor), AMOUNT);
+    assert_eq!(token.balance(&ctx.contract_id), AMOUNT);
+    let expected_events = vec![
+        &ctx.env,
+        symbol_short!("f_lock"),
+        symbol_short!("b_lock"),
+    ];
+    assert_eq!(batch_lock_event_symbols(&ctx), expected_events);
+
+    assert_eq!(
+        ctx.client
+            .try_batch_lock_funds_soa(&bounty_ids, &depositors, &amounts, &deadlines)
+            .unwrap_err()
+            .unwrap(),
+        Error::BountyExists
+    );
+    assert_eq!(token.balance(&depositor), AMOUNT);
+    assert_eq!(token.balance(&ctx.contract_id), AMOUNT);
+    assert_eq!(batch_lock_event_symbols(&ctx), expected_events);
 }
 
 // ===========================================================================

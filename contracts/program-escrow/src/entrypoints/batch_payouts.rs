@@ -475,6 +475,12 @@ impl ProgramEscrowContract {
     /// * `"New key must differ from current key"` — self-rotation attempt.
     /// * `"Invalid nonce"` — `expected_nonce` does not match the stored nonce.
     /// * `"Unauthorized"` — caller is neither the current payout key nor admin.
+    ///
+    /// # Idempotency
+    /// Calling twice with the same `expected_nonce` is refused: the first call
+    /// increments the stored nonce, so the second call panics `"Invalid nonce"`
+    /// before any state change. A retry must read the new nonce via
+    /// [`get_rotation_nonce`] and supply a fresh `new_key`.
     pub fn rotate_payout_key(
         env: Env,
         program_id: String,
@@ -779,6 +785,15 @@ impl ProgramEscrowContract {
     }
 
     /// Returns `true` if `token` is on the allowlist or the list is empty.
+    ///
+    /// # Repeat calls
+    /// This is a pure read-only view. It performs no storage writes, moves no
+    /// tokens, requires no auth and emits no events. Calling it twice in a row
+    /// (for example when a client retries after a timeout) therefore leaves the
+    /// contract in exactly the same state as calling it once, and both calls
+    /// return the same value until the allowlist itself is changed by
+    /// `add_allowed_token`, `add_allowed_token_with_decimals` or
+    /// `remove_allowed_token`. The second call is never refused.
     pub fn is_token_allowed(env: Env, token: Address) -> bool {
         let v2 = Self::get_token_allowlist_v2_internal(&env);
         if v2.is_empty() {
@@ -790,6 +805,14 @@ impl ProgramEscrowContract {
             }
         }
         false
+    }
+
+    /// Returns the maximum number of tokens that may be stored on the allowlist.
+    ///
+    /// This is the boundary value accepted by the allowlist; adding one more
+    /// token past this limit is refused with `"Token allowlist capacity exceeded"`.
+    pub fn max_allowed_tokens(_env: Env) -> u32 {
+        MAX_ALLOWED_TOKENS
     }
 
     /// Returns the full token allowlist as plain addresses (V1-compatible).

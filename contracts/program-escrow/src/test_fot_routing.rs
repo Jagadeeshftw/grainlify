@@ -470,7 +470,7 @@ fn test_router_fot_differs_from_token() {
 // ===========================================================================
 
 #[test]
-#[should_panic(expected = "Insufficient balance")]
+#[should_panic(expected = "Error(Contract, #10)")] // ContractError::InsufficientBalance
 fn test_insufficient_balance_with_routing() {
     let env = Env::default();
     let setup = setup_with_router(&env, 1_000, 1_000, 0);
@@ -513,7 +513,7 @@ fn test_clear_router_restores_no_routing() {
 // ===========================================================================
 
 #[test]
-#[should_panic(expected = "Insufficient balance")]
+#[should_panic(expected = "Error(Contract, #10)")] // ContractError::InsufficientBalance
 fn test_batch_insufficient_balance_with_routing() {
     let env = Env::default();
     // 50% router FoT means gross ≈ 2x net
@@ -616,7 +616,7 @@ fn test_clear_fot_router_emits_event() {
 // ===========================================================================
 
 #[test]
-#[should_panic(expected = "slippage exceeds maximum")]
+#[should_panic(expected = "Error(Contract, #14)")] // ContractError::InvalidState
 fn test_set_fot_router_rejects_excessive_slippage() {
     let env = Env::default();
     env.mock_all_auths();
