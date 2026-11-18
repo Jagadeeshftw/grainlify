@@ -18,14 +18,9 @@
 //! 3. Asserts the outcome (success or typed error)
 //! 4. For terminal states, verifies the record is not mutated on refusal
 
-use soroban_sdk::{
-    testutils::Address as _,
-    token, Address, Env, String,
-};
+use soroban_sdk::{testutils::Address as _, token, Address, Env, String};
 
-use crate::{
-    ProgramEscrowContract, ProgramEscrowContractClient, ProgramStatus,
-};
+use crate::{ProgramEscrowContract, ProgramEscrowContractClient, ProgramStatus};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -49,7 +44,14 @@ fn fund_contract(env: &Env, contract_id: &Address, amount: i128) -> Address {
 }
 
 /// Setup a program in Draft state (not published)
-fn setup_draft_program(env: &Env) -> (ProgramEscrowContractClient<'static>, String, Address, Address) {
+fn setup_draft_program(
+    env: &Env,
+) -> (
+    ProgramEscrowContractClient<'static>,
+    String,
+    Address,
+    Address,
+) {
     env.mock_all_auths();
     let (client, contract_id) = make_client(env);
     let token_id = fund_contract(env, &contract_id, 0);
@@ -70,7 +72,14 @@ fn setup_draft_program(env: &Env) -> (ProgramEscrowContractClient<'static>, Stri
 }
 
 /// Setup a program in Active state (published)
-fn setup_active_program(env: &Env) -> (ProgramEscrowContractClient<'static>, String, Address, Address) {
+fn setup_active_program(
+    env: &Env,
+) -> (
+    ProgramEscrowContractClient<'static>,
+    String,
+    Address,
+    Address,
+) {
     env.mock_all_auths();
     let (client, contract_id) = make_client(env);
     let token_id = fund_contract(env, &contract_id, 0);
@@ -91,7 +100,14 @@ fn setup_active_program(env: &Env) -> (ProgramEscrowContractClient<'static>, Str
 }
 
 /// Setup a program in Archived state
-fn setup_archived_program(env: &Env) -> (ProgramEscrowContractClient<'static>, String, Address, Address) {
+fn setup_archived_program(
+    env: &Env,
+) -> (
+    ProgramEscrowContractClient<'static>,
+    String,
+    Address,
+    Address,
+) {
     env.mock_all_auths();
     let (client, contract_id) = make_client(env);
     let token_id = fund_contract(env, &contract_id, 0);

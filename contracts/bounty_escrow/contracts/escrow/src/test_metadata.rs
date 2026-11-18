@@ -269,7 +269,14 @@ fn test_update_metadata_unauthorized_caller_panics_with_auth_error() {
 
     // Set empty auths so that require_auth will fail with Auth error
     env.set_auths(&[]);
-    client.update_metadata(&non_admin, &bounty_id, &repo_id, &issue_id, &bounty_type, &None);
+    client.update_metadata(
+        &non_admin,
+        &bounty_id,
+        &repo_id,
+        &issue_id,
+        &bounty_type,
+        &None,
+    );
 }
 
 #[test]
