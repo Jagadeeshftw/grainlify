@@ -1768,7 +1768,8 @@
         "DelegateMetaRateLimit(String)",
         "InsuranceReserve",
         "LifecycleTimeline(String)",
-        "ProgramAccessSignal(String)"
+        "ProgramAccessSignal(String)",
+        "MetadataFacetIndex(Symbol, String)"
       ]
     },
     {
@@ -2465,6 +2466,52 @@
       "encoding": [
         "Receipt(u64)",
         "NextId"
+      ]
+    },
+    {
+      "type": "FeeConfigUpdatedEvent",
+      "kind": "struct",
+      "encoding": [
+        [
+          "version",
+          "u32"
+        ],
+        [
+          "admin",
+          "Address"
+        ],
+        [
+          "lock_fee_rate",
+          "i128"
+        ],
+        [
+          "payout_fee_rate",
+          "i128"
+        ],
+        [
+          "lock_fixed_fee",
+          "i128"
+        ],
+        [
+          "payout_fixed_fee",
+          "i128"
+        ],
+        [
+          "fee_recipient",
+          "Address"
+        ],
+        [
+          "fee_enabled",
+          "bool"
+        ],
+        [
+          "insurance_reserve_bps",
+          "u32"
+        ],
+        [
+          "timestamp",
+          "u64"
+        ]
       ]
     }
   ],
