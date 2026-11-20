@@ -58,7 +58,11 @@ fn mint(ctx: &Ctx, recipient: &Address, amount: i128) {
     token::StellarAssetClient::new(&ctx.env, &ctx._token_id).mint(recipient, &amount);
 }
 
-fn call_soa(ctx: &Ctx, bounty_id: u64, depositor: &Address) -> Result<u32, soroban_sdk::Error> {
+fn call_soa(
+    ctx: &Ctx,
+    bounty_id: u64,
+    depositor: &Address,
+) -> Result<Result<u32, soroban_sdk::ConversionError>, Result<Error, soroban_sdk::InvokeError>> {
     let deadline = ctx.env.ledger().timestamp() + DEADLINE_OFFSET;
     let bounty_ids: Vec<u64> = vec![&ctx.env, bounty_id];
     let depositors: Vec<Address> = vec![&ctx.env, depositor.clone()];
@@ -207,7 +211,7 @@ fn batch_lock_funds_soa_from_empty_state_succeeds() {
     mint(&ctx, &depositor, AMOUNT);
     let bounty_id = 6;
 
-    let settled = call_soa(&ctx, bounty_id, &depositor).unwrap();
+    let settled = call_soa(&ctx, bounty_id, &depositor).unwrap().unwrap();
     assert_eq!(settled, 1);
     let escrow = ctx.client.get_escrow(&bounty_id);
     assert_eq!(escrow.status, EscrowStatus::Locked);
