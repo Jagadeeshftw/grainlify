@@ -645,18 +645,18 @@ impl ProgramMetadata {
 /// - `"CustomFieldValueTooLong"` if any value exceeds `MAX_CUSTOM_FIELD_VALUE_LEN` bytes.
 /// - `"MetadataAggregateSizeExceeded"` if the sum of all key+value byte lengths
 ///   exceeds `MAX_METADATA_AGGREGATE_BYTES`.
-pub fn validate_metadata_custom_fields(metadata: &ProgramMetadata) {
+pub fn validate_metadata_custom_fields(metadata: &ProgramMetadata) -> Result<(), EscrowError> {
     let num_fields = metadata.custom_fields.len();
     if num_fields > MAX_CUSTOM_FIELDS {
-        panic!("CustomFieldsLimitExceeded");
+        return Err(EscrowError::CustomFieldsLimitExceeded);
     }
     let mut aggregate: u32 = 0;
     for field in metadata.custom_fields.iter() {
         if field.key.len() > MAX_CUSTOM_FIELD_KEY_LEN {
-            panic!("CustomFieldKeyTooLong");
+            return Err(EscrowError::CustomFieldKeyTooLong);
         }
         if field.value.len() > MAX_CUSTOM_FIELD_VALUE_LEN {
-            panic!("CustomFieldValueTooLong");
+            return Err(EscrowError::CustomFieldValueTooLong);
         }
         aggregate = aggregate
             .checked_add(field.key.len())
@@ -664,8 +664,9 @@ pub fn validate_metadata_custom_fields(metadata: &ProgramMetadata) {
             .unwrap_or(u32::MAX);
     }
     if aggregate > MAX_METADATA_AGGREGATE_BYTES {
-        panic!("MetadataAggregateSizeExceeded");
+        return Err(EscrowError::MetadataAggregateSizeExceeded);
     }
+    Ok(())
 }
 
 /// Program lifecycle status.
