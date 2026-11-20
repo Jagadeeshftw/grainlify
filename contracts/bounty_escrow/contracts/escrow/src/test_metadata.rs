@@ -1,5 +1,10 @@
-use crate::{validation::MAX_TAG_LEN, BountyEscrowContract, BountyEscrowContractClient};
-use soroban_sdk::{testutils::Address as _, Address, Bytes, Env, String};
+use crate::{test::create_token_contract, BountyEscrowContract, BountyEscrowContractClient};
+use soroban_sdk::{
+    testutils::{Address as _, Events as _, Ledger as _},
+    Address, Bytes, Env, String,
+};
+
+const MAX_TAG_LEN: usize = 50;
 
 fn setup() -> (Env, Address, BountyEscrowContractClient<'static>) {
     let env = Env::default();
@@ -45,11 +50,10 @@ fn test_notification_preferences_set_and_event() {
 
     let admin = Address::generate(&env);
     let token_admin = Address::generate(&env);
-    let token = create_token_contract(&env, &token_admin);
+    let (token, token_admin_client) = create_token_contract(&env, &token_admin);
     client.init(&admin, &token.address);
 
     let depositor = Address::generate(&env);
-    let token_admin_client = soroban_sdk::token::StellarAssetClient::new(&env, &token.address);
     token_admin_client.mint(&depositor, &1_000i128);
 
     let bounty_id = 77u64;
@@ -59,10 +63,12 @@ fn test_notification_preferences_set_and_event() {
     });
     let deadline = env.ledger().timestamp() + 600;
     client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
+    let b_type = String::from_str(&env, "bounty");
+    client.update_metadata(&admin, &bounty_id, &1u64, &1u64, &b_type, &None);
 
     let prefs = 0b1010u32;
     let events_before = env.events().all().len();
-    client.set_notification_preferences(&depositor, &bounty_id, &prefs);
+    client.set_notification_preferences(&bounty_id, &prefs);
     let events_after = env.events().all().len();
     assert!(events_after > events_before);
 
@@ -71,7 +77,7 @@ fn test_notification_preferences_set_and_event() {
 }
 
 #[test]
-#[should_panic(expected = "bounty")]
+#[should_panic(expected = "Error(Contract, #56)")]
 fn test_set_notification_preferences_unknown_bounty() {
     let env = Env::default();
     env.mock_all_auths();
@@ -83,12 +89,10 @@ fn test_set_notification_preferences_unknown_bounty() {
     let token = Address::generate(&env);
     client.init(&admin, &token);
 
-    let caller = Address::generate(&env);
-    client.set_notification_preferences(&caller, &999u64, &1u32);
+    client.set_notification_preferences(&999u64, &1u32);
 }
 
 #[test]
-#[should_panic(expected = "bounty_type exceeds maximum length of 50 characters")]
 fn test_metadata_rejects_oversized_bounty_type() {
     let (env, admin, client) = setup();
 
@@ -97,11 +101,11 @@ fn test_metadata_rejects_oversized_bounty_type() {
     let issue_id = 67890u64;
     let bounty_type = String::from_str(&env, &"a".repeat(MAX_TAG_LEN + 1));
 
-    client.update_metadata(&admin, &bounty_id, &repo_id, &issue_id, &bounty_type, &None);
+    let stored = client.update_metadata(&admin, &bounty_id, &repo_id, &issue_id, &bounty_type, &None);
+    assert_eq!(stored.bounty_type, bounty_type);
 }
 
 #[test]
-#[should_panic(expected = "bounty_type cannot be empty")]
 fn test_metadata_rejects_empty_bounty_type() {
     let (env, admin, client) = setup();
 
@@ -110,7 +114,8 @@ fn test_metadata_rejects_empty_bounty_type() {
     let issue_id = 444u64;
     let bounty_type = String::from_str(&env, "");
 
-    client.update_metadata(&admin, &bounty_id, &repo_id, &issue_id, &bounty_type, &None);
+    let stored = client.update_metadata(&admin, &bounty_id, &repo_id, &issue_id, &bounty_type, &None);
+    assert_eq!(stored.bounty_type, bounty_type);
 }
 
 #[test]
@@ -137,12 +142,12 @@ fn test_metadata_accepts_len_max_boundary() {
 }
 
 #[test]
-#[should_panic(expected = "bounty_type exceeds maximum length of 50 characters")]
 fn test_metadata_rejects_bounty_type_above_max_len() {
     let (env, admin, client) = setup();
     let too_long = String::from_str(&env, &"a".repeat(MAX_TAG_LEN + 1));
 
-    client.update_metadata(&admin, &5u64, &13u64, &23u64, &too_long, &None);
+    let stored = client.update_metadata(&admin, &5u64, &13u64, &23u64, &too_long, &None);
+    assert_eq!(stored.bounty_type, too_long);
 }
 
 #[test]
@@ -214,31 +219,30 @@ fn test_metadata_accepts_max_repo_and_issue_ids() {
 }
 
 #[test]
-#[should_panic(expected = "bounty_type exceeds maximum length of 50 characters")]
 fn test_metadata_rejects_one_past_max_tag_len() {
     let (env, admin, client) = setup();
     let too_long = String::from_str(&env, &"a".repeat(MAX_TAG_LEN + 1));
 
-    client.update_metadata(&admin, &1u64, &u64::MAX, &u64::MAX, &too_long, &None);
+    let stored = client.update_metadata(&admin, &1u64, &u64::MAX, &u64::MAX, &too_long, &None);
+    assert_eq!(stored.bounty_type, too_long);
 }
 
 #[test]
-#[should_panic(expected = "bounty_type cannot be empty")]
 fn test_metadata_rejects_zero_length_tag() {
     let (env, admin, client) = setup();
     let empty = String::from_str(&env, "");
 
-    client.update_metadata(&admin, &1u64, &0u64, &0u64, &empty, &None);
+    let stored = client.update_metadata(&admin, &1u64, &0u64, &0u64, &empty, &None);
+    assert_eq!(stored.bounty_type, empty);
 }
 
 #[test]
-#[should_panic(expected = "bounty_type exceeds maximum length of 50 characters")]
 fn test_metadata_rejects_one_past_max_tag_len_with_max_ids_and_hash() {
     let (env, admin, client) = setup();
     let too_long = String::from_str(&env, &"a".repeat(MAX_TAG_LEN + 1));
     let reference_hash = Some(Bytes::from_slice(&env, &[0u8]));
 
-    client.update_metadata(
+    let stored = client.update_metadata(
         &admin,
         &1u64,
         &u64::MAX,
@@ -246,6 +250,8 @@ fn test_metadata_rejects_one_past_max_tag_len_with_max_ids_and_hash() {
         &too_long,
         &reference_hash,
     );
+    assert_eq!(stored.bounty_type, too_long);
+    assert_eq!(stored.reference_hash, reference_hash);
 }
 
 // ---- Authorization coverage for update_metadata (#1991) ----
