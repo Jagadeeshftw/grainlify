@@ -98,6 +98,16 @@ This document catalogs all invariants enforced by the bounty escrow contract. In
 
 ## Invariant Checking
 
+### Bounded Read-Only Audit
+
+`BountyEscrowContract::verify_state(cursor)` audits the escrow index in pages of
+at most 20 entries. Begin with `None`; pass each report's `next_cursor`
+unchanged until it is `None`. Per-escrow sanity, refund-history consistency,
+index completeness, and the aggregate active-liability/token-balance invariant
+are reported in `VerificationReport`. `balance_matches` is populated only on
+the final page. The endpoint does not modify contract state; run all pages
+without intervening escrow mutations for a consistent whole-state result.
+
 ### Automatic Enforcement
 
 Invariants are automatically checked after critical operations:

@@ -34,8 +34,12 @@
 //
 // ============================================================================
 
-use crate::{AnonymousEscrow, DataKey, Escrow, EscrowStatus};
+use crate::{
+    AnonymousEscrow, DataKey, Escrow, EscrowStatus, VerificationCursor, VerificationReport,
+};
 use soroban_sdk::{token, Address, Env, Vec};
+
+const VERIFICATION_PAGE_SIZE: u32 = 20;
 
 /// Full result of a multi-token balance invariant check.
 /// Returned by `check_all_invariants` so callers can inspect what failed.
@@ -131,9 +135,15 @@ pub(crate) fn check_refund_consistency(escrow: &Escrow) -> bool {
         if record.amount <= 0 {
             return false; // refund records should always be positive
         }
-        total_refunded += record.amount;
+        total_refunded = match total_refunded.checked_add(record.amount) {
+            Some(total) => total,
+            None => return false,
+        };
     }
-    let consumed = escrow.amount - escrow.remaining_amount;
+    let consumed = match escrow.amount.checked_sub(escrow.remaining_amount) {
+        Some(consumed) => consumed,
+        None => return false,
+    };
     // Total refunded must not exceed consumed amount.
     // It can be less because some consumption may be from releases, not refunds.
     total_refunded <= consumed
@@ -146,9 +156,15 @@ pub(crate) fn check_anon_refund_consistency(anon: &AnonymousEscrow) -> bool {
         if record.amount <= 0 {
             return false;
         }
-        total_refunded += record.amount;
+        total_refunded = match total_refunded.checked_add(record.amount) {
+            Some(total) => total,
+            None => return false,
+        };
     }
-    let consumed = anon.amount - anon.remaining_amount;
+    let consumed = match anon.amount.checked_sub(anon.remaining_amount) {
+        Some(consumed) => consumed,
+        None => return false,
+    };
     total_refunded <= consumed
 }
 
@@ -235,6 +251,195 @@ pub(crate) fn count_orphaned_index_entries(env: &Env) -> u32 {
         }
     }
     orphans
+}
+
+/// Inspect at most `VERIFICATION_PAGE_SIZE` index entries and return an
+/// accumulated report plus a continuation cursor when more entries remain.
+pub(crate) fn verify_state_page(
+    env: &Env,
+    cursor: Option<VerificationCursor>,
+) -> VerificationReport {
+    let index: Vec<u64> = env
+        .storage()
+        .persistent()
+        .get(&DataKey::EscrowIndex)
+        .unwrap_or(Vec::new(env));
+    let escrow_count = index.len();
+    let state = cursor.unwrap_or(VerificationCursor {
+        offset: 0,
+        sum_remaining: 0,
+        per_escrow_failures: 0,
+        orphaned_index_entries: 0,
+        refund_inconsistencies: 0,
+    });
+    let mut violations: Vec<soroban_sdk::String> = Vec::new(env);
+    let mut per_escrow_failures = state.per_escrow_failures;
+    let mut orphaned_index_entries = state.orphaned_index_entries;
+    let mut refund_inconsistencies = state.refund_inconsistencies;
+    let mut sum_remaining = state.sum_remaining;
+
+    if state.offset > escrow_count {
+        violations.push_back(soroban_sdk::String::from_str(
+            env,
+            "Invalid verification cursor",
+        ));
+        return VerificationReport {
+            healthy: false,
+            complete: true,
+            next_cursor: None,
+            page_size: 0,
+            escrow_count,
+            sum_remaining,
+            token_balance: get_contract_token_balance(env),
+            balance_matches: None,
+            per_escrow_failures,
+            orphaned_index_entries,
+            refund_inconsistencies,
+            violations,
+        };
+    }
+
+    let start = state.offset;
+    let end = core::cmp::min(start.saturating_add(VERIFICATION_PAGE_SIZE), escrow_count);
+    for offset in start..end {
+        let bounty_id = index.get(offset).unwrap();
+        let escrow = env
+            .storage()
+            .persistent()
+            .get::<DataKey, Escrow>(&DataKey::Escrow(bounty_id));
+        let anon = env
+            .storage()
+            .persistent()
+            .get::<DataKey, AnonymousEscrow>(&DataKey::EscrowAnon(bounty_id));
+
+        match (escrow, anon) {
+            (Some(escrow), None) => {
+                if !check_escrow_sanity(&escrow)
+                    || ((escrow.status == EscrowStatus::Locked
+                        || escrow.status == EscrowStatus::PartiallyRefunded)
+                        && escrow.remaining_amount == 0)
+                {
+                    per_escrow_failures += 1;
+                    violations.push_back(soroban_sdk::String::from_str(
+                        env,
+                        "INV-1: Per-escrow sanity check failed",
+                    ));
+                }
+                if !check_refund_consistency(&escrow) {
+                    refund_inconsistencies += 1;
+                    violations.push_back(soroban_sdk::String::from_str(
+                        env,
+                        "INV-4: Refund history inconsistency",
+                    ));
+                }
+                if escrow.status == EscrowStatus::Locked
+                    || escrow.status == EscrowStatus::PartiallyRefunded
+                {
+                    match sum_remaining.checked_add(escrow.remaining_amount) {
+                        Some(total) => sum_remaining = total,
+                        None => {
+                            per_escrow_failures += 1;
+                            violations.push_back(soroban_sdk::String::from_str(
+                                env,
+                                "INV-2: Escrow sum overflow",
+                            ));
+                        }
+                    }
+                }
+            }
+            (None, Some(anon)) => {
+                if !check_anon_escrow_sanity(&anon)
+                    || ((anon.status == EscrowStatus::Locked
+                        || anon.status == EscrowStatus::PartiallyRefunded)
+                        && anon.remaining_amount == 0)
+                {
+                    per_escrow_failures += 1;
+                    violations.push_back(soroban_sdk::String::from_str(
+                        env,
+                        "INV-1: Anonymous escrow sanity check failed",
+                    ));
+                }
+                if !check_anon_refund_consistency(&anon) {
+                    refund_inconsistencies += 1;
+                    violations.push_back(soroban_sdk::String::from_str(
+                        env,
+                        "INV-4: Anonymous refund history inconsistency",
+                    ));
+                }
+                if anon.status == EscrowStatus::Locked
+                    || anon.status == EscrowStatus::PartiallyRefunded
+                {
+                    match sum_remaining.checked_add(anon.remaining_amount) {
+                        Some(total) => sum_remaining = total,
+                        None => {
+                            per_escrow_failures += 1;
+                            violations.push_back(soroban_sdk::String::from_str(
+                                env,
+                                "INV-2: Escrow sum overflow",
+                            ));
+                        }
+                    }
+                }
+            }
+            (None, None) => {
+                orphaned_index_entries += 1;
+                violations.push_back(soroban_sdk::String::from_str(
+                    env,
+                    "INV-5: Orphaned index entry",
+                ));
+            }
+            (Some(_), Some(_)) => {
+                per_escrow_failures += 1;
+                violations.push_back(soroban_sdk::String::from_str(
+                    env,
+                    "INV-5: Duplicate escrow variants",
+                ));
+            }
+        }
+    }
+
+    let complete = end == escrow_count;
+    let token_balance = get_contract_token_balance(env);
+    let balance_matches = if complete {
+        Some(sum_remaining == token_balance)
+    } else {
+        None
+    };
+    if balance_matches == Some(false) {
+        violations.push_back(soroban_sdk::String::from_str(
+            env,
+            "INV-2: Sum of remaining != contract balance",
+        ));
+    }
+    let next_cursor = if complete {
+        None
+    } else {
+        Some(VerificationCursor {
+            offset: end,
+            sum_remaining,
+            per_escrow_failures,
+            orphaned_index_entries,
+            refund_inconsistencies,
+        })
+    };
+
+    VerificationReport {
+        healthy: per_escrow_failures == 0
+            && orphaned_index_entries == 0
+            && refund_inconsistencies == 0
+            && balance_matches != Some(false),
+        complete,
+        next_cursor,
+        page_size: end - start,
+        escrow_count,
+        sum_remaining,
+        token_balance,
+        balance_matches,
+        per_escrow_failures,
+        orphaned_index_entries,
+        refund_inconsistencies,
+        violations,
+    }
 }
 
 // ---------------------------------------------------------------------------
