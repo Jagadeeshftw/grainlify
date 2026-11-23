@@ -521,3 +521,19 @@ fn test_revoke_missing_ticket_rejected() {
         Err(Ok(Error::TicketNotFound))
     );
 }
+
+#[test]
+fn test_issue_rejected_while_pending_claim_active() {
+    let s = Setup::new();
+    let other = Address::generate(&s.env);
+    s.escrow
+        .authorize_claim(&BOUNTY, &other, &DisputeReason::Other);
+    let res = s.escrow.try_issue_claim_ticket(
+        &s.depositor,
+        &BOUNTY,
+        &s.beneficiary,
+        &100,
+        &(s.now() + 100),
+    );
+    assert_eq!(res, Err(Ok(Error::ClaimPending)));
+}

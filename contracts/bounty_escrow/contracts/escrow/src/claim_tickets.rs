@@ -17,7 +17,7 @@
 
 use crate::{
     events::{self, TicketClaimed, TicketIssued, TicketRevoked},
-    multitoken_invariants, reentrancy_guard, ClaimTicket, DataKey, Error, Escrow, EscrowStatus,
+    multitoken_invariants, reentrancy_guard, ClaimRecord, ClaimTicket, DataKey, Error, Escrow, EscrowStatus,
     CLAIM_ARCHIVAL_TTL, CLAIM_LIVE_TTL, TTL_RENEWAL_DIVISOR,
 };
 use soroban_sdk::{symbol_short, token, Address, Env, Vec};
@@ -157,7 +157,7 @@ fn next_ticket_id(env: &Env) -> u64 {
 ///
 /// # Errors
 /// `FundsPaused`, `NotInitialized`, `BountyNotFound`, `Unauthorized`,
-/// `EscrowFrozen`, `AddressFrozen`, `FundsNotLocked`, `InvalidAmount`
+/// `EscrowFrozen`, `AddressFrozen`, `FundsNotLocked`, `ClaimPending`, `InvalidAmount`
 /// (non-positive or above the unreserved remaining amount), `InvalidDeadline`
 /// (`expires_at <= now`).
 pub fn issue_claim_ticket(
@@ -183,6 +183,16 @@ pub fn issue_claim_ticket(
 
     if escrow.status != EscrowStatus::Locked {
         return Err(Error::FundsNotLocked);
+    }
+    // An admin-authorized pending claim takes precedence over new tickets.
+    if let Some(claim) = env
+        .storage()
+        .persistent()
+        .get::<DataKey, ClaimRecord>(&DataKey::PendingClaim(bounty_id))
+    {
+        if !claim.claimed {
+            return Err(Error::ClaimPending);
+        }
     }
     if amount <= 0 {
         return Err(Error::InvalidAmount);
