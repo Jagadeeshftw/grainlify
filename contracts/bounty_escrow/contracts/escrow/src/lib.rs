@@ -1926,7 +1926,8 @@ mod test;
 // #[cfg(test)] mod test_invariants;
 #[cfg(test)]
 mod test_lifecycle;
-// TODO(drips-wave): re-enable — test_metadata.rs does not compile against current soroban-sdk/contract API
+#[cfg(test)]
+mod test_metadata;
 
 // Boundary coverage for `update_metadata` numeric/time arguments.
 //
