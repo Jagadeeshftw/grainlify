@@ -132,7 +132,7 @@
           "type": "u64",
           "description": "Newly assigned monotonic ticket id"
         },
-        "authorization": "admin_or_depositor",
+        "authorization": "signer",
         "pausable": true,
         "gas_estimate": "medium"
       },
@@ -155,7 +155,7 @@
           "type": "()",
           "description": "Empty on success"
         },
-        "authorization": "beneficiary",
+        "authorization": "signer",
         "pausable": true,
         "gas_estimate": "medium"
       },
@@ -178,7 +178,7 @@
           "type": "()",
           "description": "Empty on success"
         },
-        "authorization": "admin_or_depositor",
+        "authorization": "signer",
         "pausable": false,
         "gas_estimate": "low"
       },
