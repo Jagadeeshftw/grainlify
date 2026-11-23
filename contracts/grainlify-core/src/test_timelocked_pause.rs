@@ -94,7 +94,7 @@ fn test_set_timelock_delay_emits_event() {
     let (client, _) = setup_admin(&env);
     client.set_timelock_delay(&7_200);
     let events = env.events().all();
-    assert!(events.len() > 0);
+    assert!(!events.is_empty());
 }
 
 #[test]
@@ -254,7 +254,7 @@ fn test_approve_upgrade_emits_timelock_started_event() {
     client.approve_upgrade(&pid, &s3);
     let events = env.events().all();
     // At least one event should have been emitted
-    assert!(events.len() > 0);
+    assert!(!events.is_empty());
 }
 
 #[test]
@@ -700,7 +700,7 @@ fn test_commit_migration_emits_event() {
     let hash = migration_hash(&env, 0x03);
     client.commit_migration(&3u32, &hash, &0u64);
     let events = env.events().all();
-    assert!(events.len() > 0);
+    assert!(!events.is_empty());
 }
 
 #[test]
