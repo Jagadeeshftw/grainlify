@@ -154,10 +154,14 @@ T=0        T=0+delay         T=0+delay+ε
 ### Protected Actions
 
 When timelock is enabled, these admin functions are blocked and must use the propose flow:
-- `update_fee_config` → `ActionType::ChangeFeeRecipient`
+- `update_fee_config` → `ActionType::UpdateFeeConfig` (or `ActionType::ChangeFeeRecipient` when only the recipient changes)
+- `set_treasury_distributions` → `ActionType::SetTreasuryDistributions`
+- `set_router` → `ActionType::SetRouter`
 - `set_paused` → `ActionType::SetPaused`
 - `set_deprecated` → `ActionType::EnableKillSwitch` / `DisableKillSwitch`
 - `set_maintenance_mode` → `ActionType::SetMaintenanceMode`
+
+A `propose_admin_action` call with a payload that does not match its `ActionType` returns `Error::InvalidPayload` (contract code 56).
 
 ### Emergency Cancellation
 
@@ -168,6 +172,8 @@ Admin can cancel any pending action at any time before execution using `cancel_a
 All pending actions are publicly visible via:
 - `get_pending_actions()` - Returns all pending actions ordered by proposal time
 - `get_action(action_id)` - Returns details of a specific action
+
+State changes emit `tmlk_cfg`, `act_prop`, `act_exec`, and `act_cncl` contract events with V2 payloads.
 
 ### Design Notes
 

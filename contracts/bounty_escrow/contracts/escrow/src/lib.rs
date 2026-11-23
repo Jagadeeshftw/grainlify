@@ -42,6 +42,7 @@ pub mod gas_budget;
 pub(crate) mod invariants;
 pub(crate) mod multitoken_invariants;
 mod reentrancy_guard;
+pub(crate) mod timelock;
 mod validation;
 // Pre-existing broken test modules excluded from compilation until their referenced types/methods are implemented:
 // #[cfg(test)] mod test_boundary_edge_cases; // Issue #1294: PartiallyRefunded accounting tests
@@ -82,9 +83,10 @@ mod test_reentrancy_malicious_token;
 // without being able to verify each test's intent risks silently changing
 // what they assert. Out of scope for reentrancy coverage — left for the
 // module's owner to fix and re-enable.
-// #[cfg(test)] mod test_timelock;
 #[cfg(test)]
 mod event_payload_fixtures;
+#[cfg(test)]
+mod test_timelock;
 // #[cfg(test)] mod test_archival_ttl; // pre-existing breakage: depends on query/metadata/analytics API never implemented (see #1975 CI)
 #[cfg(test)]
 mod test_bounded_pagination;
@@ -135,12 +137,17 @@ pub(crate) mod release;
 pub(crate) mod renewal;
 pub(crate) mod risk_flags;
 
+pub use crate::timelock::{ActionPayload, ActionStatus, ActionType, PendingAction, TimelockConfig};
+
 pub(crate) const BASIS_POINTS: i128 = 10_000;
 pub(crate) const MAX_FEE_RATE: i128 = 5_000; // 50% max fee
 pub(crate) const MAX_BATCH_SIZE: u32 = 20;
 pub(crate) const DEFAULT_ADMIN_ROTATION_TIMELOCK: u64 = 86_400;
 pub(crate) const MIN_ADMIN_ROTATION_TIMELOCK: u64 = 3_600;
 pub(crate) const MAX_ADMIN_ROTATION_TIMELOCK: u64 = 2_592_000;
+pub(crate) const MIN_TIMELOCK_DELAY: u64 = 3_600;
+pub(crate) const DEFAULT_TIMELOCK_DELAY: u64 = 86_400;
+pub(crate) const MAX_TIMELOCK_DELAY: u64 = 2_592_000;
 
 extern crate grainlify_core;
 
@@ -271,6 +278,24 @@ pub enum Error {
     FeeRoutingLocked = 60,
     /// Returned when attempting to mutate an archived escrow
     EscrowArchived = 61,
+    /// Returned when a queued admin action does not exist.
+    ActionNotFound = 62,
+}
+
+/// Timelock-specific error aliases.
+///
+/// The numeric codes are pinned to existing `Error` discriminants so deployed
+/// clients and the compatibility suite keep decoding the same contract error
+/// values. New call sites should use these names rather than the legacy
+/// variants they alias.
+impl Error {
+    pub const AdminActionTimelockActive: Error = Error::InvalidAdminRotationTarget;
+    pub const TimelockEnabled: Error = Error::InvalidBatchSizeCap;
+    pub const ActionAlreadyExecuted: Error = Error::ReleaseAlreadyQueued;
+    pub const ActionAlreadyCancelled: Error = Error::BountyExists;
+    pub const InvalidPayload: Error = Error::BountyNotFound;
+    pub const DelayBelowMinimum: Error = Error::FundsNotLocked;
+    pub const DelayAboveMaximum: Error = Error::RouterNotConfigured;
 }
 
 /// Minimum persistent-storage TTLs, measured in ledgers.
@@ -643,6 +668,12 @@ pub enum DataKey {
     TaggingTypeIndex(String),
     /// Ordered index of bounty_ids that carry a given tag.
     TaggingTagIndex(String),
+    /// Generic admin-action timelock configuration.
+    TimelockConfig,
+    /// Monotonic counter for queued admin actions.
+    ActionCounter,
+    /// Queued admin action awaiting (or having completed) execution.
+    PendingAction(u64),
 }
 
 #[contracttype]
@@ -1890,6 +1921,47 @@ impl BountyEscrowContract {
 
     pub fn cancel_queued_release(env: Env, bounty_id: u64) -> Result<(), Error> {
         crate::release::cancel_queued_release(env, bounty_id)
+    }
+
+    /// Configure the generic admin-action delay. Admin-only and intentionally
+    /// exempt from the timelock (bootstrap problem).
+    pub fn configure_timelock(env: Env, delay: u64, is_enabled: bool) -> Result<(), Error> {
+        crate::timelock::configure_timelock(env, delay, is_enabled)
+    }
+
+    /// View the configured delay and whether the queue is active.
+    pub fn get_timelock_config(env: Env) -> TimelockConfig {
+        crate::timelock::get_config(&env)
+    }
+
+    /// Propose a sensitive admin action, or execute it immediately when the
+    /// timelock is disabled (legacy deployments).
+    pub fn propose_admin_action(
+        env: Env,
+        action_type: ActionType,
+        payload: ActionPayload,
+    ) -> Result<u64, Error> {
+        crate::timelock::propose_admin_action(env, action_type, payload)
+    }
+
+    /// Execute a queued action after its `execute_after` timestamp. Permissionless.
+    pub fn execute_after_delay(env: Env, action_id: u64) -> Result<(), Error> {
+        crate::timelock::execute_after_delay(env, action_id)
+    }
+
+    /// Cancel a queued action. Admin-only and idempotent for already-cancelled actions.
+    pub fn cancel_admin_action(env: Env, action_id: u64) -> Result<(), Error> {
+        crate::timelock::cancel_admin_action(env, action_id)
+    }
+
+    /// All actions still pending, ordered by proposal time.
+    pub fn get_pending_actions(env: Env) -> Vec<PendingAction> {
+        crate::timelock::get_pending_actions(&env)
+    }
+
+    /// Fetch a queued action by id, including executed and cancelled ones.
+    pub fn get_action(env: Env, action_id: u64) -> Result<PendingAction, Error> {
+        crate::timelock::get_action(&env, action_id)
     }
 }
 
