@@ -48,7 +48,8 @@ mod validation;
 // #[cfg(test)] mod test_cross_contract_interface; // pre-existing breakage: references unimplemented methods
 // #[cfg(test)] mod test_deterministic_randomness;
 // #[cfg(test)] mod test_multi_region_treasury;
-// #[cfg(test)] mod test_rbac;
+#[cfg(test)]
+mod test_rbac;
 // Analytics & monitoring suite – enabled by issue #1882 (all referenced
 // functions are now implemented).
 // #[cfg(test)] mod test_analytics_monitoring; // pre-existing breakage: depends on query/metadata/analytics API never implemented (see #1975 CI)
@@ -3504,7 +3505,8 @@ mod test_e2e_upgrade_with_pause;
 // test_recurring_locks references unimplemented RecurringLock feature types
 // #[cfg(test)] mod test_recurring_locks;
 // #[cfg(test)] mod test_sandbox;
-// #[cfg(test)] mod test_serialization_compatibility;
+#[cfg(test)]
+mod test_serialization_compatibility;
 #[cfg(test)]
 mod test_status_transitions;
 // #[cfg(test)] mod test_upgrade_scenarios;
