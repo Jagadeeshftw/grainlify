@@ -2918,3 +2918,6 @@ mod upgrade_rollback_tests;
 #[cfg(test)]
 #[path = "test/upgrade_rollback_scenarios.rs"]
 mod upgrade_rollback_scenarios;
+
+#[cfg(test)]
+mod network_config_test;
