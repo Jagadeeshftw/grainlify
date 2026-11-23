@@ -1236,11 +1236,40 @@ pub struct TicketClaimed {
     pub claimer: Address,
     /// Address that redeemed the ticket.
     pub claimed_at: u64,
+    /// Amount paid out to the claimer.
+    pub amount: i128,
 }
 
 /// Emit [`TicketClaimed`]
 pub fn emit_ticket_claimed(env: &Env, event: TicketClaimed) {
     let topics = (symbol_short!("ticket_c"), event.ticket_id);
+    env.events().publish(topics, event);
+}
+
+/// Payload for the [`emit_ticket_revoked`] event.
+///
+/// Emitted when the admin or depositor revokes an outstanding claim ticket,
+/// returning its reserved amount to the escrow.
+///
+/// ### Topics
+/// | Index | Value |
+/// |-------|-------|
+/// | 0 | `"ticket_r"` |
+/// | 1 | `ticket_id: u64` |
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TicketRevoked {
+    pub ticket_id: u64,
+    pub bounty_id: u64,
+    pub beneficiary: Address,
+    pub amount: i128,
+    pub revoked_by: Address,
+    pub revoked_at: u64,
+}
+
+/// Emit [`TicketRevoked`]
+pub fn emit_ticket_revoked(env: &Env, event: TicketRevoked) {
+    let topics = (symbol_short!("ticket_r"), event.ticket_id);
     env.events().publish(topics, event);
 }
 

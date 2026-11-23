@@ -67,6 +67,15 @@ pub(crate) fn release_funds_logic(
         reentrancy_guard::release(&env);
         return Err(Error::FundsNotLocked);
     }
+    if let Err(e) = crate::claim_tickets::ensure_unreserved(
+        &env,
+        bounty_id,
+        escrow.remaining_amount,
+        escrow.remaining_amount,
+    ) {
+        reentrancy_guard::release(&env);
+        return Err(e);
+    }
 
     // High-value timelock: if configured and amount >= threshold, queue instead of releasing.
     if let Some(hv_cfg) = env
@@ -233,6 +242,15 @@ pub(crate) fn release_with_conversion_logic(
     if escrow.status != EscrowStatus::Locked {
         reentrancy_guard::release(&env);
         return Err(Error::FundsNotLocked);
+    }
+    if let Err(e) = crate::claim_tickets::ensure_unreserved(
+        &env,
+        bounty_id,
+        escrow.remaining_amount,
+        escrow.remaining_amount,
+    ) {
+        reentrancy_guard::release(&env);
+        return Err(e);
     }
 
     // High-value timelock check (same as release_funds_logic)
@@ -439,6 +457,12 @@ pub(crate) fn dry_run_release_impl(
     if escrow.status != EscrowStatus::Locked {
         return Err(Error::FundsNotLocked);
     }
+    crate::claim_tickets::ensure_unreserved(
+        env,
+        bounty_id,
+        escrow.remaining_amount,
+        escrow.remaining_amount,
+    )?;
     let (
         _lock_fee_rate,
         release_fee_rate,
@@ -637,6 +661,15 @@ pub fn release_with_capability(
         reentrancy_guard::release(&env);
         return Err(Error::InsufficientFunds);
     }
+    if let Err(e) = crate::claim_tickets::ensure_unreserved(
+        &env,
+        bounty_id,
+        escrow.remaining_amount,
+        payout_amount,
+    ) {
+        reentrancy_guard::release(&env);
+        return Err(e);
+    }
 
     crate::capability::consume_capability(
         &env,
@@ -745,6 +778,15 @@ pub fn partial_release(
     if payout_amount > escrow.remaining_amount {
         reentrancy_guard::release(&env);
         return Err(Error::InsufficientFunds);
+    }
+    if let Err(e) = crate::claim_tickets::ensure_unreserved(
+        &env,
+        bounty_id,
+        escrow.remaining_amount,
+        payout_amount,
+    ) {
+        reentrancy_guard::release(&env);
+        return Err(e);
     }
 
     // EFFECTS: update state before external call (CEI)
@@ -898,6 +940,15 @@ pub fn batch_release_funds(env: Env, items: Vec<ReleaseFundsItem>) -> Result<u32
             if escrow.status != EscrowStatus::Locked {
                 reentrancy_guard::release(&env);
                 return Err(Error::FundsNotLocked);
+            }
+            if let Err(e) = crate::claim_tickets::ensure_unreserved(
+                &env,
+                item.bounty_id,
+                escrow.remaining_amount,
+                escrow.remaining_amount,
+            ) {
+                reentrancy_guard::release(&env);
+                return Err(e);
             }
 
             // Check for duplicate bounty_ids in the batch
@@ -1119,6 +1170,12 @@ pub fn execute_queued_release(env: Env, bounty_id: u64) -> Result<(), Error> {
         if escrow.status != EscrowStatus::Locked {
             return Err(Error::FundsNotLocked);
         }
+        crate::claim_tickets::ensure_unreserved(
+            &env,
+            bounty_id,
+            escrow.remaining_amount,
+            escrow.remaining_amount,
+        )?;
 
         let (
             _lock_fee_rate,

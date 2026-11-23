@@ -99,6 +99,90 @@
   "entrypoints": {
     "public": [
       {
+        "name": "issue_claim_ticket",
+        "description": "Issue a single-use, expiring claim ticket that reserves part of an escrow for a beneficiary",
+        "parameters": [
+          {
+            "name": "issuer",
+            "type": "Address",
+            "description": "Admin or escrow depositor issuing the ticket"
+          },
+          {
+            "name": "bounty_id",
+            "type": "u64",
+            "description": "Bounty to reserve funds from"
+          },
+          {
+            "name": "beneficiary",
+            "type": "Address",
+            "description": "Address entitled to redeem the ticket"
+          },
+          {
+            "name": "amount",
+            "type": "i128",
+            "description": "Payout amount; must not exceed the unreserved remaining amount"
+          },
+          {
+            "name": "expires_at",
+            "type": "u64",
+            "description": "Ledger timestamp at which the ticket stops being redeemable"
+          }
+        ],
+        "returns": {
+          "type": "u64",
+          "description": "Newly assigned monotonic ticket id"
+        },
+        "authorization": "signer",
+        "pausable": true,
+        "gas_estimate": "medium"
+      },
+      {
+        "name": "claim_with_ticket",
+        "description": "Redeem a claim ticket; marks it used and debits the escrow before transferring the payout",
+        "parameters": [
+          {
+            "name": "ticket_id",
+            "type": "u64",
+            "description": "Ticket to redeem"
+          },
+          {
+            "name": "claimer",
+            "type": "Address",
+            "description": "Must be the ticket beneficiary"
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success"
+        },
+        "authorization": "signer",
+        "pausable": true,
+        "gas_estimate": "medium"
+      },
+      {
+        "name": "revoke_claim_ticket",
+        "description": "Revoke an outstanding (possibly expired) claim ticket and release its reservation",
+        "parameters": [
+          {
+            "name": "caller",
+            "type": "Address",
+            "description": "Admin or escrow depositor"
+          },
+          {
+            "name": "ticket_id",
+            "type": "u64",
+            "description": "Ticket to revoke"
+          }
+        ],
+        "returns": {
+          "type": "()",
+          "description": "Empty on success"
+        },
+        "authorization": "signer",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
         "name": "lock_funds",
         "description": "Lock funds into escrow for a bounty",
         "parameters": [
@@ -371,6 +455,70 @@
       }
     ],
     "view": [
+      {
+        "name": "get_claim_ticket",
+        "description": "Get a claim ticket by id",
+        "parameters": [
+          {
+            "name": "ticket_id",
+            "type": "u64",
+            "description": "Ticket id"
+          }
+        ],
+        "returns": {
+          "type": "ClaimTicket",
+          "description": "Stored ticket"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "get_beneficiary_tickets",
+        "description": "Page through ticket ids issued to a beneficiary (limit capped at 100)",
+        "parameters": [
+          {
+            "name": "beneficiary",
+            "type": "Address",
+            "description": "Beneficiary"
+          },
+          {
+            "name": "offset",
+            "type": "u32",
+            "description": "Start index"
+          },
+          {
+            "name": "limit",
+            "type": "u32",
+            "description": "Page size"
+          }
+        ],
+        "returns": {
+          "type": "Vec<u64>",
+          "description": "Ticket ids in issue order"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
+      {
+        "name": "get_ticket_reserved_amount",
+        "description": "Amount of an escrow reserved by outstanding claim tickets",
+        "parameters": [
+          {
+            "name": "bounty_id",
+            "type": "u64",
+            "description": "Bounty id"
+          }
+        ],
+        "returns": {
+          "type": "i128",
+          "description": "Reserved amount"
+        },
+        "authorization": "any",
+        "pausable": false,
+        "gas_estimate": "low"
+      },
       {
         "name": "get_filter_mode",
         "description": "Get current participant filter mode",
@@ -1579,6 +1727,24 @@
       }
     ],
     "storage_keys": [
+      {
+        "name": "ClaimTicketCounter",
+        "type": "instance",
+        "description": "Monotonic claim-ticket id counter",
+        "data_structure": "u64"
+      },
+      {
+        "name": "TicketReserved(u64)",
+        "type": "persistent",
+        "description": "Escrow amount reserved by outstanding claim tickets",
+        "data_structure": "i128"
+      },
+      {
+        "name": "OutstandingTickets",
+        "type": "instance",
+        "description": "Number of outstanding (unredeemed, unrevoked) claim tickets; lets payout paths skip the per-bounty reservation lookup when zero",
+        "data_structure": "u32"
+      },
       {
         "name": "Admin",
         "type": "instance",
