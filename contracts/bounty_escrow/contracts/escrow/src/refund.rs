@@ -140,7 +140,30 @@ pub(crate) fn compute_refund_eligibility(env: &Env, bounty_id: u64) -> RefundEli
         .storage()
         .persistent()
         .get(&DataKey::RefundApproval(bounty_id));
+    let reserved_view = |amount: i128| RefundEligibilityView {
+        eligible: false,
+        code: RefundEligibilityCode::IneligibleClaimPending,
+        bounty_id,
+        amount,
+        recipient: None,
+        now,
+        deadline: escrow.deadline,
+        approval_present: false,
+    };
     if let Some(app) = approval {
+        if crate::claim_tickets::ensure_unreserved(
+            env,
+            bounty_id,
+            escrow.remaining_amount,
+            app.amount,
+        )
+        .is_err()
+        {
+            return RefundEligibilityView {
+                approval_present: true,
+                ..reserved_view(0)
+            };
+        }
         if app.amount <= 0 || app.amount > escrow.remaining_amount {
             return RefundEligibilityView {
                 eligible: false,
@@ -166,6 +189,16 @@ pub(crate) fn compute_refund_eligibility(env: &Env, bounty_id: u64) -> RefundEli
     }
 
     if now >= escrow.deadline {
+        if crate::claim_tickets::ensure_unreserved(
+            env,
+            bounty_id,
+            escrow.remaining_amount,
+            escrow.remaining_amount,
+        )
+        .is_err()
+        {
+            return reserved_view(0);
+        }
         return RefundEligibilityView {
             eligible: true,
             code: RefundEligibilityCode::EligibleDeadlinePassed,

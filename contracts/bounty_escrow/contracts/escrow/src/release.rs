@@ -457,6 +457,12 @@ pub(crate) fn dry_run_release_impl(
     if escrow.status != EscrowStatus::Locked {
         return Err(Error::FundsNotLocked);
     }
+    crate::claim_tickets::ensure_unreserved(
+        env,
+        bounty_id,
+        escrow.remaining_amount,
+        escrow.remaining_amount,
+    )?;
     let (
         _lock_fee_rate,
         release_fee_rate,

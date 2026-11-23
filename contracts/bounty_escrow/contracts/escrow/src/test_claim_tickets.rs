@@ -556,3 +556,22 @@ fn test_full_beneficiary_index_does_not_block_issuance() {
     assert_eq!(last_page.len(), 1);
     s.escrow.claim_with_ticket(&id, &s.beneficiary);
 }
+
+#[test]
+fn test_previews_respect_reservation() {
+    let s = Setup::new();
+    let id = s.issue(100);
+    let other = Address::generate(&s.env);
+    assert!(!s.escrow.dry_run_release(&BOUNTY, &other).success);
+
+    s.env.ledger().set_timestamp(s.deadline + 1);
+    assert!(!s.escrow.dry_run_refund(&BOUNTY).success);
+    let view = s.escrow.get_refund_eligibility_view(&BOUNTY);
+    assert!(!view.eligible);
+    assert_eq!(view.code, RefundEligibilityCode::IneligibleClaimPending);
+
+    s.escrow.revoke_claim_ticket(&s.admin, &id);
+    assert!(s.escrow.dry_run_release(&BOUNTY, &other).success);
+    assert!(s.escrow.dry_run_refund(&BOUNTY).success);
+    assert!(s.escrow.get_refund_eligibility_view(&BOUNTY).eligible);
+}
