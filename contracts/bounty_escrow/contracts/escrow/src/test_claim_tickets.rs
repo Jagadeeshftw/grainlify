@@ -541,7 +541,7 @@ fn test_issue_rejected_while_pending_claim_active() {
 #[test]
 fn test_full_beneficiary_index_does_not_block_issuance() {
     let s = Setup::new();
-    s.env.cost_estimate().budget().reset_unlimited();
+    s.env.budget().reset_unlimited();
     for _ in 0..crate::claim_tickets::MAX_BENEFICIARY_INDEX {
         s.issue(1);
     }
