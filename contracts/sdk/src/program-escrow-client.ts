@@ -477,7 +477,10 @@ export class ProgramEscrowClient {
       prepared.sign(signer);
       const submitted = await this.server.sendTransaction(prepared);
       if (submitted.status === "ERROR") {
-        throw new Error(`Soroban submission failed for ${method}`);
+        const code = transactionResultCode(submitted.errorResult);
+        throw new Error(
+          `Soroban submission failed for ${method}${code ? ` (${code})` : ""}`,
+        );
       }
 
       const deadline = Date.now() + 30_000;
@@ -487,7 +490,10 @@ export class ProgramEscrowClient {
           return result.returnValue ? scValToNative(result.returnValue) : undefined;
         }
         if (result.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
-          throw new Error(`Soroban transaction failed for ${method}`);
+          const code = transactionResultCode(result.resultXdr);
+          throw new Error(
+            `Soroban transaction failed for ${method}${code ? ` (${code})` : ""}`,
+          );
         }
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
@@ -609,5 +615,21 @@ export class ProgramEscrowClient {
     }
     if (Array.isArray(value)) return value.map((item) => this.toPlainObject(item));
     return value;
+  }
+}
+
+/**
+ * Extract the result code from a failed transaction so failures such as
+ * `txBadSeq` are visible in the thrown error message (the SDK examples retry
+ * on that code).
+ */
+function transactionResultCode(
+  result: xdr.TransactionResult | undefined,
+): string | undefined {
+  if (!result) return undefined;
+  try {
+    return result.result().switch().name;
+  } catch {
+    return undefined;
   }
 }
