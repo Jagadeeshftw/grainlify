@@ -1914,11 +1914,13 @@ include!("traits_impl.rs");
 mod test;
 // Pre-existing broken test modules — excluded until their referenced types/methods are implemented:
 // (test_analytics_monitoring and test_query_filters enabled by issue #1882 — see top of file)
-// #[cfg(test)] mod test_auto_refund_permissions;
+#[cfg(test)]
+mod test_auto_refund_permissions;
 // #[cfg(test)] mod test_blacklist_and_whitelist;
 // #[cfg(test)] mod test_bounty_escrow;
 // #[cfg(test)] mod test_capability_tokens;
-// #[cfg(test)] mod test_deprecation;
+#[cfg(test)]
+mod test_deprecation;
 // #[cfg(test)] mod test_dispute_resolution;
 // #[cfg(test)] mod test_expiration_and_dispute;
 // #[cfg(test)] mod test_front_running_ordering;
@@ -2076,7 +2078,8 @@ mod update_metadata_boundary_tests {
     }
 }
 // #[cfg(test)] mod test_metadata_tagging; // pre-existing breakage: depends on query/metadata/analytics API never implemented (see #1975 CI)
-// #[cfg(test)] mod test_partial_payout_rounding;
+#[cfg(test)]
+mod test_partial_payout_rounding;
 // #[cfg(test)] mod test_participant_filter_mode;
 // #[cfg(test)] mod test_pause;
 #[cfg(test)]
