@@ -3487,6 +3487,8 @@ mod test_admin_invalid_identifiers;
 #[cfg(test)]
 mod test_batch_lock_funds_soa_boundary;
 #[cfg(test)]
+mod test_batch_lock_funds_soa_lifecycle;
+#[cfg(test)]
 mod test_deadline_variants;
 #[cfg(test)]
 mod test_refund_boundaries;
@@ -3542,5 +3544,3 @@ pub trait Router {
 
     fn get_amounts_out(env: Env, amount_in: i128, path: Vec<Address>) -> Vec<i128>;
 }
-
-// TODO(drips-wave): re-enable — test_batch_lock_funds_soa_lifecycle.rs does not compile against current soroban-sdk/contract API
