@@ -1,11 +1,7 @@
 import {
   Address,
-  BASE_FEE,
   Contract,
   nativeToScVal,
-  scValToNative,
-  SorobanRpc,
-  TransactionBuilder,
   Keypair,
   xdr,
 } from "@stellar/stellar-sdk";
@@ -15,14 +11,12 @@ import {
   parseContractError,
   ContractError,
 } from "./errors";
+import {
+  SorobanClientConfig,
+  SorobanContractClient,
+} from "./soroban-contract-client";
 
-export interface ProgramEscrowConfig {
-  contractId: string;
-  rpcUrl: string;
-  networkPassphrase: string;
-  /** Signer used for simulation-only reads when a method has no signer argument. */
-  sourceKeypair?: Keypair;
-}
+export interface ProgramEscrowConfig extends SorobanClientConfig {}
 
 export interface ProgramData {
   program_id: string;
@@ -115,25 +109,9 @@ export async function fetchAllPages<T>(
 /**
  * Client for interacting with the ProgramEscrow Soroban contract
  */
-export class ProgramEscrowClient {
-  private contract: Contract;
-  private server: SorobanRpc.Server;
-  private config: ProgramEscrowConfig;
-
+export class ProgramEscrowClient extends SorobanContractClient {
   constructor(config: ProgramEscrowConfig) {
-    this.config = config;
-    try {
-      this.contract = new Contract(config.contractId);
-    } catch (error) {
-      // Allow invalid contract IDs for testing purposes
-      this.contract = null as any;
-    }
-    try {
-      this.server = new SorobanRpc.Server(config.rpcUrl, { allowHttp: true });
-    } catch (error) {
-      // Allow server initialization to fail for testing
-      this.server = null as any;
-    }
+    super(config);
   }
 
   /**
@@ -316,6 +294,13 @@ export class ProgramEscrowClient {
   async getRemainingBalance(): Promise<bigint> {
     try {
       const result = await this.invokeContract("get_remaining_balance", []);
+      if (
+        typeof result !== "string" &&
+        typeof result !== "number" &&
+        typeof result !== "bigint"
+      ) {
+        throw new Error("Soroban simulation returned an invalid balance");
+      }
       return BigInt(result);
     } catch (error) {
       throw this.handleError(error);
@@ -431,90 +416,8 @@ export class ProgramEscrowClient {
     }
   }
 
-  private async invokeContract(
-    method: string,
-    args: any[],
-    sourceKeypair?: Keypair,
-    contract: Contract = this.contract,
-  ): Promise<any> {
-    try {
-      const signer = sourceKeypair ?? this.config.sourceKeypair;
-      if (!signer) {
-        throw new ValidationError(
-          "A sourceKeypair is required to simulate a Soroban invocation",
-          "sourceKeypair",
-        );
-      }
-
-      const account = await this.server.getAccount(signer.publicKey());
-      const transaction = new TransactionBuilder(account, {
-        fee: BASE_FEE,
-        networkPassphrase: this.config.networkPassphrase,
-      })
-        .addOperation(
-          contract.call(method, ...this.encodeArguments(method, args, signer)),
-        )
-        .setTimeout(30)
-        .build();
-
-      const simulation = await this.server.simulateTransaction(transaction);
-      if (SorobanRpc.Api.isSimulationError(simulation)) {
-        throw new Error(`Soroban simulation failed for ${method}: ${simulation.error}`);
-      }
-
-      const readOnlyMethods = new Set([
-        "get_program_info",
-        "get_remaining_balance",
-      ]);
-      if (readOnlyMethods.has(method)) {
-        if (!simulation.result) {
-          throw new Error(`Soroban simulation returned no result for ${method}`);
-        }
-        return scValToNative(simulation.result.retval);
-      }
-
-      const prepared = SorobanRpc.assembleTransaction(transaction, simulation).build();
-      prepared.sign(signer);
-      const submitted = await this.server.sendTransaction(prepared);
-      if (submitted.status === "ERROR") {
-        throw new Error(`Soroban submission failed for ${method}`);
-      }
-
-      const deadline = Date.now() + 30_000;
-      while (Date.now() < deadline) {
-        const result = await this.server.getTransaction(submitted.hash);
-        if (result.status === SorobanRpc.Api.GetTransactionStatus.SUCCESS) {
-          return result.returnValue ? scValToNative(result.returnValue) : undefined;
-        }
-        if (result.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
-          throw new Error(`Soroban transaction failed for ${method}`);
-        }
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
-      throw new NetworkError(`Timed out waiting for Soroban transaction ${method}`);
-    } catch (error: any) {
-      // Check for network errors
-      if (error.code === "ECONNREFUSED" || error.code === "ETIMEDOUT") {
-        throw new NetworkError(
-          `Failed to connect to RPC server: ${this.config.rpcUrl}`,
-          undefined,
-          error,
-        );
-      }
-
-      if (error.response?.status) {
-        throw new NetworkError(
-          `RPC request failed with status ${error.response.status}`,
-          error.response.status,
-          error,
-        );
-      }
-
-      throw error;
-    }
-  }
-
-  private encodeArguments(method: string, args: any[], signer: Keypair): xdr.ScVal[] {
+  protected encodeArguments(method: string, args: unknown[], signer: Keypair): xdr.ScVal[] {
+    const values = args as any[];
     const address = (value: string) => Address.fromString(value).toScVal();
     const i128 = (value: bigint) => nativeToScVal(value, { type: "i128" });
     const string = (value: string) => nativeToScVal(value, { type: "string" });
@@ -523,26 +426,26 @@ export class ProgramEscrowClient {
     switch (method) {
       case "init_program":
         return [
-          string(args[0]),
-          address(args[1]),
-          address(args[2]),
+          string(values[0]),
+          address(values[1]),
+          address(values[2]),
           address(signer.publicKey()),
-          args[3] > 0n ? i128(args[3]) : xdr.ScVal.scvVoid(),
+          values[3] > 0n ? i128(values[3]) : xdr.ScVal.scvVoid(),
           xdr.ScVal.scvVoid(),
         ];
       case "lock_program_funds":
-        return [i128(args[0])];
+        return [i128(values[0])];
       case "batch_payout":
         return [
-          vector(args[0].map((value: string) => address(value))),
-          vector(args[1].map((value: bigint) => i128(value))),
+          vector(values[0].map((value: string) => address(value))),
+          vector(values[1].map((value: bigint) => i128(value))),
         ];
       case "single_payout":
-        return [address(args[0]), i128(args[1])];
+        return [address(values[0]), i128(values[1])];
       case "publish_program":
-        return [string(args[0]), address(args[1])];
+        return [string(values[0]), address(values[1])];
       case "transfer":
-        return [address(args[0]), address(args[1]), i128(args[2])];
+        return [address(values[0]), address(values[1]), i128(values[2])];
       case "get_program_info":
       case "get_remaining_balance":
         return [];
@@ -550,13 +453,17 @@ export class ProgramEscrowClient {
         return [xdr.ScVal.scvVoid()];
       case "create_program_release_schedule":
         return [
-          address(args[0]),
-          i128(args[1]),
-          nativeToScVal(BigInt(args[2]), { type: "u64" }),
+          address(values[0]),
+          i128(values[1]),
+          nativeToScVal(BigInt(values[2]), { type: "u64" }),
         ];
       default:
         throw new Error(`No Soroban argument encoder is defined for ${method}`);
     }
+  }
+
+  protected isReadOnlyMethod(method: string): boolean {
+    return method === "get_program_info" || method === "get_remaining_balance";
   }
 
   private handleError(error: any): Error {
