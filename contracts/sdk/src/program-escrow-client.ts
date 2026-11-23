@@ -1,14 +1,11 @@
 import {
   Address,
-  BASE_FEE,
   Contract,
   nativeToScVal,
-  scValToNative,
-  SorobanRpc,
-  TransactionBuilder,
   Keypair,
   xdr,
 } from "@stellar/stellar-sdk";
+import { SorobanContractClient, SorobanClientConfig } from "./base-client";
 import {
   NetworkError,
   ValidationError,
@@ -16,13 +13,7 @@ import {
   ContractError,
 } from "./errors";
 
-export interface ProgramEscrowConfig {
-  contractId: string;
-  rpcUrl: string;
-  networkPassphrase: string;
-  /** Signer used for simulation-only reads when a method has no signer argument. */
-  sourceKeypair?: Keypair;
-}
+export interface ProgramEscrowConfig extends SorobanClientConfig {}
 
 export interface ProgramData {
   program_id: string;
@@ -115,25 +106,9 @@ export async function fetchAllPages<T>(
 /**
  * Client for interacting with the ProgramEscrow Soroban contract
  */
-export class ProgramEscrowClient {
-  private contract: Contract;
-  private server: SorobanRpc.Server;
-  private config: ProgramEscrowConfig;
-
+export class ProgramEscrowClient extends SorobanContractClient {
   constructor(config: ProgramEscrowConfig) {
-    this.config = config;
-    try {
-      this.contract = new Contract(config.contractId);
-    } catch (error) {
-      // Allow invalid contract IDs for testing purposes
-      this.contract = null as any;
-    }
-    try {
-      this.server = new SorobanRpc.Server(config.rpcUrl, { allowHttp: true });
-    } catch (error) {
-      // Allow server initialization to fail for testing
-      this.server = null as any;
-    }
+    super(config);
   }
 
   /**
@@ -431,90 +406,7 @@ export class ProgramEscrowClient {
     }
   }
 
-  private async invokeContract(
-    method: string,
-    args: any[],
-    sourceKeypair?: Keypair,
-    contract: Contract = this.contract,
-  ): Promise<any> {
-    try {
-      const signer = sourceKeypair ?? this.config.sourceKeypair;
-      if (!signer) {
-        throw new ValidationError(
-          "A sourceKeypair is required to simulate a Soroban invocation",
-          "sourceKeypair",
-        );
-      }
-
-      const account = await this.server.getAccount(signer.publicKey());
-      const transaction = new TransactionBuilder(account, {
-        fee: BASE_FEE,
-        networkPassphrase: this.config.networkPassphrase,
-      })
-        .addOperation(
-          contract.call(method, ...this.encodeArguments(method, args, signer)),
-        )
-        .setTimeout(30)
-        .build();
-
-      const simulation = await this.server.simulateTransaction(transaction);
-      if (SorobanRpc.Api.isSimulationError(simulation)) {
-        throw new Error(`Soroban simulation failed for ${method}: ${simulation.error}`);
-      }
-
-      const readOnlyMethods = new Set([
-        "get_program_info",
-        "get_remaining_balance",
-      ]);
-      if (readOnlyMethods.has(method)) {
-        if (!simulation.result) {
-          throw new Error(`Soroban simulation returned no result for ${method}`);
-        }
-        return scValToNative(simulation.result.retval);
-      }
-
-      const prepared = SorobanRpc.assembleTransaction(transaction, simulation).build();
-      prepared.sign(signer);
-      const submitted = await this.server.sendTransaction(prepared);
-      if (submitted.status === "ERROR") {
-        throw new Error(`Soroban submission failed for ${method}`);
-      }
-
-      const deadline = Date.now() + 30_000;
-      while (Date.now() < deadline) {
-        const result = await this.server.getTransaction(submitted.hash);
-        if (result.status === SorobanRpc.Api.GetTransactionStatus.SUCCESS) {
-          return result.returnValue ? scValToNative(result.returnValue) : undefined;
-        }
-        if (result.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
-          throw new Error(`Soroban transaction failed for ${method}`);
-        }
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
-      throw new NetworkError(`Timed out waiting for Soroban transaction ${method}`);
-    } catch (error: any) {
-      // Check for network errors
-      if (error.code === "ECONNREFUSED" || error.code === "ETIMEDOUT") {
-        throw new NetworkError(
-          `Failed to connect to RPC server: ${this.config.rpcUrl}`,
-          undefined,
-          error,
-        );
-      }
-
-      if (error.response?.status) {
-        throw new NetworkError(
-          `RPC request failed with status ${error.response.status}`,
-          error.response.status,
-          error,
-        );
-      }
-
-      throw error;
-    }
-  }
-
-  private encodeArguments(method: string, args: any[], signer: Keypair): xdr.ScVal[] {
+  protected encodeArguments(method: string, args: any[], signer: Keypair): xdr.ScVal[] {
     const address = (value: string) => Address.fromString(value).toScVal();
     const i128 = (value: bigint) => nativeToScVal(value, { type: "i128" });
     const string = (value: string) => nativeToScVal(value, { type: "string" });
@@ -559,6 +451,10 @@ export class ProgramEscrowClient {
     }
   }
 
+  protected isReadOnlyMethod(method: string): boolean {
+    return method === "get_program_info" || method === "get_remaining_balance";
+  }
+
   private handleError(error: any): Error {
     if (
       error instanceof ValidationError ||
@@ -601,13 +497,4 @@ export class ProgramEscrowClient {
     return this.toPlainObject(result) as ProgramReleaseSchedule;
   }
 
-  private toPlainObject(value: any): any {
-    if (value instanceof Map) {
-      return Object.fromEntries(
-        [...value.entries()].map(([key, item]) => [String(key), this.toPlainObject(item)]),
-      );
-    }
-    if (Array.isArray(value)) return value.map((item) => this.toPlainObject(item));
-    return value;
-  }
 }

@@ -8,6 +8,14 @@ export type {
   ScheduleQueryFilter,
 } from "./program-escrow-client";
 
+export { GovernanceClient } from "./governance-client";
+export type {
+  GovernanceClientConfig,
+  GovernanceConfig,
+  UpgradeProposal,
+  TimelockStatus,
+} from "./governance-client";
+
 export {
   SDKError,
   ContractError,

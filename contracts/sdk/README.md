@@ -15,6 +15,7 @@ npm install @grainlify/contracts-sdk
 - Network error detection and reporting
 - Input validation
 - Support for all ProgramEscrow contract functions
+- Governance and timelocked upgrade operations for grainlify-core
 
 ## Usage
 
@@ -109,6 +110,43 @@ try {
   // Handle errors
 }
 ```
+
+## Governance and upgrades
+
+`GovernanceClient` provides typed calls for the grainlify-core governance,
+upgrade, migration, pause, and version methods. Mutating calls accept a signer;
+read calls use the configured `sourceKeypair` for simulation.
+
+```typescript
+import { GovernanceClient } from '@grainlify/contracts-sdk';
+import { Keypair } from '@stellar/stellar-sdk';
+
+const signer = Keypair.fromSecret('YOUR_SECRET_KEY');
+const governance = new GovernanceClient({
+  contractId: 'YOUR_GRAINLIFY_CORE_CONTRACT_ID',
+  rpcUrl: 'https://soroban-testnet.stellar.org',
+  networkPassphrase: 'Test SDF Network ; September 2015',
+  sourceKeypair: signer
+});
+
+const proposalId = await governance.proposeUpgrade(
+  signer.publicKey(),
+  '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+  0n // no expiry
+);
+await governance.approveUpgrade(proposalId, signer.publicKey());
+
+if (await governance.canExecute(proposalId)) {
+  await governance.executeUpgrade(proposalId);
+}
+```
+
+WASM and migration hashes must be exactly 32 bytes, provided as a `Buffer` or
+64-character hexadecimal string (an optional `0x` prefix is accepted).
+`getTimelockStatus` returns the remaining seconds, or `null` when the timelock
+has not started. `canExecute` checks that the proposal exists, is not cancelled,
+has completed its timelock, and has not expired according to the latest ledger
+close time.
 
 ## Error Handling
 
