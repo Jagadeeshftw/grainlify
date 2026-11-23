@@ -1,4 +1,17 @@
 export { ProgramEscrowClient, fetchAllPages } from "./program-escrow-client";
+export { BountyEscrowClient } from "./bounty-escrow-client";
+export type {
+  BountyEscrowConfig,
+  Escrow,
+  EscrowStatus,
+  LockFundsItem,
+  PauseFlags,
+  RefundApproval,
+  RefundEligibility,
+  RefundMode,
+  RefundRecord,
+  SetPausedOptions,
+} from "./bounty-escrow-client";
 export type {
   ProgramEscrowConfig,
   ProgramData,
