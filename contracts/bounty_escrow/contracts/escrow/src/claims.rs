@@ -241,6 +241,15 @@ pub fn claim(env: Env, bounty_id: u64) -> Result<(), Error> {
         reentrancy_guard::release(&env);
         return Err(Error::InsufficientFunds);
     }
+    if let Err(e) = crate::claim_tickets::ensure_unreserved(
+        &env,
+        bounty_id,
+        escrow.remaining_amount,
+        claim.amount,
+    ) {
+        reentrancy_guard::release(&env);
+        return Err(e);
+    }
     escrow.remaining_amount = escrow.remaining_amount.checked_sub(claim.amount).unwrap();
     if escrow.remaining_amount == 0 {
         escrow.status = EscrowStatus::Released;
@@ -345,6 +354,15 @@ pub fn claim_with_capability(
     if claim.amount > escrow.remaining_amount {
         reentrancy_guard::release(&env);
         return Err(Error::InsufficientFunds);
+    }
+    if let Err(e) = crate::claim_tickets::ensure_unreserved(
+        &env,
+        bounty_id,
+        escrow.remaining_amount,
+        claim.amount,
+    ) {
+        reentrancy_guard::release(&env);
+        return Err(e);
     }
     escrow.remaining_amount = escrow.remaining_amount.checked_sub(claim.amount).unwrap();
     if escrow.remaining_amount == 0 {

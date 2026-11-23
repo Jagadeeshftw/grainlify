@@ -467,6 +467,15 @@ pub fn refund(env: Env, bounty_id: u64) -> Result<(), Error> {
         reentrancy_guard::release(&env);
         return Err(Error::InvalidAmount);
     }
+    if let Err(e) = crate::claim_tickets::ensure_unreserved(
+        &env,
+        bounty_id,
+        escrow.remaining_amount,
+        refund_amount,
+    ) {
+        reentrancy_guard::release(&env);
+        return Err(e);
+    }
 
     // EFFECTS: update state before external call (CEI)
     invariants::assert_escrow(&env, &escrow);
@@ -694,6 +703,15 @@ pub fn refund_resolved(env: Env, bounty_id: u64, recipient: Address) -> Result<(
         reentrancy_guard::release(&env);
         return Err(Error::InvalidAmount);
     }
+    if let Err(e) = crate::claim_tickets::ensure_unreserved(
+        &env,
+        bounty_id,
+        anon.remaining_amount,
+        refund_amount,
+    ) {
+        reentrancy_guard::release(&env);
+        return Err(e);
+    }
 
     // EFFECTS: update escrow state before external call (CEI)
     // Update escrow state: subtract the amount exactly refunded
@@ -796,6 +814,12 @@ pub fn refund_with_capability(
     if amount > escrow.remaining_amount {
         reentrancy_guard::release(&env);
         return Err(Error::InvalidAmount);
+    }
+    if let Err(e) =
+        crate::claim_tickets::ensure_unreserved(&env, bounty_id, escrow.remaining_amount, amount)
+    {
+        reentrancy_guard::release(&env);
+        return Err(e);
     }
 
     if env
