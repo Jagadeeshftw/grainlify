@@ -25,6 +25,11 @@ use soroban_sdk::{symbol_short, token, Address, Env, Vec};
 /// Maximum page size for [`get_beneficiary_tickets`].
 pub const MAX_TICKET_PAGE_SIZE: u32 = 100;
 
+/// Maximum ticket ids kept in a beneficiary's index. Beyond this, tickets are
+/// still issued but only discoverable via `TicketIssued` events, so nobody can
+/// block issuance to a beneficiary by filling their index entry.
+pub const MAX_BENEFICIARY_INDEX: u32 = 200;
+
 // ─────────────────────────────────────────────────────────────────
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────
@@ -229,8 +234,10 @@ pub fn issue_claim_ticket(
         .persistent()
         .get(&index_key)
         .unwrap_or_else(|| Vec::new(&env));
-    index.push_back(ticket_id);
-    env.storage().persistent().set(&index_key, &index);
+    if index.len() < MAX_BENEFICIARY_INDEX {
+        index.push_back(ticket_id);
+        env.storage().persistent().set(&index_key, &index);
+    }
 
     events::emit_ticket_issued(
         &env,
@@ -384,7 +391,8 @@ pub fn get_claim_ticket(env: Env, ticket_id: u64) -> Result<ClaimTicket, Error> 
     load_ticket(&env, ticket_id)
 }
 
-/// View: page through the ticket ids issued to `beneficiary`, in issue order.
+/// View: page through the ticket ids issued to `beneficiary`, in issue order
+/// (first [`MAX_BENEFICIARY_INDEX`] tickets only).
 /// `limit` is capped at [`MAX_TICKET_PAGE_SIZE`].
 pub fn get_beneficiary_tickets(
     env: Env,

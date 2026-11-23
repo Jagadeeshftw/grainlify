@@ -537,3 +537,22 @@ fn test_issue_rejected_while_pending_claim_active() {
     );
     assert_eq!(res, Err(Ok(Error::ClaimPending)));
 }
+
+#[test]
+fn test_full_beneficiary_index_does_not_block_issuance() {
+    let s = Setup::new();
+    s.env.cost_estimate().budget().reset_unlimited();
+    for _ in 0..crate::claim_tickets::MAX_BENEFICIARY_INDEX {
+        s.issue(1);
+    }
+    let id = s.issue(1);
+    assert_eq!(id, crate::claim_tickets::MAX_BENEFICIARY_INDEX as u64 + 1);
+    assert_eq!(s.escrow.get_claim_ticket(&id).amount, 1);
+    let last_page = s.escrow.get_beneficiary_tickets(
+        &s.beneficiary,
+        &(crate::claim_tickets::MAX_BENEFICIARY_INDEX - 1),
+        &10,
+    );
+    assert_eq!(last_page.len(), 1);
+    s.escrow.claim_with_ticket(&id, &s.beneficiary);
+}
