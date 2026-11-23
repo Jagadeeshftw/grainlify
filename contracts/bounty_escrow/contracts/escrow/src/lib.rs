@@ -3543,4 +3543,5 @@ pub trait Router {
     fn get_amounts_out(env: Env, amount_in: i128, path: Vec<Address>) -> Vec<i128>;
 }
 
-// TODO(drips-wave): re-enable — test_batch_lock_funds_soa_lifecycle.rs does not compile against current soroban-sdk/contract API
+#[cfg(test)]
+mod test_batch_lock_funds_soa_lifecycle;
