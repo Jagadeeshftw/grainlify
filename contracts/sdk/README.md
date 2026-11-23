@@ -15,6 +15,7 @@ npm install @grainlify/contracts-sdk
 - Network error detection and reporting
 - Input validation
 - Support for all ProgramEscrow contract functions
+- Typed BountyEscrow client for the core bounty lifecycle
 
 ## Usage
 
@@ -108,6 +109,89 @@ try {
 } catch (error) {
   // Handle errors
 }
+```
+
+### Bounty Escrow
+
+```typescript
+import { BountyEscrowClient } from '@grainlify/contracts-sdk';
+
+const bountyClient = new BountyEscrowClient({
+  contractId: 'YOUR_BOUNTY_ESCROW_CONTRACT_ID',
+  rpcUrl: 'https://soroban-testnet.stellar.org',
+  networkPassphrase: 'Test SDF Network ; September 2015',
+});
+```
+
+#### Lock funds
+
+```typescript
+await bountyClient.lockFunds(
+  depositorAddress, // G... depositor
+  42n, // bounty id (u64)
+  10_000_000n, // amount in token base units (i128, must be > 0)
+  1_800_000_000n, // refund deadline (u64, unix seconds)
+  sourceKeypair,
+);
+```
+
+#### Batch lock funds
+
+```typescript
+const created = await bountyClient.batchLockFunds(
+  [
+    {
+      bounty_id: 43n,
+      depositor: depositorAddress,
+      amount: 5_000_000n,
+      deadline: 1_800_000_000n,
+    },
+    {
+      bounty_id: 44n,
+      depositor: depositorAddress,
+      amount: 7_500_000n,
+      deadline: 1_800_000_000n,
+    },
+  ],
+  sourceKeypair,
+);
+console.log('Escrows created:', created);
+```
+
+#### Release and refund
+
+```typescript
+// Release the full remaining balance to a contributor
+await bountyClient.releaseFunds(42n, contributorAddress, sourceKeypair);
+
+// Or release part of it
+await bountyClient.partialRelease(42n, contributorAddress, 2_500_000n, sourceKeypair);
+
+// Refund the depositor
+await bountyClient.refund(42n, sourceKeypair);
+
+// Admin-approved refund before the deadline
+await bountyClient.approveRefund(42n, 10_000_000n, depositorAddress, 'Full', adminKeypair);
+```
+
+#### Read escrow state (simulation only, no transaction submitted)
+
+```typescript
+const escrow = await bountyClient.getEscrowInfo(42n);
+console.log(escrow.status, escrow.remaining_amount);
+
+const balance = await bountyClient.getBalance();
+const eligibility = await bountyClient.getRefundEligibility(42n);
+const flags = await bountyClient.getPauseFlags();
+```
+
+#### Pause operations
+
+```typescript
+await bountyClient.setPaused(
+  { lock: true, refund: true, reason: 'maintenance' },
+  adminKeypair,
+);
 ```
 
 ## Error Handling
