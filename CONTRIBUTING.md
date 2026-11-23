@@ -2,6 +2,9 @@
 
 This guide is the starting point for choosing the right code tree and reproducing CI locally. Run commands from the repository root unless a command explicitly changes directory. CI runs on Linux; on Windows, use Git Bash or WSL for the Bash scripts and shell commands below.
 
+> **Documentation Index**: A categorized index of contract specifications (architecture, security, storage, fees, errors) is available at [contracts/docs/README.md](contracts/docs/README.md).
+
+
 ## Choose the right tree
 
 There are **three Cargo workspaces** in two Soroban contract trees. Do not choose a crate by its name alone: there are separate crates named `escrow` and similar program-escrow packages.

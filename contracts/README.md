@@ -6,6 +6,9 @@ This is the **authoritative contract tree** for Grainlify. All production contra
 
 Why two trees exist at all is explained in the [root README](../README.md#contract-workspaces-why-there-are-two-trees). In short: the two trees target different Soroban SDK majors (`contracts/` on SDK 21.x, `soroban/` on SDK 23.x) with different APIs and sizes, which made it ambiguous for contributors which one is real. This tree is the one CI builds deployable WASM from and runs every contract gate against; `soroban/` is retained as a legacy/reference tree for behavioral parity testing — not for deployment.
 
+
+> **Documentation Index**: For a categorized index of all 35+ architectural, security, error, fee, and storage documents, see [contracts/docs/README.md](docs/README.md).
+
 ## What lives here
 
 | Crate | Purpose |
