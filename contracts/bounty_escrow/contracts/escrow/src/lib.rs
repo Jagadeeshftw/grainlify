@@ -1926,7 +1926,8 @@ mod test;
 // #[cfg(test)] mod test_invariants;
 #[cfg(test)]
 mod test_lifecycle;
-// TODO(drips-wave): re-enable — test_metadata.rs does not compile against current soroban-sdk/contract API
+#[cfg(test)]
+mod test_metadata;
 
 // Boundary coverage for `update_metadata` numeric/time arguments.
 //
@@ -3544,3 +3545,6 @@ pub trait Router {
 
     fn get_amounts_out(env: Env, amount_in: i128, path: Vec<Address>) -> Vec<i128>;
 }
+
+#[cfg(test)]
+mod test_batch_lock_funds_soa_lifecycle;

@@ -58,14 +58,11 @@ fn mint(ctx: &Ctx, recipient: &Address, amount: i128) {
     token::StellarAssetClient::new(&ctx.env, &ctx._token_id).mint(recipient, &amount);
 }
 
-/// Invokes `batch_lock_funds_soa` and flattens the generated client's nested
-/// `try_` result into the contract's typed `Result<u32, Error>`.
-///
-/// The generated client returns
-/// `Result<Result<u32, _>, Result<Error, InvokeError>>`: the outer `Ok` carries
-/// the decoded return value, while the outer `Err` carries either the typed
-/// contract error (`Ok`) or a host invocation error (`Err`).
-fn call_soa(ctx: &Ctx, bounty_id: u64, depositor: &Address) -> Result<u32, Error> {
+fn call_soa(
+    ctx: &Ctx,
+    bounty_id: u64,
+    depositor: &Address,
+) -> Result<Result<u32, soroban_sdk::ConversionError>, Result<Error, soroban_sdk::InvokeError>> {
     let deadline = ctx.env.ledger().timestamp() + DEADLINE_OFFSET;
     let bounty_ids: Vec<u64> = vec![&ctx.env, bounty_id];
     let depositors: Vec<Address> = vec![&ctx.env, depositor.clone()];
@@ -221,7 +218,7 @@ fn batch_lock_funds_soa_from_empty_state_succeeds() {
     mint(&ctx, &depositor, AMOUNT);
     let bounty_id = 6;
 
-    let settled = call_soa(&ctx, bounty_id, &depositor).unwrap();
+    let settled = call_soa(&ctx, bounty_id, &depositor).unwrap().unwrap();
     assert_eq!(settled, 1);
     let escrow = ctx.client.get_escrow(&bounty_id);
     assert_eq!(escrow.status, EscrowStatus::Locked);
