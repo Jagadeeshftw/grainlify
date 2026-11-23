@@ -3,8 +3,8 @@
 #
 # Readiness means both:
 #   * Soroban RPC answers JSON-RPC `getHealth` with `"status":"healthy"`.
-#   * The friendbot endpoint answers HTTP (2xx-4xx; a request without an
-#     address is expected to return 400 once the service is up).
+#   * The friendbot endpoint answers HTTP (2xx, or the 400 it returns when
+#     the required address is missing).
 #
 # On timeout the script prints the last responses and, when a container name is
 # supplied, the container's log tail, then exits non-zero.
@@ -120,7 +120,7 @@ while [ $((SECONDS - start)) -lt "$TIMEOUT" ]; do
 
   friendbot_ready=0
   case "$friendbot_code" in
-    2?? | 3?? | 4??) friendbot_ready=1 ;;
+    2?? | 400) friendbot_ready=1 ;;
   esac
 
   if [ "$rpc_ready" -eq 1 ] && [ "$friendbot_ready" -eq 1 ]; then
