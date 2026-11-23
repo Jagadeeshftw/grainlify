@@ -493,6 +493,8 @@ pub enum RefundEligibilityCode {
     IneligibleClaimPending,
     IneligibleDeadlineNotPassed,
     IneligibleInvalidApproval,
+    /// Refund would spend funds reserved by outstanding claim tickets.
+    IneligibleTicketReserved,
 }
 
 #[contracttype]

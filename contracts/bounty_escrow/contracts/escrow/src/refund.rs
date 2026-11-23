@@ -142,7 +142,7 @@ pub(crate) fn compute_refund_eligibility(env: &Env, bounty_id: u64) -> RefundEli
         .get(&DataKey::RefundApproval(bounty_id));
     let reserved_view = |amount: i128| RefundEligibilityView {
         eligible: false,
-        code: RefundEligibilityCode::IneligibleClaimPending,
+        code: RefundEligibilityCode::IneligibleTicketReserved,
         bounty_id,
         amount,
         recipient: None,
@@ -151,6 +151,18 @@ pub(crate) fn compute_refund_eligibility(env: &Env, bounty_id: u64) -> RefundEli
         approval_present: false,
     };
     if let Some(app) = approval {
+        if app.amount <= 0 || app.amount > escrow.remaining_amount {
+            return RefundEligibilityView {
+                eligible: false,
+                code: RefundEligibilityCode::IneligibleInvalidApproval,
+                bounty_id,
+                amount: 0,
+                recipient: None,
+                now,
+                deadline: escrow.deadline,
+                approval_present: true,
+            };
+        }
         if crate::claim_tickets::ensure_unreserved(
             env,
             bounty_id,
@@ -162,18 +174,6 @@ pub(crate) fn compute_refund_eligibility(env: &Env, bounty_id: u64) -> RefundEli
             return RefundEligibilityView {
                 approval_present: true,
                 ..reserved_view(0)
-            };
-        }
-        if app.amount <= 0 || app.amount > escrow.remaining_amount {
-            return RefundEligibilityView {
-                eligible: false,
-                code: RefundEligibilityCode::IneligibleInvalidApproval,
-                bounty_id,
-                amount: 0,
-                recipient: None,
-                now,
-                deadline: escrow.deadline,
-                approval_present: true,
             };
         }
         return RefundEligibilityView {
@@ -249,6 +249,7 @@ pub(crate) fn dry_run_refund_impl(
             RefundEligibilityCode::IneligibleClaimPending => Error::ClaimPending,
             RefundEligibilityCode::IneligibleDeadlineNotPassed => Error::DeadlineNotPassed,
             RefundEligibilityCode::IneligibleInvalidApproval => Error::InvalidAmount,
+            RefundEligibilityCode::IneligibleTicketReserved => Error::InsufficientFunds,
             RefundEligibilityCode::EligibleDeadlinePassed
             | RefundEligibilityCode::EligibleAdminApproval => Error::InvalidAmount,
         });

@@ -565,10 +565,12 @@ fn test_previews_respect_reservation() {
     assert!(!s.escrow.dry_run_release(&BOUNTY, &other).success);
 
     s.env.ledger().set_timestamp(s.deadline + 1);
-    assert!(!s.escrow.dry_run_refund(&BOUNTY).success);
+    let sim = s.escrow.dry_run_refund(&BOUNTY);
+    assert!(!sim.success);
+    assert_eq!(sim.error_code, Error::InsufficientFunds as u32);
     let view = s.escrow.get_refund_eligibility_view(&BOUNTY);
     assert!(!view.eligible);
-    assert_eq!(view.code, RefundEligibilityCode::IneligibleClaimPending);
+    assert_eq!(view.code, RefundEligibilityCode::IneligibleTicketReserved);
 
     s.escrow.revoke_claim_ticket(&s.admin, &id);
     assert!(s.escrow.dry_run_release(&BOUNTY, &other).success);
