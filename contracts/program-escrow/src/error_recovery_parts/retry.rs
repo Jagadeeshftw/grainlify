@@ -259,7 +259,10 @@ fn normalize_error_log_limit(requested: u32) -> u32 {
 
 fn prune_error_log(env: &Env, log: &mut Vec<ErrorEntry>, max_entries: u32) {
     while log.len() > max_entries {
-        let entry = log.get(0).unwrap();
+        // Head of a non-empty log; absence would be an invariant violation.
+        let entry = log
+            .get(0)
+            .unwrap_or_else(|| panic_with_error!(env, &ContractError::EntryNotFound));
         log.remove(0);
         let mut archived = Vec::new(env);
         let program_id = entry.program_id.clone();

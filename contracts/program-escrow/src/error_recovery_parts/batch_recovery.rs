@@ -214,8 +214,14 @@ pub fn store_batch_state(
     let mut items = soroban_sdk::Vec::new(env);
 
     for i in 0..recipients.len() {
-        let recipient = recipients.get(i).unwrap();
-        let amount = amounts.get(i).unwrap();
+        // `recipients` is loop-bounded; `amounts` may be shorter than
+        // `recipients` (no length check), which surfaces as InvalidState.
+        let recipient = recipients
+            .get(i)
+            .unwrap_or_else(|| panic_with_error!(env, &ContractError::InvalidState));
+        let amount = amounts
+            .get(i)
+            .unwrap_or_else(|| panic_with_error!(env, &ContractError::InvalidState));
         total_amount = crate::token_math::safe_add(total_amount, amount);
 
         items.push_back(BatchItem {
@@ -357,7 +363,10 @@ pub fn mark_item_success(env: &Env, batch_id: u64, item_index: u32) -> Result<()
         return Err(ERR_BATCH_NOT_FOUND);
     }
 
-    let mut item = state.items.get(item_index).unwrap();
+    let mut item = state
+        .items
+        .get(item_index)
+        .unwrap_or_else(|| panic_with_error!(env, &ContractError::EntryNotFound));
     item.status = BatchItemStatus::Success;
     state.successful_amount = crate::token_math::safe_add(state.successful_amount, item.amount);
     state.items.set(item_index, item);
@@ -381,7 +390,10 @@ pub fn mark_item_failed(
         return Err(ERR_BATCH_NOT_FOUND);
     }
 
-    let mut item = state.items.get(item_index).unwrap();
+    let mut item = state
+        .items
+        .get(item_index)
+        .unwrap_or_else(|| panic_with_error!(env, &ContractError::EntryNotFound));
     item.status = BatchItemStatus::Failed;
     item.error_code = error_code;
     state.items.set(item_index, item);
@@ -400,7 +412,10 @@ pub fn mark_item_rolled_back(env: &Env, batch_id: u64, item_index: u32) -> Resul
         return Err(ERR_BATCH_NOT_FOUND);
     }
 
-    let mut item = state.items.get(item_index).unwrap();
+    let mut item = state
+        .items
+        .get(item_index)
+        .unwrap_or_else(|| panic_with_error!(env, &ContractError::EntryNotFound));
     let was_success = item.status == BatchItemStatus::Success;
     item.status = BatchItemStatus::RolledBack;
 
@@ -443,7 +458,10 @@ pub fn get_failed_items(env: &Env, batch_id: u64) -> Result<soroban_sdk::Vec<u32
 
     let mut failed_indices = soroban_sdk::Vec::new(env);
     for i in 0..state.items.len() {
-        let item = state.items.get(i).unwrap();
+        let item = state
+        .items
+        .get(i)
+        .unwrap_or_else(|| panic_with_error!(env, &ContractError::EntryNotFound));
         if item.status == BatchItemStatus::Failed {
             failed_indices.push_back(item.index);
         }
@@ -460,7 +478,10 @@ pub fn get_successful_items(env: &Env, batch_id: u64) -> Result<soroban_sdk::Vec
 
     let mut success_indices = soroban_sdk::Vec::new(env);
     for i in 0..state.items.len() {
-        let item = state.items.get(i).unwrap();
+        let item = state
+        .items
+        .get(i)
+        .unwrap_or_else(|| panic_with_error!(env, &ContractError::EntryNotFound));
         if item.status == BatchItemStatus::Success {
             success_indices.push_back(item.index);
         }
@@ -491,7 +512,10 @@ pub fn increment_retry_count(env: &Env, batch_id: u64, item_index: u32) -> Resul
     let config = get_batch_recovery_config(env);
     let mut state = get_batch_state(env, batch_id).ok_or(ERR_BATCH_NOT_FOUND)?;
 
-    let mut item = state.items.get(item_index).unwrap();
+    let mut item = state
+        .items
+        .get(item_index)
+        .unwrap_or_else(|| panic_with_error!(env, &ContractError::EntryNotFound));
 
     if item.retry_count >= config.max_retries {
         return Err(ERR_BATCH_NOT_RECOVERABLE);
@@ -549,7 +573,10 @@ pub fn calculate_rollback_amount(env: &Env, batch_id: u64) -> Result<i128, u32> 
 
     let mut total: i128 = 0;
     for i in 0..state.items.len() {
-        let item = state.items.get(i).unwrap();
+        let item = state
+        .items
+        .get(i)
+        .unwrap_or_else(|| panic_with_error!(env, &ContractError::EntryNotFound));
         if item.status == BatchItemStatus::Success {
             total = crate::token_math::safe_add(total, item.amount);
         }
@@ -597,7 +624,10 @@ pub fn prepare_rollback(env: &Env, batch_id: u64, caller: &Address) -> Result<Ro
     let mut affected = soroban_sdk::Vec::new(env);
 
     for i in 0..state.items.len() {
-        let item = state.items.get(i).unwrap();
+        let item = state
+        .items
+        .get(i)
+        .unwrap_or_else(|| panic_with_error!(env, &ContractError::EntryNotFound));
         if item.status == BatchItemStatus::Success {
             total_amount = crate::token_math::safe_add(total_amount, item.amount);
             count += 1;
@@ -638,7 +668,10 @@ pub fn verify_batch_integrity(env: &Env, batch_id: u64) -> bool {
     let mut calculated_failed: i128 = 0;
 
     for i in 0..state.items.len() {
-        let item = state.items.get(i).unwrap();
+        let item = state
+        .items
+        .get(i)
+        .unwrap_or_else(|| panic_with_error!(env, &ContractError::EntryNotFound));
         match item.status {
             BatchItemStatus::Success => {
                 calculated_successful =

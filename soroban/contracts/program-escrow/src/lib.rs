@@ -17,8 +17,8 @@
 //! - cursor pagination keeps results reviewable and avoids hidden full scans
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, token, Address, Env, String,
-    Vec,
+    contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short, token,
+    Address, Env, String, Vec,
 };
 
 mod reentrancy_guard;
@@ -595,7 +595,13 @@ impl ProgramEscrowContract {
     }
 
     fn require_contract_admin(env: &Env) -> Address {
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        // Admin is guaranteed to exist once `ensure_initialized` has passed;
+        // absence is a fail-closed configuration error.
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .unwrap_or_else(|| panic_with_error!(env, &Error::MissingConfiguration));
         admin.require_auth();
         admin
     }
@@ -997,7 +1003,13 @@ impl ProgramEscrowContract {
         Self::ensure_not_deprecated(&env)?;
         Self::require_contract_admin(&env);
 
-        let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
+        // Token binding is written during `init`; absence is a fail-closed
+        // configuration error.
+        let token_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .unwrap_or_else(|| panic_with_error!(env, &Error::MissingConfiguration));
         let token_client = token::Client::new(&env, &token_addr);
         let contract_address = env.current_contract_address();
         let ordered_items = Self::order_batch_registration_items(&env, &items);
@@ -1081,7 +1093,13 @@ impl ProgramEscrowContract {
         Self::ensure_not_deprecated(&env)?;
         Self::require_contract_admin(&env);
 
-        let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
+        // Token binding is written during `init`; absence is a fail-closed
+        // configuration error.
+        let token_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .unwrap_or_else(|| panic_with_error!(env, &Error::MissingConfiguration));
         let token_client = token::Client::new(&env, &token_addr);
         let contract_address = env.current_contract_address();
 
@@ -1273,7 +1291,11 @@ impl ProgramEscrowContract {
         labels: Vec<String>,
     ) -> Result<Program, Error> {
         Self::ensure_initialized(&env)?;
-        let contract_admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        let contract_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .unwrap_or_else(|| panic_with_error!(env, &Error::MissingConfiguration));
         let mut program: Program = env
             .storage()
             .persistent()
@@ -1323,9 +1345,7 @@ impl ProgramEscrowContract {
         let mut next_cursor = None;
         let mut has_more = false;
 
-        for i in 0..index.len() {
-            let id = index.get(i).unwrap();
-
+        for id in index.iter() {
             if !collecting {
                 if Some(id) == cursor {
                     collecting = true;
@@ -1428,9 +1448,7 @@ impl ProgramEscrowContract {
         let mut next_cursor: Option<u64> = None;
         let mut has_more = false;
 
-        for i in 0..index.len() {
-            let id = index.get(i).unwrap();
-
+        for id in index.iter() {
             if !collecting {
                 if Some(id) == cursor {
                     collecting = true;
@@ -1523,7 +1541,11 @@ impl ProgramEscrowContract {
             .ok_or(Error::TransferProposalNotFound)?;
         pending.require_auth();
 
-        let old_admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        let old_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .unwrap_or_else(|| panic_with_error!(env, &Error::MissingConfiguration));
         env.storage().instance().set(&DataKey::Admin, &pending);
         env.storage().instance().remove(&DataKey::PendingAdmin);
 

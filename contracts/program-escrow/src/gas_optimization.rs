@@ -6,7 +6,8 @@
 //! - Reduced redundant computations
 //! - Packed-flag storage for boolean bitmask fields
 
-use soroban_sdk::{vec, Address, Env, String, Symbol, Vec};
+use crate::errors::ContractError;
+use soroban_sdk::{panic_with_error, vec, Address, Env, String, Symbol, Vec};
 
 /// Optimized batch lock processing with cached program data.
 pub fn optimized_batch_lock<F>(
@@ -62,13 +63,23 @@ pub fn deduplicate_program_ids(env: &Env, items: &Vec<String>) -> Vec<String> {
         sorted = next;
     }
 
-    // Remove adjacent duplicates
+    // Remove adjacent duplicates. `sorted` is non-empty here because the
+    // input had at least two items, so an empty vector is an invariant
+    // violation surfaced as a typed error.
     let mut deduped: Vec<String> = Vec::new(env);
-    deduped.push_back(sorted.get(0).unwrap());
+    deduped.push_back(
+        sorted
+            .get(0)
+            .unwrap_or_else(|| panic_with_error!(env, &ContractError::EntryNotFound)),
+    );
 
     for i in 1..sorted.len() {
-        let current = sorted.get(i).unwrap();
-        let previous = sorted.get(i - 1).unwrap();
+        let current = sorted
+            .get(i)
+            .unwrap_or_else(|| panic_with_error!(env, &ContractError::EntryNotFound));
+        let previous = sorted
+            .get(i - 1)
+            .unwrap_or_else(|| panic_with_error!(env, &ContractError::EntryNotFound));
 
         if current != previous {
             deduped.push_back(current);
@@ -88,7 +99,15 @@ pub fn has_duplicates(_env: &Env, items: &Vec<String>) -> bool {
 
     for i in 0..len {
         for j in (i + 1)..len {
-            if items.get(i).unwrap() == items.get(j).unwrap() {
+            // Both indices are loop-bounded; absence would be an invariant
+            // violation surfaced as a typed error.
+            let a = items
+                .get(i)
+                .unwrap_or_else(|| panic_with_error!(_env, &ContractError::EntryNotFound));
+            let b = items
+                .get(j)
+                .unwrap_or_else(|| panic_with_error!(_env, &ContractError::EntryNotFound));
+            if a == b {
                 return true;
             }
         }

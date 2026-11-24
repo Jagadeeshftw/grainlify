@@ -67,7 +67,7 @@
 
 use crate::errors::ContractError;
 use crate::DataKey;
-use soroban_sdk::{symbol_short, Env, Symbol};
+use soroban_sdk::{panic_with_error, symbol_short, Env, Symbol};
 
 /// Basis points denominator (100% = 10,000 bps).
 pub const BASIS_POINTS: i128 = 10_000;
@@ -129,7 +129,7 @@ pub fn get_insurance_reserve_balance(env: &Env) -> i128 {
 pub fn verify_reserve_solvency(env: &Env) -> i128 {
     let balance = get_insurance_reserve_balance(env);
     if balance < 0 {
-        panic!("Solvency invariant violated: insurance reserve balance is negative");
+        panic_with_error!(env, &ContractError::InvalidState);
     }
     balance
 }
