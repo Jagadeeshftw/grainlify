@@ -441,6 +441,93 @@ export class ProgramEscrowClient extends BaseContractClient {
     args: any[],
     signer: Keypair,
   ): xdr.ScVal[] {
+    sourceKeypair?: Keypair,
+    contract: Contract = this.contract,
+  ): Promise<any> {
+    try {
+      const signer = sourceKeypair ?? this.config.sourceKeypair;
+      if (!signer) {
+        throw new ValidationError(
+          "A sourceKeypair is required to simulate a Soroban invocation",
+          "sourceKeypair",
+        );
+      }
+
+      const account = await this.server.getAccount(signer.publicKey());
+      const transaction = new TransactionBuilder(account, {
+        fee: BASE_FEE,
+        networkPassphrase: this.config.networkPassphrase,
+      })
+        .addOperation(
+          contract.call(method, ...this.encodeArguments(method, args, signer)),
+        )
+        .setTimeout(30)
+        .build();
+
+      const simulation = await this.server.simulateTransaction(transaction);
+      if (SorobanRpc.Api.isSimulationError(simulation)) {
+        throw new Error(`Soroban simulation failed for ${method}: ${simulation.error}`);
+      }
+
+      const readOnlyMethods = new Set([
+        "get_program_info",
+        "get_remaining_balance",
+      ]);
+      if (readOnlyMethods.has(method)) {
+        if (!simulation.result) {
+          throw new Error(`Soroban simulation returned no result for ${method}`);
+        }
+        return scValToNative(simulation.result.retval);
+      }
+
+      const prepared = SorobanRpc.assembleTransaction(transaction, simulation).build();
+      prepared.sign(signer);
+      const submitted = await this.server.sendTransaction(prepared);
+      if (submitted.status === "ERROR") {
+        const code = transactionResultCode(submitted.errorResult);
+        throw new Error(
+          `Soroban submission failed for ${method}${code ? ` (${code})` : ""}`,
+        );
+      }
+
+      const deadline = Date.now() + 30_000;
+      while (Date.now() < deadline) {
+        const result = await this.server.getTransaction(submitted.hash);
+        if (result.status === SorobanRpc.Api.GetTransactionStatus.SUCCESS) {
+          return result.returnValue ? scValToNative(result.returnValue) : undefined;
+        }
+        if (result.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
+          const code = transactionResultCode(result.resultXdr);
+          throw new Error(
+            `Soroban transaction failed for ${method}${code ? ` (${code})` : ""}`,
+          );
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+      throw new NetworkError(`Timed out waiting for Soroban transaction ${method}`);
+    } catch (error: any) {
+      // Check for network errors
+      if (error.code === "ECONNREFUSED" || error.code === "ETIMEDOUT") {
+        throw new NetworkError(
+          `Failed to connect to RPC server: ${this.config.rpcUrl}`,
+          undefined,
+          error,
+        );
+      }
+
+      if (error.response?.status) {
+        throw new NetworkError(
+          `RPC request failed with status ${error.response.status}`,
+          error.response.status,
+          error,
+        );
+      }
+
+      throw error;
+    }
+  }
+
+  private encodeArguments(method: string, args: any[], signer: Keypair): xdr.ScVal[] {
     const address = (value: string) => Address.fromString(value).toScVal();
     const i128 = (value: bigint) => nativeToScVal(value, { type: "i128" });
     const string = (value: string) => nativeToScVal(value, { type: "string" });
@@ -529,5 +616,21 @@ export class ProgramEscrowClient extends BaseContractClient {
 
   private parseReleaseSchedule(result: any): ProgramReleaseSchedule {
     return this.toPlainObject(result) as ProgramReleaseSchedule;
+  }
+}
+
+/**
+ * Extract the result code from a failed transaction so failures such as
+ * `txBadSeq` are visible in the thrown error message (the SDK examples retry
+ * on that code).
+ */
+function transactionResultCode(
+  result: xdr.TransactionResult | undefined,
+): string | undefined {
+  if (!result) return undefined;
+  try {
+    return result.result().switch().name;
+  } catch {
+    return undefined;
   }
 }

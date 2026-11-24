@@ -324,6 +324,29 @@ Run tests with coverage:
 npm run test:coverage
 ```
 
+## End-to-End Examples (Local Quickstart)
+
+`src/__tests__/examples.e2e.test.ts` exercises the modules in `examples/` against a real Soroban deployment. It is skipped unless every `GRAINLIFY_SDK_E2E_*` variable is set, or `GRAINLIFY_SDK_E2E_REQUIRED=1` is set.
+
+The repository script starts an ephemeral [Stellar Quickstart](https://github.com/stellar/quickstart) container, waits for Soroban RPC and friendbot, builds and deploys `program_escrow.wasm`, funds a throwaway key, and runs the e2e test:
+
+```bash
+# from the repository root
+bash scripts/sdk-e2e-local.sh
+```
+
+The default image is pinned to `stellar/quickstart:v695-b1655.1-latest`; override it with `QUICKSTART_IMAGE=stellar/quickstart:<tag>`. Avoid the moving `latest` tag when you need reproducible runs. Prerequisites are Docker, Rust with the `wasm32-unknown-unknown` target, Node.js 20 with the SDK dependencies installed (`cd contracts/sdk && npm ci`), and Stellar CLI 23.0.1 (`cargo install --locked stellar-cli --version 23.0.1`).
+
+The container is stopped when the script exits. To keep it running for repeated test runs, use `KEEP_QUICKSTART=1`; the script then leaves the generated environment in `/tmp/grainlify-sdk-e2e.env`:
+
+```bash
+KEEP_QUICKSTART=1 bash scripts/sdk-e2e-local.sh
+source /tmp/grainlify-sdk-e2e.env
+cd contracts/sdk && npm test -- --runInBand src/__tests__/examples.e2e.test.ts
+```
+
+The e2e test generates a unique program id for every attempt and makes up to three attempts when the network reports `txBadSeq`, which can happen while ledger state catches up after rapid transactions. Readiness is checked by `scripts/wait-for-quickstart.sh`, which polls the RPC `getHealth` method and the friendbot endpoint and prints the container log tail on timeout.
+
 ## Error Handling Tests
 
 The SDK includes comprehensive error handling tests covering:
