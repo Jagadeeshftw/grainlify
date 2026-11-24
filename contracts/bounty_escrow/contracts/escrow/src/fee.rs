@@ -72,6 +72,89 @@ pub(crate) fn get_fee_config_internal(env: &Env) -> FeeConfig {
         })
 }
 
+/// Apply fee configuration updates without re-authenticating the admin.
+pub(crate) fn update_fee_config_internal(
+    env: &Env,
+    lock_fee_rate: Option<i128>,
+    release_fee_rate: Option<i128>,
+    lock_fixed_fee: Option<i128>,
+    release_fixed_fee: Option<i128>,
+    fee_recipient: Option<Address>,
+    fee_enabled: Option<bool>,
+) -> Result<(), Error> {
+    let mut fee_config = get_fee_config_internal(env);
+
+    if let Some(rate) = lock_fee_rate {
+        if !(0..=MAX_FEE_RATE).contains(&rate) {
+            return Err(Error::InvalidFeeRate);
+        }
+        fee_config.lock_fee_rate = rate;
+    }
+    if let Some(rate) = release_fee_rate {
+        if !(0..=MAX_FEE_RATE).contains(&rate) {
+            return Err(Error::InvalidFeeRate);
+        }
+        fee_config.release_fee_rate = rate;
+    }
+    if let Some(fixed) = lock_fixed_fee {
+        if fixed < 0 {
+            return Err(Error::InvalidAmount);
+        }
+        fee_config.lock_fixed_fee = fixed;
+    }
+    if let Some(fixed) = release_fixed_fee {
+        if fixed < 0 {
+            return Err(Error::InvalidAmount);
+        }
+        fee_config.release_fixed_fee = fixed;
+    }
+    if let Some(recipient) = fee_recipient {
+        fee_config.fee_recipient = recipient;
+    }
+    if let Some(enabled) = fee_enabled {
+        fee_config.fee_enabled = enabled;
+    }
+
+    env.storage()
+        .instance()
+        .set(&DataKey::FeeConfig, &fee_config);
+    events::emit_fee_config_updated(
+        env,
+        events::FeeConfigUpdated {
+            version: EVENT_VERSION_V2,
+            lock_fee_rate: fee_config.lock_fee_rate,
+            release_fee_rate: fee_config.release_fee_rate,
+            lock_fixed_fee: fee_config.lock_fixed_fee,
+            release_fixed_fee: fee_config.release_fixed_fee,
+            fee_recipient: fee_config.fee_recipient.clone(),
+            fee_enabled: fee_config.fee_enabled,
+            timestamp: env.ledger().timestamp(),
+        },
+    );
+    Ok(())
+}
+
+/// Apply a treasury-recipient change without re-authenticating the admin.
+pub(crate) fn set_fee_recipient_internal(env: &Env, recipient: &Address) -> Result<(), Error> {
+    update_fee_config_internal(env, None, None, None, None, Some(recipient.clone()), None)
+}
+
+/// Apply treasury distribution settings without re-authenticating the admin.
+pub(crate) fn set_treasury_distributions_internal(
+    env: &Env,
+    destinations: Vec<TreasuryDestination>,
+    distribution_enabled: bool,
+) -> Result<(), Error> {
+    validate_treasury_destinations(env, &destinations, distribution_enabled)?;
+    let mut fee_config = get_fee_config_internal(env);
+    fee_config.treasury_destinations = destinations;
+    fee_config.distribution_enabled = distribution_enabled;
+    env.storage()
+        .instance()
+        .set(&DataKey::FeeConfig, &fee_config);
+    Ok(())
+}
+
 /// Validates treasury destinations before enabling multi-region routing.
 pub(crate) fn validate_treasury_destinations(
     _env: &Env,
@@ -567,6 +650,7 @@ pub fn update_fee_config(
     fee_recipient: Option<Address>,
     fee_enabled: Option<bool>,
 ) -> Result<(), Error> {
+    crate::timelock::ensure_direct_admin_call_allowed(&env)?;
     if !env.storage().instance().has(&DataKey::Admin) {
         return Err(Error::NotInitialized);
     }
@@ -574,63 +658,15 @@ pub fn update_fee_config(
     let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
     admin.require_auth();
 
-    let mut fee_config = get_fee_config_internal(&env);
-
-    if let Some(rate) = lock_fee_rate {
-        if !(0..=MAX_FEE_RATE).contains(&rate) {
-            return Err(Error::InvalidFeeRate);
-        }
-        fee_config.lock_fee_rate = rate;
-    }
-
-    if let Some(rate) = release_fee_rate {
-        if !(0..=MAX_FEE_RATE).contains(&rate) {
-            return Err(Error::InvalidFeeRate);
-        }
-        fee_config.release_fee_rate = rate;
-    }
-
-    if let Some(fixed) = lock_fixed_fee {
-        if fixed < 0 {
-            return Err(Error::InvalidAmount);
-        }
-        fee_config.lock_fixed_fee = fixed;
-    }
-
-    if let Some(fixed) = release_fixed_fee {
-        if fixed < 0 {
-            return Err(Error::InvalidAmount);
-        }
-        fee_config.release_fixed_fee = fixed;
-    }
-
-    if let Some(recipient) = fee_recipient {
-        fee_config.fee_recipient = recipient;
-    }
-
-    if let Some(enabled) = fee_enabled {
-        fee_config.fee_enabled = enabled;
-    }
-
-    env.storage()
-        .instance()
-        .set(&DataKey::FeeConfig, &fee_config);
-
-    events::emit_fee_config_updated(
+    update_fee_config_internal(
         &env,
-        events::FeeConfigUpdated {
-            version: EVENT_VERSION_V2,
-            lock_fee_rate: fee_config.lock_fee_rate,
-            release_fee_rate: fee_config.release_fee_rate,
-            lock_fixed_fee: fee_config.lock_fixed_fee,
-            release_fixed_fee: fee_config.release_fixed_fee,
-            fee_recipient: fee_config.fee_recipient.clone(),
-            fee_enabled: fee_config.fee_enabled,
-            timestamp: env.ledger().timestamp(),
-        },
-    );
-
-    Ok(())
+        lock_fee_rate,
+        release_fee_rate,
+        lock_fixed_fee,
+        release_fixed_fee,
+        fee_recipient,
+        fee_enabled,
+    )
 }
 
 /// Configures weighted treasury destinations for multi-region fee routing.
@@ -644,6 +680,7 @@ pub fn set_treasury_distributions(
     destinations: Vec<TreasuryDestination>,
     distribution_enabled: bool,
 ) -> Result<(), Error> {
+    crate::timelock::ensure_direct_admin_call_allowed(&env)?;
     if !env.storage().instance().has(&DataKey::Admin) {
         return Err(Error::NotInitialized);
     }
@@ -651,17 +688,7 @@ pub fn set_treasury_distributions(
     let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
     admin.require_auth();
 
-    validate_treasury_destinations(&env, &destinations, distribution_enabled)?;
-
-    let mut fee_config = get_fee_config_internal(&env);
-    fee_config.treasury_destinations = destinations;
-    fee_config.distribution_enabled = distribution_enabled;
-
-    env.storage()
-        .instance()
-        .set(&DataKey::FeeConfig, &fee_config);
-
-    Ok(())
+    set_treasury_distributions_internal(&env, destinations, distribution_enabled)
 }
 
 /// Returns the current treasury routing configuration.

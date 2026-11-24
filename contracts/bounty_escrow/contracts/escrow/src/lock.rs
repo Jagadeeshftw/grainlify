@@ -141,9 +141,7 @@ pub(crate) fn lock_funds_logic(
     invariants::assert_escrow(&env, &escrow);
 
     // EFFECTS: Update state and indexes before interactions
-    env.storage()
-        .persistent()
-        .set(&DataKey::Escrow(bounty_id), &escrow);
+    crate::BountyEscrowContract::write_escrow(&env, bounty_id, &escrow)?;
     renew_escrow_record(&env, bounty_id, false);
 
     // Update indexes
@@ -329,9 +327,7 @@ pub(crate) fn publish_logic(env: Env, bounty_id: u64, publisher: Address) -> Res
 
     // Transition from Draft to Locked
     escrow.status = EscrowStatus::Locked;
-    env.storage()
-        .persistent()
-        .set(&DataKey::Escrow(bounty_id), &escrow);
+    crate::BountyEscrowContract::write_escrow(&env, bounty_id, &escrow)?;
     renew_escrow_record(&env, bounty_id, false);
 
     // Emit EscrowPublished event
@@ -517,9 +513,7 @@ pub fn archive_escrow(env: Env, bounty_id: u64) -> Result<(), Error> {
     escrow.archived = true;
     escrow.archived_at = Some(env.ledger().timestamp());
 
-    env.storage()
-        .persistent()
-        .set(&DataKey::Escrow(bounty_id), &escrow);
+    crate::BountyEscrowContract::write_escrow(&env, bounty_id, &escrow)?;
 
     // Also check anon escrow
     if let Some(mut anon) = env
@@ -638,7 +632,7 @@ pub fn lock_funds_anonymous(
     // Validation precedence (deterministic ordering):
     // 1. Reentrancy guard
     // 2. Contract initialized
-    // 3. Paused (operational state)
+    // 3. Paused / deprecated (operational state)
     // 4. Rate limiting
     // 5. Authorization
     // 6. Business logic (bounty uniqueness, amount policy)
@@ -652,10 +646,14 @@ pub fn lock_funds_anonymous(
         return Err(Error::NotInitialized);
     }
 
-    // 3. Operational state: paused
+    // 3. Operational state: paused / deprecated
     if crate::pause_freeze::check_paused(&env, symbol_short!("lock")) {
         reentrancy_guard::release(&env);
         return Err(Error::FundsPaused);
+    }
+    if crate::participant_filter::get_deprecation_state(&env).deprecated {
+        reentrancy_guard::release(&env);
+        return Err(Error::ContractDeprecated);
     }
 
     // 4. Rate limiting

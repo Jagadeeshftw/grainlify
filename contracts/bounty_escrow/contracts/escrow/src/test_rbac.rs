@@ -25,6 +25,7 @@ use soroban_sdk::{testutils::Address as _, token, Address, Env};
 
 struct Setup<'a> {
     env: Env,
+    contract_id: Address,
     admin: Address,
     operator: Address,
     depositor: Address,
@@ -52,10 +53,13 @@ impl<'a> Setup<'a> {
             .address();
 
         client.init(&admin, &token_id);
-        client.set_anti_abuse_admin(&operator);
+        env.as_contract(&contract_id, || {
+            anti_abuse::set_admin(&env, operator.clone());
+        });
 
         Self {
             env,
+            contract_id,
             admin,
             operator,
             depositor,
@@ -102,21 +106,31 @@ fn test_rbac_is_admin_false_for_random() {
 #[test]
 fn test_rbac_is_operator_true() {
     let s = Setup::new();
-    // Operator was set via set_anti_abuse_admin — verify it's stored
-    assert_eq!(s.client.get_anti_abuse_admin(), Some(s.operator.clone()));
+    // Operator was set via anti_abuse::set_admin — verify it's stored
+    s.env.as_contract(&s.contract_id, || {
+        assert!(rbac::is_operator(&s.env, &s.operator));
+        assert_eq!(anti_abuse::get_admin(&s.env), Some(s.operator.clone()));
+    });
 }
 
 #[test]
 fn test_rbac_is_operator_false_for_admin() {
     let s = Setup::new();
     // Admin and operator are distinct addresses
-    assert_ne!(s.client.get_anti_abuse_admin(), Some(s.admin.clone()));
+    s.env.as_contract(&s.contract_id, || {
+        assert!(!rbac::is_operator(&s.env, &s.admin));
+        assert_ne!(anti_abuse::get_admin(&s.env), Some(s.admin.clone()));
+    });
 }
 
 #[test]
 fn test_rbac_is_operator_false_for_random() {
     let s = Setup::new();
-    assert_ne!(s.client.get_anti_abuse_admin(), Some(s.random.clone()));
+    s.env.as_contract(&s.contract_id, || {
+        assert!(!rbac::is_admin(&s.env, &s.random));
+        assert!(!rbac::is_operator(&s.env, &s.random));
+        assert_ne!(anti_abuse::get_admin(&s.env), Some(s.random.clone()));
+    });
 }
 
 // ─── Admin-only: set_paused ──────────────────────────────────────────────────
@@ -220,8 +234,11 @@ fn test_admin_can_partial_release() {
 fn test_admin_can_set_anti_abuse_admin() {
     let s = Setup::new();
     let new_op = Address::generate(&s.env);
-    s.client.set_anti_abuse_admin(&new_op);
-    assert_eq!(s.client.get_anti_abuse_admin(), Some(new_op));
+    s.env.as_contract(&s.contract_id, || {
+        anti_abuse::set_admin(&s.env, new_op.clone());
+        assert_eq!(anti_abuse::get_admin(&s.env), Some(new_op.clone()));
+        assert!(rbac::is_operator(&s.env, &new_op));
+    });
 }
 
 // ─── Admin-only: set_filter_mode ────────────────────────────────────────────
@@ -348,7 +365,9 @@ fn test_operator_cannot_pause_contract() {
 
     env.mock_all_auths();
     client.init(&admin, &token_id);
-    client.set_anti_abuse_admin(&operator);
+    env.as_contract(&contract_id, || {
+        anti_abuse::set_admin(&env, operator.clone());
+    });
 
     // Drop mock_all_auths by using a fresh env — operator must not be able to pause
     let env2 = Env::default();
@@ -474,7 +493,10 @@ fn test_admin_stored_on_init() {
         .client
         .try_set_paused(&Some(true), &None, &None, &None)
         .is_ok());
-    assert_ne!(s.client.get_anti_abuse_admin(), Some(s.random.clone()));
+    s.env.as_contract(&s.contract_id, || {
+        assert!(!rbac::is_admin(&s.env, &s.random));
+        assert_ne!(anti_abuse::get_admin(&s.env), Some(s.random.clone()));
+    });
 }
 
 #[test]

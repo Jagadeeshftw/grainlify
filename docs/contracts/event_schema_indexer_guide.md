@@ -45,6 +45,7 @@ compile time by the Soroban SDK.
 | `risk`      | `bounty_id`    | `RiskFlagsUpdated`          | V2    |
 | `ticket_i`  | `ticket_id`    | `TicketIssued`              | V2    |
 | `ticket_c`  | `ticket_id`    | `TicketClaimed`             | V2    |
+| `ticket_r`  | `ticket_id`    | `TicketRevoked`             | V2    |
 | `pause`     | `operation`    | `PauseStateChanged`         | V2    |
 | `em_wtd`    | —              | `EmergencyWithdrawEvent`    | V2    |
 | `cap_new`   | `capability_id`| `CapabilityIssued`          | V2    |

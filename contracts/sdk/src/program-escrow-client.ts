@@ -1,12 +1,9 @@
 import {
   Address,
-  BASE_FEE,
   Contract,
   nativeToScVal,
-  scValToNative,
-  SorobanRpc,
-  TransactionBuilder,
   Keypair,
+  nativeToScVal,
   xdr,
 } from "@stellar/stellar-sdk";
 import {
@@ -15,14 +12,16 @@ import {
   parseContractError,
   ContractError,
 } from "./errors";
+import {
+  SorobanClientConfig,
+  SorobanContractClient,
+} from "./soroban-contract-client";
 
-export interface ProgramEscrowConfig {
-  contractId: string;
-  rpcUrl: string;
-  networkPassphrase: string;
-  /** Signer used for simulation-only reads when a method has no signer argument. */
-  sourceKeypair?: Keypair;
-}
+export interface ProgramEscrowConfig extends SorobanClientConfig {}
+import { ValidationError } from "./errors";
+import { BaseClientConfig, BaseContractClient } from "./base-client";
+
+export interface ProgramEscrowConfig extends BaseClientConfig {}
 
 export interface ProgramData {
   program_id: string;
@@ -112,28 +111,25 @@ export async function fetchAllPages<T>(
   return all;
 }
 
+const READ_ONLY_METHODS = new Set(["get_program_info", "get_remaining_balance"]);
+
 /**
  * Client for interacting with the ProgramEscrow Soroban contract
  */
-export class ProgramEscrowClient {
-  private contract: Contract;
-  private server: SorobanRpc.Server;
-  private config: ProgramEscrowConfig;
-
+export class ProgramEscrowClient extends SorobanContractClient {
   constructor(config: ProgramEscrowConfig) {
-    this.config = config;
-    try {
-      this.contract = new Contract(config.contractId);
-    } catch (error) {
-      // Allow invalid contract IDs for testing purposes
-      this.contract = null as any;
-    }
-    try {
-      this.server = new SorobanRpc.Server(config.rpcUrl, { allowHttp: true });
-    } catch (error) {
-      // Allow server initialization to fail for testing
-      this.server = null as any;
-    }
+    super(config);
+export class ProgramEscrowClient extends BaseContractClient {
+  constructor(config: ProgramEscrowConfig) {
+    super(config);
+  }
+
+  protected get contractErrorScope(): string {
+    return "program_escrow";
+  }
+
+  protected isReadOnlyMethod(method: string): boolean {
+    return READ_ONLY_METHODS.has(method);
   }
 
   /**
@@ -316,6 +312,13 @@ export class ProgramEscrowClient {
   async getRemainingBalance(): Promise<bigint> {
     try {
       const result = await this.invokeContract("get_remaining_balance", []);
+      if (
+        typeof result !== "string" &&
+        typeof result !== "number" &&
+        typeof result !== "bigint"
+      ) {
+        throw new Error("Soroban simulation returned an invalid balance");
+      }
       return BigInt(result);
     } catch (error) {
       throw this.handleError(error);
@@ -431,9 +434,13 @@ export class ProgramEscrowClient {
     }
   }
 
-  private async invokeContract(
+  protected encodeArguments(method: string, args: unknown[], signer: Keypair): xdr.ScVal[] {
+    const values = args as any[];
+  protected encodeArguments(
     method: string,
     args: any[],
+    signer: Keypair,
+  ): xdr.ScVal[] {
     sourceKeypair?: Keypair,
     contract: Contract = this.contract,
   ): Promise<any> {
@@ -477,7 +484,10 @@ export class ProgramEscrowClient {
       prepared.sign(signer);
       const submitted = await this.server.sendTransaction(prepared);
       if (submitted.status === "ERROR") {
-        throw new Error(`Soroban submission failed for ${method}`);
+        const code = transactionResultCode(submitted.errorResult);
+        throw new Error(
+          `Soroban submission failed for ${method}${code ? ` (${code})` : ""}`,
+        );
       }
 
       const deadline = Date.now() + 30_000;
@@ -487,7 +497,10 @@ export class ProgramEscrowClient {
           return result.returnValue ? scValToNative(result.returnValue) : undefined;
         }
         if (result.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
-          throw new Error(`Soroban transaction failed for ${method}`);
+          const code = transactionResultCode(result.resultXdr);
+          throw new Error(
+            `Soroban transaction failed for ${method}${code ? ` (${code})` : ""}`,
+          );
         }
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
@@ -523,26 +536,26 @@ export class ProgramEscrowClient {
     switch (method) {
       case "init_program":
         return [
-          string(args[0]),
-          address(args[1]),
-          address(args[2]),
+          string(values[0]),
+          address(values[1]),
+          address(values[2]),
           address(signer.publicKey()),
-          args[3] > 0n ? i128(args[3]) : xdr.ScVal.scvVoid(),
+          values[3] > 0n ? i128(values[3]) : xdr.ScVal.scvVoid(),
           xdr.ScVal.scvVoid(),
         ];
       case "lock_program_funds":
-        return [i128(args[0])];
+        return [i128(values[0])];
       case "batch_payout":
         return [
-          vector(args[0].map((value: string) => address(value))),
-          vector(args[1].map((value: bigint) => i128(value))),
+          vector(values[0].map((value: string) => address(value))),
+          vector(values[1].map((value: bigint) => i128(value))),
         ];
       case "single_payout":
-        return [address(args[0]), i128(args[1])];
+        return [address(values[0]), i128(values[1])];
       case "publish_program":
-        return [string(args[0]), address(args[1])];
+        return [string(values[0]), address(values[1])];
       case "transfer":
-        return [address(args[0]), address(args[1]), i128(args[2])];
+        return [address(values[0]), address(values[1]), i128(values[2])];
       case "get_program_info":
       case "get_remaining_balance":
         return [];
@@ -550,13 +563,17 @@ export class ProgramEscrowClient {
         return [xdr.ScVal.scvVoid()];
       case "create_program_release_schedule":
         return [
-          address(args[0]),
-          i128(args[1]),
-          nativeToScVal(BigInt(args[2]), { type: "u64" }),
+          address(values[0]),
+          i128(values[1]),
+          nativeToScVal(BigInt(values[2]), { type: "u64" }),
         ];
       default:
         throw new Error(`No Soroban argument encoder is defined for ${method}`);
     }
+  }
+
+  protected isReadOnlyMethod(method: string): boolean {
+    return method === "get_program_info" || method === "get_remaining_balance";
   }
 
   private handleError(error: any): Error {
@@ -600,14 +617,20 @@ export class ProgramEscrowClient {
   private parseReleaseSchedule(result: any): ProgramReleaseSchedule {
     return this.toPlainObject(result) as ProgramReleaseSchedule;
   }
+}
 
-  private toPlainObject(value: any): any {
-    if (value instanceof Map) {
-      return Object.fromEntries(
-        [...value.entries()].map(([key, item]) => [String(key), this.toPlainObject(item)]),
-      );
-    }
-    if (Array.isArray(value)) return value.map((item) => this.toPlainObject(item));
-    return value;
+/**
+ * Extract the result code from a failed transaction so failures such as
+ * `txBadSeq` are visible in the thrown error message (the SDK examples retry
+ * on that code).
+ */
+function transactionResultCode(
+  result: xdr.TransactionResult | undefined,
+): string | undefined {
+  if (!result) return undefined;
+  try {
+    return result.result().switch().name;
+  } catch {
+    return undefined;
   }
 }

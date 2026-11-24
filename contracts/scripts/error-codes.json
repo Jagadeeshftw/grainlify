@@ -56,7 +56,8 @@
       "RouterNotConfigured": 58,
       "SlippageExceeded": 59,
       "FeeRoutingLocked": 60,
-      "EscrowArchived": 61
+      "EscrowArchived": 61,
+      "TicketInvalid": 62
     },
     "contracts/grainlify-core/src/asset.rs::AssetIdError": {
       "MustBeContractAddress": 200,

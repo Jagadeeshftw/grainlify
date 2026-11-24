@@ -42,11 +42,17 @@ pub mod gas_budget;
 pub(crate) mod invariants;
 pub(crate) mod multitoken_invariants;
 mod reentrancy_guard;
+pub(crate) mod timelock;
 mod validation;
 // Pre-existing broken test modules excluded from compilation until their referenced types/methods are implemented:
-// #[cfg(test)] mod test_boundary_edge_cases; // Issue #1294: PartiallyRefunded accounting tests
+// Issue #1294: PartiallyRefunded accounting tests
+#[cfg(test)]
+mod test_boundary_edge_cases;
 // #[cfg(test)] mod test_cross_contract_interface; // pre-existing breakage: references unimplemented methods
 // #[cfg(test)] mod test_deterministic_randomness;
+// #[cfg(test)] mod test_multi_region_treasury;
+#[cfg(test)]
+mod test_rbac;
 #[cfg(test)]
 mod test_multi_region_treasury;
 // #[cfg(test)] mod test_rbac;
@@ -60,8 +66,10 @@ pub mod upgrade_safety;
 
 #[cfg(test)]
 mod capability_replay_tests;
-// #[cfg(test)] mod test_fee_on_transfer; // pre-existing breakage: depends on query/metadata/analytics API never implemented (see #1975 CI)
-// #[cfg(test)] mod test_fee_routing; // pre-existing breakage: depends on query/metadata/analytics API never implemented (see #1975 CI)
+#[cfg(test)]
+mod test_fee_on_transfer;
+#[cfg(test)]
+mod test_fee_routing;
 #[cfg(test)]
 mod test_filter_pagination;
 #[cfg(test)]
@@ -83,12 +91,15 @@ mod test_reentrancy_malicious_token;
 // without being able to verify each test's intent risks silently changing
 // what they assert. Out of scope for reentrancy coverage — left for the
 // module's owner to fix and re-enable.
-// #[cfg(test)] mod test_timelock;
 #[cfg(test)]
 mod event_payload_fixtures;
+#[cfg(test)]
+mod test_timelock;
 // #[cfg(test)] mod test_archival_ttl; // pre-existing breakage: depends on query/metadata/analytics API never implemented (see #1975 CI)
 #[cfg(test)]
 mod test_bounded_pagination;
+#[cfg(test)]
+mod test_claim_tickets;
 #[cfg(test)]
 mod test_deterministic_event_ordering;
 #[cfg(test)]
@@ -125,6 +136,7 @@ pub mod rbac;
 pub(crate) mod admin;
 pub(crate) mod analytics;
 pub(crate) mod capability;
+pub(crate) mod claim_tickets;
 pub(crate) mod claims;
 pub(crate) mod fee;
 pub(crate) mod gas;
@@ -136,12 +148,17 @@ pub(crate) mod release;
 pub(crate) mod renewal;
 pub(crate) mod risk_flags;
 
+pub use crate::timelock::{ActionPayload, ActionStatus, ActionType, PendingAction, TimelockConfig};
+
 pub(crate) const BASIS_POINTS: i128 = 10_000;
 pub(crate) const MAX_FEE_RATE: i128 = 5_000; // 50% max fee
 pub(crate) const MAX_BATCH_SIZE: u32 = 20;
 pub(crate) const DEFAULT_ADMIN_ROTATION_TIMELOCK: u64 = 86_400;
 pub(crate) const MIN_ADMIN_ROTATION_TIMELOCK: u64 = 3_600;
 pub(crate) const MAX_ADMIN_ROTATION_TIMELOCK: u64 = 2_592_000;
+pub(crate) const MIN_TIMELOCK_DELAY: u64 = 3_600;
+pub(crate) const DEFAULT_TIMELOCK_DELAY: u64 = 86_400;
+pub(crate) const MAX_TIMELOCK_DELAY: u64 = 2_592_000;
 
 extern crate grainlify_core;
 
@@ -272,6 +289,26 @@ pub enum Error {
     FeeRoutingLocked = 60,
     /// Returned when attempting to mutate an archived escrow
     EscrowArchived = 61,
+    /// Returned when a queued admin action does not exist.
+    ActionNotFound = 62,
+}
+
+/// Timelock-specific error aliases.
+///
+/// The numeric codes are pinned to existing `Error` discriminants so deployed
+/// clients and the compatibility suite keep decoding the same contract error
+/// values. New call sites should use these names rather than the legacy
+/// variants they alias.
+impl Error {
+    pub const AdminActionTimelockActive: Error = Error::InvalidAdminRotationTarget;
+    pub const TimelockEnabled: Error = Error::InvalidBatchSizeCap;
+    pub const ActionAlreadyExecuted: Error = Error::ReleaseAlreadyQueued;
+    pub const ActionAlreadyCancelled: Error = Error::BountyExists;
+    pub const InvalidPayload: Error = Error::BountyNotFound;
+    pub const DelayBelowMinimum: Error = Error::FundsNotLocked;
+    pub const DelayAboveMaximum: Error = Error::RouterNotConfigured;
+    /// Returned when a claim ticket has been revoked and can no longer be redeemed or revoked.
+    TicketInvalid = 62,
 }
 
 /// Minimum persistent-storage TTLs, measured in ledgers.
@@ -489,6 +526,8 @@ pub enum RefundEligibilityCode {
     IneligibleClaimPending,
     IneligibleDeadlineNotPassed,
     IneligibleInvalidApproval,
+    /// Refund would spend funds reserved by outstanding claim tickets.
+    IneligibleTicketReserved,
 }
 
 #[contracttype]
@@ -644,6 +683,18 @@ pub enum DataKey {
     TaggingTypeIndex(String),
     /// Ordered index of bounty_ids that carry a given tag.
     TaggingTagIndex(String),
+    /// Generic admin-action timelock configuration.
+    TimelockConfig,
+    /// Monotonic counter for queued admin actions.
+    ActionCounter,
+    /// Queued admin action awaiting (or having completed) execution.
+    PendingAction(u64),
+    /// Monotonic counter backing claim-ticket ids (instance storage).
+    ClaimTicketCounter,
+    /// Total amount of a bounty reserved by outstanding claim tickets.
+    TicketReserved(u64),
+    /// Number of outstanding claim tickets across all bounties (instance storage).
+    OutstandingTickets,
 }
 
 #[contracttype]
@@ -672,6 +723,46 @@ pub struct AggregateStats {
     pub count_locked: u32,
     pub count_released: u32,
     pub count_refunded: u32,
+}
+
+/// Cursor returned by a partial `verify_state` audit.
+///
+/// Pass the complete value back unchanged to continue the audit.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerificationCursor {
+    pub offset: u32,
+    pub sum_remaining: i128,
+    pub per_escrow_failures: u32,
+    pub orphaned_index_entries: u32,
+    pub refund_inconsistencies: u32,
+}
+
+/// Read-only result for one bounded page of the stored escrow invariant audit.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerificationReport {
+    /// False if a violation has been observed in this page or an earlier page.
+    pub healthy: bool,
+    /// False until the final escrow index entry has been checked.
+    pub complete: bool,
+    /// Cursor for the next page, or `None` when the audit is complete.
+    pub next_cursor: Option<VerificationCursor>,
+    /// Number of index entries checked by this page.
+    pub page_size: u32,
+    /// Total number of escrow IDs in the index.
+    pub escrow_count: u32,
+    /// Sum of active escrow remaining amounts checked through this page.
+    pub sum_remaining: i128,
+    /// Current token balance held by the contract.
+    pub token_balance: i128,
+    /// Set on the final page; compares active liabilities against token balance.
+    pub balance_matches: Option<bool>,
+    pub per_escrow_failures: u32,
+    pub orphaned_index_entries: u32,
+    pub refund_inconsistencies: u32,
+    /// Violations discovered on this page.
+    pub violations: Vec<String>,
 }
 
 #[contracttype]
@@ -910,6 +1001,7 @@ pub struct ClaimTicket {
     pub expires_at: u64,
     pub used: bool,
     pub issued_at: u64,
+    pub revoked: bool,
 }
 
 #[contracttype]
@@ -1427,6 +1519,28 @@ impl BountyEscrowContract {
         crate::analytics::get_aggregate_stats(env)
     }
 
+    /// Audit stored escrow invariants in bounded pages.
+    ///
+    /// Each call inspects at most 20 escrow IDs. Start with `None`, then pass
+    /// each returned `next_cursor` into the next call until it is `None`. The
+    /// final page reports whether accumulated active escrow liabilities equal
+    /// the contract's token balance. This method only reads storage and token
+    /// state. Callers must pass cursors through unchanged; cursor state carries
+    /// totals from earlier pages. For a consistent whole-state result, avoid
+    /// running the audit while escrow state is changing between page calls.
+    pub fn verify_state(env: Env, cursor: Option<VerificationCursor>) -> VerificationReport {
+        crate::multitoken_invariants::verify_state_page(&env, cursor)
+    }
+
+    /// Return the number of escrow IDs recorded in the global index.
+    pub fn get_escrow_count(env: Env) -> u32 {
+        env.storage()
+            .persistent()
+            .get::<DataKey, Vec<u64>>(&DataKey::EscrowIndex)
+            .unwrap_or(Vec::new(&env))
+            .len()
+    }
+
     pub fn issue_capability(
         env: Env,
         owner: Address,
@@ -1651,6 +1765,49 @@ impl BountyEscrowContract {
         _outcome: DisputeOutcome,
     ) -> Result<(), Error> {
         crate::claims::cancel_pending_claim(env, bounty_id, _outcome)
+    }
+
+    pub fn issue_claim_ticket(
+        env: Env,
+        issuer: Address,
+        bounty_id: u64,
+        beneficiary: Address,
+        amount: i128,
+        expires_at: u64,
+    ) -> Result<u64, Error> {
+        crate::claim_tickets::issue_claim_ticket(
+            env,
+            issuer,
+            bounty_id,
+            beneficiary,
+            amount,
+            expires_at,
+        )
+    }
+
+    pub fn claim_with_ticket(env: Env, ticket_id: u64, claimer: Address) -> Result<(), Error> {
+        crate::claim_tickets::claim_with_ticket(env, ticket_id, claimer)
+    }
+
+    pub fn revoke_claim_ticket(env: Env, caller: Address, ticket_id: u64) -> Result<(), Error> {
+        crate::claim_tickets::revoke_claim_ticket(env, caller, ticket_id)
+    }
+
+    pub fn get_claim_ticket(env: Env, ticket_id: u64) -> Result<ClaimTicket, Error> {
+        crate::claim_tickets::get_claim_ticket(env, ticket_id)
+    }
+
+    pub fn get_beneficiary_tickets(
+        env: Env,
+        beneficiary: Address,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<u64> {
+        crate::claim_tickets::get_beneficiary_tickets(env, beneficiary, offset, limit)
+    }
+
+    pub fn get_ticket_reserved_amount(env: Env, bounty_id: u64) -> i128 {
+        crate::claim_tickets::get_ticket_reserved_amount(env, bounty_id)
     }
 
     pub fn get_pending_claim(env: Env, bounty_id: u64) -> Result<ClaimRecord, Error> {
@@ -1892,6 +2049,61 @@ impl BountyEscrowContract {
     pub fn cancel_queued_release(env: Env, bounty_id: u64) -> Result<(), Error> {
         crate::release::cancel_queued_release(env, bounty_id)
     }
+
+    /// Configure the generic admin-action delay. Admin-only and intentionally
+    /// exempt from the timelock (bootstrap problem).
+    pub fn configure_timelock(env: Env, delay: u64, is_enabled: bool) -> Result<(), Error> {
+        crate::timelock::configure_timelock(env, delay, is_enabled)
+    }
+
+    /// View the configured delay and whether the queue is active.
+    pub fn get_timelock_config(env: Env) -> TimelockConfig {
+        crate::timelock::get_config(&env)
+    }
+
+    /// Propose a sensitive admin action, or execute it immediately when the
+    /// timelock is disabled (legacy deployments).
+    pub fn propose_admin_action(
+        env: Env,
+        action_type: ActionType,
+        payload: ActionPayload,
+    ) -> Result<u64, Error> {
+        crate::timelock::propose_admin_action(env, action_type, payload)
+    }
+
+    /// Execute a queued action after its `execute_after` timestamp. Permissionless.
+    pub fn execute_after_delay(env: Env, action_id: u64) -> Result<(), Error> {
+        crate::timelock::execute_after_delay(env, action_id)
+    }
+
+    /// Cancel a queued action. Admin-only and idempotent for already-cancelled actions.
+    pub fn cancel_admin_action(env: Env, action_id: u64) -> Result<(), Error> {
+        crate::timelock::cancel_admin_action(env, action_id)
+    }
+
+    /// All actions still pending, ordered by proposal time.
+    pub fn get_pending_actions(env: Env) -> Vec<PendingAction> {
+        crate::timelock::get_pending_actions(&env)
+    }
+
+    /// Fetch a queued action by id, including executed and cancelled ones.
+    pub fn get_action(env: Env, action_id: u64) -> Result<PendingAction, Error> {
+        crate::timelock::get_action(&env, action_id)
+    }
+}
+
+impl BountyEscrowContract {
+    /// Internal storage writer shared by state-changing paths and test fixtures.
+    pub(crate) fn write_escrow(
+        env: &Env,
+        bounty_id: u64,
+        escrow: &Escrow,
+    ) -> Result<(), Error> {
+        env.storage()
+            .persistent()
+            .set(&DataKey::Escrow(bounty_id), escrow);
+        Ok(())
+    }
 }
 
 // Test-only shims moved out of #[contractimpl] to avoid macro expansion issues.
@@ -1909,23 +2121,28 @@ impl BountyEscrowContract {
 // Trait implementation glue — delegates to the corresponding #[contractimpl] entry points.
 include!("traits_impl.rs");
 
-// #[cfg(test)] mod test_state_verification; // pre-existing breakage
+#[cfg(test)]
+mod test_state_verification;
 
 #[cfg(test)]
 mod test;
 // Pre-existing broken test modules — excluded until their referenced types/methods are implemented:
 // (test_analytics_monitoring and test_query_filters enabled by issue #1882 — see top of file)
-// #[cfg(test)] mod test_auto_refund_permissions;
+#[cfg(test)]
+mod test_auto_refund_permissions;
 // #[cfg(test)] mod test_blacklist_and_whitelist;
 #[cfg(test)]
 mod test_bounty_escrow;
 // #[cfg(test)] mod test_capability_tokens;
-// #[cfg(test)] mod test_deprecation;
+#[cfg(test)]
+mod test_deprecation;
 // #[cfg(test)] mod test_dispute_resolution;
 // #[cfg(test)] mod test_expiration_and_dispute;
-// #[cfg(test)] mod test_front_running_ordering;
+#[cfg(test)]
+mod test_front_running_ordering;
 // #[cfg(test)] mod test_granular_pause;
-// #[cfg(test)] mod test_invariants;
+#[cfg(test)]
+mod test_invariants;
 #[cfg(test)]
 mod test_lifecycle;
 #[cfg(test)]
@@ -2078,7 +2295,8 @@ mod update_metadata_boundary_tests {
     }
 }
 // #[cfg(test)] mod test_metadata_tagging; // pre-existing breakage: depends on query/metadata/analytics API never implemented (see #1975 CI)
-// #[cfg(test)] mod test_partial_payout_rounding;
+#[cfg(test)]
+mod test_partial_payout_rounding;
 // #[cfg(test)] mod test_participant_filter_mode;
 // #[cfg(test)] mod test_pause;
 #[cfg(test)]
@@ -3490,6 +3708,8 @@ mod test_admin_invalid_identifiers;
 #[cfg(test)]
 mod test_batch_lock_funds_soa_boundary;
 #[cfg(test)]
+mod test_batch_lock_funds_soa_lifecycle;
+#[cfg(test)]
 mod test_deadline_variants;
 #[cfg(test)]
 mod test_refund_boundaries;
@@ -3506,7 +3726,8 @@ mod test_e2e_upgrade_with_pause;
 // test_recurring_locks references unimplemented RecurringLock feature types
 // #[cfg(test)] mod test_recurring_locks;
 // #[cfg(test)] mod test_sandbox;
-// #[cfg(test)] mod test_serialization_compatibility;
+#[cfg(test)]
+mod test_serialization_compatibility;
 #[cfg(test)]
 mod test_status_transitions;
 // #[cfg(test)] mod test_upgrade_scenarios;
