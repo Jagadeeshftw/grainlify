@@ -637,7 +637,7 @@ pub fn lock_funds_anonymous(
     // Validation precedence (deterministic ordering):
     // 1. Reentrancy guard
     // 2. Contract initialized
-    // 3. Paused (operational state)
+    // 3. Paused / deprecated (operational state)
     // 4. Rate limiting
     // 5. Authorization
     // 6. Business logic (bounty uniqueness, amount policy)
@@ -651,10 +651,14 @@ pub fn lock_funds_anonymous(
         return Err(Error::NotInitialized);
     }
 
-    // 3. Operational state: paused
+    // 3. Operational state: paused / deprecated
     if crate::pause_freeze::check_paused(&env, symbol_short!("lock")) {
         reentrancy_guard::release(&env);
         return Err(Error::FundsPaused);
+    }
+    if crate::participant_filter::get_deprecation_state(&env).deprecated {
+        reentrancy_guard::release(&env);
+        return Err(Error::ContractDeprecated);
     }
 
     // 4. Rate limiting
