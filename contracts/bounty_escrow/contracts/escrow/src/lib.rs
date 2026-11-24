@@ -2070,7 +2070,8 @@ mod test;
 // #[cfg(test)] mod test_deprecation;
 // #[cfg(test)] mod test_dispute_resolution;
 // #[cfg(test)] mod test_expiration_and_dispute;
-// #[cfg(test)] mod test_front_running_ordering;
+#[cfg(test)]
+mod test_front_running_ordering;
 // #[cfg(test)] mod test_granular_pause;
 #[cfg(test)]
 mod test_invariants;
