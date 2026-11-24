@@ -1,10 +1,23 @@
 import {
   Address,
   Contract,
+  nativeToScVal,
   Keypair,
   nativeToScVal,
   xdr,
 } from "@stellar/stellar-sdk";
+import {
+  NetworkError,
+  ValidationError,
+  parseContractError,
+  ContractError,
+} from "./errors";
+import {
+  SorobanClientConfig,
+  SorobanContractClient,
+} from "./soroban-contract-client";
+
+export interface ProgramEscrowConfig extends SorobanClientConfig {}
 import { ValidationError } from "./errors";
 import { BaseClientConfig, BaseContractClient } from "./base-client";
 
@@ -103,6 +116,9 @@ const READ_ONLY_METHODS = new Set(["get_program_info", "get_remaining_balance"])
 /**
  * Client for interacting with the ProgramEscrow Soroban contract
  */
+export class ProgramEscrowClient extends SorobanContractClient {
+  constructor(config: ProgramEscrowConfig) {
+    super(config);
 export class ProgramEscrowClient extends BaseContractClient {
   constructor(config: ProgramEscrowConfig) {
     super(config);
@@ -296,6 +312,13 @@ export class ProgramEscrowClient extends BaseContractClient {
   async getRemainingBalance(): Promise<bigint> {
     try {
       const result = await this.invokeContract("get_remaining_balance", []);
+      if (
+        typeof result !== "string" &&
+        typeof result !== "number" &&
+        typeof result !== "bigint"
+      ) {
+        throw new Error("Soroban simulation returned an invalid balance");
+      }
       return BigInt(result);
     } catch (error) {
       throw this.handleError(error);
@@ -389,6 +412,30 @@ export class ProgramEscrowClient extends BaseContractClient {
     }
   }
 
+  private validateAddress(address: string, fieldName: string): void {
+    if (!address || address.trim().length === 0) {
+      throw new ValidationError(`${fieldName} cannot be empty`, fieldName);
+    }
+    // Basic Stellar address validation (starts with G and is 56 chars)
+    if (!address.match(/^G[A-Z0-9]{55}$/)) {
+      throw new ValidationError(
+        `${fieldName} is not a valid Stellar address`,
+        fieldName,
+      );
+    }
+  }
+
+  private validateContractAddress(address: string, fieldName: string): void {
+    if (!address || !/^C[A-Z0-9]{55}$/.test(address)) {
+      throw new ValidationError(
+        `${fieldName} is not a valid Stellar contract address`,
+        fieldName,
+      );
+    }
+  }
+
+  protected encodeArguments(method: string, args: unknown[], signer: Keypair): xdr.ScVal[] {
+    const values = args as any[];
   protected encodeArguments(
     method: string,
     args: any[],
@@ -402,26 +449,26 @@ export class ProgramEscrowClient extends BaseContractClient {
     switch (method) {
       case "init_program":
         return [
-          string(args[0]),
-          address(args[1]),
-          address(args[2]),
+          string(values[0]),
+          address(values[1]),
+          address(values[2]),
           address(signer.publicKey()),
-          args[3] > 0n ? i128(args[3]) : xdr.ScVal.scvVoid(),
+          values[3] > 0n ? i128(values[3]) : xdr.ScVal.scvVoid(),
           xdr.ScVal.scvVoid(),
         ];
       case "lock_program_funds":
-        return [i128(args[0])];
+        return [i128(values[0])];
       case "batch_payout":
         return [
-          vector(args[0].map((value: string) => address(value))),
-          vector(args[1].map((value: bigint) => i128(value))),
+          vector(values[0].map((value: string) => address(value))),
+          vector(values[1].map((value: bigint) => i128(value))),
         ];
       case "single_payout":
-        return [address(args[0]), i128(args[1])];
+        return [address(values[0]), i128(values[1])];
       case "publish_program":
-        return [string(args[0]), address(args[1])];
+        return [string(values[0]), address(values[1])];
       case "transfer":
-        return [address(args[0]), address(args[1]), i128(args[2])];
+        return [address(values[0]), address(values[1]), i128(values[2])];
       case "get_program_info":
       case "get_remaining_balance":
         return [];
@@ -429,13 +476,51 @@ export class ProgramEscrowClient extends BaseContractClient {
         return [xdr.ScVal.scvVoid()];
       case "create_program_release_schedule":
         return [
-          address(args[0]),
-          i128(args[1]),
-          nativeToScVal(BigInt(args[2]), { type: "u64" }),
+          address(values[0]),
+          i128(values[1]),
+          nativeToScVal(BigInt(values[2]), { type: "u64" }),
         ];
       default:
         throw new Error(`No Soroban argument encoder is defined for ${method}`);
     }
+  }
+
+  protected isReadOnlyMethod(method: string): boolean {
+    return method === "get_program_info" || method === "get_remaining_balance";
+  }
+
+  private handleError(error: any): Error {
+    if (
+      error instanceof ValidationError ||
+      error instanceof NetworkError ||
+      error instanceof ContractError
+    ) {
+      return error;
+    }
+
+    // Check if it's a network error first (before parsing as contract error)
+    if (
+      error.code === "ECONNREFUSED" ||
+      error.code === "ETIMEDOUT" ||
+      error.code === "ENOTFOUND"
+    ) {
+      return new NetworkError(
+        `Failed to connect to RPC server: ${this.config.rpcUrl}`,
+        undefined,
+        error,
+      );
+    }
+
+    if (error.response?.status) {
+      return new NetworkError(
+        `RPC request failed with status ${error.response.status}`,
+        error.response.status,
+        error,
+      );
+    }
+
+    // Try to parse as contract error
+    return parseContractError(error);
   }
 
   private parseProgramData(result: any): ProgramData {

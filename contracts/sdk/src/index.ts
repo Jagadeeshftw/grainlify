@@ -21,6 +21,17 @@ export type {
   ScheduleQueryFilter,
 } from "./program-escrow-client";
 
+export { GovernanceClient } from "./governance-client";
+export type {
+  GovernanceClientConfig,
+  GovernanceConfig,
+  LivenessStatus,
+  TimelockStatus,
+  UpgradeProposal,
+  VotingScheme,
+  WasmHash,
+} from "./governance-client";
+
 export {
   SDKError,
   ContractError,

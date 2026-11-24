@@ -15,6 +15,7 @@ npm install @grainlify/contracts-sdk
 - Network error detection and reporting
 - Input validation
 - Support for all ProgramEscrow contract functions
+- Governance and timelocked grainlify-core upgrades
 - Typed BountyEscrow client for the core bounty lifecycle
 
 ## Usage
@@ -111,6 +112,44 @@ try {
 }
 ```
 
+### Govern grainlify-core upgrades
+
+`GovernanceClient` can initialize governance, propose and approve upgrades,
+cancel or execute proposals, inspect proposal/timelock status, and commit and
+run version migrations. Upgrade hashes accept exactly 32-byte `Buffer` values
+or 64-character hexadecimal strings (optionally prefixed with `0x`).
+
+```typescript
+import { GovernanceClient } from '@grainlify/contracts-sdk';
+import { Keypair } from '@stellar/stellar-sdk';
+
+const governance = new GovernanceClient({
+  contractId: 'YOUR_GRAINLIFY_CORE_CONTRACT_ID',
+  rpcUrl: 'https://soroban-testnet.stellar.org',
+  networkPassphrase: 'Test SDF Network ; September 2015',
+  sourceKeypair: Keypair.fromSecret('YOUR_SECRET_KEY')
+});
+
+const proposalId = await governance.proposeUpgrade(
+  proposerAddress,
+  '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+  0n, // 0 means no proposal expiry
+  sourceKeypair
+);
+await governance.approveUpgrade(proposalId, signerAddress, sourceKeypair);
+
+const proposal = await governance.getUpgradeProposal(proposalId);
+const ready = await governance.canExecute(proposalId);
+if (proposal && ready) {
+  await governance.executeUpgrade(proposalId, sourceKeypair);
+}
+```
+
+`canExecute` checks that the proposal exists and is not cancelled, that the
+on-chain timelock has elapsed, and that the proposal has not reached its expiry
+ledger timestamp. Read methods use the configured `sourceKeypair` for Soroban
+simulation; alternatively, provide one as the final argument to each write
+method.
 ### Bounty Escrow
 
 ```typescript
