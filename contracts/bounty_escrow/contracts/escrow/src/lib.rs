@@ -271,6 +271,12 @@ pub enum Error {
     FeeRoutingLocked = 60,
     /// Returned when attempting to mutate an archived escrow
     EscrowArchived = 61,
+    /// No oracle is configured, or the configured oracle is disabled.
+    OracleNotConfigured = 62,
+    /// The caller does not match the configured oracle address.
+    CallerNotOracle = 63,
+    /// This bounty has already been refunded through the oracle path.
+    OracleRefundAlreadyProcessed = 64,
 }
 
 /// Minimum persistent-storage TTLs, measured in ledgers.
@@ -643,6 +649,12 @@ pub enum DataKey {
     TaggingTypeIndex(String),
     /// Ordered index of bounty_ids that carry a given tag.
     TaggingTagIndex(String),
+    /// Configured conditional-refund oracle address.
+    OracleAddress,
+    /// Whether oracle-triggered refunds are enabled.
+    OracleEnabled,
+    /// Marks a bounty refunded through oracle attestation.
+    OracleRefundUsed(u64),
 }
 
 #[contracttype]
@@ -1740,6 +1752,22 @@ impl BountyEscrowContract {
 
     pub fn refund(env: Env, bounty_id: u64) -> Result<(), Error> {
         crate::refund::refund(env, bounty_id)
+    }
+
+    pub fn set_oracle(env: Env, oracle: Address, enabled: bool) -> Result<(), Error> {
+        crate::refund::set_oracle(env, oracle, enabled)
+    }
+
+    pub fn get_oracle(env: Env) -> Option<Address> {
+        crate::refund::get_oracle(env)
+    }
+
+    pub fn oracle_refund(env: Env, bounty_id: u64, oracle: Address) -> Result<(), Error> {
+        crate::refund::oracle_refund(env, bounty_id, oracle)
+    }
+
+    pub fn auto_refund(env: Env, bounty_id: u64) -> Result<(), Error> {
+        crate::refund::auto_refund(env, bounty_id)
     }
 
     pub fn dry_run_refund(env: Env, bounty_id: u64) -> SimulationResult {
@@ -3527,6 +3555,9 @@ mod test_update_metadata_lifecycle;
 
 #[cfg(test)]
 mod test_refund_auth;
+
+#[cfg(test)]
+mod test_conditional_refund;
 
 // #[cfg(test)] mod test_update_metadata_boundaries; // pre-existing breakage (#2031): invalid assertions and missing escrow check
 

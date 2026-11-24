@@ -5,7 +5,7 @@ mod test_conditional_refund {
     };
     use soroban_sdk::{
         testutils::{Address as _, Ledger},
-        token, Address, Env,
+        token, Address, Env, IntoVal,
     };
 
     // ── Test harness ──────────────────────────────────────────────────────────
@@ -55,6 +55,17 @@ mod test_conditional_refund {
         client(s).lock_funds(&s.depositor, &bounty_id, &1_000, &deadline);
     }
 
+    fn refund_event(s: &Setup) -> crate::events::FundsRefunded {
+        for (_, topics, data) in s.env.events().all().iter() {
+            if topics.get(0).unwrap().into_val(&s.env)
+                == soroban_sdk::symbol_short!("f_ref").into_val(&s.env)
+            {
+                return data.into_val(&s.env);
+            }
+        }
+        panic!("refund event was not emitted");
+    }
+
     // ── Oracle-triggered refund tests ─────────────────────────────────────────
 
     #[test]
@@ -68,9 +79,8 @@ mod test_conditional_refund {
         assert_eq!(escrow.status, EscrowStatus::Refunded);
         assert_eq!(escrow.remaining_amount, 0);
         // Verify trigger type in history
-        let record = escrow.refund_history.get(0).unwrap();
         assert_eq!(
-            record.trigger_type,
+            refund_event(&s).trigger_type,
             crate::events::RefundTriggerType::OracleAttestation
         );
     }
@@ -156,9 +166,8 @@ mod test_conditional_refund {
         let escrow = client(&s).get_escrow_info(&1u64).unwrap();
         assert_eq!(escrow.status, EscrowStatus::Refunded);
         assert_eq!(escrow.remaining_amount, 0);
-        let record = escrow.refund_history.get(0).unwrap();
         assert_eq!(
-            record.trigger_type,
+            refund_event(&s).trigger_type,
             crate::events::RefundTriggerType::DeadlineExpired
         );
     }
@@ -252,9 +261,8 @@ mod test_conditional_refund {
         client(&s).auto_refund(&1u64);
 
         let escrow = client(&s).get_escrow_info(&1u64).unwrap();
-        let record = escrow.refund_history.get(0).unwrap();
         assert_eq!(
-            record.trigger_type,
+            refund_event(&s).trigger_type,
             crate::events::RefundTriggerType::DeadlineExpired
         );
     }
@@ -267,9 +275,8 @@ mod test_conditional_refund {
         client(&s).oracle_refund(&1u64, &s.oracle);
 
         let escrow = client(&s).get_escrow_info(&1u64).unwrap();
-        let record = escrow.refund_history.get(0).unwrap();
         assert_eq!(
-            record.trigger_type,
+            refund_event(&s).trigger_type,
             crate::events::RefundTriggerType::OracleAttestation
         );
     }
@@ -283,9 +290,8 @@ mod test_conditional_refund {
         client(&s).refund(&1u64);
 
         let escrow = client(&s).get_escrow_info(&1u64).unwrap();
-        let record = escrow.refund_history.get(0).unwrap();
         assert_eq!(
-            record.trigger_type,
+            refund_event(&s).trigger_type,
             crate::events::RefundTriggerType::AdminApproval
         );
     }

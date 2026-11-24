@@ -4,8 +4,8 @@ use crate::{
     events,
     events::{
         emit_funds_refunded, emit_refund_approval_consumed, emit_refund_approval_set,
-        CriticalOperationOutcome, FundsRefunded, RefundApprovalConsumed, RefundApprovalSet,
-        RefundTriggerType, EVENT_VERSION_V2,
+        CriticalOperationOutcome, FundsRefunded, OracleConfigUpdated, RefundApprovalConsumed,
+        RefundApprovalSet, RefundTriggerType, EVENT_VERSION_V2,
     },
     gas_budget, invariants, multitoken_invariants, reentrancy_guard, AnonymousEscrow, Capability,
     CapabilityAction, ClaimRecord, DataKey, Error, Escrow, EscrowStatus, RefundApproval,
@@ -558,6 +558,178 @@ pub fn refund(env: Env, bounty_id: u64) -> Result<(), Error> {
     // GUARD: release reentrancy lock
     reentrancy_guard::release(&env);
     Ok(())
+}
+
+/// Set or disable the address authorized to attest conditional refunds.
+pub fn set_oracle(env: Env, oracle: Address, enabled: bool) -> Result<(), Error> {
+    let admin: Address = env
+        .storage()
+        .instance()
+        .get(&DataKey::Admin)
+        .ok_or(Error::NotInitialized)?;
+    admin.require_auth();
+
+    env.storage()
+        .instance()
+        .set(&DataKey::OracleAddress, &oracle);
+    env.storage()
+        .instance()
+        .set(&DataKey::OracleEnabled, &enabled);
+    events::emit_oracle_config_updated(
+        &env,
+        OracleConfigUpdated {
+            version: EVENT_VERSION_V2,
+            oracle_address: oracle,
+            enabled,
+            admin,
+            timestamp: env.ledger().timestamp(),
+        },
+    );
+    Ok(())
+}
+
+/// Return the configured oracle address, even when oracle refunds are disabled.
+pub fn get_oracle(env: Env) -> Option<Address> {
+    env.storage().instance().get(&DataKey::OracleAddress)
+}
+
+fn execute_conditional_refund(
+    env: &Env,
+    bounty_id: u64,
+    trigger_type: RefundTriggerType,
+    require_deadline: bool,
+) -> Result<(), Error> {
+    if crate::pause_freeze::check_paused(env, symbol_short!("refund")) {
+        return Err(Error::FundsPaused);
+    }
+    if !env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
+        return Err(Error::BountyNotFound);
+    }
+
+    let mut escrow: Escrow = env
+        .storage()
+        .persistent()
+        .get(&DataKey::Escrow(bounty_id))
+        .unwrap();
+    crate::pause_freeze::ensure_escrow_not_frozen(env, bounty_id)?;
+    crate::pause_freeze::ensure_address_not_frozen(env, &escrow.depositor)?;
+
+    if escrow.status != EscrowStatus::Locked && escrow.status != EscrowStatus::PartiallyRefunded {
+        return Err(Error::FundsNotLocked);
+    }
+
+    let now = env.ledger().timestamp();
+    if require_deadline && now < escrow.deadline {
+        return Err(Error::DeadlineNotPassed);
+    }
+
+    if let Some(claim) = env
+        .storage()
+        .persistent()
+        .get::<_, ClaimRecord>(&DataKey::PendingClaim(bounty_id))
+    {
+        if !claim.claimed {
+            return Err(Error::ClaimPending);
+        }
+    }
+
+    let refund_amount = escrow.remaining_amount;
+    if refund_amount <= 0 {
+        return Err(Error::InvalidAmount);
+    }
+    let refund_to = escrow.depositor.clone();
+
+    invariants::assert_escrow(env, &escrow);
+    escrow.remaining_amount = 0;
+    escrow.status = EscrowStatus::Refunded;
+    escrow.refund_history.push_back(RefundRecord {
+        amount: refund_amount,
+        recipient: refund_to.clone(),
+        timestamp: now,
+        mode: RefundMode::Full,
+    });
+    env.storage()
+        .persistent()
+        .set(&DataKey::Escrow(bounty_id), &escrow);
+    crate::lock::renew_escrow_record(env, bounty_id, true);
+
+    let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
+    token::Client::new(env, &token_addr).transfer(
+        &env.current_contract_address(),
+        &refund_to,
+        &refund_amount,
+    );
+
+    emit_funds_refunded(
+        env,
+        FundsRefunded {
+            version: EVENT_VERSION_V2,
+            bounty_id,
+            amount: refund_amount,
+            refund_to: refund_to.clone(),
+            timestamp: now,
+            trigger_type,
+            correlation_id: None,
+        },
+    );
+    crate::capability::record_receipt(
+        env,
+        CriticalOperationOutcome::Refunded,
+        bounty_id,
+        refund_amount,
+        refund_to,
+    );
+    multitoken_invariants::assert_after_disbursement(env);
+    Ok(())
+}
+
+/// Refund a locked escrow when the configured oracle authenticates its attestation.
+pub fn oracle_refund(env: Env, bounty_id: u64, oracle: Address) -> Result<(), Error> {
+    reentrancy_guard::acquire(&env);
+    let result = (|| {
+        let configured_oracle: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::OracleAddress)
+            .ok_or(Error::OracleNotConfigured)?;
+        let enabled: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::OracleEnabled)
+            .unwrap_or(false);
+        if !enabled {
+            return Err(Error::OracleNotConfigured);
+        }
+        if oracle != configured_oracle {
+            return Err(Error::CallerNotOracle);
+        }
+        oracle.require_auth();
+
+        if env
+            .storage()
+            .persistent()
+            .has(&DataKey::OracleRefundUsed(bounty_id))
+        {
+            return Err(Error::OracleRefundAlreadyProcessed);
+        }
+
+        execute_conditional_refund(&env, bounty_id, RefundTriggerType::OracleAttestation, false)?;
+        env.storage()
+            .persistent()
+            .set(&DataKey::OracleRefundUsed(bounty_id), &true);
+        Ok(())
+    })();
+    reentrancy_guard::release(&env);
+    result
+}
+
+/// Permissionlessly refund a locked escrow once its deadline has elapsed.
+pub fn auto_refund(env: Env, bounty_id: u64) -> Result<(), Error> {
+    reentrancy_guard::acquire(&env);
+    let result =
+        execute_conditional_refund(&env, bounty_id, RefundTriggerType::DeadlineExpired, true);
+    reentrancy_guard::release(&env);
+    result
 }
 
 /// Simulate refund operation without state changes or token transfers.
