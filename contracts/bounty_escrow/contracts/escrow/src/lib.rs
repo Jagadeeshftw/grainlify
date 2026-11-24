@@ -53,6 +53,9 @@ mod test_boundary_edge_cases;
 // #[cfg(test)] mod test_multi_region_treasury;
 #[cfg(test)]
 mod test_rbac;
+#[cfg(test)]
+mod test_multi_region_treasury;
+// #[cfg(test)] mod test_rbac;
 // Analytics & monitoring suite – enabled by issue #1882 (all referenced
 // functions are now implemented).
 // #[cfg(test)] mod test_analytics_monitoring; // pre-existing breakage: depends on query/metadata/analytics API never implemented (see #1975 CI)
@@ -2128,7 +2131,8 @@ mod test;
 #[cfg(test)]
 mod test_auto_refund_permissions;
 // #[cfg(test)] mod test_blacklist_and_whitelist;
-// #[cfg(test)] mod test_bounty_escrow;
+#[cfg(test)]
+mod test_bounty_escrow;
 // #[cfg(test)] mod test_capability_tokens;
 #[cfg(test)]
 mod test_deprecation;
