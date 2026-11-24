@@ -17,6 +17,7 @@ npm install @grainlify/contracts-sdk
 - Support for all ProgramEscrow contract functions
 - Governance and timelocked grainlify-core upgrades
 - Typed BountyEscrow client for the core bounty lifecycle
+- Read-only simulation clients (`ViewFacadeClient` and `EscrowViewFacadeClient`) requiring no signing keypair
 
 ## Usage
 
@@ -231,6 +232,80 @@ await bountyClient.setPaused(
   { lock: true, refund: true, reason: 'maintenance' },
   adminKeypair,
 );
+### Read-Only View Facade Client (`ViewFacadeClient`)
+
+`ViewFacadeClient` queries the `view-facade` contract using Soroban RPC simulation only. No signing keypair is required; a throwaway source account is used automatically (configurable via `sourceAccount`).
+
+```typescript
+import { ViewFacadeClient, NotFoundError, NetworkError } from '@grainlify/contracts-sdk';
+
+const viewFacade = new ViewFacadeClient({
+  contractId: 'CVIEW_FACADE_CONTRACT_ID...',
+  rpcUrl: 'https://soroban-testnet.stellar.org',
+  networkPassphrase: 'Test SDF Network ; September 2015',
+  // Optional: override the throwaway simulation source account
+  // sourceAccount: 'G...'
+});
+
+// Paginate all registered contracts
+const allContracts = await viewFacade.fetchAllContracts(50);
+
+// Or iterate lazily page-by-page
+for await (const entry of viewFacade.iterateContracts(25)) {
+  console.log(entry.kind, entry.address, entry.version);
+}
+
+// Look up a single registered contract
+const contract = await viewFacade.getContract('CESCROW_CONTRACT_ID...');
+
+// Cached cross-contract program & fee queries
+const [programData, feeConfig] = await viewFacade.queryProgramBalanceAndFee(
+  'CPROGRAM_ESCROW_ID...',
+  'grant-2026'
+);
+```
+
+### Read-Only Escrow View Facade Client (`EscrowViewFacadeClient`)
+
+`EscrowViewFacadeClient` provides typed, simulation-only reads against `escrow-view-facade` for wallets and dashboards.
+
+```typescript
+import { EscrowViewFacadeClient, NotFoundError, NetworkError } from '@grainlify/contracts-sdk';
+
+const escrowView = new EscrowViewFacadeClient({
+  contractId: 'CESCROW_VIEW_FACADE_CONTRACT_ID...',
+  rpcUrl: 'https://soroban-testnet.stellar.org',
+  networkPassphrase: 'Test SDF Network ; September 2015',
+});
+
+// Single escrow summary (returns null if not found)
+const summary = await escrowView.getEscrowSummary('CBOUNTY_ESCROW_ID...', 42n);
+
+// Or throw NotFoundError when missing (distinguished from NetworkError on RPC failure)
+try {
+  const required = await escrowView.getEscrowSummaryOrThrow('CBOUNTY_ESCROW_ID...', 42n);
+  console.log(required.amount, required.remaining_amount, required.status);
+} catch (error) {
+  if (error instanceof NotFoundError) {
+    console.error('Escrow does not exist');
+  } else if (error instanceof NetworkError) {
+    console.error('RPC request failed:', error.message);
+  }
+}
+
+// Batch-paginated summaries
+const summaries = await escrowView.fetchAllEscrowSummaries(
+  'CBOUNTY_ESCROW_ID...',
+  [1n, 2n, 3n, 4n],
+  50
+);
+
+// User portfolio (as depositor & beneficiary)
+const portfolio = await escrowView.getUserPortfolio('CBOUNTY_ESCROW_ID...', 'GUSER...');
+
+// Program delegates & recipient payout history
+const delegates = await escrowView.queryAllDelegates('CPROGRAM_ESCROW_ID...', 'grant-2026');
+const history = await escrowView.queryRecipientHistory('CPROGRAM_ESCROW_ID...', 'grant-2026', 'GUSER...');
 ```
 
 ## Error Handling
