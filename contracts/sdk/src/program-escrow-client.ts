@@ -3,6 +3,7 @@ import {
   Contract,
   nativeToScVal,
   Keypair,
+  nativeToScVal,
   xdr,
 } from "@stellar/stellar-sdk";
 import {
@@ -17,6 +18,10 @@ import {
 } from "./soroban-contract-client";
 
 export interface ProgramEscrowConfig extends SorobanClientConfig {}
+import { ValidationError } from "./errors";
+import { BaseClientConfig, BaseContractClient } from "./base-client";
+
+export interface ProgramEscrowConfig extends BaseClientConfig {}
 
 export interface ProgramData {
   program_id: string;
@@ -106,12 +111,25 @@ export async function fetchAllPages<T>(
   return all;
 }
 
+const READ_ONLY_METHODS = new Set(["get_program_info", "get_remaining_balance"]);
+
 /**
  * Client for interacting with the ProgramEscrow Soroban contract
  */
 export class ProgramEscrowClient extends SorobanContractClient {
   constructor(config: ProgramEscrowConfig) {
     super(config);
+export class ProgramEscrowClient extends BaseContractClient {
+  constructor(config: ProgramEscrowConfig) {
+    super(config);
+  }
+
+  protected get contractErrorScope(): string {
+    return "program_escrow";
+  }
+
+  protected isReadOnlyMethod(method: string): boolean {
+    return READ_ONLY_METHODS.has(method);
   }
 
   /**
@@ -418,6 +436,11 @@ export class ProgramEscrowClient extends SorobanContractClient {
 
   protected encodeArguments(method: string, args: unknown[], signer: Keypair): xdr.ScVal[] {
     const values = args as any[];
+  protected encodeArguments(
+    method: string,
+    args: any[],
+    signer: Keypair,
+  ): xdr.ScVal[] {
     const address = (value: string) => Address.fromString(value).toScVal();
     const i128 = (value: bigint) => nativeToScVal(value, { type: "i128" });
     const string = (value: string) => nativeToScVal(value, { type: "string" });
@@ -506,15 +529,5 @@ export class ProgramEscrowClient extends SorobanContractClient {
 
   private parseReleaseSchedule(result: any): ProgramReleaseSchedule {
     return this.toPlainObject(result) as ProgramReleaseSchedule;
-  }
-
-  private toPlainObject(value: any): any {
-    if (value instanceof Map) {
-      return Object.fromEntries(
-        [...value.entries()].map(([key, item]) => [String(key), this.toPlainObject(item)]),
-      );
-    }
-    if (Array.isArray(value)) return value.map((item) => this.toPlainObject(item));
-    return value;
   }
 }
