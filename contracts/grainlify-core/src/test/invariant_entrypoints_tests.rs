@@ -107,7 +107,7 @@ fn test_init_admin_success() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, admin) = setup_contract(&env);
+    let (client, _admin) = setup_contract(&env);
 
     // Verify admin is set
     let report = client.check_invariants();
