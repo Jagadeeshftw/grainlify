@@ -128,7 +128,10 @@ fn test_issue_and_use_release_capability() {
         &setup.delegate,
         &capability_id,
     );
-    assert_eq!(too_large.unwrap_err().unwrap(), Error::CapAmountExceeded);
+    assert_eq!(
+        too_large.unwrap_err().unwrap(),
+        Error::CapabilityAmountExceeded
+    );
 }
 
 #[test]
@@ -234,7 +237,7 @@ fn test_capability_cannot_exceed_owner_authority() {
     );
     assert_eq!(
         over_limit_issue.unwrap_err().unwrap(),
-        Error::CapExceedsAuthority
+        Error::CapabilityExceedsAuthority
     );
 
     setup.client.set_claim_window(&300);

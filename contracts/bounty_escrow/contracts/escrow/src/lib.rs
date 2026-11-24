@@ -3713,7 +3713,8 @@ mod test_batch_lock_funds_soa_lifecycle;
 mod test_deadline_variants;
 #[cfg(test)]
 mod test_refund_boundaries;
-// #[cfg(test)] mod test_dry_run_simulation;
+#[cfg(test)]
+mod test_dry_run_simulation;
 #[cfg(test)]
 mod test_e2e_upgrade_with_pause;
 // #[cfg(test)] mod test_escrow_expiry;
@@ -3730,7 +3731,10 @@ mod test_e2e_upgrade_with_pause;
 mod test_serialization_compatibility;
 #[cfg(test)]
 mod test_status_transitions;
-// #[cfg(test)] mod test_upgrade_scenarios;
+#[cfg(test)]
+mod test_upgrade_scenarios;
+#[cfg(test)]
+mod test_capability_tokens;
 
 /// Privacy-leak regression tests for anonymous-lock query paths (issue #1466).
 #[cfg(test)]

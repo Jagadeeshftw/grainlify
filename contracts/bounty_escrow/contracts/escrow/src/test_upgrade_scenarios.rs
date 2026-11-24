@@ -8,7 +8,7 @@
 
 use crate::{
     upgrade_safety, AnonymousEscrow, BountyEscrowContract, BountyEscrowContractClient, DataKey,
-    EscrowStatus, ESCROW_SCHEMA_VERSION,
+    EscrowStatus,
 };
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
@@ -455,8 +455,6 @@ fn test_storage_layout_fails_for_dual_variant_collision() {
         status: EscrowStatus::Locked,
         deadline,
         refund_history: vec![&env],
-        creation_timestamp: env.ledger().timestamp(),
-        expiry: 0,
         archived: false,
         archived_at: None,
     };
