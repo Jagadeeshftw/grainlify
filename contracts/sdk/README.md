@@ -15,6 +15,8 @@ npm install @grainlify/contracts-sdk
 - Network error detection and reporting
 - Input validation
 - Support for all ProgramEscrow contract functions
+- Governance and timelocked grainlify-core upgrades
+- Typed BountyEscrow client for the core bounty lifecycle
 
 ## Usage
 
@@ -108,6 +110,127 @@ try {
 } catch (error) {
   // Handle errors
 }
+```
+
+### Govern grainlify-core upgrades
+
+`GovernanceClient` can initialize governance, propose and approve upgrades,
+cancel or execute proposals, inspect proposal/timelock status, and commit and
+run version migrations. Upgrade hashes accept exactly 32-byte `Buffer` values
+or 64-character hexadecimal strings (optionally prefixed with `0x`).
+
+```typescript
+import { GovernanceClient } from '@grainlify/contracts-sdk';
+import { Keypair } from '@stellar/stellar-sdk';
+
+const governance = new GovernanceClient({
+  contractId: 'YOUR_GRAINLIFY_CORE_CONTRACT_ID',
+  rpcUrl: 'https://soroban-testnet.stellar.org',
+  networkPassphrase: 'Test SDF Network ; September 2015',
+  sourceKeypair: Keypair.fromSecret('YOUR_SECRET_KEY')
+});
+
+const proposalId = await governance.proposeUpgrade(
+  proposerAddress,
+  '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+  0n, // 0 means no proposal expiry
+  sourceKeypair
+);
+await governance.approveUpgrade(proposalId, signerAddress, sourceKeypair);
+
+const proposal = await governance.getUpgradeProposal(proposalId);
+const ready = await governance.canExecute(proposalId);
+if (proposal && ready) {
+  await governance.executeUpgrade(proposalId, sourceKeypair);
+}
+```
+
+`canExecute` checks that the proposal exists and is not cancelled, that the
+on-chain timelock has elapsed, and that the proposal has not reached its expiry
+ledger timestamp. Read methods use the configured `sourceKeypair` for Soroban
+simulation; alternatively, provide one as the final argument to each write
+method.
+### Bounty Escrow
+
+```typescript
+import { BountyEscrowClient } from '@grainlify/contracts-sdk';
+
+const bountyClient = new BountyEscrowClient({
+  contractId: 'YOUR_BOUNTY_ESCROW_CONTRACT_ID',
+  rpcUrl: 'https://soroban-testnet.stellar.org',
+  networkPassphrase: 'Test SDF Network ; September 2015',
+});
+```
+
+#### Lock funds
+
+```typescript
+await bountyClient.lockFunds(
+  depositorAddress, // G... depositor
+  42n, // bounty id (u64)
+  10_000_000n, // amount in token base units (i128, must be > 0)
+  1_800_000_000n, // refund deadline (u64, unix seconds)
+  sourceKeypair,
+);
+```
+
+#### Batch lock funds
+
+```typescript
+const created = await bountyClient.batchLockFunds(
+  [
+    {
+      bounty_id: 43n,
+      depositor: depositorAddress,
+      amount: 5_000_000n,
+      deadline: 1_800_000_000n,
+    },
+    {
+      bounty_id: 44n,
+      depositor: depositorAddress,
+      amount: 7_500_000n,
+      deadline: 1_800_000_000n,
+    },
+  ],
+  sourceKeypair,
+);
+console.log('Escrows created:', created);
+```
+
+#### Release and refund
+
+```typescript
+// Release the full remaining balance to a contributor
+await bountyClient.releaseFunds(42n, contributorAddress, sourceKeypair);
+
+// Or release part of it
+await bountyClient.partialRelease(42n, contributorAddress, 2_500_000n, sourceKeypair);
+
+// Refund the depositor
+await bountyClient.refund(42n, sourceKeypair);
+
+// Admin-approved refund before the deadline
+await bountyClient.approveRefund(42n, 10_000_000n, depositorAddress, 'Full', adminKeypair);
+```
+
+#### Read escrow state (simulation only, no transaction submitted)
+
+```typescript
+const escrow = await bountyClient.getEscrowInfo(42n);
+console.log(escrow.status, escrow.remaining_amount);
+
+const balance = await bountyClient.getBalance();
+const eligibility = await bountyClient.getRefundEligibility(42n);
+const flags = await bountyClient.getPauseFlags();
+```
+
+#### Pause operations
+
+```typescript
+await bountyClient.setPaused(
+  { lock: true, refund: true, reason: 'maintenance' },
+  adminKeypair,
+);
 ```
 
 ## Error Handling

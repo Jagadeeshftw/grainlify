@@ -101,7 +101,8 @@ fn test_metadata_rejects_oversized_bounty_type() {
     let issue_id = 67890u64;
     let bounty_type = String::from_str(&env, &"a".repeat(MAX_TAG_LEN + 1));
 
-    let stored = client.update_metadata(&admin, &bounty_id, &repo_id, &issue_id, &bounty_type, &None);
+    let stored =
+        client.update_metadata(&admin, &bounty_id, &repo_id, &issue_id, &bounty_type, &None);
     assert_eq!(stored.bounty_type, bounty_type);
 }
 
@@ -114,7 +115,8 @@ fn test_metadata_rejects_empty_bounty_type() {
     let issue_id = 444u64;
     let bounty_type = String::from_str(&env, "");
 
-    let stored = client.update_metadata(&admin, &bounty_id, &repo_id, &issue_id, &bounty_type, &None);
+    let stored =
+        client.update_metadata(&admin, &bounty_id, &repo_id, &issue_id, &bounty_type, &None);
     assert_eq!(stored.bounty_type, bounty_type);
 }
 
