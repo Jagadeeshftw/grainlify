@@ -704,6 +704,46 @@ pub struct AggregateStats {
     pub count_refunded: u32,
 }
 
+/// Cursor returned by a partial `verify_state` audit.
+///
+/// Pass the complete value back unchanged to continue the audit.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerificationCursor {
+    pub offset: u32,
+    pub sum_remaining: i128,
+    pub per_escrow_failures: u32,
+    pub orphaned_index_entries: u32,
+    pub refund_inconsistencies: u32,
+}
+
+/// Read-only result for one bounded page of the stored escrow invariant audit.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerificationReport {
+    /// False if a violation has been observed in this page or an earlier page.
+    pub healthy: bool,
+    /// False until the final escrow index entry has been checked.
+    pub complete: bool,
+    /// Cursor for the next page, or `None` when the audit is complete.
+    pub next_cursor: Option<VerificationCursor>,
+    /// Number of index entries checked by this page.
+    pub page_size: u32,
+    /// Total number of escrow IDs in the index.
+    pub escrow_count: u32,
+    /// Sum of active escrow remaining amounts checked through this page.
+    pub sum_remaining: i128,
+    /// Current token balance held by the contract.
+    pub token_balance: i128,
+    /// Set on the final page; compares active liabilities against token balance.
+    pub balance_matches: Option<bool>,
+    pub per_escrow_failures: u32,
+    pub orphaned_index_entries: u32,
+    pub refund_inconsistencies: u32,
+    /// Violations discovered on this page.
+    pub violations: Vec<String>,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PauseStateChanged {
@@ -1457,6 +1497,28 @@ impl BountyEscrowContract {
         crate::analytics::get_aggregate_stats(env)
     }
 
+    /// Audit stored escrow invariants in bounded pages.
+    ///
+    /// Each call inspects at most 20 escrow IDs. Start with `None`, then pass
+    /// each returned `next_cursor` into the next call until it is `None`. The
+    /// final page reports whether accumulated active escrow liabilities equal
+    /// the contract's token balance. This method only reads storage and token
+    /// state. Callers must pass cursors through unchanged; cursor state carries
+    /// totals from earlier pages. For a consistent whole-state result, avoid
+    /// running the audit while escrow state is changing between page calls.
+    pub fn verify_state(env: Env, cursor: Option<VerificationCursor>) -> VerificationReport {
+        crate::multitoken_invariants::verify_state_page(&env, cursor)
+    }
+
+    /// Return the number of escrow IDs recorded in the global index.
+    pub fn get_escrow_count(env: Env) -> u32 {
+        env.storage()
+            .persistent()
+            .get::<DataKey, Vec<u64>>(&DataKey::EscrowIndex)
+            .unwrap_or(Vec::new(&env))
+            .len()
+    }
+
     pub fn issue_capability(
         env: Env,
         owner: Address,
@@ -1965,6 +2027,20 @@ impl BountyEscrowContract {
     }
 }
 
+impl BountyEscrowContract {
+    /// Internal storage writer shared by state-changing paths and test fixtures.
+    pub(crate) fn write_escrow(
+        env: &Env,
+        bounty_id: u64,
+        escrow: &Escrow,
+    ) -> Result<(), Error> {
+        env.storage()
+            .persistent()
+            .set(&DataKey::Escrow(bounty_id), escrow);
+        Ok(())
+    }
+}
+
 // Test-only shims moved out of #[contractimpl] to avoid macro expansion issues.
 #[cfg(test)]
 impl BountyEscrowContract {
@@ -1980,7 +2056,8 @@ impl BountyEscrowContract {
 // Trait implementation glue — delegates to the corresponding #[contractimpl] entry points.
 include!("traits_impl.rs");
 
-// #[cfg(test)] mod test_state_verification; // pre-existing breakage
+#[cfg(test)]
+mod test_state_verification;
 
 #[cfg(test)]
 mod test;
@@ -1995,7 +2072,8 @@ mod test;
 // #[cfg(test)] mod test_expiration_and_dispute;
 // #[cfg(test)] mod test_front_running_ordering;
 // #[cfg(test)] mod test_granular_pause;
-// #[cfg(test)] mod test_invariants;
+#[cfg(test)]
+mod test_invariants;
 #[cfg(test)]
 mod test_lifecycle;
 #[cfg(test)]

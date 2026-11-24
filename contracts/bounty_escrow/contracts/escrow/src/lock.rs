@@ -146,9 +146,7 @@ pub(crate) fn lock_funds_logic(
     invariants::assert_escrow(&env, &escrow);
 
     // EFFECTS: Update state and indexes before interactions
-    env.storage()
-        .persistent()
-        .set(&DataKey::Escrow(bounty_id), &escrow);
+    crate::BountyEscrowContract::write_escrow(&env, bounty_id, &escrow)?;
     renew_escrow_record(&env, bounty_id, false);
 
     // Update indexes
@@ -334,9 +332,7 @@ pub(crate) fn publish_logic(env: Env, bounty_id: u64, publisher: Address) -> Res
 
     // Transition from Draft to Locked
     escrow.status = EscrowStatus::Locked;
-    env.storage()
-        .persistent()
-        .set(&DataKey::Escrow(bounty_id), &escrow);
+    crate::BountyEscrowContract::write_escrow(&env, bounty_id, &escrow)?;
     renew_escrow_record(&env, bounty_id, false);
 
     // Emit EscrowPublished event
@@ -522,9 +518,7 @@ pub fn archive_escrow(env: Env, bounty_id: u64) -> Result<(), Error> {
     escrow.archived = true;
     escrow.archived_at = Some(env.ledger().timestamp());
 
-    env.storage()
-        .persistent()
-        .set(&DataKey::Escrow(bounty_id), &escrow);
+    crate::BountyEscrowContract::write_escrow(&env, bounty_id, &escrow)?;
 
     // Also check anon escrow
     if let Some(mut anon) = env
