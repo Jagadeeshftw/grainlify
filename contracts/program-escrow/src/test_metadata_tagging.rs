@@ -1,5 +1,6 @@
 extern crate std;
 
+use crate::errors::ContractError;
 use crate::*;
 use soroban_sdk::{testutils::Address as _, token, Address, Env, String, Vec as SdkVec};
 
@@ -552,6 +553,9 @@ fn test_compress_round_trip_through_update() {
         ],
     );
 
+    // Publish first — updates are rejected on Draft programs.
+    s.escrow.publish_program(&program_id, &s.backend);
+
     s.escrow
         .update_program_metadata_by(&program_id, &s.backend, &updated);
 
@@ -591,8 +595,12 @@ fn test_legacy_metadata_still_readable() {
     };
 
     // Write directly under the legacy DataKey::Metadata (simulating old contract).
+    // Storage writes must happen from inside the contract's context.
     let key = DataKey::Metadata(program_id.clone());
-    s.env.storage().instance().set(&key, &metadata);
+    let contract_id = s.escrow.address.clone();
+    s.env.as_contract(&contract_id, || {
+        s.env.storage().instance().set(&key, &metadata);
+    });
 
     let retrieved = s.escrow.get_program_metadata(&program_id);
     assert!(retrieved.is_some());
@@ -609,7 +617,8 @@ fn test_compress_long_custom_key() {
     let s = Setup::new();
     let program_id = String::from_str(&s.env, "LongKey");
 
-    let long_key = "x".repeat(200);
+    // Longest key allowed by the documented limit (MAX_CUSTOM_FIELD_KEY_LEN = 64).
+    let long_key = "x".repeat(64);
     let metadata = make_metadata_with_fields(&s.env, &[(&long_key, "value")]);
 
     s.escrow.init_program_with_metadata(
@@ -751,7 +760,7 @@ fn test_init_accept_max_program_metadata_custom_fields() {
 }
 
 #[test]
-#[should_panic(expected = "Metadata custom fields exceed limit")]
+#[should_panic(expected = "Error(Contract, #104)")] // ContractError::MetadataUpdateFailed
 fn test_init_reject_over_soft_limit_custom_fields() {
     let s = Setup::new();
     let program_id = String::from_str(&s.env, "InitOverSoft");
@@ -789,7 +798,7 @@ fn test_update_accept_max_program_metadata_custom_fields() {
 }
 
 #[test]
-#[should_panic(expected = "Metadata custom fields exceed limit")]
+#[should_panic(expected = "Error(Contract, #104)")] // ContractError::MetadataUpdateFailed
 fn test_update_reject_over_soft_limit_custom_fields() {
     let s = Setup::new();
     let program_id = String::from_str(&s.env, "UpdOverSoft");
@@ -826,7 +835,7 @@ fn test_init_accept_max_key_len() {
 }
 
 #[test]
-#[should_panic(expected = "CustomFieldKeyTooLong")]
+#[should_panic(expected = "Error(Contract, #104)")] // ContractError::MetadataUpdateFailed
 fn test_init_reject_over_key_len() {
     let s = Setup::new();
     let program_id = String::from_str(&s.env, "InitOverKeyLen");
@@ -861,7 +870,7 @@ fn test_update_accept_max_key_len() {
 }
 
 #[test]
-#[should_panic(expected = "CustomFieldKeyTooLong")]
+#[should_panic(expected = "Error(Contract, #104)")] // ContractError::MetadataUpdateFailed
 fn test_update_reject_over_key_len() {
     let s = Setup::new();
     let program_id = String::from_str(&s.env, "UpdOverKeyLen");
@@ -898,7 +907,7 @@ fn test_init_accept_max_value_len() {
 }
 
 #[test]
-#[should_panic(expected = "CustomFieldValueTooLong")]
+#[should_panic(expected = "Error(Contract, #104)")] // ContractError::MetadataUpdateFailed
 fn test_init_reject_over_value_len() {
     let s = Setup::new();
     let program_id = String::from_str(&s.env, "InitOverValLen");
@@ -933,7 +942,7 @@ fn test_update_accept_max_value_len() {
 }
 
 #[test]
-#[should_panic(expected = "CustomFieldValueTooLong")]
+#[should_panic(expected = "Error(Contract, #104)")] // ContractError::MetadataUpdateFailed
 fn test_update_reject_over_value_len() {
     let s = Setup::new();
     let program_id = String::from_str(&s.env, "UpdOverValLen");
@@ -956,45 +965,51 @@ fn test_update_reject_over_value_len() {
 fn test_shared_validation_accepts_max_custom_fields() {
     let env = Env::default();
     let metadata = metadata_with_n_fields(&env, MAX_CUSTOM_FIELDS);
-    validate_metadata_custom_fields(&metadata);
+    validate_metadata_custom_fields(&metadata).unwrap();
 }
 
 #[test]
-#[should_panic(expected = "CustomFieldsLimitExceeded")]
 fn test_shared_validation_rejects_over_max_custom_fields() {
     let env = Env::default();
     let metadata = metadata_with_n_fields(&env, MAX_CUSTOM_FIELDS + 1);
-    validate_metadata_custom_fields(&metadata);
+    assert_eq!(
+        validate_metadata_custom_fields(&metadata),
+        Err(ContractError::MetadataUpdateFailed)
+    );
 }
 
 #[test]
 fn test_shared_validation_accepts_max_key_len() {
     let env = Env::default();
     let metadata = metadata_with_key_value_len(&env, MAX_CUSTOM_FIELD_KEY_LEN, 1);
-    validate_metadata_custom_fields(&metadata);
+    validate_metadata_custom_fields(&metadata).unwrap();
 }
 
 #[test]
-#[should_panic(expected = "CustomFieldKeyTooLong")]
 fn test_shared_validation_rejects_over_key_len() {
     let env = Env::default();
     let metadata = metadata_with_key_value_len(&env, MAX_CUSTOM_FIELD_KEY_LEN + 1, 1);
-    validate_metadata_custom_fields(&metadata);
+    assert_eq!(
+        validate_metadata_custom_fields(&metadata),
+        Err(ContractError::MetadataUpdateFailed)
+    );
 }
 
 #[test]
 fn test_shared_validation_accepts_max_value_len() {
     let env = Env::default();
     let metadata = metadata_with_key_value_len(&env, 1, MAX_CUSTOM_FIELD_VALUE_LEN);
-    validate_metadata_custom_fields(&metadata);
+    validate_metadata_custom_fields(&metadata).unwrap();
 }
 
 #[test]
-#[should_panic(expected = "CustomFieldValueTooLong")]
 fn test_shared_validation_rejects_over_value_len() {
     let env = Env::default();
     let metadata = metadata_with_key_value_len(&env, 1, MAX_CUSTOM_FIELD_VALUE_LEN + 1);
-    validate_metadata_custom_fields(&metadata);
+    assert_eq!(
+        validate_metadata_custom_fields(&metadata),
+        Err(ContractError::MetadataUpdateFailed)
+    );
 }
 
 // ============================================================================
@@ -1064,9 +1079,9 @@ fn test_none_metadata_accepted_on_init() {
         &Some(s.organizer.clone()),
         &None,
     );
+    // No metadata was stored, so the query returns None.
     let retrieved = s.escrow.get_program_metadata(&program_id);
-    assert!(retrieved.is_some());
-    assert_eq!(retrieved.unwrap().custom_fields.len(), 0);
+    assert!(retrieved.is_none());
 }
 
 // ── Aggregate size boundary ────────────────────────────────────────────────
@@ -1108,12 +1123,15 @@ fn test_shared_validation_accepts_at_aggregate_limit() {
     let env = Env::default();
     // 10 fields × (64 + 256) = 3200 bytes — well within 10 240.
     let metadata = metadata_with_aggregate_bytes(&env, 10, 64, 256);
-    validate_metadata_custom_fields(&metadata);
+    validate_metadata_custom_fields(&metadata).unwrap();
 }
 
-/// Exceeding the aggregate limit is rejected.
+/// Oversized field values are rejected.
+///
+/// The metadata here would exceed `MAX_METADATA_AGGREGATE_BYTES` too, but the
+/// per-field value cap (`MAX_CUSTOM_FIELD_VALUE_LEN` = 256) is enforced first;
+/// both surface as `ContractError::MetadataUpdateFailed`.
 #[test]
-#[should_panic(expected = "MetadataAggregateSizeExceeded")]
 fn test_shared_validation_rejects_over_aggregate_limit() {
     let env = Env::default();
     // 33 fields × (64 + 256) = 10 560 bytes > 10 240.
@@ -1138,20 +1156,30 @@ fn test_shared_validation_rejects_over_aggregate_limit() {
         end_date: None,
         custom_fields,
     };
-    validate_metadata_custom_fields(&metadata);
+    assert_eq!(
+        validate_metadata_custom_fields(&metadata),
+        Err(ContractError::MetadataUpdateFailed)
+    );
 }
 
-/// Exactly at aggregate limit (20 fields × 512 bytes = 10 240).
+/// Max legal aggregate (20 fields × 320 bytes = 6 400) is accepted.
+///
+/// Note: `MAX_METADATA_AGGREGATE_BYTES` (10 240) is unreachable while
+/// `MAX_CUSTOM_FIELDS` (20) and the per-field byte caps (64 + 256 = 320) hold —
+/// the ceiling is defense-in-depth, so this test drives the true maximum
+/// instead.
 #[test]
-fn test_shared_validation_accepts_exactly_at_aggregate_limit() {
+fn test_shared_validation_accepts_max_legal_aggregate() {
     let env = Env::default();
-    // 20 fields × (1 + 511) = 10 240 bytes = MAX_METADATA_AGGREGATE_BYTES.
+    // 20 fields × (64 + 256) = 6 400 bytes, under MAX_METADATA_AGGREGATE_BYTES.
     let mut custom_fields: Vec<ProgramMetadataField> = Vec::new(&env);
-    let val_buf = [b'v'; 511];
+    let key_buf = [b'k'; 64];
+    let val_buf = [b'v'; 256];
+    let key_str = core::str::from_utf8(&key_buf[..]).unwrap();
     let val_str = core::str::from_utf8(&val_buf[..]).unwrap();
     for _ in 0..20 {
         custom_fields.push_back(ProgramMetadataField {
-            key: String::from_str(&env, "k"),
+            key: String::from_str(&env, key_str),
             value: String::from_str(&env, val_str),
         });
     }
@@ -1164,12 +1192,12 @@ fn test_shared_validation_accepts_exactly_at_aggregate_limit() {
         end_date: None,
         custom_fields,
     };
-    validate_metadata_custom_fields(&metadata);
+    validate_metadata_custom_fields(&metadata).unwrap();
 }
 
 /// Aggregate size check via init_program_with_metadata entrypoint.
 #[test]
-#[should_panic(expected = "MetadataAggregateSizeExceeded")]
+#[should_panic(expected = "Error(Contract, #104)")] // ContractError::MetadataUpdateFailed
 fn test_init_rejects_over_aggregate_limit() {
     let s = Setup::new();
     let program_id = String::from_str(&s.env, "InitOverAgg");
@@ -1203,7 +1231,7 @@ fn test_init_rejects_over_aggregate_limit() {
 
 /// Aggregate size check via update_program_metadata entrypoint.
 #[test]
-#[should_panic(expected = "MetadataAggregateSizeExceeded")]
+#[should_panic(expected = "Error(Contract, #104)")] // ContractError::MetadataUpdateFailed
 fn test_update_rejects_over_aggregate_limit() {
     let s = Setup::new();
     let program_id = String::from_str(&s.env, "UpdOverAgg");
@@ -1282,7 +1310,7 @@ fn test_multibyte_utf8_accepted() {
     let env = Env::default();
     // "🎉" is 4 bytes in UTF-8.
     let metadata = metadata_with_key_value_len(&env, 4, 4);
-    validate_metadata_custom_fields(&metadata);
+    validate_metadata_custom_fields(&metadata).unwrap();
     // Build with emoji content
     let mut custom_fields: Vec<ProgramMetadataField> = Vec::new(&env);
     custom_fields.push_back(ProgramMetadataField {
@@ -1298,7 +1326,7 @@ fn test_multibyte_utf8_accepted() {
         end_date: None,
         custom_fields,
     };
-    validate_metadata_custom_fields(&metadata);
+    validate_metadata_custom_fields(&metadata).unwrap();
 }
 
 // ── Update replaces (does not merge) ───────────────────────────────────────

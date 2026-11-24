@@ -4,6 +4,7 @@
 //! Extracted from `lib.rs` to keep the root module focused on the
 //! `#[contractimpl]` block while preserving the exact same public API.
 
+use crate::errors::ContractError;
 use grainlify_core::CorrelationId;
 use soroban_sdk::{
     contracterror, contracttype, symbol_short, vec, Address, Env, String, Symbol, Vec,
@@ -639,24 +640,25 @@ impl ProgramMetadata {
 /// Updates **replace** the entire metadata; they do not merge with existing
 /// values.
 ///
-/// # Panics
-/// - `"CustomFieldsLimitExceeded"` if `custom_fields.len() > MAX_CUSTOM_FIELDS`.
-/// - `"CustomFieldKeyTooLong"` if any key exceeds `MAX_CUSTOM_FIELD_KEY_LEN` bytes.
-/// - `"CustomFieldValueTooLong"` if any value exceeds `MAX_CUSTOM_FIELD_VALUE_LEN` bytes.
-/// - `"MetadataAggregateSizeExceeded"` if the sum of all key+value byte lengths
-///   exceeds `MAX_METADATA_AGGREGATE_BYTES`.
-pub fn validate_metadata_custom_fields(metadata: &ProgramMetadata) -> Result<(), EscrowError> {
+/// # Errors
+/// Returns [`ContractError::MetadataUpdateFailed`] when any limit is exceeded:
+/// - `custom_fields.len() > MAX_CUSTOM_FIELDS`.
+/// - any key exceeds `MAX_CUSTOM_FIELD_KEY_LEN` bytes.
+/// - any value exceeds `MAX_CUSTOM_FIELD_VALUE_LEN` bytes.
+/// - the sum of all key+value byte lengths exceeds
+///   `MAX_METADATA_AGGREGATE_BYTES`.
+pub fn validate_metadata_custom_fields(metadata: &ProgramMetadata) -> Result<(), ContractError> {
     let num_fields = metadata.custom_fields.len();
     if num_fields > MAX_CUSTOM_FIELDS {
-        return Err(EscrowError::CustomFieldsLimitExceeded);
+        return Err(ContractError::MetadataUpdateFailed);
     }
     let mut aggregate: u32 = 0;
     for field in metadata.custom_fields.iter() {
         if field.key.len() > MAX_CUSTOM_FIELD_KEY_LEN {
-            return Err(EscrowError::CustomFieldKeyTooLong);
+            return Err(ContractError::MetadataUpdateFailed);
         }
         if field.value.len() > MAX_CUSTOM_FIELD_VALUE_LEN {
-            return Err(EscrowError::CustomFieldValueTooLong);
+            return Err(ContractError::MetadataUpdateFailed);
         }
         aggregate = aggregate
             .checked_add(field.key.len())
@@ -664,7 +666,7 @@ pub fn validate_metadata_custom_fields(metadata: &ProgramMetadata) -> Result<(),
             .unwrap_or(u32::MAX);
     }
     if aggregate > MAX_METADATA_AGGREGATE_BYTES {
-        return Err(EscrowError::MetadataAggregateSizeExceeded);
+        return Err(ContractError::MetadataUpdateFailed);
     }
     Ok(())
 }
