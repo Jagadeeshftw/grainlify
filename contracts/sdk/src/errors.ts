@@ -56,6 +56,22 @@ export class ValidationError extends SDKError {
   }
 }
 
+/**
+ * Error thrown when a requested on-chain resource (contract, escrow, program, etc.)
+ * does not exist, distinguishing "not found" from RPC/network failures.
+ */
+export class NotFoundError extends SDKError {
+  constructor(
+    message: string,
+    public readonly resource?: string,
+    public readonly identifier?: string,
+  ) {
+    super(message, "NOT_FOUND");
+    this.name = "NotFoundError";
+    Object.setPrototypeOf(this, NotFoundError.prototype);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Contract error codes — Unified Registry
 // ---------------------------------------------------------------------------

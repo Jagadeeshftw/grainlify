@@ -305,7 +305,6 @@ fn test_varied_small_payouts_sum_to_full_amount() {
 
 /// After releasing all but 1, trying to release 2 must fail.
 #[test]
-#[should_panic(expected = "Error(Contract, #16)")] // InsufficientFunds
 fn test_overpay_by_one_after_partial_release() {
     let s = Setup::new();
     let amount = 50_i128;
@@ -315,13 +314,13 @@ fn test_overpay_by_one_after_partial_release() {
     s.escrow.partial_release(&9, &s.contributor, &(amount - 1));
 
     // Try to release 2 when only 1 remains — must fail
-    s.escrow.partial_release(&9, &s.contributor, &2_i128);
+    let res = s.escrow.try_partial_release(&9, &s.contributor, &2_i128);
+    assert_eq!(res, Err(Ok(Error::InsufficientFunds)));
 }
 
 /// After fully releasing via partial_release (remaining == 0), any further
 /// partial_release must fail with FundsNotLocked.
 #[test]
-#[should_panic(expected = "Error(Contract, #5)")] // FundsNotLocked
 fn test_partial_release_after_fully_drained() {
     let s = Setup::new();
     let amount = 10_i128;
@@ -331,17 +330,18 @@ fn test_partial_release_after_fully_drained() {
     s.escrow.partial_release(&10, &s.contributor, &amount);
 
     // Try to release 1 more — should fail (status is now Released)
-    s.escrow.partial_release(&10, &s.contributor, &1_i128);
+    let res = s.escrow.try_partial_release(&10, &s.contributor, &1_i128);
+    assert_eq!(res, Err(Ok(Error::FundsNotLocked)));
 }
 
 /// Releasing a negative amount must be rejected.
 #[test]
-#[should_panic(expected = "Error(Contract, #13)")] // InvalidAmount
 fn test_negative_partial_release_rejected() {
     let s = Setup::new();
     s.lock(11, 100_i128);
 
-    s.escrow.partial_release(&11, &s.contributor, &(-1_i128));
+    let res = s.escrow.try_partial_release(&11, &s.contributor, &(-1_i128));
+    assert_eq!(res, Err(Ok(Error::InvalidAmount)));
 }
 
 // ===========================================================================

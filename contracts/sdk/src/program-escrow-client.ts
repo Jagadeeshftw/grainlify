@@ -1,4 +1,10 @@
 import {
+  Address,
+  Contract,
+  nativeToScVal,
+  Keypair,
+  nativeToScVal,
+  xdr,
   BASE_FEE,
   Contract,
   scValToNative,
@@ -17,7 +23,16 @@ import {
   parseContractError,
   ContractError,
 } from "./errors";
+import {
+  SorobanClientConfig,
+  SorobanContractClient,
+} from "./soroban-contract-client";
 
+export interface ProgramEscrowConfig extends SorobanClientConfig {}
+import { ValidationError } from "./errors";
+import { BaseClientConfig, BaseContractClient } from "./base-client";
+
+export interface ProgramEscrowConfig extends BaseClientConfig {}
 export interface ProgramEscrowConfig {
   contractId: string;
   rpcUrl: string;
@@ -116,9 +131,25 @@ export async function fetchAllPages<T>(
   return all;
 }
 
+const READ_ONLY_METHODS = new Set(["get_program_info", "get_remaining_balance"]);
+
 /**
  * Client for interacting with the ProgramEscrow Soroban contract
  */
+export class ProgramEscrowClient extends SorobanContractClient {
+  constructor(config: ProgramEscrowConfig) {
+    super(config);
+export class ProgramEscrowClient extends BaseContractClient {
+  constructor(config: ProgramEscrowConfig) {
+    super(config);
+  }
+
+  protected get contractErrorScope(): string {
+    return "program_escrow";
+  }
+
+  protected isReadOnlyMethod(method: string): boolean {
+    return READ_ONLY_METHODS.has(method);
 export class ProgramEscrowClient {
   private contract: Contract;
   private server: SorobanRpc.Server;
@@ -400,6 +431,14 @@ export class ProgramEscrowClient {
    */
   async getRemainingBalance(): Promise<bigint> {
     try {
+      const result = await this.invokeContract("get_remaining_balance", []);
+      if (
+        typeof result !== "string" &&
+        typeof result !== "number" &&
+        typeof result !== "bigint"
+      ) {
+        throw new Error("Soroban simulation returned an invalid balance");
+      }
       const result = await this.invokeContract("get_remaining_balance", {});
       return BigInt(result);
     } catch (error) {
@@ -520,8 +559,13 @@ export class ProgramEscrowClient {
     }
   }
 
-  private async invokeContract(
+  protected encodeArguments(method: string, args: unknown[], signer: Keypair): xdr.ScVal[] {
+    const values = args as any[];
+  protected encodeArguments(
     method: string,
+    args: any[],
+    signer: Keypair,
+  ): xdr.ScVal[] {
     args: Record<string, unknown> | unknown[],
     sourceKeypair?: Keypair,
     contract: Contract = this.contract,
@@ -569,7 +613,10 @@ export class ProgramEscrowClient {
       prepared.sign(signer);
       const submitted = await this.server.sendTransaction(prepared);
       if (submitted.status === "ERROR") {
-        throw new Error(`Soroban submission failed for ${method}`);
+        const code = transactionResultCode(submitted.errorResult);
+        throw new Error(
+          `Soroban submission failed for ${method}${code ? ` (${code})` : ""}`,
+        );
       }
 
       const deadline = Date.now() + 30_000;
@@ -579,7 +626,10 @@ export class ProgramEscrowClient {
           return result.returnValue ? scValToNative(result.returnValue) : undefined;
         }
         if (result.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
-          throw new Error(`Soroban transaction failed for ${method}`);
+          const code = transactionResultCode(result.resultXdr);
+          throw new Error(
+            `Soroban transaction failed for ${method}${code ? ` (${code})` : ""}`,
+          );
         }
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
@@ -606,6 +656,49 @@ export class ProgramEscrowClient {
     }
   }
 
+  private encodeArguments(method: string, args: any[], signer: Keypair): xdr.ScVal[] {
+    const address = (value: string) => Address.fromString(value).toScVal();
+    const i128 = (value: bigint) => nativeToScVal(value, { type: "i128" });
+    const string = (value: string) => nativeToScVal(value, { type: "string" });
+    const vector = (values: xdr.ScVal[]) => xdr.ScVal.scvVec(values);
+
+    switch (method) {
+      case "init_program":
+        return [
+          string(values[0]),
+          address(values[1]),
+          address(values[2]),
+          address(signer.publicKey()),
+          values[3] > 0n ? i128(values[3]) : xdr.ScVal.scvVoid(),
+          xdr.ScVal.scvVoid(),
+        ];
+      case "lock_program_funds":
+        return [i128(values[0])];
+      case "batch_payout":
+        return [
+          vector(values[0].map((value: string) => address(value))),
+          vector(values[1].map((value: bigint) => i128(value))),
+        ];
+      case "single_payout":
+        return [address(values[0]), i128(values[1])];
+      case "publish_program":
+        return [string(values[0]), address(values[1])];
+      case "transfer":
+        return [address(values[0]), address(values[1]), i128(values[2])];
+      case "get_program_info":
+      case "get_remaining_balance":
+        return [];
+      case "trigger_program_releases":
+        return [xdr.ScVal.scvVoid()];
+      case "create_program_release_schedule":
+        return [
+          address(values[0]),
+          i128(values[1]),
+          nativeToScVal(BigInt(values[2]), { type: "u64" }),
+        ];
+      default:
+        throw new Error(`No Soroban argument encoder is defined for ${method}`);
+    }
   private positionalToNamedArgs(
     method: string,
     args: unknown[],
@@ -619,6 +712,10 @@ export class ProgramEscrowClient {
       }
     });
     return named;
+  }
+
+  protected isReadOnlyMethod(method: string): boolean {
+    return method === "get_program_info" || method === "get_remaining_balance";
   }
 
   private handleError(error: any): Error {
@@ -662,14 +759,20 @@ export class ProgramEscrowClient {
   private parseReleaseSchedule(result: any): ProgramReleaseSchedule {
     return this.toPlainObject(result) as ProgramReleaseSchedule;
   }
+}
 
-  private toPlainObject(value: any): any {
-    if (value instanceof Map) {
-      return Object.fromEntries(
-        [...value.entries()].map(([key, item]) => [String(key), this.toPlainObject(item)]),
-      );
-    }
-    if (Array.isArray(value)) return value.map((item) => this.toPlainObject(item));
-    return value;
+/**
+ * Extract the result code from a failed transaction so failures such as
+ * `txBadSeq` are visible in the thrown error message (the SDK examples retry
+ * on that code).
+ */
+function transactionResultCode(
+  result: xdr.TransactionResult | undefined,
+): string | undefined {
+  if (!result) return undefined;
+  try {
+    return result.result().switch().name;
+  } catch {
+    return undefined;
   }
 }

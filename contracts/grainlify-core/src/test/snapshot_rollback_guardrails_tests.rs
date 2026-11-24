@@ -40,7 +40,7 @@ use crate::{GrainlifyContract, GrainlifyContractClient};
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-fn setup(env: &Env) -> (GrainlifyContractClient, Address) {
+fn setup(env: &Env) -> (GrainlifyContractClient<'_>, Address) {
     let id = env.register_contract(None, GrainlifyContract);
     let client = GrainlifyContractClient::new(env, &id);
     let admin = Address::generate(env);
@@ -95,7 +95,7 @@ fn test_confirm_admin_restore_blocked_in_read_only_mode() {
     let id = env.register_contract(None, GrainlifyContract);
     let client = GrainlifyContractClient::new(&env, &id);
     let admin_a = Address::generate(&env);
-    let admin_b = Address::generate(&env);
+    let _admin_b = Address::generate(&env);
 
     // Init with admin_a, snapshot, then change admin to admin_b via set_version
     // (we can't change admin directly, so we use a fresh contract with admin_b)
@@ -194,7 +194,11 @@ fn test_restore_same_admin_applies_immediately() {
 
     // Restore — admin unchanged, must apply immediately
     client.restore_config_snapshot(&snap_id);
-    assert_eq!(client.get_version(), 2, "version must be restored to snapshot value");
+    assert_eq!(
+        client.get_version(),
+        2,
+        "version must be restored to snapshot value"
+    );
 }
 
 // ============================================================================
@@ -374,8 +378,15 @@ fn test_snapshot_captures_state_at_creation_time() {
     client.set_version(&9);
 
     let snap = client.get_config_snapshot(&snap_id).unwrap();
-    assert_eq!(snap.version, 3, "snapshot must capture version at creation time");
-    assert_eq!(snap.admin, Some(admin), "snapshot must capture admin at creation time");
+    assert_eq!(
+        snap.version, 3,
+        "snapshot must capture version at creation time"
+    );
+    assert_eq!(
+        snap.admin,
+        Some(admin),
+        "snapshot must capture admin at creation time"
+    );
 }
 
 // ============================================================================
@@ -402,7 +413,10 @@ fn test_compare_snapshots_detects_restore() {
     let s3 = client.create_config_snapshot(); // v2 again
 
     let diff2 = client.compare_snapshots(&s2, &s3);
-    assert!(diff2.version_changed, "version must differ between s2(v5) and s3(v2)");
+    assert!(
+        diff2.version_changed,
+        "version must differ between s2(v5) and s3(v2)"
+    );
     assert_eq!(diff2.from_version, 5);
     assert_eq!(diff2.to_version, 2);
 }

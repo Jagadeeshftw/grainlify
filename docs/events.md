@@ -241,6 +241,22 @@ Emitted when a claim ticket is redeemed.
 | `bounty_id` | `u64` |
 | `claimer` | `Address` |
 | `claimed_at` | `u64` |
+| `amount` | `i128` — amount paid out |
+
+---
+
+### `TicketRevoked`
+
+Emitted by `revoke_claim_ticket()` when the admin or depositor revokes an outstanding ticket and its reservation is returned to the escrow.
+
+| Topics | `("ticket_r", ticket_id: u64)` |
+|--------|-------------------------------|
+| `ticket_id` | `u64` |
+| `bounty_id` | `u64` |
+| `beneficiary` | `Address` |
+| `amount` | `i128` — reservation released |
+| `revoked_by` | `Address` |
+| `revoked_at` | `u64` |
 
 ---
 
@@ -305,6 +321,8 @@ update_fee_config()              → FeeConfigUpdated
 set_escrow_risk_flags()          → RiskFlagsUpdated
 clear_escrow_risk_flags()        → RiskFlagsUpdated
 issue_claim_ticket()             → TicketIssued
+claim_with_ticket()              → TicketClaimed
+revoke_claim_ticket()            → TicketRevoked
 issue_claim_ticket_deterministic()→ DeterministicSelectionDerived + TicketIssued
 emergency_withdraw()             → EmergencyWithdrawEvent
 issue_capability()               → CapabilityIssued

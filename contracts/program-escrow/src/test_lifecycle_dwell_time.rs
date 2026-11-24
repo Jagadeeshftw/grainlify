@@ -32,7 +32,7 @@ fn setup() -> (Env, Address, ProgramEscrowContractClient<'static>) {
     let contract_id = env.register_contract(None, ProgramEscrowContract);
     let client = ProgramEscrowContractClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
-    client.initialize(&admin);
+    client.initialize_contract(&admin);
     (env, admin, client)
 }
 
@@ -203,7 +203,7 @@ fn test_batch_init_records_transitions() {
             reference_hash: None,
         },
     ];
-    let count = client.batch_initialize_programs(&items).unwrap();
+    let count = client.batch_initialize_programs(&items);
     assert_eq!(count, 2, "expected 2 programs to be initialized");
 
     let tl1 = client.get_program_lifecycle_timeline(&pid1);
@@ -280,11 +280,9 @@ fn test_failed_publish_does_not_record_transition() {
         .get_program_lifecycle_timeline(&pid(&env, "p-001"))
         .len();
 
-    // Try to publish again — should panic
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        client.publish_program(&pid(&env, "p-001"), &admin);
-    }));
-    assert!(result.is_err(), "double publish should panic");
+    // Try to publish again — should fail
+    let result = client.try_publish_program(&pid(&env, "p-001"), &admin);
+    assert!(result.is_err(), "double publish should fail");
 
     // Timeline should be unchanged
     assert_eq!(

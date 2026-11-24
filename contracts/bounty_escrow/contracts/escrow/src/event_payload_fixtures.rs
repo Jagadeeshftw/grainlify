@@ -1170,6 +1170,40 @@ pub const EVENT_PAYLOAD_FIXTURES: &[EventPayloadFixture] = &[
                 name: "claimed_at",
                 ty: "u64",
             },
+            FieldFixture {
+                name: "amount",
+                ty: "i128",
+            },
+        ],
+    },
+    EventPayloadFixture {
+        name: "TicketRevoked",
+        has_version_field: false,
+        fields: &[
+            FieldFixture {
+                name: "ticket_id",
+                ty: "u64",
+            },
+            FieldFixture {
+                name: "bounty_id",
+                ty: "u64",
+            },
+            FieldFixture {
+                name: "beneficiary",
+                ty: "Address",
+            },
+            FieldFixture {
+                name: "amount",
+                ty: "i128",
+            },
+            FieldFixture {
+                name: "revoked_by",
+                ty: "Address",
+            },
+            FieldFixture {
+                name: "revoked_at",
+                ty: "u64",
+            },
         ],
     },
     EventPayloadFixture {
@@ -1480,6 +1514,10 @@ pub const EVENT_PAYLOAD_FIXTURES: &[EventPayloadFixture] = &[
                 name: "timestamp",
                 ty: "u64",
             },
+            FieldFixture {
+                name: "correlation_id",
+                ty: "Option<CorrelationId>",
+            },
         ],
     },
     EventPayloadFixture {
@@ -1492,7 +1530,7 @@ pub const EVENT_PAYLOAD_FIXTURES: &[EventPayloadFixture] = &[
             },
             FieldFixture {
                 name: "action_type",
-                ty: "CapabilityAction",
+                ty: "ActionType",
             },
             FieldFixture {
                 name: "execute_after",
@@ -1506,6 +1544,10 @@ pub const EVENT_PAYLOAD_FIXTURES: &[EventPayloadFixture] = &[
                 name: "timestamp",
                 ty: "u64",
             },
+            FieldFixture {
+                name: "correlation_id",
+                ty: "Option<CorrelationId>",
+            },
         ],
     },
     EventPayloadFixture {
@@ -1518,7 +1560,7 @@ pub const EVENT_PAYLOAD_FIXTURES: &[EventPayloadFixture] = &[
             },
             FieldFixture {
                 name: "action_type",
-                ty: "CapabilityAction",
+                ty: "ActionType",
             },
             FieldFixture {
                 name: "executed_by",
@@ -1527,6 +1569,10 @@ pub const EVENT_PAYLOAD_FIXTURES: &[EventPayloadFixture] = &[
             FieldFixture {
                 name: "executed_at",
                 ty: "u64",
+            },
+            FieldFixture {
+                name: "correlation_id",
+                ty: "Option<CorrelationId>",
             },
         ],
     },
@@ -1540,7 +1586,7 @@ pub const EVENT_PAYLOAD_FIXTURES: &[EventPayloadFixture] = &[
             },
             FieldFixture {
                 name: "action_type",
-                ty: "CapabilityAction",
+                ty: "ActionType",
             },
             FieldFixture {
                 name: "cancelled_by",
@@ -1549,6 +1595,10 @@ pub const EVENT_PAYLOAD_FIXTURES: &[EventPayloadFixture] = &[
             FieldFixture {
                 name: "cancelled_at",
                 ty: "u64",
+            },
+            FieldFixture {
+                name: "correlation_id",
+                ty: "Option<CorrelationId>",
             },
         ],
     },

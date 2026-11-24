@@ -1,11 +1,12 @@
 use super::*;
 use soroban_sdk::{
-    testutils::{Address as _, Ledger},
-    Address, Env,
+    testutils::{Address as _, Ledger, MockAuth, MockAuthInvoke},
+    Address, Env, IntoVal,
 };
 
 fn advance_ledger_time(env: &Env, seconds: u64) {
-    env.ledger().set_timestamp(env.ledger().timestamp() + seconds);
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + seconds);
 }
 
 #[test]
@@ -67,7 +68,7 @@ fn test_configure_timelock_above_maximum() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #7)")]
+#[should_panic(expected = "Error(Auth, InvalidAction)")]
 fn test_configure_timelock_unauthorized() {
     let env = Env::default();
     let contract_id = env.register_contract(None, BountyEscrowContract);
@@ -78,7 +79,15 @@ fn test_configure_timelock_unauthorized() {
     let non_admin = Address::generate(&env);
 
     client.init(&admin, &token);
-    env.mock_auths(&[&non_admin]);
+    env.mock_auths(&[MockAuth {
+        address: &non_admin,
+        invoke: &MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "configure_timelock",
+            args: (7_200u64, true).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
     client.configure_timelock(&7_200, &true);
 }
 
@@ -103,7 +112,7 @@ fn test_propose_admin_action_immediate_execution_when_disabled() {
     );
 
     assert_eq!(action_id, 0);
-    assert_eq!(client.get_admin(), new_admin);
+    assert_eq!(client.get_admin(), Some(new_admin));
     assert_eq!(client.get_pending_actions().len(), 0);
 }
 
@@ -137,7 +146,7 @@ fn test_propose_admin_action_creates_pending_when_enabled() {
     assert_eq!(action.proposed_at, current_timestamp);
     assert_eq!(action.execute_after, current_timestamp + delay);
     assert_eq!(action.status, ActionStatus::Pending);
-    assert_eq!(client.get_admin(), admin);
+    assert_eq!(client.get_admin(), Some(admin));
 }
 
 #[test]
@@ -188,7 +197,7 @@ fn test_execute_at_exact_delay_succeeds() {
     advance_ledger_time(&env, delay);
     client.execute_after_delay(&action_id);
 
-    assert_eq!(client.get_admin(), new_admin);
+    assert_eq!(client.get_admin(), Some(new_admin));
     assert_eq!(client.get_action(&action_id).status, ActionStatus::Executed);
 }
 
@@ -217,7 +226,7 @@ fn test_execute_after_delay_succeeds() {
     env.ledger().set_timestamp(start_timestamp + delay + 100);
     client.execute_after_delay(&action_id);
 
-    assert_eq!(client.get_admin(), new_admin);
+    assert_eq!(client.get_admin(), Some(new_admin));
     assert_eq!(client.get_action(&action_id).status, ActionStatus::Executed);
 }
 
@@ -272,7 +281,7 @@ fn test_cancel_pending_action() {
     client.cancel_admin_action(&action_id);
     let action = client.get_action(&action_id);
     assert_eq!(action.status, ActionStatus::Cancelled);
-    assert_eq!(client.get_admin(), admin);
+    assert_eq!(client.get_admin(), Some(admin));
 }
 
 #[test]
@@ -328,7 +337,7 @@ fn test_cancel_executed_action_reverts() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #7)")]
+#[should_panic(expected = "Error(Auth, InvalidAction)")]
 fn test_only_admin_can_cancel() {
     let env = Env::default();
     env.mock_all_auths();
@@ -349,7 +358,15 @@ fn test_only_admin_can_cancel() {
         &ActionPayload::ChangeAdmin(new_admin),
     );
 
-    env.mock_auths(&[&non_admin]);
+    env.mock_auths(&[MockAuth {
+        address: &non_admin,
+        invoke: &MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "cancel_admin_action",
+            args: (action_id,).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
     client.cancel_admin_action(&action_id);
 }
 
@@ -376,10 +393,18 @@ fn test_non_admin_can_execute_after_delay() {
     );
 
     env.ledger().set_timestamp(start_timestamp + 7_200);
-    env.mock_auths(&[&executor]);
+    env.mock_auths(&[MockAuth {
+        address: &executor,
+        invoke: &MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "execute_after_delay",
+            args: (action_id,).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
     client.execute_after_delay(&action_id);
 
-    assert_eq!(client.get_admin(), new_admin);
+    assert_eq!(client.get_admin(), Some(new_admin));
 }
 
 #[test]
