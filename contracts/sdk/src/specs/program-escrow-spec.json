@@ -1,0 +1,326 @@
+{
+  "contractName": "ProgramEscrowContract",
+  "version": "1.1.0",
+  "types": {
+    "PayoutQueryFilter": {
+      "kind": "struct",
+      "fields": [
+        { "name": "recipient", "type": "Option<Address>" },
+        { "name": "min_amount", "type": "Option<i128>" },
+        { "name": "max_amount", "type": "Option<i128>" },
+        { "name": "min_timestamp", "type": "Option<u64>" },
+        { "name": "max_timestamp", "type": "Option<u64>" }
+      ]
+    },
+    "ScheduleQueryFilter": {
+      "kind": "struct",
+      "fields": [
+        { "name": "recipient", "type": "Option<Address>" },
+        { "name": "released", "type": "Option<bool>" },
+        { "name": "min_amount", "type": "Option<i128>" },
+        { "name": "max_amount", "type": "Option<i128>" },
+        { "name": "min_release_timestamp", "type": "Option<u64>" },
+        { "name": "max_release_timestamp", "type": "Option<u64>" }
+      ]
+    },
+    "ProgramStatus": {
+      "kind": "enum",
+      "variants": [
+        { "name": "Draft" },
+        { "name": "Active" },
+        { "name": "Paused" },
+        { "name": "Completed" },
+        { "name": "Cancelled" }
+      ]
+    },
+    "CircuitState": {
+      "kind": "enum",
+      "variants": [
+        { "name": "Closed" },
+        { "name": "Open" },
+        { "name": "HalfOpen" }
+      ]
+    }
+  },
+  "entrypoints": [
+    {
+      "name": "init_program",
+      "description": "Initialize a new program escrow instance.",
+      "readOnly": false,
+      "parameters": [
+        { "name": "program_id", "type": "String" },
+        { "name": "authorized_payout_key", "type": "Address" },
+        { "name": "token_address", "type": "Address" },
+        { "name": "creator", "type": "Address" },
+        { "name": "initial_liquidity", "type": "Option<i128>" },
+        { "name": "reference_hash", "type": "Option<Bytes>" }
+      ]
+    },
+    {
+      "name": "lock_program_funds",
+      "description": "Lock funds into the program escrow. Blocked when lock_paused is true.",
+      "readOnly": false,
+      "parameters": [
+        { "name": "amount", "type": "i128" }
+      ]
+    },
+    {
+      "name": "single_payout",
+      "description": "Execute a single payout to one winner.",
+      "readOnly": false,
+      "parameters": [
+        { "name": "recipient", "type": "Address" },
+        { "name": "amount", "type": "i128" }
+      ]
+    },
+    {
+      "name": "batch_payout",
+      "description": "Execute batch payouts to multiple winners atomically (all-or-nothing).",
+      "readOnly": false,
+      "parameters": [
+        { "name": "recipients", "type": "Vec<Address>" },
+        { "name": "amounts", "type": "Vec<i128>" }
+      ]
+    },
+    {
+      "name": "publish_program",
+      "description": "Publish a newly initialized program so payouts and releases are enabled.",
+      "readOnly": false,
+      "parameters": [
+        { "name": "program_id", "type": "String" },
+        { "name": "caller", "type": "Address" }
+      ]
+    },
+    {
+      "name": "create_program_release_schedule",
+      "description": "Create a time-locked release schedule for a recipient.",
+      "readOnly": false,
+      "parameters": [
+        { "name": "recipient", "type": "Address" },
+        { "name": "amount", "type": "i128" },
+        { "name": "release_timestamp", "type": "u64" }
+      ]
+    },
+    {
+      "name": "trigger_program_releases",
+      "description": "Trigger all eligible release schedules.",
+      "readOnly": false,
+      "parameters": [
+        { "name": "epoch_id", "type": "Option<u64>" }
+      ]
+    },
+    {
+      "name": "get_program_info",
+      "description": "Return current program state.",
+      "readOnly": true,
+      "parameters": []
+    },
+    {
+      "name": "get_program_info_v2",
+      "description": "Return program state by program ID.",
+      "readOnly": true,
+      "parameters": [
+        { "name": "program_id", "type": "String" }
+      ]
+    },
+    {
+      "name": "get_remaining_balance",
+      "description": "Return current remaining balance.",
+      "readOnly": true,
+      "parameters": []
+    },
+    {
+      "name": "get_circuit_breaker_status",
+      "description": "Return a full snapshot of the circuit breaker state.",
+      "readOnly": true,
+      "parameters": []
+    },
+    {
+      "name": "get_cb_schema_version",
+      "description": "Return the upgrade-safe circuit-breaker storage schema version.",
+      "readOnly": true,
+      "parameters": []
+    },
+    {
+      "name": "get_circuit_error_log",
+      "description": "Return the full circuit breaker error log.",
+      "readOnly": true,
+      "parameters": []
+    },
+    {
+      "name": "get_fee_config",
+      "description": "Return current fee configuration including insurance reserve basis points.",
+      "readOnly": true,
+      "parameters": []
+    },
+    {
+      "name": "get_insurance_reserve_balance",
+      "description": "Return current insurance reserve balance in native token units.",
+      "readOnly": true,
+      "parameters": []
+    },
+    {
+      "name": "query_payout_history",
+      "description": "Query payout history with optional filtering and pagination.",
+      "readOnly": true,
+      "parameters": [
+        { "name": "filter", "type": "PayoutQueryFilter" },
+        { "name": "offset", "type": "u32" },
+        { "name": "limit", "type": "u32" }
+      ]
+    },
+    {
+      "name": "query_release_schedules",
+      "description": "Query release schedules with optional filtering and pagination.",
+      "readOnly": true,
+      "parameters": [
+        { "name": "filter", "type": "ScheduleQueryFilter" },
+        { "name": "offset", "type": "u32" },
+        { "name": "limit", "type": "u32" }
+      ]
+    },
+    {
+      "name": "initialize_contract",
+      "description": "Initialize the contract with an admin address.",
+      "readOnly": false,
+      "parameters": [
+        { "name": "admin", "type": "Address" }
+      ]
+    },
+    {
+      "name": "propose_admin",
+      "description": "Propose a new admin (two-step rotation step 1).",
+      "readOnly": false,
+      "parameters": [
+        { "name": "proposed_admin", "type": "Address" }
+      ]
+    },
+    {
+      "name": "accept_admin",
+      "description": "Accept the proposed admin role (two-step rotation step 2).",
+      "readOnly": false,
+      "parameters": []
+    },
+    {
+      "name": "cancel_admin_rotation",
+      "description": "Cancel a pending admin rotation.",
+      "readOnly": false,
+      "parameters": []
+    },
+    {
+      "name": "set_circuit_admin",
+      "description": "Set or rotate the circuit breaker admin address.",
+      "readOnly": false,
+      "parameters": [
+        { "name": "new_admin", "type": "Address" },
+        { "name": "caller", "type": "Option<Address>" }
+      ]
+    },
+    {
+      "name": "emergency_open_circuit",
+      "description": "Immediately transition the circuit breaker to OPEN.",
+      "readOnly": false,
+      "parameters": [
+        { "name": "admin", "type": "Address" }
+      ]
+    },
+    {
+      "name": "reset_circuit_breaker",
+      "description": "Reset the circuit breaker to CLOSED state.",
+      "readOnly": false,
+      "parameters": [
+        { "name": "caller", "type": "Address" }
+      ]
+    },
+    {
+      "name": "configure_circuit_breaker",
+      "description": "Configure circuit breaker thresholds.",
+      "readOnly": false,
+      "parameters": [
+        { "name": "caller", "type": "Address" },
+        { "name": "failure_threshold", "type": "u32" },
+        { "name": "success_threshold", "type": "u32" },
+        { "name": "max_error_log", "type": "u32" }
+      ]
+    },
+    {
+      "name": "set_paused",
+      "description": "Set pause flags for lock, release, and refund operations independently.",
+      "readOnly": false,
+      "parameters": [
+        { "name": "lock", "type": "Option<bool>" },
+        { "name": "release", "type": "Option<bool>" },
+        { "name": "refund", "type": "Option<bool>" },
+        { "name": "reason", "type": "Option<String>" }
+      ]
+    },
+    {
+      "name": "propose_controller",
+      "description": "Propose a new controller for a program (two-step rotation step 1).",
+      "readOnly": false,
+      "parameters": [
+        { "name": "program_id", "type": "String" },
+        { "name": "caller", "type": "Address" },
+        { "name": "proposed_controller", "type": "Address" }
+      ]
+    },
+    {
+      "name": "accept_controller",
+      "description": "Accept the proposed controller role for a program (two-step rotation step 2).",
+      "readOnly": false,
+      "parameters": [
+        { "name": "program_id", "type": "String" }
+      ]
+    },
+    {
+      "name": "cancel_controller_rotation",
+      "description": "Cancel a pending controller rotation for a program.",
+      "readOnly": false,
+      "parameters": [
+        { "name": "program_id", "type": "String" },
+        { "name": "caller", "type": "Address" }
+      ]
+    },
+    {
+      "name": "set_program_spend_threshold",
+      "description": "Set per-program spend threshold.",
+      "readOnly": false,
+      "parameters": [
+        { "name": "program_id", "type": "String" },
+        { "name": "threshold_amount", "type": "i128" }
+      ]
+    },
+    {
+      "name": "update_fee_config",
+      "description": "Update fee configuration including insurance reserve basis points.",
+      "readOnly": false,
+      "parameters": [
+        { "name": "lock_fee_rate", "type": "Option<i128>" },
+        { "name": "payout_fee_rate", "type": "Option<i128>" },
+        { "name": "lock_fixed_fee", "type": "Option<i128>" },
+        { "name": "payout_fixed_fee", "type": "Option<i128>" },
+        { "name": "fee_recipient", "type": "Option<Address>" },
+        { "name": "fee_enabled", "type": "Option<bool>" },
+        { "name": "insurance_reserve_bps", "type": "Option<u32>" }
+      ]
+    },
+    {
+      "name": "withdraw_insurance_reserve",
+      "description": "Withdraw funds from the insurance reserve.",
+      "readOnly": false,
+      "parameters": [
+        { "name": "target", "type": "Address" },
+        { "name": "amount", "type": "i128" }
+      ]
+    },
+    {
+      "name": "set_program_status",
+      "description": "Update a program lifecycle status.",
+      "readOnly": false,
+      "parameters": [
+        { "name": "program_id", "type": "String" },
+        { "name": "status", "type": "ProgramStatus" }
+      ]
+    }
+  ]
+}
