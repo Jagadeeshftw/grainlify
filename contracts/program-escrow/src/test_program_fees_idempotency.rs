@@ -33,6 +33,7 @@ fn test_program_payout_fee_percentage_and_fixed() {
         &Some(500i128),
         &Some(fee_bucket.clone()),
         &Some(true),
+        &None,
     );
     let recipient = Address::generate(&env);
     // Gross 10_000: 10% ceil = 1_000 + 500 fixed = 1_500 fee, net 8_500
@@ -56,6 +57,7 @@ fn test_program_lock_fixed_fee_reduces_credited_balance() {
         &None,
         &Some(fee_bucket.clone()),
         &Some(true),
+        &None,
     );
     client.lock_program_funds(&20_000);
     assert_eq!(client.get_remaining_balance(), 18_000);
@@ -76,9 +78,10 @@ fn test_program_update_fee_config_disables_fees() {
         &None,
         &Some(fee_bucket.clone()),
         &Some(true),
+        &None,
     );
     client.lock_program_funds(&10_000);
-    client.update_fee_config(&None, &None, &None, &None, &None, &Some(false));
+    client.update_fee_config(&None, &None, &None, &None, &None, &Some(false), &None);
     client.lock_program_funds(&10_000);
     assert_eq!(client.get_remaining_balance(), 19_000);
     assert_eq!(token_client.balance(&fee_bucket), 1_000);
@@ -179,7 +182,7 @@ fn test_batch_payout_idempotent_first_time() {
 
     let initial_balance = token_client.balance(&client.address);
     let data =
-        client.batch_payout_idempotent(&recipients, &amounts, &Some(idempotency_key.clone()));
+        client.batch_payout_idempotent(&idempotency_key, &recipients, &amounts);
 
     assert_eq!(data.remaining_balance, 7000);
     assert_eq!(
@@ -202,14 +205,14 @@ fn test_batch_payout_idempotent_replay() {
 
     // First batch payout
     let data1 =
-        client.batch_payout_idempotent(&recipients, &amounts, &Some(idempotency_key.clone()));
+        client.batch_payout_idempotent(&idempotency_key, &recipients, &amounts);
     let balance_after_first = token_client.balance(&client.address);
     assert_eq!(data1.remaining_balance, 7000);
     assert_eq!(data1.payout_history.len(), 2);
 
     // Replay with same key - should not execute again
     let data2 =
-        client.batch_payout_idempotent(&recipients, &amounts, &Some(idempotency_key.clone()));
+        client.batch_payout_idempotent(&idempotency_key, &recipients, &amounts);
     let balance_after_replay = token_client.balance(&client.address);
 
     // Balance should be the same (no double payout)
@@ -232,12 +235,12 @@ fn test_batch_payout_idempotent_different_keys() {
     let key2 = String::from_str(&env, "batch-payout-002");
 
     // First batch payout with key1
-    let data1 = client.batch_payout_idempotent(&recipients, &amounts, &Some(key1.clone()));
+    let data1 = client.batch_payout_idempotent(&key1, &recipients, &amounts);
     assert_eq!(data1.remaining_balance, 7000);
     assert_eq!(data1.payout_history.len(), 2);
 
     // Second batch payout with key2 - should execute
-    let data2 = client.batch_payout_idempotent(&recipients, &amounts, &Some(key2.clone()));
+    let data2 = client.batch_payout_idempotent(&key2, &recipients, &amounts);
     assert_eq!(data2.remaining_balance, 4000);
     assert_eq!(data2.payout_history.len(), 4);
 }
@@ -465,7 +468,7 @@ fn test_batch_idempotency_stores_all_recipients() {
     let idempotency_key = String::from_str(&env, "batch-all-recipients");
 
     // Execute batch payout
-    client.batch_payout_idempotent(&recipients, &amounts, &Some(idempotency_key.clone()));
+    client.batch_payout_idempotent(&idempotency_key, &recipients, &amounts);
 
     // Query the idempotency key status
     let status = client.get_idempotency_key_status(&idempotency_key);
@@ -581,7 +584,26 @@ fn test_idempotency_key_with_special_characters() {
 #[test]
 fn test_batch_payout_idempotent_replay_different_params() {
     let env = Env::default();
-    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 10_000);
-    // Function body was truncated in a merge conflict; stub with no-op assertion.
-    let _ = client.get_remaining_balance();
+    let (client, _admin, token_client, _token_admin) = setup_program(&env, 10_000);
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+    let original_recipients = vec![&env, r1.clone(), r2.clone()];
+    let original_amounts = vec![&env, 1_000i128, 2_000i128];
+    let key = String::from_str(&env, "batch-replay-different-params");
+
+    let first =
+        client.batch_payout_idempotent(&key, &original_recipients, &original_amounts);
+    let escrow_balance = token_client.balance(&client.address);
+    let history = first.payout_history.clone();
+
+    let other_recipient = Address::generate(&env);
+    let replay_recipients = vec![&env, other_recipient.clone()];
+    let replay_amounts = vec![&env, 5_000i128];
+    let replay =
+        client.batch_payout_idempotent(&key, &replay_recipients, &replay_amounts);
+
+    assert_eq!(replay.remaining_balance, first.remaining_balance);
+    assert_eq!(replay.payout_history, history);
+    assert_eq!(token_client.balance(&client.address), escrow_balance);
+    assert_eq!(token_client.balance(&other_recipient), 0);
 }
