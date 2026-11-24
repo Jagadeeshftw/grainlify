@@ -98,6 +98,166 @@ pub(crate) fn check_paused(env: &Env, operation: Symbol) -> bool {
     false
 }
 
+/// Apply pause flag changes without re-authenticating the admin.
+pub(crate) fn set_paused_internal(
+    env: &Env,
+    lock: Option<bool>,
+    release: Option<bool>,
+    refund: Option<bool>,
+    reason: &Option<String>,
+) -> Result<(), Error> {
+    let admin: Address = env
+        .storage()
+        .instance()
+        .get(&DataKey::Admin)
+        .ok_or(Error::NotInitialized)?;
+
+    let mut flags = get_pause_flags(env);
+    let timestamp = env.ledger().timestamp();
+
+    if reason.is_some() {
+        flags.pause_reason = reason.clone();
+    }
+    if let Some(paused) = lock {
+        flags.lock_paused = paused;
+        events::emit_pause_state_changed(
+            env,
+            PauseStateChanged {
+                operation: symbol_short!("lock"),
+                paused,
+                admin: admin.clone(),
+                reason: reason.clone(),
+                timestamp,
+            },
+        );
+    }
+    if let Some(paused) = release {
+        flags.release_paused = paused;
+        events::emit_pause_state_changed(
+            env,
+            PauseStateChanged {
+                operation: symbol_short!("release"),
+                paused,
+                admin: admin.clone(),
+                reason: reason.clone(),
+                timestamp,
+            },
+        );
+    }
+    if let Some(paused) = refund {
+        flags.refund_paused = paused;
+        events::emit_pause_state_changed(
+            env,
+            PauseStateChanged {
+                operation: symbol_short!("refund"),
+                paused,
+                admin: admin.clone(),
+                reason: reason.clone(),
+                timestamp,
+            },
+        );
+    }
+
+    let any_paused = flags.lock_paused || flags.release_paused || flags.refund_paused;
+    if any_paused {
+        if flags.paused_at == 0 {
+            flags.paused_at = timestamp;
+        }
+    } else {
+        flags.pause_reason = None;
+        flags.paused_at = 0;
+    }
+
+    env.storage().instance().set(&DataKey::PauseFlags, &flags);
+    Ok(())
+}
+
+/// Apply deprecation state without re-authenticating the admin.
+pub(crate) fn set_deprecated_internal(
+    env: &Env,
+    deprecated: bool,
+    migration_target: Option<Address>,
+) -> Result<(), Error> {
+    let admin: Address = env
+        .storage()
+        .instance()
+        .get(&DataKey::Admin)
+        .ok_or(Error::NotInitialized)?;
+
+    env.storage().instance().set(
+        &DataKey::DeprecationState,
+        &DeprecationState {
+            deprecated,
+            migration_target: migration_target.clone(),
+        },
+    );
+    emit_deprecation_state_changed(
+        env,
+        DeprecationStateChanged {
+            deprecated,
+            migration_target,
+            admin,
+            timestamp: env.ledger().timestamp(),
+        },
+    );
+    Ok(())
+}
+
+/// Apply maintenance mode without re-authenticating the admin.
+pub(crate) fn set_maintenance_mode_internal(
+    env: &Env,
+    enabled: bool,
+    reason: &Option<String>,
+) -> Result<(), Error> {
+    let admin: Address = env
+        .storage()
+        .instance()
+        .get(&DataKey::Admin)
+        .ok_or(Error::NotInitialized)?;
+
+    let previous_enabled = env
+        .storage()
+        .instance()
+        .get(&DataKey::MaintenanceMode)
+        .unwrap_or(false);
+    if previous_enabled == enabled {
+        return Ok(());
+    }
+
+    let timestamp = env.ledger().timestamp();
+    env.storage()
+        .instance()
+        .set(&DataKey::MaintenanceMode, &enabled);
+    env.storage()
+        .instance()
+        .set(&DataKey::MaintenanceModeUpdatedAt, &timestamp);
+    env.storage()
+        .instance()
+        .set(&DataKey::MaintenanceModeUpdatedBy, &admin);
+
+    events::emit_maintenance_mode_changed(
+        env,
+        events::MaintenanceModeChanged {
+            enabled,
+            reason: reason.clone(),
+            admin: admin.clone(),
+            timestamp,
+        },
+    );
+    events::emit_maintenance_mode_changed_v2(
+        env,
+        events::MaintenanceModeChangedV2 {
+            version: EVENT_VERSION_V2,
+            previous_enabled,
+            enabled,
+            reason: reason.clone(),
+            admin,
+            timestamp,
+        },
+    );
+    Ok(())
+}
+
 // ─────────────────────────────────────────────────────────────────
 // Public entry points (dispatcher targets)
 // ─────────────────────────────────────────────────────────────────
@@ -120,6 +280,7 @@ pub fn set_paused(
     refund: Option<bool>,
     reason: Option<soroban_sdk::String>,
 ) -> Result<(), Error> {
+    crate::timelock::ensure_direct_admin_call_allowed(&env)?;
     if !env.storage().instance().has(&DataKey::Admin) {
         return Err(Error::NotInitialized);
     }
@@ -127,68 +288,7 @@ pub fn set_paused(
     let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
     admin.require_auth();
 
-    let mut flags = get_pause_flags(&env);
-    let timestamp = env.ledger().timestamp();
-
-    if reason.is_some() {
-        flags.pause_reason = reason.clone();
-    }
-
-    if let Some(paused) = lock {
-        flags.lock_paused = paused;
-        events::emit_pause_state_changed(
-            &env,
-            PauseStateChanged {
-                operation: symbol_short!("lock"),
-                paused,
-                admin: admin.clone(),
-                reason: reason.clone(),
-                timestamp,
-            },
-        );
-    }
-
-    if let Some(paused) = release {
-        flags.release_paused = paused;
-        events::emit_pause_state_changed(
-            &env,
-            PauseStateChanged {
-                operation: symbol_short!("release"),
-                paused,
-                admin: admin.clone(),
-                reason: reason.clone(),
-                timestamp,
-            },
-        );
-    }
-
-    if let Some(paused) = refund {
-        flags.refund_paused = paused;
-        events::emit_pause_state_changed(
-            &env,
-            PauseStateChanged {
-                operation: symbol_short!("refund"),
-                paused,
-                admin: admin.clone(),
-                reason: reason.clone(),
-                timestamp,
-            },
-        );
-    }
-
-    let any_paused = flags.lock_paused || flags.release_paused || flags.refund_paused;
-
-    if any_paused {
-        if flags.paused_at == 0 {
-            flags.paused_at = timestamp;
-        }
-    } else {
-        flags.pause_reason = None;
-        flags.paused_at = 0;
-    }
-
-    env.storage().instance().set(&DataKey::PauseFlags, &flags);
-    Ok(())
+    set_paused_internal(&env, lock, release, refund, &reason)
 }
 
 /// Drains all reward tokens from the contract to a target address.
@@ -252,29 +352,14 @@ pub fn set_deprecated(
     deprecated: bool,
     migration_target: Option<Address>,
 ) -> Result<(), Error> {
+    crate::timelock::ensure_direct_admin_call_allowed(&env)?;
     if !env.storage().instance().has(&DataKey::Admin) {
         return Err(Error::NotInitialized);
     }
     let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
     admin.require_auth();
 
-    let state = DeprecationState {
-        deprecated,
-        migration_target: migration_target.clone(),
-    };
-    env.storage()
-        .instance()
-        .set(&DataKey::DeprecationState, &state);
-    emit_deprecation_state_changed(
-        &env,
-        DeprecationStateChanged {
-            deprecated: state.deprecated,
-            migration_target: state.migration_target,
-            admin,
-            timestamp: env.ledger().timestamp(),
-        },
-    );
-    Ok(())
+    set_deprecated_internal(&env, deprecated, migration_target)
 }
 
 /// View: returns whether the contract is deprecated and the optional migration target address.
@@ -497,55 +582,14 @@ pub fn get_maintenance_schema_version(env: Env) -> u32 {
 
 /// Update maintenance mode (admin only)
 pub fn set_maintenance_mode(env: Env, enabled: bool, reason: Option<String>) -> Result<(), Error> {
+    crate::timelock::ensure_direct_admin_call_allowed(&env)?;
     if !env.storage().instance().has(&DataKey::Admin) {
         return Err(Error::NotInitialized);
     }
     let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
     admin.require_auth();
 
-    let previous_enabled = env
-        .storage()
-        .instance()
-        .get(&DataKey::MaintenanceMode)
-        .unwrap_or(false);
-
-    // Idempotent behavior: if no state change, do not emit events.
-    if previous_enabled == enabled {
-        return Ok(());
-    }
-
-    env.storage()
-        .instance()
-        .set(&DataKey::MaintenanceMode, &enabled);
-    env.storage().instance().set(
-        &DataKey::MaintenanceModeUpdatedAt,
-        &env.ledger().timestamp(),
-    );
-    env.storage()
-        .instance()
-        .set(&DataKey::MaintenanceModeUpdatedBy, &admin);
-
-    events::emit_maintenance_mode_changed(
-        &env,
-        events::MaintenanceModeChanged {
-            enabled,
-            reason: reason.clone(),
-            admin: admin.clone(),
-            timestamp: env.ledger().timestamp(),
-        },
-    );
-    events::emit_maintenance_mode_changed_v2(
-        &env,
-        events::MaintenanceModeChangedV2 {
-            version: EVENT_VERSION_V2,
-            previous_enabled,
-            enabled,
-            reason,
-            admin: admin.clone(),
-            timestamp: env.ledger().timestamp(),
-        },
-    );
-    Ok(())
+    set_maintenance_mode_internal(&env, enabled, &reason)
 }
 
 // ============================================================================
