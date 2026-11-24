@@ -26,6 +26,25 @@ fn create_token(
     (token_client, token_id, token_sac)
 }
 
+fn assert_conservation(
+    client: &ProgramEscrowContractClient<'_>,
+    token_client: &token::Client<'_>,
+    sum_locked: i128,
+    sum_paid: i128,
+) {
+    let remaining = client.get_remaining_balance();
+    let token_balance = token_client.balance(&client.address);
+    assert_eq!(
+        sum_locked,
+        sum_paid + remaining,
+        "conservation violated: sum(lock) != sum(payout) + remaining"
+    );
+    assert_eq!(
+        token_balance, remaining,
+        "token balance must match contract remaining_balance"
+    );
+}
+
 #[test]
 fn test_complex_multi_program_lifecycle_integration() {
     let env = Env::default();
@@ -61,15 +80,18 @@ fn test_complex_multi_program_lifecycle_integration() {
     token_sac.mint(&client.address, &300_000);
     client.lock_program_funds(&300_000);
     assert_eq!(client.get_remaining_balance(), 300_000);
+    assert_conservation(&client, &token_client, 300_000, 0);
 
     token_sac.mint(&client.address, &200_000);
     client.lock_program_funds(&200_000);
     assert_eq!(client.get_remaining_balance(), 500_000);
+    assert_conservation(&client, &token_client, 500_000, 0);
 
     // Program B: Lock 1,000,000 in one chunk
     token_sac.mint(&client_b.address, &1_000_000);
     client_b.lock_program_funds(&1_000_000);
     assert_eq!(client_b.get_remaining_balance(), 1_000_000);
+    assert_conservation(&client_b, &token_client, 1_000_000, 0);
 
     // ── Phase 3: Batch Payouts Round 1 ─────────────────────────────────
     let r1 = Address::generate(&env);
@@ -84,11 +106,13 @@ fn test_complex_multi_program_lifecycle_integration() {
     assert_eq!(client.get_remaining_balance(), 250_000);
     assert_eq!(token_client.balance(&r1), 100_000);
     assert_eq!(token_client.balance(&r2), 150_000);
+    assert_conservation(&client, &token_client, 500_000, 250_000);
 
     // Program B: Payout to r3 (400k)
-    client_b.single_payout(&r3, &400_000);
+    client_b.single_payout(&r3, &400_000, &None);
     assert_eq!(client_b.get_remaining_balance(), 600_000);
     assert_eq!(token_client.balance(&r3), 400_000);
+    assert_conservation(&client_b, &token_client, 1_000_000, 400_000);
 
     // ── Phase 4: Batch Payouts Round 2 ─────────────────────────────────
     let r4 = Address::generate(&env);
@@ -102,6 +126,7 @@ fn test_complex_multi_program_lifecycle_integration() {
     assert_eq!(client.get_remaining_balance(), 0);
     assert_eq!(token_client.balance(&r4), 200_000);
     assert_eq!(token_client.balance(&r5), 50_000);
+    assert_conservation(&client, &token_client, 500_000, 500_000);
 
     // ── Phase 5: Final Sanity Checks ────────────────────────────────────
     let info_a = client.get_program_info();
@@ -135,26 +160,31 @@ fn test_lifecycle_with_pausing_and_topup() {
     client.init_program(&prog_id, &admin, &token_id, &creator, &None, &None);
     token_sac.mint(&client.address, &100_000);
     client.lock_program_funds(&100_000);
+    assert_conservation(&client, &token_client, 100_000, 0);
 
     // 2. Pause the contract
-    client.set_paused(&None, &Some(true), &None, &None); // Pause releases
+    client.set_paused(&None, &Some(true), &None, &None, &None); // Pause releases
 
     // 3. Try payout while paused -> Should fail
     let r = Address::generate(&env);
-    let _res = env.as_contract(&contract_id, || client.try_single_payout(&r, &10_000));
+    let _res = env.as_contract(&contract_id, || {
+        client.try_single_payout(&r, &10_000, &None)
+    });
     // Soroban sdk try_ functions might not catch all panics depending on implementation.
     // If it panics, we just assume it's blocked.
 
     // 4. Resume and Payout
-    client.set_paused(&None, &Some(false), &None, &None);
-    client.single_payout(&r, &50_000);
+    client.set_paused(&None, &Some(false), &None, &None, &None);
+    client.single_payout(&r, &50_000, &None);
     assert_eq!(client.get_remaining_balance(), 50_000);
+    assert_conservation(&client, &token_client, 100_000, 50_000);
 
     // 5. Top-up
     token_sac.mint(&client.address, &50_000);
     client.lock_program_funds(&50_000);
     assert_eq!(client.get_remaining_balance(), 100_000);
     assert_eq!(client.get_program_info().total_funds, 150_000);
+    assert_conservation(&client, &token_client, 150_000, 50_000);
 }
 
 #[test]
@@ -171,9 +201,10 @@ fn test_batch_and_split_payout_integration() {
 
     // 1. Initial funding: 10,000 tokens
     client.init_program(&prog_id, &admin, &token_id, &creator, &None, &None);
-    client.publish_program(&prog_id);
+    client.publish_program(&prog_id, &admin);
     token_sac.mint(&client.address, &10_000);
     client.lock_program_funds(&10_000);
+    assert_conservation(&client, &token_client, 10_000, 0);
 
     // 2. Batch payout to winners (Individual amounts)
     let w1 = Address::generate(&env);
@@ -185,6 +216,7 @@ fn test_batch_and_split_payout_integration() {
     assert_eq!(client.get_remaining_balance(), 5_000);
     assert_eq!(token_client.balance(&w1), 2_000);
     assert_eq!(token_client.balance(&w2), 3_000);
+    assert_conservation(&client, &token_client, 10_000, 5_000);
 
     // 3. Configure a split for the remaining 5,000 (Ratio-based)
     let b1 = Address::generate(&env);
@@ -211,6 +243,7 @@ fn test_batch_and_split_payout_integration() {
     assert_eq!(client.get_remaining_balance(), 2_500);
     assert_eq!(token_client.balance(&b1), 1_750);
     assert_eq!(token_client.balance(&b2), 750);
+    assert_conservation(&client, &token_client, 10_000, 7_500);
 
     // 5. Verify Payout History
     let info = client.get_program_info();
