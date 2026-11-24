@@ -47,7 +47,8 @@ mod validation;
 // #[cfg(test)] mod test_boundary_edge_cases; // Issue #1294: PartiallyRefunded accounting tests
 // #[cfg(test)] mod test_cross_contract_interface; // pre-existing breakage: references unimplemented methods
 // #[cfg(test)] mod test_deterministic_randomness;
-// #[cfg(test)] mod test_multi_region_treasury;
+#[cfg(test)]
+mod test_multi_region_treasury;
 // #[cfg(test)] mod test_rbac;
 // Analytics & monitoring suite – enabled by issue #1882 (all referenced
 // functions are now implemented).
@@ -1916,7 +1917,8 @@ mod test;
 // (test_analytics_monitoring and test_query_filters enabled by issue #1882 — see top of file)
 // #[cfg(test)] mod test_auto_refund_permissions;
 // #[cfg(test)] mod test_blacklist_and_whitelist;
-// #[cfg(test)] mod test_bounty_escrow;
+#[cfg(test)]
+mod test_bounty_escrow;
 // #[cfg(test)] mod test_capability_tokens;
 // #[cfg(test)] mod test_deprecation;
 // #[cfg(test)] mod test_dispute_resolution;

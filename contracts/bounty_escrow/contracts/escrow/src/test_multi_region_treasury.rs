@@ -382,4 +382,58 @@ mod test_multi_region_treasury {
         assert!(fee_config.distribution_enabled);
         assert_eq!(fee_config.treasury_destinations.len(), 1);
     }
+
+    /// Test that rounding remainder from integer division is assigned to the last destination
+    /// and that total distributed strictly equals total fee.
+    #[test]
+    fn test_weighted_distribution_rounding_remainder_goes_to_last_destination() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let admin = Address::generate(&env);
+        let token_admin = Address::generate(&env);
+        let depositor = Address::generate(&env);
+
+        let (token_addr, token_client, token_minter) = make_token(&env, &token_admin);
+        let client = make_escrow_instance(&env, &admin, &token_addr);
+
+        let dest_a = Address::generate(&env);
+        let dest_b = Address::generate(&env);
+        let dest_c = Address::generate(&env);
+
+        let mut destinations = Vec::new(&env);
+        destinations.push_back(TreasuryDestination {
+            address: dest_a.clone(),
+            weight: 1,
+            region: String::from_str(&env, "north_america"),
+        });
+        destinations.push_back(TreasuryDestination {
+            address: dest_b.clone(),
+            weight: 1,
+            region: String::from_str(&env, "europe"),
+        });
+        destinations.push_back(TreasuryDestination {
+            address: dest_c.clone(),
+            weight: 1,
+            region: String::from_str(&env, "asia_pacific"),
+        });
+
+        client.set_treasury_distributions(&destinations, &true);
+        client.update_fee_config(&Some(1000), &Some(0), &None, &None, &None, &Some(true)); // 10% lock fee
+
+        token_minter.mint(&depositor, &1000);
+        let deadline = env.ledger().timestamp() + 1000;
+        client.lock_funds(&depositor, &1u64, &1000i128, &deadline);
+
+        // Total lock fee is 100; 100 / 3 = 33 remainder 1 -> last destination absorbs remainder.
+        let bal_a = token_client.balance(&dest_a);
+        let bal_b = token_client.balance(&dest_b);
+        let bal_c = token_client.balance(&dest_c);
+
+        assert_eq!(bal_a, 33);
+        assert_eq!(bal_b, 33);
+        assert_eq!(bal_c, 34);
+        assert_eq!(bal_a + bal_b + bal_c, 100);
+        assert_eq!(token_client.balance(&client.address), 900);
+    }
 }

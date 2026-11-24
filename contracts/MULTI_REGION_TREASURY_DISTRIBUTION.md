@@ -52,7 +52,8 @@ When `distribution_enabled` is true:
 
 1. **Lock Fees**: Deducted from depositor's transfer, distributed to treasury destinations
 2. **Release Fees**: Deducted from release amount, distributed to treasury destinations
-3. **Weight Calculation**: Each destination receives `fee_amount * (destination_weight / total_weight)`
+3. **Weight Calculation**: Each non-final destination receives `floor(fee_amount * destination_weight / total_weight)` via integer division.
+4. **Rounding Remainder Rule**: To preserve exact fee conservation (`sum(all_destination_amounts) == fee_amount`), any rounding remainder from integer division is deterministically assigned to the **last destination** in the configured `treasury_destinations` order (`last_share = fee_amount - distributed_so_far`). For example, distributing a fee of `100` across three equal-weight destinations `[1, 1, 1]` yields `33`, `33`, and `34`.
 
 ### Backward Compatibility
 

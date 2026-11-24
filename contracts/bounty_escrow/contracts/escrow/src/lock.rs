@@ -110,16 +110,11 @@ pub(crate) fn lock_funds_logic(
         fee_recipient,
         fee_enabled,
     ) = crate::fee::resolve_fee_config(&env);
-    let fee_config = FeeConfig {
-        lock_fee_rate,
-        release_fee_rate: 0,
-        lock_fixed_fee,
-        release_fixed_fee: 0,
-        fee_recipient: fee_recipient.clone(),
-        fee_enabled,
-        treasury_destinations: Vec::new(&env),
-        distribution_enabled: false,
-    };
+    let mut fee_config = crate::fee::get_fee_config_internal(&env);
+    fee_config.lock_fee_rate = lock_fee_rate;
+    fee_config.lock_fixed_fee = lock_fixed_fee;
+    fee_config.fee_recipient = fee_recipient.clone();
+    fee_config.fee_enabled = fee_enabled;
 
     // Deduct lock fee from the escrowed principal (percentage + fixed, capped at deposit).
     let fee_amount =
