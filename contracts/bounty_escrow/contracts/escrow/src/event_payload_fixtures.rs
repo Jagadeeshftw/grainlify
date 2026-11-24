@@ -1170,6 +1170,40 @@ pub const EVENT_PAYLOAD_FIXTURES: &[EventPayloadFixture] = &[
                 name: "claimed_at",
                 ty: "u64",
             },
+            FieldFixture {
+                name: "amount",
+                ty: "i128",
+            },
+        ],
+    },
+    EventPayloadFixture {
+        name: "TicketRevoked",
+        has_version_field: false,
+        fields: &[
+            FieldFixture {
+                name: "ticket_id",
+                ty: "u64",
+            },
+            FieldFixture {
+                name: "bounty_id",
+                ty: "u64",
+            },
+            FieldFixture {
+                name: "beneficiary",
+                ty: "Address",
+            },
+            FieldFixture {
+                name: "amount",
+                ty: "i128",
+            },
+            FieldFixture {
+                name: "revoked_by",
+                ty: "Address",
+            },
+            FieldFixture {
+                name: "revoked_at",
+                ty: "u64",
+            },
         ],
     },
     EventPayloadFixture {

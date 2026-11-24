@@ -78,6 +78,9 @@ To prevent collisions between different functional modules, error codes are assi
 | 219 | `InvalidSelectionInput` | Input used for deterministic random selection is invalid. |
 | 220 | `UpgradeSafetyCheckFailed` | Pre-flight safety check failed during contract upgrade. |
 | 221 | `BountyAlreadyInitialized` | Legacy/Specific: Bounty contract already initialized. |
+| 229 | `TicketInvalid` | Claim ticket was revoked and can no longer be redeemed or revoked. |
+
+> **Bounty escrow claim tickets** (`bounty_escrow` `Error` discriminants): `TicketNotFound = 23`, `TicketAlreadyUsed = 24`, `TicketExpired = 25`, `TicketInvalid = 62`. Redemption also returns `Unauthorized` for a non-beneficiary claimer, and issuance returns `InvalidAmount` when the amount exceeds the escrow's unreserved remaining amount.
 
 ### 300-399: Identity / KYC Errors
 | Code | Name | Description |

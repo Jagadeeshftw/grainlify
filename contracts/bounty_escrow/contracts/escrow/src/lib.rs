@@ -92,6 +92,8 @@ mod test_timelock;
 #[cfg(test)]
 mod test_bounded_pagination;
 #[cfg(test)]
+mod test_claim_tickets;
+#[cfg(test)]
 mod test_deterministic_event_ordering;
 #[cfg(test)]
 mod test_event_payload_fixtures;
@@ -127,6 +129,7 @@ pub mod rbac;
 pub(crate) mod admin;
 pub(crate) mod analytics;
 pub(crate) mod capability;
+pub(crate) mod claim_tickets;
 pub(crate) mod claims;
 pub(crate) mod fee;
 pub(crate) mod gas;
@@ -297,6 +300,8 @@ impl Error {
     pub const InvalidPayload: Error = Error::BountyNotFound;
     pub const DelayBelowMinimum: Error = Error::FundsNotLocked;
     pub const DelayAboveMaximum: Error = Error::RouterNotConfigured;
+    /// Returned when a claim ticket has been revoked and can no longer be redeemed or revoked.
+    TicketInvalid = 62,
 }
 
 /// Minimum persistent-storage TTLs, measured in ledgers.
@@ -514,6 +519,8 @@ pub enum RefundEligibilityCode {
     IneligibleClaimPending,
     IneligibleDeadlineNotPassed,
     IneligibleInvalidApproval,
+    /// Refund would spend funds reserved by outstanding claim tickets.
+    IneligibleTicketReserved,
 }
 
 #[contracttype]
@@ -675,6 +682,12 @@ pub enum DataKey {
     ActionCounter,
     /// Queued admin action awaiting (or having completed) execution.
     PendingAction(u64),
+    /// Monotonic counter backing claim-ticket ids (instance storage).
+    ClaimTicketCounter,
+    /// Total amount of a bounty reserved by outstanding claim tickets.
+    TicketReserved(u64),
+    /// Number of outstanding claim tickets across all bounties (instance storage).
+    OutstandingTickets,
 }
 
 #[contracttype]
@@ -981,6 +994,7 @@ pub struct ClaimTicket {
     pub expires_at: u64,
     pub used: bool,
     pub issued_at: u64,
+    pub revoked: bool,
 }
 
 #[contracttype]
@@ -1744,6 +1758,49 @@ impl BountyEscrowContract {
         _outcome: DisputeOutcome,
     ) -> Result<(), Error> {
         crate::claims::cancel_pending_claim(env, bounty_id, _outcome)
+    }
+
+    pub fn issue_claim_ticket(
+        env: Env,
+        issuer: Address,
+        bounty_id: u64,
+        beneficiary: Address,
+        amount: i128,
+        expires_at: u64,
+    ) -> Result<u64, Error> {
+        crate::claim_tickets::issue_claim_ticket(
+            env,
+            issuer,
+            bounty_id,
+            beneficiary,
+            amount,
+            expires_at,
+        )
+    }
+
+    pub fn claim_with_ticket(env: Env, ticket_id: u64, claimer: Address) -> Result<(), Error> {
+        crate::claim_tickets::claim_with_ticket(env, ticket_id, claimer)
+    }
+
+    pub fn revoke_claim_ticket(env: Env, caller: Address, ticket_id: u64) -> Result<(), Error> {
+        crate::claim_tickets::revoke_claim_ticket(env, caller, ticket_id)
+    }
+
+    pub fn get_claim_ticket(env: Env, ticket_id: u64) -> Result<ClaimTicket, Error> {
+        crate::claim_tickets::get_claim_ticket(env, ticket_id)
+    }
+
+    pub fn get_beneficiary_tickets(
+        env: Env,
+        beneficiary: Address,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<u64> {
+        crate::claim_tickets::get_beneficiary_tickets(env, beneficiary, offset, limit)
+    }
+
+    pub fn get_ticket_reserved_amount(env: Env, bounty_id: u64) -> i128 {
+        crate::claim_tickets::get_ticket_reserved_amount(env, bounty_id)
     }
 
     pub fn get_pending_claim(env: Env, bounty_id: u64) -> Result<ClaimRecord, Error> {
