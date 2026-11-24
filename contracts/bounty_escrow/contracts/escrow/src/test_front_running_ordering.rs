@@ -5,13 +5,26 @@ use soroban_sdk::{
     token, Address, Env,
 };
 
-/// Race-model tests for front-running-sensitive escrow actions.
-///
-/// # Assumptions
-/// - Soroban executes contract calls atomically within a transaction.
-/// - Contention is modeled as multiple transactions touching the same bounty in sequence.
-/// - Determinism requirement: once the first state transition succeeds, later conflicting
-///   transitions must fail with a stable error and must not move additional funds.
+//! Race-model tests for front-running-sensitive escrow actions.
+//!
+//! # Assumptions
+//! - Soroban executes contract calls atomically within a transaction.
+//! - Contention is modeled as multiple transactions touching the same bounty in sequence.
+//! - Determinism requirement: once the first state transition succeeds, later conflicting
+//!   transitions must fail with a stable error and must not move additional funds.
+//!
+//! # Refund vs. Release Ordering Rules
+//! - `Locked` → `partial_release`: allowed while `Locked` and `payout_amount <= remaining_amount`.
+//!   Status stays `Locked` while `remaining_amount > 0`, and transitions to `Released` once
+//!   `remaining_amount == 0`.
+//! - `Locked` → `release_funds`: allowed only while `Locked`; transitions to terminal `Released`.
+//! - `Locked` → `refund` (post-deadline or admin-approved): transitions to `PartiallyRefunded`
+//!   if `remaining_amount > 0`, or terminal `Refunded` if `remaining_amount == 0`.
+//! - `PartiallyRefunded` → `approve_refund` / `refund`: allowed up to `remaining_amount`.
+//! - `PartiallyRefunded` → `release_funds` / `partial_release`: **disallowed**; both fail with
+//!   `Error::FundsNotLocked` (once any refund has executed, funds cannot be released).
+//! - `Released` / `Refunded` (terminal): all subsequent `release_funds`, `partial_release`,
+//!   `approve_refund`, and `refund` calls fail with `Error::FundsNotLocked`.
 
 fn create_token_contract<'a>(
     env: &Env,
@@ -378,10 +391,13 @@ fn test_partial_refund_then_release_fails() {
 
     // Verify no funds were released
     assert_eq!(setup.token.balance(&recipient), 0);
-    assert_eq!(setup.token.balance(&setup.depositor), 1_000_000 + 40_000);
+    assert_eq!(
+        setup.token.balance(&setup.depositor),
+        1_000_000 - amount + 40_000
+    );
 }
 
-/// Test: Partial release then refund succeeds (Locked → PartiallyRefunded → Refunded)
+/// Test: Partial release then refund succeeds (Locked → Refunded)
 ///
 /// Scenario:
 /// 1. Lock funds
@@ -416,19 +432,24 @@ fn test_partial_release_then_refund_succeeds() {
     let escrow = setup.escrow.get_escrow_info(&bounty_id);
     assert_eq!(escrow.status, EscrowStatus::Refunded);
     assert_eq!(setup.token.balance(&recipient), 60_000);
-    assert_eq!(setup.token.balance(&setup.depositor), 1_000_000 + 40_000);
+    assert_eq!(
+        setup.token.balance(&setup.depositor),
+        1_000_000 - amount + 40_000
+    );
 }
 
-/// Test: Multiple interleaved partial refunds and releases
+/// Test: Multiple interleaved partial releases and partial refunds
 ///
 /// Scenario:
-/// 1. Lock funds
-/// 2. Partial refund (30%)
-/// 3. Partial release (40%)
-/// 4. Attempt another partial refund (30%) → must succeed
-/// 5. Attempt release → must fail (status is Refunded)
+/// 1. Lock funds (100,000)
+/// 2. Partial release (40%) → stays Locked, remaining 60,000
+/// 3. First partial refund (30%) → PartiallyRefunded, remaining 30,000
+/// 4. Attempt partial release after partial refund → must fail (FundsNotLocked)
+/// 5. Second partial refund (30%) → Refunded, remaining 0
+/// 6. Attempt release → must fail (status is Refunded)
 ///
-/// Security: Ensures complex interleaved operations don't allow double-spend.
+/// Security: Ensures interleaved partial operations enforce Locked-only release
+/// rules and never allow double-spend.
 #[test]
 fn test_interleaved_partial_refunds_and_releases() {
     let setup = TestSetup::new();
@@ -441,7 +462,16 @@ fn test_interleaved_partial_refunds_and_releases() {
         .escrow
         .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
-    // First partial refund (30%)
+    // Partial release (40%) while Locked
+    setup
+        .escrow
+        .partial_release(&bounty_id, &recipient, &40_000);
+
+    let escrow = setup.escrow.get_escrow_info(&bounty_id);
+    assert_eq!(escrow.status, EscrowStatus::Locked);
+    assert_eq!(escrow.remaining_amount, 60_000);
+
+    // First partial refund (30%) transitions to PartiallyRefunded
     setup
         .escrow
         .approve_refund(&bounty_id, &30_000, &setup.depositor, &RefundMode::Partial);
@@ -449,17 +479,15 @@ fn test_interleaved_partial_refunds_and_releases() {
 
     let escrow = setup.escrow.get_escrow_info(&bounty_id);
     assert_eq!(escrow.status, EscrowStatus::PartiallyRefunded);
-    assert_eq!(escrow.remaining_amount, 70_000);
-
-    // Partial release (40%)
-    setup
-        .escrow
-        .partial_release(&bounty_id, &recipient, &40_000);
-
-    let escrow = setup.escrow.get_escrow_info(&bounty_id);
     assert_eq!(escrow.remaining_amount, 30_000);
 
-    // Second partial refund (30%)
+    // Partial release after partial refund → must fail with FundsNotLocked
+    let late_partial_release = setup
+        .escrow
+        .try_partial_release(&bounty_id, &recipient, &10_000);
+    assert_eq!(late_partial_release, Err(Ok(Error::FundsNotLocked)));
+
+    // Second partial refund (30%) completes the refund
     setup
         .escrow
         .approve_refund(&bounty_id, &30_000, &setup.depositor, &RefundMode::Partial);
@@ -475,7 +503,10 @@ fn test_interleaved_partial_refunds_and_releases() {
 
     // Verify final balances
     assert_eq!(setup.token.balance(&recipient), 40_000);
-    assert_eq!(setup.token.balance(&setup.depositor), 1_000_000 + 60_000);
+    assert_eq!(
+        setup.token.balance(&setup.depositor),
+        1_000_000 - amount + 60_000
+    );
 }
 
 /// Test: Refund with admin approval vs release contention
@@ -513,7 +544,7 @@ fn test_admin_approved_refund_prevents_release() {
 
     // Verify no funds were released
     assert_eq!(setup.token.balance(&recipient), 0);
-    assert_eq!(setup.token.balance(&setup.depositor), 1_000_000 + amount);
+    assert_eq!(setup.token.balance(&setup.depositor), 1_000_000);
 }
 
 /// Test: Release then refund with admin approval fails
@@ -555,7 +586,7 @@ fn test_release_prevents_admin_approved_refund() {
 
     // Verify funds remain with recipient
     assert_eq!(setup.token.balance(&recipient), amount);
-    assert_eq!(setup.token.balance(&setup.depositor), 1_000_000);
+    assert_eq!(setup.token.balance(&setup.depositor), 1_000_000 - amount);
 }
 
 /// Test: Partial refund then release with different timing
@@ -597,7 +628,10 @@ fn test_partial_refund_then_release_with_timing() {
 
     // Verify no funds were released
     assert_eq!(setup.token.balance(&recipient), 0);
-    assert_eq!(setup.token.balance(&setup.depositor), 1_000_000 + 50_000);
+    assert_eq!(
+        setup.token.balance(&setup.depositor),
+        1_000_000 - amount + 50_000
+    );
 }
 
 /// Test: Multiple bounties with refund/release contention
@@ -647,19 +681,19 @@ fn test_multiple_bounties_refund_release_contention() {
     let refund_attempt_2 = setup.escrow.try_refund(&bounty_id_2);
     assert_eq!(refund_attempt_2, Err(Ok(Error::FundsNotLocked)));
 
-    // Verify final balances
+    // Verify final balances (2 * amount locked, 1 * amount refunded)
     assert_eq!(setup.token.balance(&recipient), amount);
-    assert_eq!(setup.token.balance(&setup.depositor), 1_000_000 + amount);
+    assert_eq!(setup.token.balance(&setup.depositor), 1_000_000 - amount);
 }
 
 /// Test: Complex interleaved operations with partial amounts
 ///
 /// Scenario:
 /// 1. Lock funds (100,000)
-/// 2. Partial refund (20,000) → PartiallyRefunded
-/// 3. Partial release (30,000) → remaining 50,000
-/// 4. Partial refund (25,000) → remaining 25,000
-/// 5. Attempt release (30,000) → must fail (insufficient funds)
+/// 2. Partial release (30,000) → stays Locked, remaining 70,000
+/// 3. Partial refund (20,000) → PartiallyRefunded, remaining 50,000
+/// 4. Partial refund (25,000) → PartiallyRefunded, remaining 25,000
+/// 5. Attempt partial release (30,000) → must fail (FundsNotLocked)
 /// 6. Refund remaining (25,000) → Refunded
 /// 7. Attempt release → must fail (status is Refunded)
 ///
@@ -676,7 +710,16 @@ fn test_complex_interleaved_operations() {
         .escrow
         .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
-    // Step 1: Partial refund (20,000)
+    // Step 1: Partial release (30,000) while Locked
+    setup
+        .escrow
+        .partial_release(&bounty_id, &recipient, &30_000);
+
+    let escrow = setup.escrow.get_escrow_info(&bounty_id);
+    assert_eq!(escrow.status, EscrowStatus::Locked);
+    assert_eq!(escrow.remaining_amount, 70_000);
+
+    // Step 2: Partial refund (20,000) transitions to PartiallyRefunded
     setup
         .escrow
         .approve_refund(&bounty_id, &20_000, &setup.depositor, &RefundMode::Partial);
@@ -684,14 +727,6 @@ fn test_complex_interleaved_operations() {
 
     let escrow = setup.escrow.get_escrow_info(&bounty_id);
     assert_eq!(escrow.status, EscrowStatus::PartiallyRefunded);
-    assert_eq!(escrow.remaining_amount, 80_000);
-
-    // Step 2: Partial release (30,000)
-    setup
-        .escrow
-        .partial_release(&bounty_id, &recipient, &30_000);
-
-    let escrow = setup.escrow.get_escrow_info(&bounty_id);
     assert_eq!(escrow.remaining_amount, 50_000);
 
     // Step 3: Partial refund (25,000)
@@ -701,13 +736,14 @@ fn test_complex_interleaved_operations() {
     setup.escrow.refund(&bounty_id);
 
     let escrow = setup.escrow.get_escrow_info(&bounty_id);
+    assert_eq!(escrow.status, EscrowStatus::PartiallyRefunded);
     assert_eq!(escrow.remaining_amount, 25_000);
 
-    // Step 4: Attempt release (30,000) → must fail (insufficient funds)
+    // Step 4: Attempt partial release (30,000) → must fail (FundsNotLocked)
     let release_attempt = setup
         .escrow
         .try_partial_release(&bounty_id, &recipient, &30_000);
-    assert!(release_attempt.is_err());
+    assert_eq!(release_attempt, Err(Ok(Error::FundsNotLocked)));
 
     // Step 5: Refund remaining (25,000)
     setup.env.ledger().set_timestamp(deadline + 1);
@@ -723,7 +759,10 @@ fn test_complex_interleaved_operations() {
 
     // Verify final balances
     assert_eq!(setup.token.balance(&recipient), 30_000);
-    assert_eq!(setup.token.balance(&setup.depositor), 1_000_000 + 70_000);
+    assert_eq!(
+        setup.token.balance(&setup.depositor),
+        1_000_000 - amount + 70_000
+    );
 }
 
 /// Test: Refund after partial release with admin approval
@@ -771,5 +810,8 @@ fn test_partial_release_then_admin_approved_refund() {
 
     // Verify final balances
     assert_eq!(setup.token.balance(&recipient), 60_000);
-    assert_eq!(setup.token.balance(&setup.depositor), 1_000_000 + 40_000);
+    assert_eq!(
+        setup.token.balance(&setup.depositor),
+        1_000_000 - amount + 40_000
+    );
 }

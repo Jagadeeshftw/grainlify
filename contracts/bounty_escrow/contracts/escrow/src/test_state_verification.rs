@@ -14,7 +14,7 @@ mod test {
     //! 2. **Action sequence**: Execute a series of operations (lock, release, refund,
     //!    admin approval, partial refund, etc.).
     //! 3. **Post-condition**: Verify each escrow's state matches the expected outcome:
-    //!    - `verify_state(bounty_id)` returns `true` (invariants hold)
+    //!    - paginated `verify_state` reports healthy state
     //!    - `get_escrow_info(bounty_id)` fields match expected values
     //!    - Token balances reconcile with escrow remaining amounts
     //!    - Aggregate stats are consistent with individual escrow states
@@ -40,6 +40,20 @@ mod test {
     };
     use soroban_sdk::testutils::{Address as _, Ledger};
     use soroban_sdk::{token, vec, Address, Env};
+
+    fn verify_state(client: &BountyEscrowContractClient<'static>) -> bool {
+        let mut cursor = None;
+        loop {
+            let report = client.verify_state(&cursor);
+            if !report.healthy {
+                return false;
+            }
+            match report.next_cursor {
+                Some(next) => cursor = Some(next),
+                None => return report.complete && report.balance_matches == Some(true),
+            }
+        }
+    }
 
     /// Shared setup: initializes contract, mints tokens, returns all handles.
     fn setup_bounty(
@@ -92,7 +106,7 @@ mod test {
 
         client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
 
-        assert!(client.verify_state(&bounty_id));
+        assert!(verify_state(&client));
     }
 
     /// Released escrow passes invariant checks (remaining_amount == 0).
@@ -107,7 +121,7 @@ mod test {
         client.lock_funds(&depositor, &bounty_id, &1000i128, &100);
         client.release_funds(&bounty_id, &contributor);
 
-        assert!(client.verify_state(&bounty_id));
+        assert!(verify_state(&client));
         let info = client.get_escrow_info(&bounty_id);
         assert_eq!(info.status, EscrowStatus::Released);
         assert_eq!(info.remaining_amount, 0);
@@ -126,7 +140,7 @@ mod test {
         env.ledger().set_timestamp(deadline + 1);
         client.refund(&bounty_id);
 
-        assert!(client.verify_state(&bounty_id));
+        assert!(verify_state(&client));
         let info = client.get_escrow_info(&bounty_id);
         assert_eq!(info.status, EscrowStatus::Refunded);
     }
@@ -151,7 +165,7 @@ mod test {
         });
 
         assert!(
-            !client.verify_state(&bounty_id),
+            !verify_state(&client),
             "Should fail when remaining > total"
         );
     }
@@ -172,7 +186,7 @@ mod test {
         });
 
         assert!(
-            !client.verify_state(&bounty_id),
+            !verify_state(&client),
             "Should fail with negative amount"
         );
     }
@@ -194,7 +208,7 @@ mod test {
         });
 
         assert!(
-            !client.verify_state(&bounty_id),
+            !verify_state(&client),
             "Should fail if released with remaining balance"
         );
     }
@@ -215,21 +229,40 @@ mod test {
         });
 
         assert!(
-            !client.verify_state(&bounty_id),
+            !verify_state(&client),
             "Should fail with negative remaining_amount"
         );
     }
 
-    /// Non-existent bounty fails verification (returns false).
+    /// An empty escrow index is a healthy state.
     #[test]
-    fn test_verify_state_nonexistent_bounty_returns_false() {
+    fn test_verify_state_empty_index_is_healthy() {
         let env = Env::default();
         let (client, _contract_id, _admin, _depositor, _token_id, _token) = setup_bounty(&env);
 
-        assert!(
-            !client.verify_state(&999),
-            "Non-existent bounty must return false"
-        );
+        assert!(verify_state(&client));
+    }
+
+    #[test]
+    fn test_verify_state_is_bounded_and_accumulates_across_pages() {
+        let env = Env::default();
+        let (client, _contract_id, _admin, depositor, _token_id, _token) = setup_bounty(&env);
+        let deadline = env.ledger().timestamp() + 100;
+        for bounty_id in 0..21 {
+            client.lock_funds(&depositor, &bounty_id, &1, &deadline);
+        }
+
+        let first = client.verify_state(&None);
+        assert!(!first.complete);
+        assert_eq!(first.page_size, 20);
+        assert_eq!(first.sum_remaining, 20);
+        let second = client.verify_state(&first.next_cursor);
+        assert!(second.complete);
+        assert_eq!(second.page_size, 1);
+        assert_eq!(second.sum_remaining, 21);
+        assert_eq!(second.balance_matches, Some(true));
+        assert!(second.healthy);
+        assert_eq!(second.next_cursor, None);
     }
 
     // =========================================================================
@@ -254,7 +287,7 @@ mod test {
         client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
 
         // After lock: verify state
-        assert!(client.verify_state(&bounty_id));
+        assert!(verify_state(&client));
         let info = client.get_escrow_info(&bounty_id);
         assert_eq!(info.status, EscrowStatus::Locked);
         assert_eq!(info.amount, amount);
@@ -266,7 +299,7 @@ mod test {
         client.release_funds(&bounty_id, &contributor);
 
         // After release: verify state and balances
-        assert!(client.verify_state(&bounty_id));
+        assert!(verify_state(&client));
         let info = client.get_escrow_info(&bounty_id);
         assert_eq!(info.status, EscrowStatus::Released);
         assert_eq!(info.remaining_amount, 0);
@@ -294,7 +327,7 @@ mod test {
         client.refund(&bounty_id);
 
         // After refund: verify state
-        assert!(client.verify_state(&bounty_id));
+        assert!(verify_state(&client));
         let info = client.get_escrow_info(&bounty_id);
         assert_eq!(info.status, EscrowStatus::Refunded);
         assert_eq!(token.balance(&depositor), depositor_before);
@@ -322,7 +355,7 @@ mod test {
         client.refund(&bounty_id);
 
         // After partial refund: verify state
-        assert!(client.verify_state(&bounty_id));
+        assert!(verify_state(&client));
         let info = client.get_escrow_info(&bounty_id);
         assert_eq!(info.status, EscrowStatus::PartiallyRefunded);
         assert_eq!(info.remaining_amount, amount - partial_amount);
@@ -362,9 +395,9 @@ mod test {
         client.refund(&refunded_id);
 
         // All three must pass state verification
-        assert!(client.verify_state(&locked_id));
-        assert!(client.verify_state(&released_id));
-        assert!(client.verify_state(&refunded_id));
+        assert!(verify_state(&client));
+        assert!(verify_state(&client));
+        assert!(verify_state(&client));
 
         // Verify individual states
         assert_eq!(
@@ -495,7 +528,7 @@ mod test {
             .set_timestamp(env.ledger().timestamp() + 10 * 365 * 24 * 3600);
 
         // State should still be valid
-        assert!(client.verify_state(&bounty_id));
+        assert!(verify_state(&client));
         let info = client.get_escrow_info(&bounty_id);
         assert_eq!(info.status, EscrowStatus::Locked);
         assert_eq!(info.amount, 5000);
@@ -524,7 +557,7 @@ mod test {
         assert!(result.is_err());
 
         // State unchanged after failed attempt
-        assert!(client.verify_state(&bounty_id));
+        assert!(verify_state(&client));
         assert_eq!(
             client.get_escrow_info(&bounty_id).status,
             EscrowStatus::Locked
@@ -535,7 +568,7 @@ mod test {
         env.ledger().set_timestamp(deadline + 1);
         client.refund(&bounty_id);
 
-        assert!(client.verify_state(&bounty_id));
+        assert!(verify_state(&client));
         assert_eq!(
             client.get_escrow_info(&bounty_id).status,
             EscrowStatus::Refunded
@@ -563,7 +596,7 @@ mod test {
         assert!(result.is_err());
 
         // Original bounty still valid and unchanged
-        assert!(client.verify_state(&bounty_id));
+        assert!(verify_state(&client));
         let info = client.get_escrow_info(&bounty_id);
         assert_eq!(info.status, EscrowStatus::Locked);
         assert_eq!(info.remaining_amount, 1500);
@@ -600,9 +633,9 @@ mod test {
         );
 
         // All should pass verification
-        assert!(client.verify_state(&80));
-        assert!(client.verify_state(&81));
-        assert!(client.verify_state(&82));
+        assert!(verify_state(&client));
+        assert!(verify_state(&client));
+        assert!(verify_state(&client));
     }
 
     // =========================================================================

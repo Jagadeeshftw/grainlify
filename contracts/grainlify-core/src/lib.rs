@@ -1039,6 +1039,8 @@ mod test_storage_layout;
 mod test_strict_mode;
 #[cfg(test)]
 mod test_timelock_boundary;
+#[cfg(test)]
+mod test_timelocked_pause;
 #[cfg(all(test, feature = "wasm_tests"))]
 mod test_version_helpers;
 // ==================== END MONITORING MODULE ====================
@@ -2919,5 +2921,19 @@ mod upgrade_rollback_tests;
 #[path = "test/upgrade_rollback_scenarios.rs"]
 mod upgrade_rollback_scenarios;
 
+// Orphaned suites wired for issue #2088 (timelocked pause, invariant entrypoints,
+// rollback guardrails, upgrade timelock). `upgrade_timelock_tests` is retained as a
+// documented stub because its coverage is superseded by `test_timelock_boundary`.
+#[cfg(test)]
+#[path = "test/invariant_entrypoints_tests.rs"]
+mod invariant_entrypoints_tests;
+
+#[cfg(test)]
+#[path = "test/snapshot_rollback_guardrails_tests.rs"]
+mod snapshot_rollback_guardrails_tests;
+
+#[cfg(test)]
+#[path = "test/upgrade_timelock_tests.rs"]
+mod upgrade_timelock_tests;
 #[cfg(test)]
 mod network_config_test;

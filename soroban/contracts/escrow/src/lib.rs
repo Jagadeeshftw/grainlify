@@ -15,7 +15,7 @@ const ESCROW_LABELS_UPDATED: soroban_sdk::Symbol = symbol_short!("EscLbls");
 
 const MAX_LABEL_LENGTH: u32 = 32;
 const MAX_LABELS: u32 = 10;
-const MAX_PAGE_SIZE: u32 = 50;
+const MAX_PAGE_SIZE: u32 = 20;
 
 pub const DELEGATE_PERMISSION_RELEASE: u32 = 1 << 0;
 pub const DELEGATE_PERMISSION_REFUND: u32 = 1 << 1;
@@ -122,6 +122,21 @@ pub struct EscrowLabelRecord {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EscrowLabelPage {
+    pub records: Vec<EscrowLabelRecord>,
+    pub next_cursor: Option<u64>,
+    pub has_more: bool,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EscrowSearchCriteria {
+    pub status_filter: u32,
+    pub depositor: Option<Address>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EscrowSearchPage {
     pub records: Vec<EscrowLabelRecord>,
     pub next_cursor: Option<u64>,
     pub has_more: bool,
@@ -1067,6 +1082,113 @@ impl EscrowContract {
         Ok(escrow)
     }
 
+    /// Convenience method to lock funds with initial labels.
+    pub fn lock_funds_with_labels(
+        env: Env,
+        depositor: Address,
+        bounty_id: u64,
+        amount: i128,
+        deadline: u64,
+        labels: Vec<String>,
+    ) -> Result<Escrow, Error> {
+        Self::lock_funds(env.clone(), depositor.clone(), bounty_id, amount, deadline)?;
+        Self::update_labels(env, depositor, bounty_id, labels)
+    }
+
+    /// Return the total number of registered escrows.
+    pub fn get_escrow_count(env: Env) -> u32 {
+        let index: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::EscrowIndex)
+            .unwrap_or_else(|| Vec::new(&env));
+        index.len()
+    }
+
+    /// Search and paginate escrows by status and depositor criteria.
+    pub fn get_escrows(
+        env: Env,
+        criteria: EscrowSearchCriteria,
+        cursor: Option<u64>,
+        limit: u32,
+    ) -> EscrowSearchPage {
+        let effective_limit = if limit == 0 || limit > MAX_PAGE_SIZE {
+            MAX_PAGE_SIZE
+        } else {
+            limit
+        };
+
+        let index: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::EscrowIndex)
+            .unwrap_or_else(|| Vec::new(&env));
+
+        let mut records: Vec<EscrowLabelRecord> = Vec::new(&env);
+        let mut collecting = cursor.is_none();
+        let mut next_cursor = None;
+        let mut has_more = false;
+
+        for i in 0..index.len() {
+            let id = index.get(i).unwrap();
+            if !collecting {
+                if Some(id) == cursor {
+                    collecting = true;
+                }
+                continue;
+            }
+
+            let escrow: Escrow = match env.storage().persistent().get(&DataKey::Escrow(id)) {
+                Some(e) => e,
+                None => continue,
+            };
+
+            // status_filter: 0 = any, 1 = Locked, 2 = Released, 3 = Refunded
+            let matches_status = match criteria.status_filter {
+                0 => true,
+                1 => escrow.status == EscrowStatus::Locked,
+                2 => escrow.status == EscrowStatus::Released,
+                3 => escrow.status == EscrowStatus::Refunded,
+                _ => false,
+            };
+            if !matches_status {
+                continue;
+            }
+
+            if let Some(ref dep) = criteria.depositor {
+                if &escrow.depositor != dep {
+                    continue;
+                }
+            }
+
+            if records.len() >= effective_limit {
+                has_more = true;
+                next_cursor = Some(id);
+                break;
+            }
+
+            records.push_back(EscrowLabelRecord {
+                bounty_id: id,
+                depositor: escrow.depositor,
+                amount: escrow.amount,
+                remaining_amount: escrow.remaining_amount,
+                status: escrow.status,
+                deadline: escrow.deadline,
+                labels: escrow.labels,
+            });
+        }
+
+        if !has_more {
+            next_cursor = None;
+        }
+
+        EscrowSearchPage {
+            records,
+            next_cursor,
+            has_more,
+        }
+    }
+
     pub fn get_escrows_by_label(
         env: Env,
         label: String,
@@ -1427,3 +1549,11 @@ mod identity_test;
 mod test;
 #[cfg(test)]
 mod test_ownership_transfer;
+#[cfg(test)]
+mod delegate_test;
+#[cfg(test)]
+mod test_labels;
+#[cfg(test)]
+mod test_max_counts;
+#[cfg(test)]
+mod test_search;

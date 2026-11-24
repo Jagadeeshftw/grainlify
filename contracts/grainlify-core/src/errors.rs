@@ -68,6 +68,7 @@ pub const USE_INFO_V2_FOR_ANON: u32 = 225;
 pub const INVALID_LABEL: u32 = 226;
 pub const TOO_MANY_LABELS: u32 = 227;
 pub const LABEL_NOT_ALLOWED: u32 = 228;
+pub const TICKET_INVALID: u32 = 229;
 
 // 300-399: Identity / KYC Errors
 pub const INVALID_SIGNATURE: u32 = 301;

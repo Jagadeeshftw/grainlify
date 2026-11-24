@@ -433,6 +433,7 @@ mod tests {
             errors::INVALID_LABEL,
             errors::TOO_MANY_LABELS,
             errors::LABEL_NOT_ALLOWED,
+            errors::TICKET_INVALID,
         ]
         .iter()
         .map(|&c| (c, ""))
@@ -548,6 +549,7 @@ mod tests {
             errors::INVALID_LABEL,
             errors::TOO_MANY_LABELS,
             errors::LABEL_NOT_ALLOWED,
+            errors::TICKET_INVALID,
             // Identity
             errors::INVALID_SIGNATURE,
             errors::CLAIM_EXPIRED,
