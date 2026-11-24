@@ -46,6 +46,7 @@
 //! | `refund_with_capability` | token `transfer`       |
 //! | `release_with_capability`| token `transfer`       |
 //! | `claim`                  | token `transfer`       |
+//! | `claim_with_ticket`      | token `transfer`       |
 //! | `batch_lock_funds`       | token `transfer` ×N    |
 //! | `batch_release_funds`    | token `transfer` ×N    |
 //! | `emergency_withdraw`     | token `transfer`       |

@@ -15,6 +15,8 @@ npm install @grainlify/contracts-sdk
 - Network error detection and reporting
 - Input validation
 - Support for all ProgramEscrow contract functions
+- Governance and timelocked grainlify-core upgrades
+- Typed BountyEscrow client for the core bounty lifecycle
 - Read-only simulation clients (`ViewFacadeClient` and `EscrowViewFacadeClient`) requiring no signing keypair
 
 ## Usage
@@ -111,6 +113,125 @@ try {
 }
 ```
 
+### Govern grainlify-core upgrades
+
+`GovernanceClient` can initialize governance, propose and approve upgrades,
+cancel or execute proposals, inspect proposal/timelock status, and commit and
+run version migrations. Upgrade hashes accept exactly 32-byte `Buffer` values
+or 64-character hexadecimal strings (optionally prefixed with `0x`).
+
+```typescript
+import { GovernanceClient } from '@grainlify/contracts-sdk';
+import { Keypair } from '@stellar/stellar-sdk';
+
+const governance = new GovernanceClient({
+  contractId: 'YOUR_GRAINLIFY_CORE_CONTRACT_ID',
+  rpcUrl: 'https://soroban-testnet.stellar.org',
+  networkPassphrase: 'Test SDF Network ; September 2015',
+  sourceKeypair: Keypair.fromSecret('YOUR_SECRET_KEY')
+});
+
+const proposalId = await governance.proposeUpgrade(
+  proposerAddress,
+  '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+  0n, // 0 means no proposal expiry
+  sourceKeypair
+);
+await governance.approveUpgrade(proposalId, signerAddress, sourceKeypair);
+
+const proposal = await governance.getUpgradeProposal(proposalId);
+const ready = await governance.canExecute(proposalId);
+if (proposal && ready) {
+  await governance.executeUpgrade(proposalId, sourceKeypair);
+}
+```
+
+`canExecute` checks that the proposal exists and is not cancelled, that the
+on-chain timelock has elapsed, and that the proposal has not reached its expiry
+ledger timestamp. Read methods use the configured `sourceKeypair` for Soroban
+simulation; alternatively, provide one as the final argument to each write
+method.
+### Bounty Escrow
+
+```typescript
+import { BountyEscrowClient } from '@grainlify/contracts-sdk';
+
+const bountyClient = new BountyEscrowClient({
+  contractId: 'YOUR_BOUNTY_ESCROW_CONTRACT_ID',
+  rpcUrl: 'https://soroban-testnet.stellar.org',
+  networkPassphrase: 'Test SDF Network ; September 2015',
+});
+```
+
+#### Lock funds
+
+```typescript
+await bountyClient.lockFunds(
+  depositorAddress, // G... depositor
+  42n, // bounty id (u64)
+  10_000_000n, // amount in token base units (i128, must be > 0)
+  1_800_000_000n, // refund deadline (u64, unix seconds)
+  sourceKeypair,
+);
+```
+
+#### Batch lock funds
+
+```typescript
+const created = await bountyClient.batchLockFunds(
+  [
+    {
+      bounty_id: 43n,
+      depositor: depositorAddress,
+      amount: 5_000_000n,
+      deadline: 1_800_000_000n,
+    },
+    {
+      bounty_id: 44n,
+      depositor: depositorAddress,
+      amount: 7_500_000n,
+      deadline: 1_800_000_000n,
+    },
+  ],
+  sourceKeypair,
+);
+console.log('Escrows created:', created);
+```
+
+#### Release and refund
+
+```typescript
+// Release the full remaining balance to a contributor
+await bountyClient.releaseFunds(42n, contributorAddress, sourceKeypair);
+
+// Or release part of it
+await bountyClient.partialRelease(42n, contributorAddress, 2_500_000n, sourceKeypair);
+
+// Refund the depositor
+await bountyClient.refund(42n, sourceKeypair);
+
+// Admin-approved refund before the deadline
+await bountyClient.approveRefund(42n, 10_000_000n, depositorAddress, 'Full', adminKeypair);
+```
+
+#### Read escrow state (simulation only, no transaction submitted)
+
+```typescript
+const escrow = await bountyClient.getEscrowInfo(42n);
+console.log(escrow.status, escrow.remaining_amount);
+
+const balance = await bountyClient.getBalance();
+const eligibility = await bountyClient.getRefundEligibility(42n);
+const flags = await bountyClient.getPauseFlags();
+```
+
+#### Pause operations
+
+```typescript
+await bountyClient.setPaused(
+  { lock: true, refund: true, reason: 'maintenance' },
+  adminKeypair,
+);
 ### Read-Only View Facade Client (`ViewFacadeClient`)
 
 `ViewFacadeClient` queries the `view-facade` contract using Soroban RPC simulation only. No signing keypair is required; a throwaway source account is used automatically (configurable via `sourceAccount`).
@@ -277,6 +398,29 @@ Run tests with coverage:
 ```bash
 npm run test:coverage
 ```
+
+## End-to-End Examples (Local Quickstart)
+
+`src/__tests__/examples.e2e.test.ts` exercises the modules in `examples/` against a real Soroban deployment. It is skipped unless every `GRAINLIFY_SDK_E2E_*` variable is set, or `GRAINLIFY_SDK_E2E_REQUIRED=1` is set.
+
+The repository script starts an ephemeral [Stellar Quickstart](https://github.com/stellar/quickstart) container, waits for Soroban RPC and friendbot, builds and deploys `program_escrow.wasm`, funds a throwaway key, and runs the e2e test:
+
+```bash
+# from the repository root
+bash scripts/sdk-e2e-local.sh
+```
+
+The default image is pinned to `stellar/quickstart:v695-b1655.1-latest`; override it with `QUICKSTART_IMAGE=stellar/quickstart:<tag>`. Avoid the moving `latest` tag when you need reproducible runs. Prerequisites are Docker, Rust with the `wasm32-unknown-unknown` target, Node.js 20 with the SDK dependencies installed (`cd contracts/sdk && npm ci`), and Stellar CLI 23.0.1 (`cargo install --locked stellar-cli --version 23.0.1`).
+
+The container is stopped when the script exits. To keep it running for repeated test runs, use `KEEP_QUICKSTART=1`; the script then leaves the generated environment in `/tmp/grainlify-sdk-e2e.env`:
+
+```bash
+KEEP_QUICKSTART=1 bash scripts/sdk-e2e-local.sh
+source /tmp/grainlify-sdk-e2e.env
+cd contracts/sdk && npm test -- --runInBand src/__tests__/examples.e2e.test.ts
+```
+
+The e2e test generates a unique program id for every attempt and makes up to three attempts when the network reports `txBadSeq`, which can happen while ledger state catches up after rapid transactions. Readiness is checked by `scripts/wait-for-quickstart.sh`, which polls the RPC `getHealth` method and the friendbot endpoint and prints the container log tail on timeout.
 
 ## Error Handling Tests
 

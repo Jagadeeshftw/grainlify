@@ -38,7 +38,7 @@
 //! * No PII, KYC data, or private keys are ever emitted.
 //! * All `symbol_short!` strings are ≤ 9 bytes — Soroban rejects longer values,
 //!   which would corrupt topic-based filtering.
-use crate::CapabilityAction;
+use crate::{ActionType, CapabilityAction};
 use grainlify_core::CorrelationId;
 use soroban_sdk::{contracttype, symbol_short, Address, BytesN, Env, Symbol};
 
@@ -1236,11 +1236,40 @@ pub struct TicketClaimed {
     pub claimer: Address,
     /// Address that redeemed the ticket.
     pub claimed_at: u64,
+    /// Amount paid out to the claimer.
+    pub amount: i128,
 }
 
 /// Emit [`TicketClaimed`]
 pub fn emit_ticket_claimed(env: &Env, event: TicketClaimed) {
     let topics = (symbol_short!("ticket_c"), event.ticket_id);
+    env.events().publish(topics, event);
+}
+
+/// Payload for the [`emit_ticket_revoked`] event.
+///
+/// Emitted when the admin or depositor revokes an outstanding claim ticket,
+/// returning its reserved amount to the escrow.
+///
+/// ### Topics
+/// | Index | Value |
+/// |-------|-------|
+/// | 0 | `"ticket_r"` |
+/// | 1 | `ticket_id: u64` |
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TicketRevoked {
+    pub ticket_id: u64,
+    pub bounty_id: u64,
+    pub beneficiary: Address,
+    pub amount: i128,
+    pub revoked_by: Address,
+    pub revoked_at: u64,
+}
+
+/// Emit [`TicketRevoked`]
+pub fn emit_ticket_revoked(env: &Env, event: TicketRevoked) {
+    let topics = (symbol_short!("ticket_r"), event.ticket_id);
     env.events().publish(topics, event);
 }
 
@@ -1530,7 +1559,7 @@ pub struct GasBudgetAdvisoryNotice {
 /// ### Topics
 /// | Index | Value |
 /// |-------|-------|
-/// | 0 | `"tl_cfg"` (short symbol; Soroban topic limit 9 chars) |
+/// | 0 | `"tmlk_cfg"` |
 ///
 /// ### Data fields
 /// | Field | Type | Description |
@@ -1540,6 +1569,7 @@ pub struct GasBudgetAdvisoryNotice {
 /// | `is_enabled` | `bool` | Whether timelock is enabled |
 /// | `configured_by` | `Address` | Admin who configured the timelock |
 /// | `timestamp` | `u64` | Ledger time of configuration |
+/// | `correlation_id` | `Option<CorrelationId>` | Optional cross-contract correlation id |
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TimelockConfigured {
@@ -1548,11 +1578,12 @@ pub struct TimelockConfigured {
     pub is_enabled: bool,
     pub configured_by: Address,
     pub timestamp: u64,
+    pub correlation_id: Option<CorrelationId>,
 }
 
 /// Emit [`TimelockConfigured`].
 pub fn emit_timelock_configured(env: &Env, event: TimelockConfigured) {
-    let topics = (symbol_short!("tl_cfg"),);
+    let topics = (symbol_short!("tmlk_cfg"),);
     env.events().publish(topics, event);
 }
 
@@ -1563,8 +1594,7 @@ pub fn emit_timelock_configured(env: &Env, event: TimelockConfigured) {
 /// ### Topics
 /// | Index | Value |
 /// |-------|-------|
-/// | 0 | `"adm_prp"` |
-/// | 1 | `action_id: u64` |
+/// | 0 | `"act_prop"` |
 ///
 /// ### Data fields
 /// | Field | Type | Description |
@@ -1574,19 +1604,21 @@ pub fn emit_timelock_configured(env: &Env, event: TimelockConfigured) {
 /// | `execute_after` | `u64` | Timestamp when action becomes executable |
 /// | `proposed_by` | `Address` | Admin who proposed the action |
 /// | `timestamp` | `u64` | Ledger time of proposal |
+/// | `correlation_id` | `Option<CorrelationId>` | Optional cross-contract correlation id |
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdminActionProposed {
     pub version: u32,
-    pub action_type: CapabilityAction,
+    pub action_type: ActionType,
     pub execute_after: u64,
     pub proposed_by: Address,
     pub timestamp: u64,
+    pub correlation_id: Option<CorrelationId>,
 }
 
 /// Emit [`AdminActionProposed`].
 pub fn emit_admin_action_proposed(env: &Env, event: AdminActionProposed) {
-    let topics = (symbol_short!("adm_prp"),);
+    let topics = (symbol_short!("act_prop"),);
     env.events().publish(topics, event);
 }
 
@@ -1597,28 +1629,29 @@ pub fn emit_admin_action_proposed(env: &Env, event: AdminActionProposed) {
 /// ### Topics
 /// | Index | Value |
 /// |-------|-------|
-/// | 0 | `"adm_exe"` |
-/// | 1 | `action_id: u64` |
+/// | 0 | `"act_exec"` |
 ///
 /// ### Data fields
 /// | Field | Type | Description |
 /// |-------|------|-------------|
 /// | `version` | `u32` | Always [`EVENT_VERSION_V2`] |
 /// | `action_type` | `ActionType` | Type of admin action |
-/// | `executed_by` | `Address` | Address that executed the action |
+/// | `executed_by` | `Address` | Contract execution context for the permissionless call |
 /// | `executed_at` | `u64` | Ledger time of execution |
+/// | `correlation_id` | `Option<CorrelationId>` | Optional cross-contract correlation id |
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdminActionExecuted {
     pub version: u32,
-    pub action_type: CapabilityAction,
+    pub action_type: ActionType,
     pub executed_by: Address,
     pub executed_at: u64,
+    pub correlation_id: Option<CorrelationId>,
 }
 
 /// Emit [`AdminActionExecuted`].
 pub fn emit_admin_action_executed(env: &Env, event: AdminActionExecuted) {
-    let topics = (symbol_short!("adm_exe"),);
+    let topics = (symbol_short!("act_exec"),);
     env.events().publish(topics, event);
 }
 
@@ -1629,8 +1662,7 @@ pub fn emit_admin_action_executed(env: &Env, event: AdminActionExecuted) {
 /// ### Topics
 /// | Index | Value |
 /// |-------|-------|
-/// | 0 | `"adm_can"` |
-/// | 1 | `action_id: u64` |
+/// | 0 | `"act_cncl"` |
 ///
 /// ### Data fields
 /// | Field | Type | Description |
@@ -1639,18 +1671,20 @@ pub fn emit_admin_action_executed(env: &Env, event: AdminActionExecuted) {
 /// | `action_type` | `ActionType` | Type of admin action |
 /// | `cancelled_by` | `Address` | Admin who cancelled the action |
 /// | `cancelled_at` | `u64` | Ledger time of cancellation |
+/// | `correlation_id` | `Option<CorrelationId>` | Optional cross-contract correlation id |
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdminActionCancelled {
     pub version: u32,
-    pub action_type: CapabilityAction,
+    pub action_type: ActionType,
     pub cancelled_by: Address,
     pub cancelled_at: u64,
+    pub correlation_id: Option<CorrelationId>,
 }
 
 /// Emit [`AdminActionCancelled`].
 pub fn emit_admin_action_cancelled(env: &Env, event: AdminActionCancelled) {
-    let topics = (symbol_short!("adm_can"),);
+    let topics = (symbol_short!("act_cncl"),);
     env.events().publish(topics, event);
 }
 

@@ -69,8 +69,11 @@ fn test_init_event() {
     // Get all events emitted
     let events = env.events().all();
 
-    // Verify the event was emitted
-    assert_eq!(events.len(), 1);
+    // Verify the expected events were emitted:
+    // BountyEscrowInitialized + 4 schema-version audit events
+    // (FeeRoutingSchemaVersionSet, MaintenanceModeSchemaVersionSet,
+    // ParticipantListSchemaVersionSet, HighValueConfigSchemaVersionSet).
+    assert_eq!(events.len(), 5);
 }
 
 #[test]

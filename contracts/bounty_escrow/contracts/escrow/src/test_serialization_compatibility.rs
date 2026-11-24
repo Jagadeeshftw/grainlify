@@ -87,8 +87,6 @@ fn serialization_compatibility_public_types_and_events() {
         deadline,
         // Keep nested vectors minimal in goldens to avoid huge outputs.
         refund_history: soroban_sdk::vec![&env],
-        creation_timestamp: 0,
-        expiry: 0,
         archived: false,
         archived_at: None,
     };
@@ -273,6 +271,7 @@ fn serialization_compatibility_public_types_and_events() {
                 amount,
                 depositor: depositor.clone(),
                 deadline,
+                correlation_id: None,
             }
             .into_val(&env),
         ),
@@ -284,6 +283,7 @@ fn serialization_compatibility_public_types_and_events() {
                 amount: 123,
                 recipient: contributor.clone(),
                 timestamp: 456,
+                correlation_id: None,
             }
             .into_val(&env),
         ),
@@ -296,6 +296,7 @@ fn serialization_compatibility_public_types_and_events() {
                 refund_to: depositor.clone(),
                 timestamp: 200,
                 trigger_type: crate::events::RefundTriggerType::DeadlineExpired,
+                correlation_id: None,
             }
             .into_val(&env),
         ),
@@ -306,6 +307,7 @@ fn serialization_compatibility_public_types_and_events() {
         (
             "FeeCollected",
             FeeCollected {
+                version: EVENT_VERSION_V2,
                 operation_type: FeeOperationType::Release,
                 amount: 456,
                 fee_rate: 123,
@@ -318,15 +320,18 @@ fn serialization_compatibility_public_types_and_events() {
         (
             "BatchFundsLocked",
             BatchFundsLocked {
+                version: EVENT_VERSION_V2,
                 count: 2,
                 total_amount: 999,
                 timestamp: 1,
+                correlation_id: None,
             }
             .into_val(&env),
         ),
         (
             "FeeConfigUpdated",
             FeeConfigUpdated {
+                version: EVENT_VERSION_V2,
                 lock_fee_rate: 10,
                 release_fee_rate: 20,
                 lock_fixed_fee: 0,
@@ -340,6 +345,7 @@ fn serialization_compatibility_public_types_and_events() {
         (
             "BatchFundsReleased",
             BatchFundsReleased {
+                version: EVENT_VERSION_V2,
                 count: 1,
                 total_amount: 333,
                 timestamp: 3,
@@ -349,6 +355,7 @@ fn serialization_compatibility_public_types_and_events() {
         (
             "ApprovalAdded",
             ApprovalAdded {
+                version: EVENT_VERSION_V2,
                 bounty_id,
                 contributor: contributor.clone(),
                 approver: admin.clone(),
@@ -390,6 +397,7 @@ fn serialization_compatibility_public_types_and_events() {
         (
             "EmergencyWithdrawEvent",
             EmergencyWithdrawEvent {
+                version: EVENT_VERSION_V2,
                 admin: admin.clone(),
                 recipient: depositor.clone(),
                 amount: 1000,
