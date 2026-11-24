@@ -286,7 +286,8 @@ pub mod chaos {
     }
 }
 
-// #[cfg(test)] mod test_token_math; // pre-existing breakage
+#[cfg(test)]
+mod test_token_math;
 // #[cfg(test)] mod test_circuit_breaker_audit; // pre-existing breakage
 // #[cfg(test)] mod error_recovery_tests; // pre-existing breakage
 mod malicious_reentrant;
@@ -338,11 +339,12 @@ mod test_reputation;
 // and live under `src/tests/`; see `src/tests/mod.rs` for the entry point.
 #[cfg(test)]
 mod tests;
-// #[cfg(test)] mod test_lifecycle; // pre-existing breakage
-// #[cfg(test)] mod test_full_lifecycle; // pre-existing breakage
+#[cfg(test)]
+mod test_lifecycle;
+#[cfg(test)]
+mod test_full_lifecycle;
 
 #[cfg(test)]
-#[cfg(any())] // pre-existing breakage: uses std
 mod test_lifecycle_dwell_time;
 mod test_maintenance_mode;
 mod test_risk_flags;
