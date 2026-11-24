@@ -361,10 +361,8 @@ mod test_program_admin;
 #[cfg(any())] // pre-existing breakage: missing make_program_id helper and arg-count drift
 mod test_program_allowlist;
 #[cfg(test)]
-#[cfg(any())] // pre-existing breakage: arg-count drift against the current client
 mod test_program_analytics;
 #[cfg(test)]
-#[cfg(any())] // pre-existing breakage: arg-count drift and update_fee_recipient no longer exposed
 mod test_program_atomicity_security;
 #[cfg(test)]
 mod test_program_batch_registration;
@@ -372,7 +370,6 @@ mod test_program_batch_registration;
 #[cfg(any())] // pre-existing breakage: trailing doc comment documents nothing
 mod test_program_core;
 #[cfg(test)]
-#[cfg(any())] // pre-existing breakage: dangling attribute at end of file
 mod test_program_fees_idempotency;
 #[cfg(test)]
 #[cfg(any())] // pre-existing breakage: trailing doc comment documents nothing

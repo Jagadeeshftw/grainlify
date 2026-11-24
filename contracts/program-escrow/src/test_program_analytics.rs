@@ -73,7 +73,7 @@ fn test_analytics_after_batch_payout() {
     let recipients = vec![&env, r1.clone(), r2.clone(), r3.clone()];
     let amounts = vec![&env, 10_000_0000000, 20_000_0000000, 30_000_0000000];
 
-    client.batch_payout(&recipients, &amounts, &None);
+    client.batch_payout(&recipients, &amounts);
 
     let stats = client.get_program_aggregate_stats();
 
@@ -102,7 +102,7 @@ fn test_analytics_multiple_operations() {
 
     let recipients = vec![&env, r2.clone()];
     let amounts = vec![&env, 3_000_0000000];
-    client.batch_payout(&recipients, &amounts, &None);
+    client.batch_payout(&recipients, &amounts);
 
     let stats = client.get_program_aggregate_stats();
 
@@ -230,7 +230,7 @@ fn test_comprehensive_analytics_workflow() {
     let r3 = Address::generate(&env);
     let recipients = vec![&env, r2.clone(), r3.clone()];
     let amounts = vec![&env, 15_000_0000000, 20_000_0000000];
-    client.batch_payout(&recipients, &amounts, &None);
+    client.batch_payout(&recipients, &amounts);
 
     let future_timestamp = env.ledger().timestamp() + 100;
     let r4 = Address::generate(&env);
@@ -305,18 +305,19 @@ fn test_analytics_query_functions() {
     client.single_payout(&r3, &15_000_0000000, &None);
 
     // Query by recipient
-    let payouts_r1 = client.get_payouts_by_recipient(&r1, &0, &10);
+    let payouts_r1 = client.get_payouts_by_recipient(&r1, &0, &10).unwrap();
     assert_eq!(payouts_r1.len(), 1);
     assert_eq!(payouts_r1.get(0).unwrap().amount, 10_000_0000000);
 
-    let payouts_r2 = client.get_payouts_by_recipient(&r2, &0, &10);
+    let payouts_r2 = client.get_payouts_by_recipient(&r2, &0, &10).unwrap();
     assert_eq!(payouts_r2.len(), 1);
     assert_eq!(payouts_r2.get(0).unwrap().amount, 20_000_0000000);
 
     // Query by amount range
-    let payouts_range = client.query_payouts_by_amount(&12_000_0000000, &18_000_0000000, &0, &10);
+    let payouts_range =
+        client.query_payouts_by_amount(&12_000_0000000, &18_000_0000000, &0, &10).unwrap();
     assert_eq!(payouts_range.len(), 1);
     assert_eq!(payouts_range.get(0).unwrap().amount, 15_000_0000000);
 }
 
-// Test (#493): metrics reflect real operations â€” total operations, success counts
+// Query-specific coverage follows the current Result-returning analytics API above.
