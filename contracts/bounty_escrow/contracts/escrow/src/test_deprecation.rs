@@ -228,7 +228,6 @@ fn test_non_admin_cannot_set_deprecated() {
 
 /// `lock_funds` must return `Error::ContractDeprecated` (code 34) when deprecated.
 #[test]
-#[should_panic(expected = "Error(Contract, #34)")]
 fn test_lock_funds_blocked_when_deprecated() {
     let env = Env::default();
     let (escrow, _admin, depositor, _token, _) = setup(&env);
@@ -236,12 +235,12 @@ fn test_lock_funds_blocked_when_deprecated() {
     escrow.set_deprecated(&true, &None);
 
     let deadline = env.ledger().timestamp() + 1_000;
-    escrow.lock_funds(&depositor, &1u64, &1_000i128, &deadline);
+    let res = escrow.try_lock_funds(&depositor, &1u64, &1_000i128, &deadline);
+    assert_eq!(res, Err(Ok(Error::ContractDeprecated)));
 }
 
 /// `batch_lock_funds` must return `Error::ContractDeprecated` (code 34) when deprecated.
 #[test]
-#[should_panic(expected = "Error(Contract, #34)")]
 fn test_batch_lock_funds_blocked_when_deprecated() {
     let env = Env::default();
     let (escrow, _admin, depositor, _token, _) = setup(&env);
@@ -255,12 +254,12 @@ fn test_batch_lock_funds_blocked_when_deprecated() {
         amount: 500,
         deadline: env.ledger().timestamp() + 1_000,
     });
-    escrow.batch_lock_funds(&items);
+    let res = escrow.try_batch_lock_funds(&items);
+    assert_eq!(res, Err(Ok(Error::ContractDeprecated)));
 }
 
 /// `lock_funds_anonymous` must return `Error::ContractDeprecated` (code 34) when deprecated.
 #[test]
-#[should_panic(expected = "Error(Contract, #34)")]
 fn test_lock_funds_anonymous_blocked_when_deprecated() {
     let env = Env::default();
     let (escrow, _admin, depositor, _token, _) = setup(&env);
@@ -269,7 +268,8 @@ fn test_lock_funds_anonymous_blocked_when_deprecated() {
 
     let commitment = BytesN::from_array(&env, &[0u8; 32]);
     let deadline = env.ledger().timestamp() + 1_000;
-    escrow.lock_funds_anonymous(&depositor, &commitment, &1u64, &1_000i128, &deadline);
+    let res = escrow.try_lock_funds_anonymous(&depositor, &commitment, &1u64, &1_000i128, &deadline);
+    assert_eq!(res, Err(Ok(Error::ContractDeprecated)));
 }
 
 // ============================================================================

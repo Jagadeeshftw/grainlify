@@ -292,6 +292,21 @@ pub fn get_admin(env: Env) -> Option<Address> {
     env.storage().instance().get(&DataKey::Admin)
 }
 
+/// Apply an admin change without requiring authorization again.
+///
+/// Used by the timelock executor after the proposer's authorization was
+/// captured; direct entrypoints must authenticate before calling this.
+pub(crate) fn set_admin_internal(env: &Env, new_admin: &Address) -> Result<(), Error> {
+    let previous_admin: Address = env
+        .storage()
+        .instance()
+        .get(&DataKey::Admin)
+        .ok_or(Error::NotInitialized)?;
+    env.storage().instance().set(&DataKey::Admin, new_admin);
+    events::emit_admin_transferred(env, previous_admin, new_admin.clone());
+    Ok(())
+}
+
 /// Update the persisted contract version (admin only).
 pub fn set_version(env: Env, new_version: u32) -> Result<(), Error> {
     let admin: Address = env

@@ -1,4 +1,4 @@
-//! # Timelocked Upgrades & Emergency Pause — Edge Case Tests
+//! # Timelocked Upgrades & Emergency Pause â€” Edge Case Tests
 //!
 //! Covers every branch of the new entrypoints added in v3.0.0:
 //!   - propose_upgrade / approve_upgrade / cancel_upgrade / execute_upgrade
@@ -6,20 +6,22 @@
 //!   - commit_migration / migrate
 //!   - set_timelock_delay bounds
 //!
-//! Target: ≥95 % line coverage of the new code paths.
+//! Target: â‰¥95 % line coverage of the new code paths.
 
 #![cfg(test)]
 
 extern crate std;
+
+use std::format;
 
 use soroban_sdk::{
     testutils::{Address as _, Events, Ledger as _},
     Address, BytesN, Env, Vec as SVec,
 };
 
-use crate::{GrainlifyContract, GrainlifyContractClient};
+use crate::{DataKey, GrainlifyContract, GrainlifyContractClient};
 
-// ── shared helpers ────────────────────────────────────────────────────────────
+// â”€â”€ shared helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 fn fake_wasm(env: &Env) -> BytesN<32> {
     BytesN::from_array(env, &[0xAB; 32])
@@ -34,7 +36,11 @@ fn migration_hash(env: &Env, seed: u8) -> BytesN<32> {
 }
 
 /// Register + init with 2-of-3 multisig; returns (client, [s1, s2, s3]).
-fn setup_multisig(env: &Env) -> (GrainlifyContractClient, [Address; 3]) {
+///
+/// Seeds `DataKey::Admin` to `s1` so admin-gated config helpers such as
+/// `set_timelock_delay` can be exercised alongside the multisig upgrade flow in
+/// this mixed fixture (mirrors `test_timelock_boundary.rs`).
+fn setup_multisig(env: &Env) -> (GrainlifyContractClient<'_>, [Address; 3]) {
     let id = env.register_contract(None, GrainlifyContract);
     let client = GrainlifyContractClient::new(env, &id);
     let s1 = Address::generate(env);
@@ -45,11 +51,14 @@ fn setup_multisig(env: &Env) -> (GrainlifyContractClient, [Address; 3]) {
     signers.push_back(s2.clone());
     signers.push_back(s3.clone());
     client.init(&signers, &2);
+    env.as_contract(&id, || {
+        env.storage().instance().set(&DataKey::Admin, &s1);
+    });
     (client, [s1, s2, s3])
 }
 
 /// Register + init with single admin; returns (client, admin).
-fn setup_admin(env: &Env) -> (GrainlifyContractClient, Address) {
+fn setup_admin(env: &Env) -> (GrainlifyContractClient<'_>, Address) {
     let id = env.register_contract(None, GrainlifyContract);
     let client = GrainlifyContractClient::new(env, &id);
     let admin = Address::generate(env);
@@ -57,9 +66,9 @@ fn setup_admin(env: &Env) -> (GrainlifyContractClient, Address) {
     (client, admin)
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SECTION 1 — Timelock delay configuration
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// SECTION 1 â€” Timelock delay configuration
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 #[test]
 fn test_timelock_default_is_86400() {
@@ -85,7 +94,7 @@ fn test_set_timelock_delay_emits_event() {
     let (client, _) = setup_admin(&env);
     client.set_timelock_delay(&7_200);
     let events = env.events().all();
-    assert!(events.len() > 0);
+    assert!(!events.is_empty());
 }
 
 #[test]
@@ -111,7 +120,7 @@ fn test_set_timelock_delay_at_exact_min() {
     let env = Env::default();
     env.mock_all_auths();
     let (client, _) = setup_admin(&env);
-    client.set_timelock_delay(&3_600); // exactly 1 hour — must succeed
+    client.set_timelock_delay(&3_600); // exactly 1 hour â€” must succeed
     assert_eq!(client.get_timelock_delay(), 3_600);
 }
 
@@ -120,7 +129,7 @@ fn test_set_timelock_delay_at_exact_max() {
     let env = Env::default();
     env.mock_all_auths();
     let (client, _) = setup_admin(&env);
-    client.set_timelock_delay(&2_592_000); // exactly 30 days — must succeed
+    client.set_timelock_delay(&2_592_000); // exactly 30 days â€” must succeed
     assert_eq!(client.get_timelock_delay(), 2_592_000);
 }
 
@@ -134,9 +143,9 @@ fn test_set_timelock_delay_blocked_in_read_only_mode() {
     client.set_timelock_delay(&7_200);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SECTION 2 — propose_upgrade
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// SECTION 2 â€” propose_upgrade
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 #[test]
 fn test_propose_upgrade_returns_proposal_id() {
@@ -207,9 +216,9 @@ fn test_get_upgrade_proposal_returns_none_for_unknown_id() {
     assert!(client.get_upgrade_proposal(&999u64).is_none());
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SECTION 3 — approve_upgrade and timelock auto-start
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// SECTION 3 â€” approve_upgrade and timelock auto-start
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 #[test]
 fn test_approve_upgrade_no_timelock_before_threshold() {
@@ -217,7 +226,7 @@ fn test_approve_upgrade_no_timelock_before_threshold() {
     env.mock_all_auths();
     let (client, [s1, s2, _]) = setup_multisig(&env);
     let pid = client.propose_upgrade(&s1, &fake_wasm(&env), &0u64);
-    // Only one approval — threshold (2) not yet met
+    // Only one approval â€” threshold (2) not yet met
     client.approve_upgrade(&pid, &s2);
     assert_eq!(client.get_timelock_status(&pid), None);
 }
@@ -245,7 +254,7 @@ fn test_approve_upgrade_emits_timelock_started_event() {
     client.approve_upgrade(&pid, &s3);
     let events = env.events().all();
     // At least one event should have been emitted
-    assert!(events.len() > 0);
+    assert!(!events.is_empty());
 }
 
 #[test]
@@ -261,7 +270,7 @@ fn test_approve_upgrade_timelock_not_restarted_on_extra_approval() {
     // Advance time slightly
     env.ledger().set_timestamp(env.ledger().timestamp() + 100);
 
-    // Extra approval from s1 — timelock should NOT restart
+    // Extra approval from s1 â€” timelock should NOT restart
     client.approve_upgrade(&pid, &s1);
     let status_after_extra = client.get_timelock_status(&pid);
 
@@ -288,12 +297,12 @@ fn test_approve_upgrade_rejects_duplicate_approval() {
     let (client, [s1, s2, _]) = setup_multisig(&env);
     let pid = client.propose_upgrade(&s1, &fake_wasm(&env), &0u64);
     client.approve_upgrade(&pid, &s2);
-    client.approve_upgrade(&pid, &s2); // duplicate — must panic
+    client.approve_upgrade(&pid, &s2); // duplicate â€” must panic
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SECTION 4 — execute_upgrade timelock enforcement
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// SECTION 4 â€” execute_upgrade timelock enforcement
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 #[test]
 #[should_panic(expected = "Timelock not started")]
@@ -302,7 +311,7 @@ fn test_execute_upgrade_panics_without_timelock() {
     env.mock_all_auths();
     let (client, [s1, _, _]) = setup_multisig(&env);
     let pid = client.propose_upgrade(&s1, &fake_wasm(&env), &0u64);
-    // No approvals — timelock never started
+    // No approvals â€” timelock never started
     client.execute_upgrade(&pid);
 }
 
@@ -316,7 +325,7 @@ fn test_execute_upgrade_panics_before_delay_elapses() {
     let pid = client.propose_upgrade(&s1, &fake_wasm(&env), &0u64);
     client.approve_upgrade(&pid, &s2);
     client.approve_upgrade(&pid, &s3); // timelock starts
-    // Do NOT advance time — should panic
+                                       // Do NOT advance time â€” should panic
     client.execute_upgrade(&pid);
 }
 
@@ -346,14 +355,15 @@ fn test_execute_upgrade_succeeds_exactly_at_delay() {
     client.approve_upgrade(&pid, &s3);
     let start = env.ledger().timestamp();
     env.ledger().set_timestamp(start + 3_600); // exactly at boundary
-    // Should not panic (WASM swap will fail in test env, but auth/timelock passes)
-    let result = std::panic::catch_unwind(|| client.execute_upgrade(&pid));
+                                               // Should not panic on timelock (WASM swap may fail in test env, but auth/timelock passes)
+    let result = client.try_execute_upgrade(&pid);
     // We accept either success or a WASM-not-found error (not a timelock error)
-    if let Err(e) = result {
-        let msg = format!("{:?}", e);
+    if result.is_err() {
+        let msg = format!("{:?}", result);
         assert!(
             !msg.contains("Timelock delay not met"),
-            "Should not fail on timelock: {}", msg
+            "Should not fail on timelock: {}",
+            msg
         );
     }
 }
@@ -369,8 +379,8 @@ fn test_execute_upgrade_clears_timelock_status() {
     client.approve_upgrade(&pid, &s3);
     let start = env.ledger().timestamp();
     env.ledger().set_timestamp(start + 3_700);
-    // Attempt execution — may fail on WASM swap but timelock key should be cleared
-    let _ = std::panic::catch_unwind(|| client.execute_upgrade(&pid));
+    // Attempt execution â€” may fail on WASM swap in test env; timelock has elapsed.
+    let _ = client.try_execute_upgrade(&pid);
     // After a successful execute the timelock entry is removed; after WASM failure
     // the storage is rolled back, so we just verify no timelock panic occurs on retry
 }
@@ -398,9 +408,9 @@ fn test_timelock_status_none_before_threshold() {
     assert_eq!(client.get_timelock_status(&pid), None);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SECTION 5 — cancel_upgrade
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// SECTION 5 â€” cancel_upgrade
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 #[test]
 fn test_cancel_upgrade_marks_proposal_cancelled() {
@@ -468,9 +478,9 @@ fn test_cancel_nonexistent_proposal_panics() {
     client.cancel_upgrade(&999u64, &s1);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SECTION 6 — Emergency pause / unpause
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// SECTION 6 â€” Emergency pause / unpause
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 #[test]
 fn test_is_paused_false_by_default() {
@@ -556,7 +566,7 @@ fn test_approve_upgrade_not_blocked_when_paused() {
 
 #[test]
 fn test_execute_upgrade_not_blocked_by_pause() {
-    // execute_upgrade does NOT check the pause flag — it only checks timelock.
+    // execute_upgrade does NOT check the pause flag â€” it only checks timelock.
     // This test verifies the panic is about timelock, not pause.
     let env = Env::default();
     env.mock_all_auths();
@@ -569,10 +579,14 @@ fn test_execute_upgrade_not_blocked_by_pause() {
     let start = env.ledger().timestamp();
     env.ledger().set_timestamp(start + 3_700);
     // Should fail on WASM-not-found, NOT on "Contract is paused"
-    let result = std::panic::catch_unwind(|| client.execute_upgrade(&pid));
-    if let Err(e) = result {
-        let msg = format!("{:?}", e);
-        assert!(!msg.contains("Contract is paused"), "execute_upgrade must not be blocked by pause: {}", msg);
+    let result = client.try_execute_upgrade(&pid);
+    if result.is_err() {
+        let msg = format!("{:?}", result);
+        assert!(
+            !msg.contains("Contract is paused"),
+            "execute_upgrade must not be blocked by pause: {}",
+            msg
+        );
     }
 }
 
@@ -601,9 +615,9 @@ fn test_propose_upgrade_works_after_unpause() {
     assert_eq!(pid, 1);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SECTION 7 — commit_migration / migrate
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// SECTION 7 â€” commit_migration / migrate
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 #[test]
 fn test_migrate_happy_path() {
@@ -611,7 +625,7 @@ fn test_migrate_happy_path() {
     env.mock_all_auths();
     let (client, _) = setup_admin(&env);
     let hash = migration_hash(&env, 0x03);
-    client.commit_migration(&3u32, &hash);
+    client.commit_migration(&3u32, &hash, &0u64);
     client.migrate(&3u32, &hash);
     let state = client.get_migration_state().unwrap();
     assert_eq!(state.to_version, 3);
@@ -624,7 +638,7 @@ fn test_migrate_updates_version() {
     env.mock_all_auths();
     let (client, _) = setup_admin(&env);
     let hash = migration_hash(&env, 0x05);
-    client.commit_migration(&5u32, &hash);
+    client.commit_migration(&5u32, &hash, &0u64);
     client.migrate(&5u32, &hash);
     assert_eq!(client.get_version(), 5);
 }
@@ -636,7 +650,7 @@ fn test_migrate_records_from_version() {
     let (client, _) = setup_admin(&env);
     let initial_version = client.get_version();
     let hash = migration_hash(&env, 0x04);
-    client.commit_migration(&4u32, &hash);
+    client.commit_migration(&4u32, &hash, &0u64);
     client.migrate(&4u32, &hash);
     let state = client.get_migration_state().unwrap();
     assert_eq!(state.from_version, initial_version);
@@ -648,7 +662,7 @@ fn test_migrate_is_idempotent() {
     env.mock_all_auths();
     let (client, _) = setup_admin(&env);
     let hash = migration_hash(&env, 0x03);
-    client.commit_migration(&3u32, &hash);
+    client.commit_migration(&3u32, &hash, &0u64);
     client.migrate(&3u32, &hash);
     // Second call to same version should be a no-op (not panic)
     client.migrate(&3u32, &hash);
@@ -662,7 +676,7 @@ fn test_migrate_without_commit_panics() {
     env.mock_all_auths();
     let (client, _) = setup_admin(&env);
     let hash = migration_hash(&env, 0x03);
-    // No commit_migration call — must panic with MigrationCommitmentNotFound
+    // No commit_migration call â€” must panic with MigrationCommitmentNotFound
     client.migrate(&3u32, &hash);
 }
 
@@ -674,8 +688,8 @@ fn test_migrate_wrong_hash_panics() {
     let (client, _) = setup_admin(&env);
     let committed_hash = migration_hash(&env, 0x03);
     let wrong_hash = migration_hash(&env, 0xFF);
-    client.commit_migration(&3u32, &committed_hash);
-    client.migrate(&3u32, &wrong_hash); // hash mismatch — must panic
+    client.commit_migration(&3u32, &committed_hash, &0u64);
+    client.migrate(&3u32, &wrong_hash); // hash mismatch â€” must panic
 }
 
 #[test]
@@ -684,9 +698,9 @@ fn test_commit_migration_emits_event() {
     env.mock_all_auths();
     let (client, _) = setup_admin(&env);
     let hash = migration_hash(&env, 0x03);
-    client.commit_migration(&3u32, &hash);
+    client.commit_migration(&3u32, &hash, &0u64);
     let events = env.events().all();
-    assert!(events.len() > 0);
+    assert!(!events.is_empty());
 }
 
 #[test]
@@ -695,7 +709,7 @@ fn test_migrate_emits_done_event() {
     env.mock_all_auths();
     let (client, _) = setup_admin(&env);
     let hash = migration_hash(&env, 0x03);
-    client.commit_migration(&3u32, &hash);
+    client.commit_migration(&3u32, &hash, &0u64);
     let before = env.events().all().len();
     client.migrate(&3u32, &hash);
     let after = env.events().all().len();
@@ -710,9 +724,9 @@ fn test_commit_migration_commitment_consumed_after_migrate() {
     env.mock_all_auths();
     let (client, _) = setup_admin(&env);
     let hash = migration_hash(&env, 0x03);
-    client.commit_migration(&3u32, &hash);
+    client.commit_migration(&3u32, &hash, &0u64);
     client.migrate(&3u32, &hash);
-    // Idempotent second call — version already at 3, returns early
+    // Idempotent second call â€” version already at 3, returns early
     client.migrate(&3u32, &hash);
     assert_eq!(client.get_version(), 3);
 }
@@ -724,7 +738,7 @@ fn test_commit_migration_blocked_in_read_only_mode() {
     env.mock_all_auths();
     let (client, _) = setup_admin(&env);
     client.set_read_only_mode(&true);
-    client.commit_migration(&3u32, &migration_hash(&env, 0x03));
+    client.commit_migration(&3u32, &migration_hash(&env, 0x03), &0u64);
 }
 
 #[test]
@@ -734,14 +748,14 @@ fn test_migrate_blocked_in_read_only_mode() {
     env.mock_all_auths();
     let (client, _) = setup_admin(&env);
     let hash = migration_hash(&env, 0x03);
-    client.commit_migration(&3u32, &hash);
+    client.commit_migration(&3u32, &hash, &0u64);
     client.set_read_only_mode(&true);
     client.migrate(&3u32, &hash);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SECTION 8 — Proposal expiry
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// SECTION 8 â€” Proposal expiry
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 #[test]
 #[should_panic]
@@ -775,14 +789,15 @@ fn test_zero_expiry_never_expires() {
     env.mock_all_auths();
     let (client, [s1, s2, _]) = setup_multisig(&env);
     let pid = client.propose_upgrade(&s1, &fake_wasm(&env), &0u64); // no expiry
-    env.ledger().set_timestamp(env.ledger().timestamp() + 999_999_999);
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + 999_999_999);
     // Should not panic on approval
     client.approve_upgrade(&pid, &s2);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SECTION 9 — Initialization paths
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// SECTION 9 â€” Initialization paths
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 #[test]
 fn test_init_multisig_sets_version() {
@@ -845,9 +860,9 @@ fn test_init_with_network_blocked_after_init() {
     client.init_with_network(&admin2, &chain, &network);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SECTION 10 — Integration: full timelocked upgrade flow
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// SECTION 10 â€” Integration: full timelocked upgrade flow
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 #[test]
 fn test_full_flow_propose_approve_wait_execute_attempt() {
@@ -861,17 +876,17 @@ fn test_full_flow_propose_approve_wait_execute_attempt() {
     let pid = client.propose_upgrade(&s1, &fake_wasm(&env), &0u64);
     assert_eq!(client.get_timelock_status(&pid), None);
 
-    // 2. First approval — threshold not met
+    // 2. First approval â€” threshold not met
     client.approve_upgrade(&pid, &s2);
     assert_eq!(client.get_timelock_status(&pid), None);
 
-    // 3. Second approval — threshold met, timelock starts
+    // 3. Second approval â€” threshold met, timelock starts
     client.approve_upgrade(&pid, &s3);
     let status = client.get_timelock_status(&pid);
     assert!(status.is_some() && status.unwrap() > 0);
 
-    // 4. Attempt before delay — must fail on timelock
-    let result = std::panic::catch_unwind(|| client.execute_upgrade(&pid));
+    // 4. Attempt before delay â€” must fail on timelock
+    let result = client.try_execute_upgrade(&pid);
     assert!(result.is_err());
 
     // 5. Advance past delay
@@ -879,12 +894,20 @@ fn test_full_flow_propose_approve_wait_execute_attempt() {
     env.ledger().set_timestamp(start + 3_700);
     assert_eq!(client.get_timelock_status(&pid), Some(0));
 
-    // 6. Execute — fails on WASM swap in test env, but NOT on timelock
-    let result = std::panic::catch_unwind(|| client.execute_upgrade(&pid));
-    if let Err(e) = result {
-        let msg = format!("{:?}", e);
-        assert!(!msg.contains("Timelock delay not met"), "Unexpected timelock error: {}", msg);
-        assert!(!msg.contains("Timelock not started"), "Unexpected timelock error: {}", msg);
+    // 6. Execute â€” fails on WASM swap in test env, but NOT on timelock
+    let result = client.try_execute_upgrade(&pid);
+    if result.is_err() {
+        let msg = format!("{:?}", result);
+        assert!(
+            !msg.contains("Timelock delay not met"),
+            "Unexpected timelock error: {}",
+            msg
+        );
+        assert!(
+            !msg.contains("Timelock not started"),
+            "Unexpected timelock error: {}",
+            msg
+        );
     }
 }
 
@@ -897,9 +920,9 @@ fn test_full_flow_propose_pause_cancel_unpause_repropose() {
     // 1. Propose
     let pid = client.propose_upgrade(&s1, &fake_wasm(&env), &0u64);
 
-    // 2. Pause — blocks further approvals
+    // 2. Pause â€” blocks further approvals
     client.pause(&s1);
-    let result = std::panic::catch_unwind(|| client.approve_upgrade(&pid, &s2));
+    let result = client.try_approve_upgrade(&pid, &s2);
     assert!(result.is_err());
 
     // 3. Cancel the stale proposal
@@ -923,7 +946,7 @@ fn test_full_migration_flow_with_commit_reveal() {
     let hash = migration_hash(&env, 0x07);
 
     // 1. Commit
-    client.commit_migration(&7u32, &hash);
+    client.commit_migration(&7u32, &hash, &0u64);
 
     // 2. Migrate
     client.migrate(&7u32, &hash);

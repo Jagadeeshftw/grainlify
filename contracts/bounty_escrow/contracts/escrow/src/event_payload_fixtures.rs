@@ -1514,6 +1514,10 @@ pub const EVENT_PAYLOAD_FIXTURES: &[EventPayloadFixture] = &[
                 name: "timestamp",
                 ty: "u64",
             },
+            FieldFixture {
+                name: "correlation_id",
+                ty: "Option<CorrelationId>",
+            },
         ],
     },
     EventPayloadFixture {
@@ -1526,7 +1530,7 @@ pub const EVENT_PAYLOAD_FIXTURES: &[EventPayloadFixture] = &[
             },
             FieldFixture {
                 name: "action_type",
-                ty: "CapabilityAction",
+                ty: "ActionType",
             },
             FieldFixture {
                 name: "execute_after",
@@ -1540,6 +1544,10 @@ pub const EVENT_PAYLOAD_FIXTURES: &[EventPayloadFixture] = &[
                 name: "timestamp",
                 ty: "u64",
             },
+            FieldFixture {
+                name: "correlation_id",
+                ty: "Option<CorrelationId>",
+            },
         ],
     },
     EventPayloadFixture {
@@ -1552,7 +1560,7 @@ pub const EVENT_PAYLOAD_FIXTURES: &[EventPayloadFixture] = &[
             },
             FieldFixture {
                 name: "action_type",
-                ty: "CapabilityAction",
+                ty: "ActionType",
             },
             FieldFixture {
                 name: "executed_by",
@@ -1561,6 +1569,10 @@ pub const EVENT_PAYLOAD_FIXTURES: &[EventPayloadFixture] = &[
             FieldFixture {
                 name: "executed_at",
                 ty: "u64",
+            },
+            FieldFixture {
+                name: "correlation_id",
+                ty: "Option<CorrelationId>",
             },
         ],
     },
@@ -1574,7 +1586,7 @@ pub const EVENT_PAYLOAD_FIXTURES: &[EventPayloadFixture] = &[
             },
             FieldFixture {
                 name: "action_type",
-                ty: "CapabilityAction",
+                ty: "ActionType",
             },
             FieldFixture {
                 name: "cancelled_by",
@@ -1583,6 +1595,10 @@ pub const EVENT_PAYLOAD_FIXTURES: &[EventPayloadFixture] = &[
             FieldFixture {
                 name: "cancelled_at",
                 ty: "u64",
+            },
+            FieldFixture {
+                name: "correlation_id",
+                ty: "Option<CorrelationId>",
             },
         ],
     },

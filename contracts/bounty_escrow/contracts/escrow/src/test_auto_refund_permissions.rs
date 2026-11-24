@@ -256,7 +256,6 @@ fn test_auto_refund_unauthorized_random_user_panics_on_missing_required_auth() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #6)")] // DeadlineNotPassed
 fn test_auto_refund_fails_before_deadline() {
     let setup = TestSetup::new();
     let bounty_id = 1;
@@ -268,11 +267,11 @@ fn test_auto_refund_fails_before_deadline() {
         .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     // Try to refund before deadline
-    setup.escrow.refund(&bounty_id);
+    let res = setup.escrow.try_refund(&bounty_id);
+    assert_eq!(res, Err(Ok(Error::DeadlineNotPassed)));
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #6)")] // DeadlineNotPassed
 fn test_auto_refund_admin_cannot_bypass_deadline() {
     let setup = TestSetup::new();
     let bounty_id = 1;
@@ -284,7 +283,8 @@ fn test_auto_refund_admin_cannot_bypass_deadline() {
         .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     // Admin tries to refund before deadline (should fail)
-    setup.escrow.refund(&bounty_id);
+    let res = setup.escrow.try_refund(&bounty_id);
+    assert_eq!(res, Err(Ok(Error::DeadlineNotPassed)));
 }
 
 #[test]
@@ -313,7 +313,6 @@ fn test_auto_refund_at_exact_deadline() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #5)")] // FundsNotLocked
 fn test_auto_refund_idempotent_second_call_fails() {
     let setup = TestSetup::new();
     let bounty_id = 1;
@@ -330,7 +329,8 @@ fn test_auto_refund_idempotent_second_call_fails() {
     setup.escrow.refund(&bounty_id);
 
     // Second refund should fail
-    setup.escrow.refund(&bounty_id);
+    let res = setup.escrow.try_refund(&bounty_id);
+    assert_eq!(res, Err(Ok(Error::FundsNotLocked)));
 }
 
 #[test]

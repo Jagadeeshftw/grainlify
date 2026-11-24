@@ -545,14 +545,19 @@ pub fn release_funds(env: Env, bounty_id: u64, contributor: Address) -> Result<(
     res
 }
 
+pub(crate) fn set_router_internal(env: &Env, router: &Address) {
+    env.storage().instance().set(&DataKey::Router, router);
+}
+
 pub fn set_router(env: Env, router: Address) -> Result<(), Error> {
+    crate::timelock::ensure_direct_admin_call_allowed(&env)?;
     let admin: Address = env
         .storage()
         .instance()
         .get(&DataKey::Admin)
         .ok_or(Error::NotInitialized)?;
     admin.require_auth();
-    env.storage().instance().set(&DataKey::Router, &router);
+    set_router_internal(&env, &router);
     Ok(())
 }
 
