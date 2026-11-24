@@ -2935,3 +2935,5 @@ mod snapshot_rollback_guardrails_tests;
 #[cfg(test)]
 #[path = "test/upgrade_timelock_tests.rs"]
 mod upgrade_timelock_tests;
+#[cfg(test)]
+mod network_config_test;

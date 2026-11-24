@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod network_config_tests {
     use soroban_sdk::{testutils::Address as _, Address, Env, String};
-    use grainlify_core::{GrainlifyContract, GrainlifyContractClient};
+    use crate::{GrainlifyContract, GrainlifyContractClient};
 
     #[test]
     fn test_network_initialization() {
