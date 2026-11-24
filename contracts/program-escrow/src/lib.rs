@@ -4135,7 +4135,7 @@ impl ProgramEscrowContract {
         if key_len < MIN_IDEMPOTENCY_KEY_LENGTH as usize
             || key_len > MAX_IDEMPOTENCY_KEY_LENGTH as usize
         {
-            panic_with_error!(env, &ContractError::InvalidConfig);
+            panic_with_error!(env, &ContractError::IdempotencyKeyInvalid);
         }
         let mut buf = [0u8; 128];
         key.copy_into_slice(&mut buf[..key_len]);
@@ -4148,7 +4148,7 @@ impl ProgramEscrowContract {
                 || b == b'-'
                 || b == b'_';
             if !valid_char {
-                panic_with_error!(env, &ContractError::InvalidConfig);
+                panic_with_error!(env, &ContractError::IdempotencyKeyInvalid);
             }
             i += 1;
         }
@@ -5555,7 +5555,7 @@ impl ProgramEscrowContract {
     ) -> ProgramData {
         // Validation precedence (deterministic ordering):
         // 1. Reentrancy guard
-        // 1b. Idempotency check
+        // 1b. Idempotency key format validation & duplicate check
         // 2. Contract initialized
         // 3. Paused (operational state)
         // 3b. Dispute guard
@@ -5568,9 +5568,10 @@ impl ProgramEscrowContract {
         // Regression: `reentrancy_tests::test_single_payout_guard_blocks_reentrant_token_transfer`.
         reentrancy_guard::acquire(&env);
 
-        // 1b. Idempotency check — runs before any state reads so duplicate
-        //     submissions are rejected cheaply and deterministically.
+        // 1b. Idempotency check — validate format before touching storage, then
+        //     reject duplicate submissions cheaply and deterministically.
         if let Some(ref key) = idempotency_key {
+            Self::validate_idempotency_key_format(&env, key);
             if env
                 .storage()
                 .persistent()

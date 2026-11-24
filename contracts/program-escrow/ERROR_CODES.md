@@ -11,7 +11,7 @@ Deployable entrypoints must surface failures via `Result<_, ContractError>` or
 
 | Range | Domain |
 | --- | --- |
-| 1–99 | General (auth, validation, state) |
+| 1–99 | General (auth, validation, state; includes `IdempotencyKeyInvalid = 21`) |
 | 100–199 | Program management |
 | 200–299 | Fund operations |
 | 300–399 | Payouts |
