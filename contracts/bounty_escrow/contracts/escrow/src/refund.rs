@@ -140,6 +140,16 @@ pub(crate) fn compute_refund_eligibility(env: &Env, bounty_id: u64) -> RefundEli
         .storage()
         .persistent()
         .get(&DataKey::RefundApproval(bounty_id));
+    let reserved_view = |amount: i128| RefundEligibilityView {
+        eligible: false,
+        code: RefundEligibilityCode::IneligibleTicketReserved,
+        bounty_id,
+        amount,
+        recipient: None,
+        now,
+        deadline: escrow.deadline,
+        approval_present: false,
+    };
     if let Some(app) = approval {
         if app.amount <= 0 || app.amount > escrow.remaining_amount {
             return RefundEligibilityView {
@@ -151,6 +161,19 @@ pub(crate) fn compute_refund_eligibility(env: &Env, bounty_id: u64) -> RefundEli
                 now,
                 deadline: escrow.deadline,
                 approval_present: true,
+            };
+        }
+        if crate::claim_tickets::ensure_unreserved(
+            env,
+            bounty_id,
+            escrow.remaining_amount,
+            app.amount,
+        )
+        .is_err()
+        {
+            return RefundEligibilityView {
+                approval_present: true,
+                ..reserved_view(0)
             };
         }
         return RefundEligibilityView {
@@ -166,6 +189,16 @@ pub(crate) fn compute_refund_eligibility(env: &Env, bounty_id: u64) -> RefundEli
     }
 
     if now >= escrow.deadline {
+        if crate::claim_tickets::ensure_unreserved(
+            env,
+            bounty_id,
+            escrow.remaining_amount,
+            escrow.remaining_amount,
+        )
+        .is_err()
+        {
+            return reserved_view(0);
+        }
         return RefundEligibilityView {
             eligible: true,
             code: RefundEligibilityCode::EligibleDeadlinePassed,
@@ -216,6 +249,7 @@ pub(crate) fn dry_run_refund_impl(
             RefundEligibilityCode::IneligibleClaimPending => Error::ClaimPending,
             RefundEligibilityCode::IneligibleDeadlineNotPassed => Error::DeadlineNotPassed,
             RefundEligibilityCode::IneligibleInvalidApproval => Error::InvalidAmount,
+            RefundEligibilityCode::IneligibleTicketReserved => Error::InsufficientFunds,
             RefundEligibilityCode::EligibleDeadlinePassed
             | RefundEligibilityCode::EligibleAdminApproval => Error::InvalidAmount,
         });
@@ -466,6 +500,15 @@ pub fn refund(env: Env, bounty_id: u64) -> Result<(), Error> {
     if refund_amount <= 0 || refund_amount > escrow.remaining_amount {
         reentrancy_guard::release(&env);
         return Err(Error::InvalidAmount);
+    }
+    if let Err(e) = crate::claim_tickets::ensure_unreserved(
+        &env,
+        bounty_id,
+        escrow.remaining_amount,
+        refund_amount,
+    ) {
+        reentrancy_guard::release(&env);
+        return Err(e);
     }
 
     // EFFECTS: update state before external call (CEI)
@@ -866,6 +909,15 @@ pub fn refund_resolved(env: Env, bounty_id: u64, recipient: Address) -> Result<(
         reentrancy_guard::release(&env);
         return Err(Error::InvalidAmount);
     }
+    if let Err(e) = crate::claim_tickets::ensure_unreserved(
+        &env,
+        bounty_id,
+        anon.remaining_amount,
+        refund_amount,
+    ) {
+        reentrancy_guard::release(&env);
+        return Err(e);
+    }
 
     // EFFECTS: update escrow state before external call (CEI)
     // Update escrow state: subtract the amount exactly refunded
@@ -968,6 +1020,12 @@ pub fn refund_with_capability(
     if amount > escrow.remaining_amount {
         reentrancy_guard::release(&env);
         return Err(Error::InvalidAmount);
+    }
+    if let Err(e) =
+        crate::claim_tickets::ensure_unreserved(&env, bounty_id, escrow.remaining_amount, amount)
+    {
+        reentrancy_guard::release(&env);
+        return Err(e);
     }
 
     if env

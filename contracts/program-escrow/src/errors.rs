@@ -176,6 +176,12 @@ pub enum ContractError {
     /// This error occurs when `limit > HistoryPaginationConfig::max_limit`.
     PaginationLimitExceedsMax = 20,
 
+    /// Idempotency key format is invalid.
+    ///
+    /// This error occurs when an idempotency key is empty, exceeds the
+    /// maximum allowed length, or contains disallowed characters.
+    IdempotencyKeyInvalid = 21,
+
     // =========================================================================
     // Program Management Errors (100-199)
     // =========================================================================
@@ -844,6 +850,7 @@ impl ContractError {
             ContractError::RateLimitExceeded => "Rate limit exceeded",
             ContractError::InvalidPaginationLimit => "Pagination limit must be greater than zero",
             ContractError::PaginationLimitExceedsMax => "Pagination limit exceeds maximum",
+            ContractError::IdempotencyKeyInvalid => "Idempotency key format is invalid",
 
             // Program Management Errors
             ContractError::ProgramInitFailed => "Program initialization failed",

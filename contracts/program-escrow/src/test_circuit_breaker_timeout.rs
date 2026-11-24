@@ -43,12 +43,16 @@ mod test {
         client.initialize_contract(&admin);
         client.set_circuit_admin(&admin, &None);
 
-        // Configure circuit breaker with custom recovery window
-        client.configure_circuit_breaker(&admin, &3u32, &1u32, &10u32, &recovery_window);
-
         let program_id = String::from_str(&env, "timeout-test");
         client.init_program(&program_id, &admin, &token_id, &admin, &None, &None);
-        client.publish_program(&program_id);
+        client.publish_program(&program_id, &admin);
+
+        // Configure the circuit breaker *after* program init: `init_program`
+        // seeds the default circuit-breaker config (including `recovery_window: 0`)
+        // on first use, so configuring beforehand would be overwritten.
+        // `success_threshold = 2` keeps the circuit in HalfOpen after the first
+        // successful probe, so the Close transition is observable.
+        client.configure_circuit_breaker(&admin, &3u32, &2u32, &10u32, &recovery_window);
 
         if initial_balance > 0 {
             token_admin_client.mint(&contract_id, &initial_balance);

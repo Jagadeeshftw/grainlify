@@ -21,7 +21,7 @@ fn test_idempotency_key_batch_payout_success() {
     let idempotency_key = String::from_str(&env, "test-batch-123");
 
     // First successful payout with idempotency key
-    let result = client.batch_payout(&recipients, &amounts, &Some(idempotency_key.clone()));
+    let result = client.batch_payout_idempotent(&idempotency_key, &recipients, &amounts);
     assert_eq!(result.remaining_balance, 700_0000000);
 
     // Verify idempotency record was stored
@@ -55,18 +55,18 @@ fn test_idempotency_key_batch_payout_retry() {
     let idempotency_key = String::from_str(&env, "test-batch-retry-456");
 
     // First successful payout
-    let result1 = client.batch_payout(&recipients, &amounts, &Some(idempotency_key.clone()));
+    let result1 = client.batch_payout_idempotent(&idempotency_key, &recipients, &amounts);
     assert_eq!(result1.remaining_balance, 700_0000000);
 
     // Retry with same idempotency key should return same result
-    let result2 = client.batch_payout(&recipients, &amounts, &Some(idempotency_key.clone()));
+    let result2 = client.batch_payout_idempotent(&idempotency_key, &recipients, &amounts);
     assert_eq!(result2.remaining_balance, 700_0000000);
     assert_eq!(result1.payout_history.len(), result2.payout_history.len());
 
     // Verify retry event was emitted
     let events = env.events().all();
     let retry_events: soroban_sdk::Vec<_> = events.clone();
-    assert_eq!(retry_events.len(), 2); // First use + retry
+    assert!(retry_events.len() >= 3); // BatchPayout, initial key use, and replay event
 }
 
 /// Test idempotency key validation for successful single payout
@@ -223,7 +223,7 @@ fn test_idempotency_key_operation_isolation() {
 
     // First batch payout
     let data1 =
-        client.batch_payout_idempotent(&recipients, &amounts, &Some(idempotency_key.clone()));
+        client.batch_payout_idempotent(&idempotency_key, &recipients, &amounts);
     let balance_after_first = token_client.balance(&client.address);
     assert_eq!(data1.remaining_balance, 7000);
 
@@ -233,11 +233,8 @@ fn test_idempotency_key_operation_isolation() {
     let different_amounts = vec![&env, 5000];
 
     // This should return the original result, not execute with new params
-    let data2 = client.batch_payout_idempotent(
-        &different_recipients,
-        &different_amounts,
-        &Some(idempotency_key.clone()),
-    );
+    let data2 =
+        client.batch_payout_idempotent(&idempotency_key, &different_recipients, &different_amounts);
     let balance_after_replay = token_client.balance(&client.address);
 
     // Balance should be the same (no execution with different params)
@@ -300,10 +297,11 @@ fn test_batch_atomicity_duplicate_recipient_no_partial_transfer() {
     let r2 = Address::generate(&env);
 
     // r1 appears twice â€” must be rejected before any transfer
+    let before = client.get_program_info();
+    let escrow_balance = token_client.balance(&client.address);
     let result = client.try_batch_payout(
         &vec![&env, r1.clone(), r2.clone(), r1.clone()],
         &vec![&env, 1_000i128, 2_000i128, 1_500i128],
-        &None,
     );
     assert!(result.is_err(), "duplicate recipient must be rejected");
     assert_eq!(
@@ -313,6 +311,9 @@ fn test_batch_atomicity_duplicate_recipient_no_partial_transfer() {
     );
     assert_eq!(token_client.balance(&r1), 0);
     assert_eq!(token_client.balance(&r2), 0);
+    let after = client.get_program_info();
+    assert_eq!(after.payout_history, before.payout_history);
+    assert_eq!(token_client.balance(&client.address), escrow_balance);
 }
 
 /// Atomicity: zero amount in batch â†’ zero transfers, balance unchanged.
@@ -325,15 +326,19 @@ fn test_batch_atomicity_zero_amount_no_partial_transfer() {
     let r2 = Address::generate(&env);
 
     // Second amount is zero â€” must be rejected before any transfer
+    let before = client.get_program_info();
+    let escrow_balance = token_client.balance(&client.address);
     let result = client.try_batch_payout(
         &vec![&env, r1.clone(), r2.clone()],
         &vec![&env, 1_000i128, 0i128],
-        &None,
     );
     assert!(result.is_err(), "zero amount must be rejected");
     assert_eq!(client.get_remaining_balance(), 10_000);
     assert_eq!(token_client.balance(&r1), 0);
     assert_eq!(token_client.balance(&r2), 0);
+    let after = client.get_program_info();
+    assert_eq!(after.payout_history, before.payout_history);
+    assert_eq!(token_client.balance(&client.address), escrow_balance);
 }
 
 /// Atomicity: insufficient balance â†’ zero transfers, balance unchanged.
@@ -346,32 +351,40 @@ fn test_batch_atomicity_insufficient_balance_no_partial_transfer() {
     let r2 = Address::generate(&env);
 
     // Total 3_000 > balance 1_000
+    let before = client.get_program_info();
+    let escrow_balance = token_client.balance(&client.address);
     let result = client.try_batch_payout(
         &vec![&env, r1.clone(), r2.clone()],
         &vec![&env, 1_500i128, 1_500i128],
-        &None,
     );
     assert!(result.is_err(), "over-balance batch must be rejected");
     assert_eq!(client.get_remaining_balance(), 1_000);
     assert_eq!(token_client.balance(&r1), 0);
     assert_eq!(token_client.balance(&r2), 0);
+    let after = client.get_program_info();
+    assert_eq!(after.payout_history, before.payout_history);
+    assert_eq!(token_client.balance(&client.address), escrow_balance);
 }
 
 /// Atomicity: mismatched recipients/amounts â†’ zero transfers, balance unchanged.
 #[test]
 fn test_batch_atomicity_length_mismatch_no_partial_transfer() {
     let env = Env::default();
-    let (client, _admin, _token_client, _token_admin) = setup_program(&env, 10_000);
+    let (client, _admin, token_client, _token_admin) = setup_program(&env, 10_000);
 
     let r1 = Address::generate(&env);
+    let before = client.get_program_info();
+    let escrow_balance = token_client.balance(&client.address);
 
     let result = client.try_batch_payout(
         &vec![&env, r1.clone()],
         &vec![&env, 1_000i128, 2_000i128], // 2 amounts, 1 recipient
-        &None,
     );
     assert!(result.is_err(), "length mismatch must be rejected");
     assert_eq!(client.get_remaining_balance(), 10_000);
+    assert_eq!(client.get_program_info().payout_history, before.payout_history);
+    assert_eq!(token_client.balance(&client.address), escrow_balance);
+    assert_eq!(token_client.balance(&r1), 0);
 }
 
 /// Atomicity: batch exceeds MAX_BATCH_SIZE â†’ rejected, balance unchanged.
@@ -379,7 +392,7 @@ fn test_batch_atomicity_length_mismatch_no_partial_transfer() {
 fn test_batch_atomicity_exceeds_max_batch_size() {
     let env = Env::default();
     let total = (MAX_BATCH_SIZE as i128 + 1) * 100;
-    let (client, _admin, _token_client, _token_admin) = setup_program(&env, total);
+    let (client, _admin, token_client, _token_admin) = setup_program(&env, total);
 
     let mut recipients = vec![&env];
     let mut amounts = vec![&env];
@@ -388,12 +401,19 @@ fn test_batch_atomicity_exceeds_max_batch_size() {
         amounts.push_back(100i128);
     }
 
-    let result = client.try_batch_payout(&recipients, &amounts, &None);
+    let before = client.get_program_info();
+    let escrow_balance = token_client.balance(&client.address);
+    let result = client.try_batch_payout(&recipients, &amounts);
     assert!(
         result.is_err(),
         "batch exceeding MAX_BATCH_SIZE must be rejected"
     );
     assert_eq!(client.get_remaining_balance(), total);
+    assert_eq!(client.get_program_info().payout_history, before.payout_history);
+    assert_eq!(token_client.balance(&client.address), escrow_balance);
+    for recipient in recipients.iter() {
+        assert_eq!(token_client.balance(&recipient), 0);
+    }
 }
 
 /// Deterministic ordering: MAX_BATCH_SIZE boundary is accepted.
@@ -413,7 +433,7 @@ fn test_batch_max_size_boundary_accepted() {
         amounts.push_back(100i128);
     }
 
-    let data = client.batch_payout(&recipients, &amounts, &None);
+    let data = client.batch_payout(&recipients, &amounts);
     assert_eq!(data.remaining_balance, 0);
     assert_eq!(data.payout_history.len(), MAX_BATCH_SIZE);
     for i in 0..MAX_BATCH_SIZE {
@@ -431,84 +451,37 @@ fn test_batch_payout_schema_version_set_on_init() {
 }
 
 #[test]
-fn test_update_fee_recipient_admin_only() {
+// `update_fee_recipient` was removed; configure the recipient through the current fee API.
+fn test_update_fee_config_changes_fee_recipient_and_emits_event() {
     let env = Env::default();
-    let (client, admin, _token, _token_admin) = setup_program(&env, 1000);
-
-    let new_recipient = Address::generate(&env);
-
-    // Admin should be able to update
-    env.mock_all_auths();
-    client.update_fee_recipient(&new_recipient);
-
-    let cfg = client.get_fee_config();
-    assert_eq!(cfg.fee_recipient, new_recipient);
-
-    // Verify event was emitted
-    let events = env.events().all();
-    assert!(events.len() > 0);
-}
-
-#[test]
-fn test_update_fee_recipient_multiple_times() {
-    let env = Env::default();
-    let (client, _admin, _token, _token_admin) = setup_program(&env, 1000);
-
-    let recipient1 = Address::generate(&env);
-    let recipient2 = Address::generate(&env);
-
-    env.mock_all_auths();
-
-    // First update
-    client.update_fee_recipient(&recipient1);
-    let cfg = client.get_fee_config();
-    assert_eq!(cfg.fee_recipient, recipient1);
-
-    // Second update
-    client.update_fee_recipient(&recipient2);
-    let cfg = client.get_fee_config();
-    assert_eq!(cfg.fee_recipient, recipient2);
-}
-
-#[test]
-fn test_fee_recipient_update_event_contains_old_and_new() {
-    let env = Env::default();
-    let (client, _admin, _token, _token_admin) = setup_program(&env, 1000);
-
+    env.ledger().set_timestamp(12_345);
+    let (client, _admin, _token, _token_admin) = setup_program(&env, 1_000);
     let original_cfg = client.get_fee_config();
     let new_recipient = Address::generate(&env);
 
-    env.mock_all_auths();
-    client.update_fee_recipient(&new_recipient);
-
-    let events = env.events().all();
-    // Verify at least one event was published
-    assert!(
-        events.len() > 0,
-        "Expected at least one event to be published"
+    client.update_fee_config(
+        &None,
+        &None,
+        &None,
+        &None,
+        &Some(new_recipient.clone()),
+        &None,
+        &None,
     );
-}
-
-#[test]
-fn test_update_fee_recipient_preserves_other_fee_config() {
-    let env = Env::default();
-    let (client, _admin, _token, _token_admin) = setup_program(&env, 1000);
-
-    let original_cfg = client.get_fee_config();
-    let new_recipient = Address::generate(&env);
-
-    env.mock_all_auths();
-    client.update_fee_recipient(&new_recipient);
 
     let updated_cfg = client.get_fee_config();
-
-    // Verify only fee_recipient changed
     assert_eq!(updated_cfg.fee_recipient, new_recipient);
     assert_eq!(updated_cfg.lock_fee_rate, original_cfg.lock_fee_rate);
     assert_eq!(updated_cfg.payout_fee_rate, original_cfg.payout_fee_rate);
     assert_eq!(updated_cfg.lock_fixed_fee, original_cfg.lock_fixed_fee);
     assert_eq!(updated_cfg.payout_fixed_fee, original_cfg.payout_fixed_fee);
     assert_eq!(updated_cfg.fee_enabled, original_cfg.fee_enabled);
+
+    let events = env.events().all();
+    let event = events.get(events.len() - 1).unwrap();
+    let event_data = FeeConfigUpdatedEvent::try_from_val(&env, &event.2).unwrap();
+    assert_eq!(event_data.fee_recipient, new_recipient);
+    assert_eq!(event_data.timestamp, 12_345);
 }
 
 #[test]
@@ -579,6 +552,7 @@ fn test_threat_model_fee_drain_prevention() {
     client.update_fee_config(
         &None,
         &Some(2000), // This should panic
+        &None,
         &None,
         &None,
         &None,

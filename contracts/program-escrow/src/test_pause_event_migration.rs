@@ -13,22 +13,28 @@
 //! | `timestamp`  | ✅  | ✅  | unchanged                      |
 //! | `receipt_id` | ❌  | ✅  | **new in V2** — monotonic u64  |
 //!
-//! ## Migration guarantee
+//! ## Migration guarantee (as implemented by `soroban-sdk` 21.7.7)
 //!
-//! Soroban encodes `#[contracttype]` structs as XDR maps keyed by field name.
-//! A V1 parser that only reads the five original fields will:
-//! - Successfully decode all five fields from a V2 XDR blob.
-//! - Silently ignore the unknown `receipt_id` key.
+//! Soroban encodes `#[contracttype]` structs as XDR maps keyed by field name,
+//! and the SDK's generated decoder requires the map length to match the struct's
+//! field count exactly. The practical consequence, asserted below, is:
 //!
-//! These tests verify that guarantee holds and document the exact XDR layout
-//! so indexer operators can validate their parsers.
+//! - Each schema decodes its own blobs (round-trip) and preserves every field.
+//! - A V1 parser handed a V2 blob **fails loudly** with
+//!   `Error(Object, UnexpectedSize)` instead of silently dropping `receipt_id`.
+//! - A V2 parser handed a legacy V1 blob fails the same way instead of
+//!   inventing `receipt_id`.
 //!
-//! ## Security notes
-//! - The `receipt_id` field is informational only; it does not affect fund
-//!   safety. A V1 parser that drops it loses deduplication capability but
-//!   cannot be tricked into double-processing a payout.
-//! - V2 events always include `receipt_id > 0`. Indexers SHOULD upgrade to
-//!   V2 parsing to gain deduplication support.
+//! This is stricter than the earlier "forward-compatible map" assumption: an
+//! indexer that replays historical events must version-gate its parser on the
+//! event topic (`PauseSt` for V1, `PauseStateChangedV2` / `PAUSE_STATE_CHANGED_V2`
+//! for the current shape) rather than trying one parser for both. `receipt_id` is
+//! informational, so a V1-only indexer loses deduplication but cannot be tricked
+//! into double-processing a payout.
+//!
+//! See `contracts/EVENT_VERSIONING.md`: legacy payloads may be unversioned,
+//! current payloads carry `version: 2`, and parsers must reject payloads that do
+//! not match the shape they expect.
 
 #![cfg(test)]
 
@@ -38,10 +44,10 @@ use soroban_sdk::{
     contracttype,
     testutils::Address as _,
     xdr::{FromXdr, ToXdr},
-    Address, Env, IntoVal, String as SdkString, Symbol, TryFromVal, Val,
+    Address, Env, String as SdkString, Symbol,
 };
 
-use crate::{PauseStateChanged, EVENT_VERSION_V2};
+use crate::PauseStateChanged;
 
 // ---------------------------------------------------------------------------
 // V1 schema — the original PauseStateChanged without receipt_id
@@ -50,8 +56,8 @@ use crate::{PauseStateChanged, EVENT_VERSION_V2};
 /// V1 schema for `PauseStateChanged`.
 ///
 /// This mirrors the struct as it existed before `receipt_id` was added.
-/// Indexers that have not yet upgraded to V2 will parse V2 XDR using this
-/// layout. The test suite below verifies that doing so is safe.
+/// Indexers that have not yet upgraded to V2 parse their own (V1) XDR using this
+/// layout; they must not be handed V2 XDR (see the module docs).
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PauseStateChangedV1 {
@@ -65,16 +71,6 @@ pub struct PauseStateChangedV1 {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-fn hex_encode(bytes: &[u8]) -> std::string::String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut out = std::string::String::with_capacity(bytes.len() * 2);
-    for &b in bytes {
-        out.push(HEX[(b >> 4) as usize] as char);
-        out.push(HEX[(b & 0x0f) as usize] as char);
-    }
-    out
-}
 
 fn make_v2(env: &Env) -> PauseStateChanged {
     let admin = Address::generate(env);
@@ -101,100 +97,64 @@ fn make_v2_no_reason(env: &Env) -> PauseStateChanged {
 }
 
 // ---------------------------------------------------------------------------
-// Core migration tests
+// Migration tests
 // ---------------------------------------------------------------------------
 
-/// A V1 parser can decode a V2 XDR blob without panicking.
+/// A V1 parser must reject V2 XDR rather than silently truncating it.
 ///
-/// Soroban map-based XDR is forward-compatible: unknown keys are ignored.
-/// This test is the primary regression guard for indexer operators.
+/// This is the regression guard for indexer operators: a partial decode that
+/// dropped `receipt_id` would look successful but lose deduplication, so the
+/// decoder is expected to fail with a map-size error.
+///
+/// Note: the SDK decoder raises the map-size mismatch as a host panic rather
+/// than returning `Err`, so this is asserted with `should_panic`.
 #[test]
-fn test_v1_parser_decodes_v2_xdr_without_panic() {
+#[should_panic]
+fn test_v1_parser_rejects_v2_xdr_explicitly() {
     let env = Env::default();
     let v2 = make_v2(&env);
 
-    // Encode as V2
     let xdr_bytes = v2.clone().to_xdr(&env);
 
-    // Decode using V1 schema — must not panic
-    let v1 = PauseStateChangedV1::from_xdr(&env, &xdr_bytes)
-        .expect("V1 parser must decode V2 XDR without error");
-
-    // All V1 fields must match
-    assert_eq!(v1.operation, v2.operation);
-    assert_eq!(v1.paused, v2.paused);
-    assert_eq!(v1.admin, v2.admin);
-    assert_eq!(v1.reason, v2.reason);
-    assert_eq!(v1.timestamp, v2.timestamp);
+    // Must not silently decode a shorter field set.
+    let _ = PauseStateChangedV1::from_xdr(&env, &xdr_bytes);
 }
 
-/// V1 parser handles V2 event with `reason = None`.
+/// The same holds for a V2 blob whose `reason` is `None`.
 #[test]
-fn test_v1_parser_decodes_v2_xdr_no_reason() {
+#[should_panic]
+fn test_v1_parser_rejects_v2_xdr_no_reason() {
     let env = Env::default();
     let v2 = make_v2_no_reason(&env);
-    let xdr_bytes = v2.clone().to_xdr(&env);
 
-    let v1 = PauseStateChangedV1::from_xdr(&env, &xdr_bytes)
-        .expect("V1 parser must decode V2 XDR (no reason) without error");
-
-    assert_eq!(v1.operation, v2.operation);
-    assert_eq!(v1.paused, v2.paused);
-    assert_eq!(v1.admin, v2.admin);
-    assert!(v1.reason.is_none());
-    assert_eq!(v1.timestamp, v2.timestamp);
+    let _ = PauseStateChangedV1::from_xdr(&env, &v2.to_xdr(&env));
 }
 
-/// V2 parser can still decode a V1-encoded blob (backward read compatibility).
+/// A V2 parser must reject legacy V1 XDR instead of defaulting `receipt_id` to 0.
 ///
-/// This covers the case where an indexer replays historical V1 events after
-/// upgrading to V2 parsing. The `receipt_id` field will be absent; the
-/// contract default is 0.
+/// Defaulting would fabricate an event id that never existed on chain, so the
+/// decoder fails explicitly and the indexer can fall back to V1 parsing.
 #[test]
-fn test_v2_parser_decodes_v1_xdr_receipt_id_defaults() {
+#[should_panic]
+fn test_v2_parser_rejects_v1_xdr_explicitly() {
     let env = Env::default();
-    let admin = Address::generate(&env);
-
     let v1 = PauseStateChangedV1 {
         operation: Symbol::new(&env, "refund"),
         paused: true,
-        admin: admin.clone(),
+        admin: Address::generate(&env),
         reason: None,
         timestamp: 500,
     };
 
-    let xdr_bytes = v1.clone().to_xdr(&env);
-
-    // Decode using V2 schema — receipt_id will be absent / default
-    // Soroban will panic if a required field is missing, so we use try_from_val
-    let val = Val::from_xdr(&env, &xdr_bytes).expect("XDR must be valid Val");
-    let result = PauseStateChanged::try_from_val(&env, &val);
-
-    // V1 XDR lacks receipt_id; V2 parsing may fail or default to 0.
-    // Either outcome is acceptable — the key assertion is no silent data corruption.
-    match result {
-        Ok(v2) => {
-            // If decoding succeeds, all V1 fields must be preserved
-            assert_eq!(v2.operation, v1.operation);
-            assert_eq!(v2.paused, v1.paused);
-            assert_eq!(v2.admin, v1.admin);
-            assert_eq!(v2.reason, v1.reason);
-            assert_eq!(v2.timestamp, v1.timestamp);
-        }
-        Err(_) => {
-            // Acceptable: V2 parser rejects V1 XDR due to missing receipt_id.
-            // Indexers replaying V1 events must handle this case explicitly.
-        }
-    }
+    let _ = PauseStateChanged::from_xdr(&env, &v1.to_xdr(&env));
 }
 
-/// V2 XDR round-trips correctly through V2 parser.
+/// V2 XDR round-trips correctly through the V2 parser.
 #[test]
 fn test_v2_roundtrip() {
     let env = Env::default();
     let v2 = make_v2(&env);
-    let xdr_bytes = v2.clone().to_xdr(&env);
-    let decoded = PauseStateChanged::from_xdr(&env, &xdr_bytes)
+    let decoded = PauseStateChanged::from_xdr(&env, &v2.clone().to_xdr(&env))
         .expect("V2 round-trip must succeed");
     assert_eq!(decoded, v2);
 }
@@ -204,31 +164,28 @@ fn test_v2_roundtrip() {
 fn test_v2_roundtrip_unpause_no_reason() {
     let env = Env::default();
     let v2 = make_v2_no_reason(&env);
-    let xdr_bytes = v2.clone().to_xdr(&env);
-    let decoded = PauseStateChanged::from_xdr(&env, &xdr_bytes)
+    let decoded = PauseStateChanged::from_xdr(&env, &v2.clone().to_xdr(&env))
         .expect("V2 round-trip (no reason) must succeed");
     assert_eq!(decoded, v2);
 }
 
-/// V1 round-trips correctly through V1 parser.
+/// V1 round-trips correctly through the V1 parser.
 #[test]
 fn test_v1_roundtrip() {
     let env = Env::default();
-    let admin = Address::generate(&env);
     let v1 = PauseStateChangedV1 {
         operation: Symbol::new(&env, "lock"),
         paused: true,
-        admin,
+        admin: Address::generate(&env),
         reason: Some(SdkString::from_str(&env, "scheduled")),
-        timestamp: 12345,
+        timestamp: 12_345,
     };
-    let xdr_bytes = v1.clone().to_xdr(&env);
-    let decoded = PauseStateChangedV1::from_xdr(&env, &xdr_bytes)
+    let decoded = PauseStateChangedV1::from_xdr(&env, &v1.clone().to_xdr(&env))
         .expect("V1 round-trip must succeed");
     assert_eq!(decoded, v1);
 }
 
-/// The V2 XDR blob is strictly larger than V1 (contains the extra `receipt_id` field).
+/// The V2 XDR blob is strictly larger than V1 (it carries the extra `receipt_id`).
 #[test]
 fn test_v2_xdr_larger_than_v1() {
     let env = Env::default();
@@ -258,34 +215,48 @@ fn test_v2_xdr_larger_than_v1() {
     );
 }
 
-/// V1 parser preserves all five original fields across all three pause operations.
+/// V2 is a strict superset of V1: every legacy field survives a round-trip for
+/// all three pause operations, and the new `receipt_id` is preserved.
 #[test]
-fn test_v1_parser_all_operations() {
+fn test_v2_carries_all_legacy_fields_for_every_operation() {
     let env = Env::default();
-    for op in &["lock", "release", "refund"] {
+
+    for (index, op) in ["lock", "release", "refund"].iter().enumerate() {
         let admin = Address::generate(&env);
-        let v2 = PauseStateChanged {
+        let legacy = PauseStateChangedV1 {
             operation: Symbol::new(&env, op),
             paused: true,
             admin: admin.clone(),
             reason: Some(SdkString::from_str(&env, "test")),
             timestamp: 100,
-            receipt_id: 7,
         };
-        let xdr_bytes = v2.clone().to_xdr(&env);
-        let v1 = PauseStateChangedV1::from_xdr(&env, &xdr_bytes)
-            .unwrap_or_else(|_| panic!("V1 parse failed for operation={op}"));
-        assert_eq!(v1.operation, v2.operation, "operation mismatch for {op}");
-        assert_eq!(v1.paused, v2.paused);
-        assert_eq!(v1.admin, v2.admin);
-        assert_eq!(v1.timestamp, v2.timestamp);
+        let current = PauseStateChanged {
+            operation: legacy.operation.clone(),
+            paused: legacy.paused,
+            admin: legacy.admin.clone(),
+            reason: legacy.reason.clone(),
+            timestamp: legacy.timestamp,
+            receipt_id: index as u64 + 1,
+        };
+
+        let decoded = PauseStateChanged::from_xdr(&env, &current.to_xdr(&env))
+            .unwrap_or_else(|_| panic!("V2 round-trip failed for operation={op}"));
+
+        // Legacy fields (present in both shapes) are unchanged.
+        assert_eq!(
+            decoded.operation, legacy.operation,
+            "operation mismatch for {op}"
+        );
+        assert_eq!(decoded.paused, legacy.paused);
+        assert_eq!(decoded.admin, legacy.admin);
+        assert_eq!(decoded.reason, legacy.reason);
+        assert_eq!(decoded.timestamp, legacy.timestamp);
+        // The additive V2 field survives.
+        assert_eq!(decoded.receipt_id, index as u64 + 1);
     }
 }
 
-/// Golden XDR hex for V2 PauseStateChanged is stable.
-///
-/// This pins the wire format so any accidental struct change is caught.
-/// To regenerate: run with `GRAINLIFY_PRINT_PAUSE_GOLDEN=1`.
+/// Golden sanity check: the V2 payload is non-trivially sized.
 #[test]
 fn test_v2_xdr_golden_field_count() {
     let env = Env::default();
@@ -297,14 +268,13 @@ fn test_v2_xdr_golden_field_count() {
         timestamp: 1,
         receipt_id: 1,
     };
-    let xdr_bytes = v2.to_xdr(&env);
-    let len = xdr_bytes.len() as usize;
+    let len = v2.to_xdr(&env).len() as usize;
     // V2 has 6 fields; V1 had 5. Sanity-check the XDR is non-trivially sized.
     assert!(len > 64, "V2 XDR unexpectedly small ({len} bytes)");
 }
 
 // ---------------------------------------------------------------------------
-// Golden hex constants for documentation / indexer reference
+// Golden hex constant for documentation / indexer reference
 // ---------------------------------------------------------------------------
 
 /// V2 PauseStateChanged golden from serialization_goldens.rs.

@@ -286,7 +286,8 @@ pub mod chaos {
     }
 }
 
-// #[cfg(test)] mod test_token_math; // pre-existing breakage
+#[cfg(test)]
+mod test_token_math;
 // #[cfg(test)] mod test_circuit_breaker_audit; // pre-existing breakage
 // #[cfg(test)] mod error_recovery_tests; // pre-existing breakage
 mod malicious_reentrant;
@@ -338,11 +339,12 @@ mod test_reputation;
 // and live under `src/tests/`; see `src/tests/mod.rs` for the entry point.
 #[cfg(test)]
 mod tests;
-// #[cfg(test)] mod test_lifecycle; // pre-existing breakage
-// #[cfg(test)] mod test_full_lifecycle; // pre-existing breakage
+#[cfg(test)]
+mod test_lifecycle;
+#[cfg(test)]
+mod test_full_lifecycle;
 
 #[cfg(test)]
-#[cfg(any())] // pre-existing breakage: uses std
 mod test_lifecycle_dwell_time;
 mod test_maintenance_mode;
 mod test_risk_flags;
@@ -359,10 +361,8 @@ mod test_program_admin;
 #[cfg(any())] // pre-existing breakage: missing make_program_id helper and arg-count drift
 mod test_program_allowlist;
 #[cfg(test)]
-#[cfg(any())] // pre-existing breakage: arg-count drift against the current client
 mod test_program_analytics;
 #[cfg(test)]
-#[cfg(any())] // pre-existing breakage: arg-count drift and update_fee_recipient no longer exposed
 mod test_program_atomicity_security;
 #[cfg(test)]
 mod test_program_batch_registration;
@@ -370,7 +370,6 @@ mod test_program_batch_registration;
 #[cfg(any())] // pre-existing breakage: trailing doc comment documents nothing
 mod test_program_core;
 #[cfg(test)]
-#[cfg(any())] // pre-existing breakage: dangling attribute at end of file
 mod test_program_fees_idempotency;
 #[cfg(test)]
 #[cfg(any())] // pre-existing breakage: trailing doc comment documents nothing
@@ -4135,7 +4134,7 @@ impl ProgramEscrowContract {
         if key_len < MIN_IDEMPOTENCY_KEY_LENGTH as usize
             || key_len > MAX_IDEMPOTENCY_KEY_LENGTH as usize
         {
-            panic_with_error!(env, &ContractError::InvalidConfig);
+            panic_with_error!(env, &ContractError::IdempotencyKeyInvalid);
         }
         let mut buf = [0u8; 128];
         key.copy_into_slice(&mut buf[..key_len]);
@@ -4148,7 +4147,7 @@ impl ProgramEscrowContract {
                 || b == b'-'
                 || b == b'_';
             if !valid_char {
-                panic_with_error!(env, &ContractError::InvalidConfig);
+                panic_with_error!(env, &ContractError::IdempotencyKeyInvalid);
             }
             i += 1;
         }
@@ -5555,7 +5554,7 @@ impl ProgramEscrowContract {
     ) -> ProgramData {
         // Validation precedence (deterministic ordering):
         // 1. Reentrancy guard
-        // 1b. Idempotency check
+        // 1b. Idempotency key format validation & duplicate check
         // 2. Contract initialized
         // 3. Paused (operational state)
         // 3b. Dispute guard
@@ -5568,9 +5567,10 @@ impl ProgramEscrowContract {
         // Regression: `reentrancy_tests::test_single_payout_guard_blocks_reentrant_token_transfer`.
         reentrancy_guard::acquire(&env);
 
-        // 1b. Idempotency check — runs before any state reads so duplicate
-        //     submissions are rejected cheaply and deterministically.
+        // 1b. Idempotency check — validate format before touching storage, then
+        //     reject duplicate submissions cheaply and deterministically.
         if let Some(ref key) = idempotency_key {
+            Self::validate_idempotency_key_format(&env, key);
             if env
                 .storage()
                 .persistent()
@@ -8144,7 +8144,21 @@ mod test_batch_operations;
 // of its MAX_BATCH_SIZE enforcement tests ever ran. Registered for #1877.
 #[cfg(test)]
 mod test_batch_limits;
-// #[cfg(test)] mod test_pause;
+// Pause suites were orphaned files (never declared as modules), so their
+// coverage never ran. Wired up for #2089 alongside the already-running
+// `test_granular_pause` / `test_pause_boundaries` / `test_set_paused_idempotency`
+// suites; duplicates with those suites were dropped from `test_pause` and the
+// surviving scenarios are noted in that file's header.
+#[cfg(test)]
+mod test_admin_reset;
+#[cfg(test)]
+mod test_circuit_breaker_timeout;
+#[cfg(test)]
+mod test_pause;
+#[cfg(test)]
+mod test_pause_event_migration;
+#[cfg(test)]
+mod test_read_only_mode;
 
 #[cfg(test)]
 #[cfg(any())] // pre-existing breakage: uses std in a no_std crate

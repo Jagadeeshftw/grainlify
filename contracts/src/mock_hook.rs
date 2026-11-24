@@ -2,50 +2,17 @@
 //!
 //! This contract provides a simple hook implementation for testing the hook system
 //! without requiring a full insurance or reserve pool implementation.
-//!
-//! ## Features
-//!
-//! - Track hook calls received
-//! - Store last event type and amount
-//! - Configurable failure mode for testing error scenarios
-//! - Statistics and call history
-//!
-//! ## Usage
-//!
-//! ```ignore
-//! let mock = Address::random(&env);
-//! contract.set_hook_address(&env, &admin, &Some(mock.clone()));
-//!
-//! // Perform operations that trigger hooks
-//! contract.open_dispute(&env, bounty_id, &disputer, &reason);
-//!
-//! // Verify hook was called
-//! let stats = MockHook::get_stats(&env, &mock);
-//! assert_eq!(stats.calls_received, 1);
-//! ```
 
-#![no_std]
-
+use crate::hooks::{HookCall, HookEventType};
 use soroban_sdk::{
-    contract, contractimpl, contracttype, symbol_short, Address, Env, String, Symbol, Vec,
+    contract, contracterror, contractimpl, contracttype, Env, String, Symbol, Vec,
 };
 
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum HookEventType {
-    DisputeOpened = 0,
-    LargeRelease = 1,
-    Refund = 2,
-    DisputeResolved = 3,
-}
-
-#[contracttype]
-#[derive(Clone, Debug)]
-pub struct HookCall {
-    pub event_type: HookEventType,
-    pub bounty_id: u64,
-    pub amount: i128,
-    pub timestamp: u64,
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum MockHookError {
+    ConfiguredFailure = 1,
 }
 
 #[contracttype]
@@ -83,7 +50,7 @@ pub struct MockHook;
 #[contractimpl]
 impl MockHook {
     /// Handle hook call from escrow contract
-    pub fn handle_hook(env: Env, call: HookCall) -> Result<(), String> {
+    pub fn handle_hook(env: Env, call: HookCall) -> Result<(), MockHookError> {
         let key = Symbol::new(&env, "mock_stats");
         let mut stats: MockHookStats = env
             .storage()
@@ -91,7 +58,7 @@ impl MockHook {
             .get(&key)
             .unwrap_or(MockHookStats {
                 calls_received: 0,
-                last_event: call.event_type.clone(),
+                last_event: call.event_type,
                 last_bounty_id: 0,
                 last_amount: 0,
                 last_timestamp: 0,
@@ -101,7 +68,7 @@ impl MockHook {
 
         // Update statistics
         stats.calls_received += 1;
-        stats.last_event = call.event_type.clone();
+        stats.last_event = call.event_type;
         stats.last_bounty_id = call.bounty_id;
         stats.last_amount = call.amount;
         stats.last_timestamp = call.timestamp;
@@ -127,7 +94,7 @@ impl MockHook {
 
         // Return error if configured to fail
         if stats.should_fail {
-            Err(stats.fail_message)
+            Err(MockHookError::ConfiguredFailure)
         } else {
             Ok(())
         }
@@ -191,7 +158,9 @@ impl MockHook {
         amount: i128,
     ) -> bool {
         let stats = Self::get_stats(env);
-        stats.last_event == event_type && stats.last_bounty_id == bounty_id && stats.last_amount == amount
+        stats.last_event == event_type
+            && stats.last_bounty_id == bounty_id
+            && stats.last_amount == amount
     }
 }
 
@@ -202,6 +171,8 @@ mod tests {
     #[test]
     fn test_mock_hook_records_call() {
         let env = Env::default();
+        let contract_id = env.register_contract(None, MockHook);
+        let client = MockHookClient::new(&env, &contract_id);
 
         let call = HookCall {
             event_type: HookEventType::DisputeOpened,
@@ -210,10 +181,9 @@ mod tests {
             timestamp: 1000,
         };
 
-        let result = MockHook::handle_hook(env.clone(), call.clone());
-        assert!(result.is_ok());
+        client.handle_hook(&call);
 
-        let stats = MockHook::get_stats(env.clone());
+        let stats = client.get_stats();
         assert_eq!(stats.calls_received, 1);
         assert_eq!(stats.last_event, HookEventType::DisputeOpened);
         assert_eq!(stats.last_bounty_id, 123);
@@ -223,12 +193,10 @@ mod tests {
     #[test]
     fn test_mock_hook_failure() {
         let env = Env::default();
+        let contract_id = env.register_contract(None, MockHook);
+        let client = MockHookClient::new(&env, &contract_id);
 
-        MockHook::set_fail(
-            env.clone(),
-            true,
-            String::from_str(&env, "Test failure"),
-        );
+        client.set_fail(&true, &String::from_str(&env, "Test failure"));
 
         let call = HookCall {
             event_type: HookEventType::DisputeOpened,
@@ -237,13 +205,15 @@ mod tests {
             timestamp: 1000,
         };
 
-        let result = MockHook::handle_hook(env.clone(), call);
-        assert!(result.is_err());
+        let result = client.try_handle_hook(&call);
+        assert_eq!(result, Err(Ok(MockHookError::ConfiguredFailure)));
     }
 
     #[test]
     fn test_mock_hook_reset() {
         let env = Env::default();
+        let contract_id = env.register_contract(None, MockHook);
+        let client = MockHookClient::new(&env, &contract_id);
 
         let call = HookCall {
             event_type: HookEventType::DisputeOpened,
@@ -252,10 +222,10 @@ mod tests {
             timestamp: 1000,
         };
 
-        let _ = MockHook::handle_hook(env.clone(), call);
-        assert_eq!(MockHook::get_call_count(env.clone()), 1);
+        client.handle_hook(&call);
+        assert_eq!(client.get_call_count(), 1);
 
-        MockHook::reset(env.clone());
-        assert_eq!(MockHook::get_call_count(env), 0);
+        client.reset();
+        assert_eq!(client.get_call_count(), 0);
     }
 }

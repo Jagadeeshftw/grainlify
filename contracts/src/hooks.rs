@@ -30,12 +30,12 @@
 //! ```
 
 use soroban_sdk::{
-    contract, contractimpl, contracttype, symbol_short, Address, Env, String, Symbol, Vec,
+    contracttype, symbol_short, vec, Address, Env, Error, IntoVal, String, Symbol, Val,
 };
 
 /// Hook event types
 #[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum HookEventType {
     DisputeOpened = 0,    // Dispute initiated on a bounty
     LargeRelease = 1,     // Single or batch release exceeds threshold
@@ -45,7 +45,7 @@ pub enum HookEventType {
 
 /// Refund reason enumeration
 #[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum RefundReason {
     Expired = 0,     // Claim deadline passed
     Cancelled = 1,   // Cancelled by authorized user
@@ -115,10 +115,10 @@ pub struct DisputeResolvedHook {
 
 /// Hook call event (emitted regardless of hook success/failure)
 #[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum HookCallStatus {
     Success = 0,
-    Error = 1,
+    Failed = 1,
     Panic = 2,
 }
 
@@ -358,20 +358,38 @@ fn _execute_hook_call(
         timestamp: env.ledger().timestamp(),
     };
 
-    // Attempt to call the hook contract
-    // In Soroban, we use invoke_contract to call other contracts
-    let result: Result<(), String> = env
-        .invoke_contract(
-            hook_addr,
-            &Symbol::new(env, "handle_hook"),
-            (&call,).into_iter().collect(),
-        )
-        .unwrap_or_else(|_| Err("Invocation failed".to_string()));
+    // Attempt to call the hook contract using try_invoke_contract so that
+    // hook errors or panics/traps never revert the caller's transaction.
+    let result = env.try_invoke_contract::<Val, Error>(
+        hook_addr,
+        &Symbol::new(env, "handle_hook"),
+        vec![env, call.into_val(env)],
+    );
 
     // Emit hook call result for auditing
     let (status, error_msg) = match result {
-        Ok(()) => (HookCallStatus::Success, None),
-        Err(e) => (HookCallStatus::Error, Some(e)),
+        Ok(Ok(_)) => (HookCallStatus::Success, None),
+        Ok(Err(_)) => (
+            HookCallStatus::Failed,
+            Some(String::from_str(env, "Hook return conversion failed")),
+        ),
+        Err(Ok(err)) => {
+            if err.is_type(soroban_sdk::xdr::ScErrorType::Contract) {
+                (
+                    HookCallStatus::Failed,
+                    Some(String::from_str(env, "Hook returned error")),
+                )
+            } else {
+                (
+                    HookCallStatus::Panic,
+                    Some(String::from_str(env, "Hook invocation panicked or aborted")),
+                )
+            }
+        }
+        Err(Err(_)) => (
+            HookCallStatus::Panic,
+            Some(String::from_str(env, "Hook invocation panicked or aborted")),
+        ),
     };
 
     let call_event = HookCallEvent {
@@ -390,37 +408,50 @@ fn _execute_hook_call(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use soroban_sdk::{contract, contractimpl, testutils::Address as _};
+
+    #[contract]
+    struct DummyContract;
+
+    #[contractimpl]
+    impl DummyContract {}
 
     #[test]
     fn test_hook_address_storage() {
         let env = Env::default();
-        let addr = Address::random(&env);
+        let contract_id = env.register_contract(None, DummyContract);
+        let addr = Address::generate(&env);
 
-        // Initially none
-        assert_eq!(get_hook_address(&env), None);
+        env.as_contract(&contract_id, || {
+            // Initially none
+            assert_eq!(get_hook_address(&env), None);
 
-        // Set
-        set_hook_address_internal(&env, Some(addr.clone()));
-        assert_eq!(get_hook_address(&env), Some(addr.clone()));
+            // Set
+            set_hook_address_internal(&env, Some(addr.clone()));
+            assert_eq!(get_hook_address(&env), Some(addr.clone()));
 
-        // Remove
-        set_hook_address_internal(&env, None);
-        assert_eq!(get_hook_address(&env), None);
+            // Remove
+            set_hook_address_internal(&env, None);
+            assert_eq!(get_hook_address(&env), None);
+        });
     }
 
     #[test]
     fn test_threshold_storage() {
         let env = Env::default();
+        let contract_id = env.register_contract(None, DummyContract);
 
-        // Initially none
-        assert_eq!(get_large_release_threshold(&env), None);
+        env.as_contract(&contract_id, || {
+            // Initially none
+            assert_eq!(get_large_release_threshold(&env), None);
 
-        // Set
-        set_large_release_threshold_internal(&env, Some(1_000_000));
-        assert_eq!(get_large_release_threshold(&env), Some(1_000_000));
+            // Set
+            set_large_release_threshold_internal(&env, Some(1_000_000));
+            assert_eq!(get_large_release_threshold(&env), Some(1_000_000));
 
-        // Remove
-        set_large_release_threshold_internal(&env, None);
-        assert_eq!(get_large_release_threshold(&env), None);
+            // Remove
+            set_large_release_threshold_internal(&env, None);
+            assert_eq!(get_large_release_threshold(&env), None);
+        });
     }
 }

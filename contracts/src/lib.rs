@@ -3,13 +3,20 @@
 //! This crate provides shared utilities and storage key management for Grainlify smart contracts.
 //! It includes namespace protection, collision detection, and common constants.
 
+pub mod hooks;
 pub mod storage_key_audit;
+
+#[cfg(test)]
+pub mod mock_hook;
 
 // Storage-key collision audit. Declared under `cfg(test)` so it only builds
 // for the test profile; `contracts/scripts/ci-contracts.sh` runs it on every
 // pull request via `cargo test --manifest-path contracts/Cargo.toml --workspace`.
 #[cfg(test)]
 pub mod storage_collision_tests;
+
+#[cfg(test)]
+mod test_hooks_integration;
 
 // # View-Facade Contract
 //
