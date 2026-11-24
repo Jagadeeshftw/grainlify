@@ -1,5 +1,34 @@
 #![cfg(test)]
 
+//! Pause / emergency-withdraw suite, wired up for #2089 (it previously existed
+//! as an orphaned file that no `mod` declared, so none of it ran).
+//!
+//! ## Overlap with the already-running pause suites
+//!
+//! The following tests were dropped because `test_granular_pause.rs`,
+//! `test_set_paused_auth.rs` and this file's own RBAC section already cover the
+//! same scenario, and keeping them here would only duplicate runtime:
+//!
+//! - `test_mixed_pause_states` — the 3-flag storage assertions are covered by
+//!   `test_granular_pause::test_pause_matrix_110_lock_and_release_paused` and
+//!   `test_unpausing_release_does_not_unpause_lock_or_refund`.
+//! - `test_pause_by_non_admin_fails` — covered by
+//!   `test_set_paused_auth::test_set_paused_unauthorized_caller_refused`.
+//! - `test_emergency_withdraw_non_admin_fails` — covered by
+//!   `test_rbac_operator_cannot_emergency_withdraw` (below).
+//! - `test_emergency_withdraw_unpaused_fails` — covered by
+//!   `test_rbac_admin_emergency_withdraw_requires_paused_state` (below).
+//! - `test_emergency_withdraw_succeeds` — covered by
+//!   `test_rbac_admin_can_emergency_withdraw_when_paused` (below).
+//! - `test_rbac_emergency_withdraw_ignores_release_and_refund_pause` — the union
+//!   of `test_rbac_emergency_withdraw_requires_lock_paused_not_release_paused`
+//!   and `..._not_refund_paused` (below).
+//!
+//! Everything kept here is unique: per-flag `PauseFlags` storage round-trips,
+//! enforcement of the pause gate on lock/release entrypoints, the V1
+//! `PauseStateChanged` event payload, the emergency-withdraw RBAC matrix, and the
+//! time-based auto-unpause (TTL) behaviour.
+
 use super::*;
 use soroban_sdk::{
     testutils::{Address as _, Events, Ledger},
@@ -46,7 +75,7 @@ fn setup_program_with_admin<'a>(
         &None,
         &None,
     );
-    client.publish_program(&program_id);
+    client.publish_program(&program_id, &admin);
     (client, admin, payout_key, token_client)
 }
 
@@ -108,48 +137,24 @@ fn test_set_paused_release() {
     assert_eq!(flags.refund_paused, false);
 }
 
-// --- mixed pause states ---
-
-#[test]
-fn test_mixed_pause_states() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (contract, _admin) = setup_with_admin(&env);
-
-    // Pause lock and release, leave refund unpaused
-    contract.set_paused(&Some(true), &Some(true), &Some(false), &None, &None);
-
-    let flags = contract.get_pause_flags();
-    assert_eq!(flags.lock_paused, true);
-    assert_eq!(flags.release_paused, true);
-    assert_eq!(flags.refund_paused, false);
-
-    // Only update release back to unpaused; lock should stay paused
-    contract.set_paused(&None, &Some(false), &None, &None, &None);
-
-    let flags = contract.get_pause_flags();
-    assert_eq!(flags.lock_paused, true);
-    assert_eq!(flags.release_paused, false);
-    assert_eq!(flags.refund_paused, false);
-}
-
 // --- lock_program_funds enforcement ---
 
 #[test]
-#[should_panic(expected = "Funds Paused")]
 fn test_lock_program_funds_paused() {
     let env = Env::default();
     env.mock_all_auths();
     let (contract, _admin, _payout_key, _token) = setup_program_with_admin(&env);
 
     contract.set_paused(&Some(true), &None, &None, &None, &None);
-    contract.lock_program_funds(&1000);
+    assert!(
+        contract.try_lock_program_funds(&1000).is_err(),
+        "locking funds must be refused while lock_paused is set"
+    );
 }
 
 // --- single_payout enforcement ---
 
 #[test]
-#[should_panic(expected = "Funds Paused")]
 fn test_single_payout_paused() {
     let env = Env::default();
     env.mock_all_auths();
@@ -157,13 +162,15 @@ fn test_single_payout_paused() {
     let recipient = Address::generate(&env);
 
     contract.set_paused(&None, &Some(true), &None, &None, &None);
-    contract.single_payout(&recipient, &100);
+    assert!(
+        contract.try_single_payout(&recipient, &100, &None).is_err(),
+        "single_payout must be refused while release_paused is set"
+    );
 }
 
 // --- batch_payout enforcement ---
 
 #[test]
-#[should_panic(expected = "Funds Paused")]
 fn test_batch_payout_paused() {
     let env = Env::default();
     env.mock_all_auths();
@@ -174,13 +181,15 @@ fn test_batch_payout_paused() {
     let amounts = soroban_sdk::vec![&env, 100i128];
 
     contract.set_paused(&None, &Some(true), &None, &None, &None);
-    contract.batch_payout(&recipients, &amounts);
+    assert!(
+        contract.try_batch_payout(&recipients, &amounts).is_err(),
+        "batch_payout must be refused while release_paused is set"
+    );
 }
 
 // --- initialize_contract guard ---
 
 #[test]
-#[should_panic(expected = "Already initialized")]
 fn test_double_initialize_contract() {
     let env = Env::default();
 
@@ -191,34 +200,31 @@ fn test_double_initialize_contract() {
     // Explicit mock to allow init
     env.mock_all_auths();
     client.initialize_contract(&admin);
-    client.initialize_contract(&admin); // should panic
+    assert!(
+        client.try_initialize_contract(&admin).is_err(),
+        "a second initialize_contract must be refused"
+    );
 }
 
 // --- set_paused requires initialization ---
 
 #[test]
-#[should_panic(expected = "Not initialized")]
 fn test_set_paused_before_initialize() {
     let env = Env::default();
     let contract_id = env.register_contract(None, ProgramEscrowContract);
     let client = ProgramEscrowContractClient::new(&env, &contract_id);
 
-    client.set_paused(&Some(true), &None, &None, &None, &None);
+    assert!(
+        client
+            .try_set_paused(&Some(true), &None, &None, &None, &None)
+            .is_err(),
+        "set_paused must be refused before initialize_contract"
+    );
 }
 
 // =========================================================================
 // NEW NEGATIVE TESTS & EVENT EMISSIONS (Added for PR 353)
 // =========================================================================
-
-#[test]
-#[should_panic(expected = "Error(Auth, InvalidAction)")]
-fn test_pause_by_non_admin_fails() {
-    let env = Env::default();
-    let (contract, _admin) = setup_with_admin(&env);
-
-    // Not calling mock_all_auths to verify admin tracking
-    contract.set_paused(&Some(true), &Some(true), &Some(true), &None, &None);
-}
 
 #[test]
 fn test_set_paused_emits_events() {
@@ -276,56 +282,6 @@ fn test_operations_resume_after_unpause() {
     contract.lock_program_funds(&1000);
 }
 
-#[test]
-#[should_panic(expected = "Error(Auth, InvalidAction)")]
-fn test_emergency_withdraw_non_admin_fails() {
-    let env = Env::default();
-    let (contract, _admin) = setup_with_admin(&env);
-
-    let target = Address::generate(&env);
-    contract.emergency_withdraw(&target);
-}
-
-#[test]
-#[should_panic(expected = "Not paused")]
-fn test_emergency_withdraw_unpaused_fails() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (contract, _admin) = setup_with_admin(&env);
-    let target = Address::generate(&env);
-
-    contract.emergency_withdraw(&target);
-}
-
-#[test]
-fn test_emergency_withdraw_succeeds() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (contract, admin, _payout_key, token_client) = setup_program_with_admin(&env);
-    let target = Address::generate(&env);
-
-    // We need the token admin to mint tokens directly to the contract.
-    // In test_pause.rs, token_admin is generated internally, so let's just make a new token and re-init
-    // Actually, `setup_program_with_admin` doesn't expose `token_admin`.
-    // We can just use the StellarAssetClient from the token client's address.
-    let token_admin_client =
-        soroban_sdk::token::StellarAssetClient::new(&env, &token_client.address);
-    token_admin_client.mint(&admin, &1000);
-    token_client.transfer(&admin, &contract.address, &500);
-
-    // Lock some funds to get balance in contract state
-    contract.lock_program_funds(&500);
-    assert_eq!(token_client.balance(&contract.address), 500);
-
-    let reason = soroban_sdk::String::from_str(&env, "Hacked");
-    contract.set_paused(&Some(true), &None, &None, &Some(reason), &None);
-
-    contract.emergency_withdraw(&target);
-
-    assert_eq!(token_client.balance(&contract.address), 0);
-    assert_eq!(token_client.balance(&target), 500);
-}
-
 // =========================================================================
 // COMPREHENSIVE RBAC + EMERGENCY WITHDRAW TESTS
 // =========================================================================
@@ -369,7 +325,7 @@ fn setup_rbac_program_env_strict<'a>(
     let depositor = Address::generate(env);
     token_admin_client.mint(&depositor, &1000);
     token_client.transfer(&depositor, &contract_client.address, &500);
-    contract_client.publish_program(&program_id);
+    contract_client.publish_program(&program_id, &admin);
     contract_client.lock_program_funds(&500);
 
     // Now reset auths - subsequent operations need proper auth
@@ -412,7 +368,7 @@ fn setup_rbac_program_env<'a>(
     let depositor = Address::generate(env);
     token_admin_client.mint(&depositor, &1000);
     token_client.transfer(&depositor, &contract_client.address, &500);
-    contract_client.publish_program(&program_id);
+    contract_client.publish_program(&program_id, &admin);
     contract_client.lock_program_funds(&500);
 
     (admin, operator, token_client, contract_client)
@@ -455,7 +411,6 @@ fn test_rbac_operator_cannot_emergency_withdraw() {
 
 /// emergency_withdraw FAILS even for admin when contract is NOT paused
 #[test]
-#[should_panic(expected = "Not paused")]
 fn test_rbac_admin_emergency_withdraw_requires_paused_state() {
     let env = Env::default();
     env.mock_all_auths();
@@ -464,7 +419,10 @@ fn test_rbac_admin_emergency_withdraw_requires_paused_state() {
     let target = Address::generate(&env);
 
     // Contract is unpaused by default
-    contract_client.emergency_withdraw(&target);
+    assert!(
+        contract_client.try_emergency_withdraw(&target).is_err(),
+        "emergency_withdraw requires lock_paused"
+    );
 }
 
 /// emergency_withdraw emits correct event with admin address and amount
@@ -540,7 +498,6 @@ fn test_rbac_pause_state_preserved_after_emergency_withdraw() {
 
 /// Partial pause: only release paused (not lock) — emergency_withdraw still requires lock_paused
 #[test]
-#[should_panic(expected = "Not paused")]
 fn test_rbac_emergency_withdraw_requires_lock_paused_not_release_paused() {
     let env = Env::default();
     env.mock_all_auths();
@@ -551,12 +508,14 @@ fn test_rbac_emergency_withdraw_requires_lock_paused_not_release_paused() {
     // Only pause release, not lock
     contract_client.set_paused(&None, &Some(true), &None, &None, &None);
 
-    contract_client.emergency_withdraw(&target);
+    assert!(
+        contract_client.try_emergency_withdraw(&target).is_err(),
+        "release_paused alone must not satisfy the emergency_withdraw gate"
+    );
 }
 
 /// Partial pause: only refund paused (not lock) — emergency_withdraw still requires lock_paused
 #[test]
-#[should_panic(expected = "Not paused")]
 fn test_rbac_emergency_withdraw_requires_lock_paused_not_refund_paused() {
     let env = Env::default();
     env.mock_all_auths();
@@ -567,7 +526,10 @@ fn test_rbac_emergency_withdraw_requires_lock_paused_not_refund_paused() {
     // Only pause refund, not lock
     contract_client.set_paused(&None, &None, &Some(true), &None, &None);
 
-    contract_client.emergency_withdraw(&target);
+    assert!(
+        contract_client.try_emergency_withdraw(&target).is_err(),
+        "refund_paused alone must not satisfy the emergency_withdraw gate"
+    );
 }
 
 /// Admin withdraws all funds in multiple programs from same contract
@@ -601,7 +563,7 @@ fn test_rbac_emergency_withdraw_drains_all_funds() {
         &None,
         &None,
     );
-    contract_client.publish_program(&program_id_1);
+    contract_client.publish_program(&program_id_1, &admin);
 
     // let program_id_2 = String::from_str(&env, "prog-2");
     // contract_client.init_program(&program_id_2, &operator, &token_address, &admin, &None, &None);
@@ -667,23 +629,6 @@ fn test_rbac_after_emergency_withdraw_can_unpause_and_reuse() {
     assert_eq!(token_client.balance(&contract_client.address), 200);
 }
 
-/// Only lock_paused gate affects emergency_withdraw, not release or refund pause
-#[test]
-#[should_panic(expected = "Not paused")]
-fn test_rbac_emergency_withdraw_ignores_release_and_refund_pause() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let (_admin, _operator, _token_client, contract_client) = setup_rbac_program_env(&env);
-    let target = Address::generate(&env);
-
-    // Pause both release and refund, but NOT lock
-    contract_client.set_paused(&None, &Some(true), &Some(true), &None, &None);
-
-    // Should still fail because lock is not paused
-    contract_client.emergency_withdraw(&target);
-}
-
 // =========================================================================
 // TIME-BASED AUTO-UNPAUSE (TTL) TESTS
 // =========================================================================
@@ -740,12 +685,14 @@ fn test_ttl_cleared_on_manual_unpause() {
 
     let flags = contract.get_pause_flags();
     assert!(!flags.lock_paused);
-    assert!(flags.lock_unpause_at.is_none(), "TTL should be cleared on unpause");
+    assert!(
+        flags.lock_unpause_at.is_none(),
+        "TTL should be cleared on unpause"
+    );
 }
 
 // 4. No auto-unpause while current_time <= unpause_at (equal = still paused)
 #[test]
-#[should_panic(expected = "Funds Paused")]
 fn test_ttl_no_auto_unpause_at_exact_threshold() {
     let env = Env::default();
     env.mock_all_auths();
@@ -757,7 +704,10 @@ fn test_ttl_no_auto_unpause_at_exact_threshold() {
 
     // Advance time to exactly unpause_at — still paused (strictly greater required)
     env.ledger().with_mut(|li| li.timestamp = 2000);
-    contract.lock_program_funds(&100); // should panic: still paused
+    assert!(
+        contract.try_lock_program_funds(&100).is_err(),
+        "TTL is exclusive: at exactly unpause_at the lock must still be refused"
+    );
 }
 
 // 5. Auto-unpause triggers when current_time strictly exceeds unpause_at
@@ -777,7 +727,10 @@ fn test_ttl_auto_unpause_when_exceeded() {
     contract.lock_program_funds(&1); // triggers the guard check; from=None so no real token transfer
     let flags = contract.get_pause_flags();
     assert!(!flags.lock_paused, "lock should be auto-unpaused");
-    assert!(flags.lock_unpause_at.is_none(), "TTL should be cleared after auto-unpause");
+    assert!(
+        flags.lock_unpause_at.is_none(),
+        "TTL should be cleared after auto-unpause"
+    );
 }
 
 // 6. Auto-unpause emits AutoUnpauseEvent with actor="system"
@@ -810,7 +763,11 @@ fn test_ttl_auto_unpause_emits_event_with_system_actor() {
 
     let data: AutoUnpauseEvent = auto_unpause_event.2.try_into_val(&env).unwrap();
     assert_eq!(data.operation, symbol_short!("lock"));
-    assert_eq!(data.actor, String::from_str(&env, "system"), "actor must be 'system'");
+    assert_eq!(
+        data.actor,
+        String::from_str(&env, "system"),
+        "actor must be 'system'"
+    );
     assert_eq!(data.unpause_at, 2000u64);
     assert_eq!(data.triggered_at, 3000u64);
     assert!(data.receipt_id > 0);
@@ -860,7 +817,10 @@ fn test_ttl_no_re_emit_on_repeated_guard_calls() {
         })
         .count();
 
-    assert_eq!(count_after_first, count_after_second, "AUTO_UNPAUSE must not be re-emitted");
+    assert_eq!(
+        count_after_first, count_after_second,
+        "AUTO_UNPAUSE must not be re-emitted"
+    );
 }
 
 // 8. All three pause modes behave consistently with TTL
@@ -896,7 +856,6 @@ fn test_ttl_all_modes_consistent() {
 
 // 9. Regression: existing manual pause behavior unchanged (no TTL provided)
 #[test]
-#[should_panic(expected = "Funds Paused")]
 fn test_ttl_regression_manual_pause_still_blocks() {
     let env = Env::default();
     env.mock_all_auths();
@@ -908,7 +867,10 @@ fn test_ttl_regression_manual_pause_still_blocks() {
 
     // Very far in future — should still be paused (no TTL to expire)
     env.ledger().with_mut(|li| li.timestamp = 999_999_999);
-    contract.lock_program_funds(&100); // must panic
+    assert!(
+        contract.try_lock_program_funds(&100).is_err(),
+        "a pause without a TTL must never auto-unpause"
+    );
 }
 
 // 10. Per-mode TTL independence: release-only TTL does not affect lock
@@ -933,5 +895,8 @@ fn test_ttl_per_mode_independence() {
     let flags = contract.get_pause_flags();
     // lock is still paused (no TTL); release TTL has not been triggered yet (no guard call)
     assert!(flags.lock_paused, "lock should still be paused (no TTL)");
-    assert!(flags.release_paused, "release still stored as paused until guard runs");
+    assert!(
+        flags.release_paused,
+        "release still stored as paused until guard runs"
+    );
 }

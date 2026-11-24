@@ -8144,7 +8144,21 @@ mod test_batch_operations;
 // of its MAX_BATCH_SIZE enforcement tests ever ran. Registered for #1877.
 #[cfg(test)]
 mod test_batch_limits;
-// #[cfg(test)] mod test_pause;
+// Pause suites were orphaned files (never declared as modules), so their
+// coverage never ran. Wired up for #2089 alongside the already-running
+// `test_granular_pause` / `test_pause_boundaries` / `test_set_paused_idempotency`
+// suites; duplicates with those suites were dropped from `test_pause` and the
+// surviving scenarios are noted in that file's header.
+#[cfg(test)]
+mod test_admin_reset;
+#[cfg(test)]
+mod test_circuit_breaker_timeout;
+#[cfg(test)]
+mod test_pause;
+#[cfg(test)]
+mod test_pause_event_migration;
+#[cfg(test)]
+mod test_read_only_mode;
 
 #[cfg(test)]
 #[cfg(any())] // pre-existing breakage: uses std in a no_std crate
