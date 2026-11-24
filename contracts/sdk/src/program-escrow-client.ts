@@ -1,14 +1,16 @@
 import {
-  Address,
   BASE_FEE,
   Contract,
-  nativeToScVal,
   scValToNative,
   SorobanRpc,
   TransactionBuilder,
   Keypair,
-  xdr,
 } from "@stellar/stellar-sdk";
+import {
+  ContractSpec,
+  PROGRAM_ESCROW_SPEC,
+  SEP41_TOKEN_SPEC,
+} from "./contract-spec";
 import {
   NetworkError,
   ValidationError,
@@ -22,6 +24,8 @@ export interface ProgramEscrowConfig {
   networkPassphrase: string;
   /** Signer used for simulation-only reads when a method has no signer argument. */
   sourceKeypair?: Keypair;
+  /** Optional custom contract spec. Defaults to `PROGRAM_ESCROW_SPEC`. */
+  spec?: ContractSpec;
 }
 
 export interface ProgramData {
@@ -119,9 +123,11 @@ export class ProgramEscrowClient {
   private contract: Contract;
   private server: SorobanRpc.Server;
   private config: ProgramEscrowConfig;
+  private spec: ContractSpec;
 
   constructor(config: ProgramEscrowConfig) {
     this.config = config;
+    this.spec = config.spec ?? PROGRAM_ESCROW_SPEC;
     try {
       this.contract = new Contract(config.contractId);
     } catch (error) {
@@ -133,6 +139,73 @@ export class ProgramEscrowClient {
     } catch (error) {
       // Allow server initialization to fail for testing
       this.server = null as any;
+    }
+  }
+
+  /**
+   * Returns the `ContractSpec` used by this client for argument encoding
+   * and read-only method detection.
+   */
+  getSpec(): ContractSpec {
+    return this.spec;
+  }
+
+  /**
+   * Generic spec-driven contract invocation.
+   *
+   * Encodes `namedArgs` using the contract spec. Read-only entrypoints
+   * (as declared in the spec) are simulated and their decoded return value
+   * is returned without submitting a transaction. State-changing entrypoints
+   * are simulated, assembled, signed with `sourceKeypair` (or
+   * `config.sourceKeypair`), submitted, and polled until finalized.
+   *
+   * Throws `ValidationError` listing allowed names if `method` is unknown
+   * or if `namedArgs` contains unknown or missing required argument names.
+   */
+  async invoke<T = any>(
+    method: string,
+    namedArgs: Record<string, unknown> = {},
+    sourceKeypair?: Keypair,
+  ): Promise<T> {
+    try {
+      const result = await this.invokeContract(
+        method,
+        namedArgs,
+        sourceKeypair,
+      );
+      return result as T;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Generic spec-driven simulation (read-only dry run).
+   *
+   * Encodes `namedArgs` using the contract spec and simulates the call
+   * without signing or submitting a transaction, even for state-changing
+   * entrypoints.
+   *
+   * Throws `ValidationError` listing allowed names if `method` is unknown
+   * or if `namedArgs` contains unknown or missing required argument names.
+   */
+  async simulate<T = any>(
+    method: string,
+    namedArgs: Record<string, unknown> = {},
+    sourceKeypair?: Keypair,
+  ): Promise<T> {
+    try {
+      const result = await this.invokeContract(
+        method,
+        namedArgs,
+        sourceKeypair,
+        this.contract,
+        this.spec,
+        true,
+      );
+      return result as T;
+    } catch (error) {
+      throw this.handleError(error);
     }
   }
 
@@ -156,7 +229,14 @@ export class ProgramEscrowClient {
     try {
       const result = await this.invokeContract(
         "init_program",
-        [programId, authorizedPayoutKey, tokenAddress, initialLiquidity],
+        {
+          program_id: programId,
+          authorized_payout_key: authorizedPayoutKey,
+          token_address: tokenAddress,
+          creator: sourceKeypair.publicKey(),
+          initial_liquidity: initialLiquidity > 0n ? initialLiquidity : null,
+          reference_hash: null,
+        },
         sourceKeypair,
       );
       return this.parseProgramData(result);
@@ -179,7 +259,7 @@ export class ProgramEscrowClient {
     try {
       const result = await this.invokeContract(
         "lock_program_funds",
-        [amount],
+        { amount },
         sourceKeypair,
       );
       return this.parseProgramData(result);
@@ -198,7 +278,7 @@ export class ProgramEscrowClient {
     try {
       const result = await this.invokeContract(
         "publish_program",
-        [programId, caller],
+        { program_id: programId, caller },
         sourceKeypair,
       );
       return this.parseProgramData(result);
@@ -216,9 +296,14 @@ export class ProgramEscrowClient {
     try {
       await this.invokeContract(
         "transfer",
-        [sourceKeypair.publicKey(), this.config.contractId, amount],
+        {
+          from: sourceKeypair.publicKey(),
+          to: this.config.contractId,
+          amount,
+        },
         sourceKeypair,
         new Contract(program.token_address),
+        SEP41_TOKEN_SPEC,
       );
     } catch (error) {
       throw this.handleError(error);
@@ -263,7 +348,7 @@ export class ProgramEscrowClient {
     try {
       const result = await this.invokeContract(
         "batch_payout",
-        [recipients, amounts],
+        { recipients, amounts },
         sourceKeypair,
       );
       return this.parseProgramData(result);
@@ -289,7 +374,7 @@ export class ProgramEscrowClient {
     try {
       const result = await this.invokeContract(
         "single_payout",
-        [recipient, amount],
+        { recipient, amount },
         sourceKeypair,
       );
       return this.parseProgramData(result);
@@ -303,7 +388,7 @@ export class ProgramEscrowClient {
    */
   async getProgramInfo(): Promise<ProgramData> {
     try {
-      const result = await this.invokeContract("get_program_info", []);
+      const result = await this.invokeContract("get_program_info", {});
       return this.parseProgramData(result);
     } catch (error) {
       throw this.handleError(error);
@@ -315,7 +400,7 @@ export class ProgramEscrowClient {
    */
   async getRemainingBalance(): Promise<bigint> {
     try {
-      const result = await this.invokeContract("get_remaining_balance", []);
+      const result = await this.invokeContract("get_remaining_balance", {});
       return BigInt(result);
     } catch (error) {
       throw this.handleError(error);
@@ -340,7 +425,11 @@ export class ProgramEscrowClient {
     try {
       const result = await this.invokeContract(
         "create_program_release_schedule",
-        [recipient, amount, releaseTimestamp],
+        {
+          recipient,
+          amount,
+          release_timestamp: releaseTimestamp,
+        },
         sourceKeypair,
       );
       return this.parseReleaseSchedule(result);
@@ -356,7 +445,7 @@ export class ProgramEscrowClient {
     try {
       const result = await this.invokeContract(
         "trigger_program_releases",
-        [null],
+        { epoch_id: null },
         sourceKeypair,
       );
       return Number(result);
@@ -433,11 +522,20 @@ export class ProgramEscrowClient {
 
   private async invokeContract(
     method: string,
-    args: any[],
+    args: Record<string, unknown> | unknown[],
     sourceKeypair?: Keypair,
     contract: Contract = this.contract,
+    spec: ContractSpec = this.spec,
+    forceSimulate: boolean = false,
   ): Promise<any> {
     try {
+      const namedArgs = Array.isArray(args)
+        ? this.positionalToNamedArgs(method, args, spec)
+        : args;
+
+      // Validate and encode arguments via the contract spec before touching RPC.
+      const encodedArgs = spec.encodeArgs(method, namedArgs);
+
       const signer = sourceKeypair ?? this.config.sourceKeypair;
       if (!signer) {
         throw new ValidationError(
@@ -451,9 +549,7 @@ export class ProgramEscrowClient {
         fee: BASE_FEE,
         networkPassphrase: this.config.networkPassphrase,
       })
-        .addOperation(
-          contract.call(method, ...this.encodeArguments(method, args, signer)),
-        )
+        .addOperation(contract.call(method, ...encodedArgs))
         .setTimeout(30)
         .build();
 
@@ -462,11 +558,7 @@ export class ProgramEscrowClient {
         throw new Error(`Soroban simulation failed for ${method}: ${simulation.error}`);
       }
 
-      const readOnlyMethods = new Set([
-        "get_program_info",
-        "get_remaining_balance",
-      ]);
-      if (readOnlyMethods.has(method)) {
+      if (forceSimulate || spec.isReadOnly(method)) {
         if (!simulation.result) {
           throw new Error(`Soroban simulation returned no result for ${method}`);
         }
@@ -514,49 +606,19 @@ export class ProgramEscrowClient {
     }
   }
 
-  private encodeArguments(method: string, args: any[], signer: Keypair): xdr.ScVal[] {
-    const address = (value: string) => Address.fromString(value).toScVal();
-    const i128 = (value: bigint) => nativeToScVal(value, { type: "i128" });
-    const string = (value: string) => nativeToScVal(value, { type: "string" });
-    const vector = (values: xdr.ScVal[]) => xdr.ScVal.scvVec(values);
-
-    switch (method) {
-      case "init_program":
-        return [
-          string(args[0]),
-          address(args[1]),
-          address(args[2]),
-          address(signer.publicKey()),
-          args[3] > 0n ? i128(args[3]) : xdr.ScVal.scvVoid(),
-          xdr.ScVal.scvVoid(),
-        ];
-      case "lock_program_funds":
-        return [i128(args[0])];
-      case "batch_payout":
-        return [
-          vector(args[0].map((value: string) => address(value))),
-          vector(args[1].map((value: bigint) => i128(value))),
-        ];
-      case "single_payout":
-        return [address(args[0]), i128(args[1])];
-      case "publish_program":
-        return [string(args[0]), address(args[1])];
-      case "transfer":
-        return [address(args[0]), address(args[1]), i128(args[2])];
-      case "get_program_info":
-      case "get_remaining_balance":
-        return [];
-      case "trigger_program_releases":
-        return [xdr.ScVal.scvVoid()];
-      case "create_program_release_schedule":
-        return [
-          address(args[0]),
-          i128(args[1]),
-          nativeToScVal(BigInt(args[2]), { type: "u64" }),
-        ];
-      default:
-        throw new Error(`No Soroban argument encoder is defined for ${method}`);
-    }
+  private positionalToNamedArgs(
+    method: string,
+    args: unknown[],
+    spec: ContractSpec,
+  ): Record<string, unknown> {
+    const ep = spec.getMethod(method);
+    const named: Record<string, unknown> = {};
+    ep.parameters.forEach((param, idx) => {
+      if (idx < args.length) {
+        named[param.name] = args[idx];
+      }
+    });
+    return named;
   }
 
   private handleError(error: any): Error {
