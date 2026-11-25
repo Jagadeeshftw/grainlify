@@ -189,18 +189,6 @@ pub(crate) fn lock_funds_logic(
     }
     soroban_sdk::log!(&env, "fee ok");
 
-    let mut depositor_index: Vec<u64> = env
-        .storage()
-        .persistent()
-        .get(&DataKey::DepositorIndex(depositor.clone()))
-        .unwrap_or(Vec::new(&env));
-    depositor_index.push_back(bounty_id);
-    env.storage().persistent().set(
-        &DataKey::DepositorIndex(depositor.clone()),
-        &depositor_index,
-    );
-    renew_depositor_index(&env, &depositor, false);
-
     // Emit value allows for off-chain indexing
     emit_funds_locked(
         &env,
@@ -1022,6 +1010,7 @@ pub fn batch_lock_funds(env: Env, items: Vec<LockFundsItem>) -> Result<u32, Erro
                 archived_at: None,
             };
 
+            crate::index::sync_status(&env, item.bounty_id, escrow.status);
             env.storage()
                 .persistent()
                 .set(&DataKey::Escrow(item.bounty_id), &escrow);

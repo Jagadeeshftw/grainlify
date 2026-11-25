@@ -313,6 +313,7 @@ fn redeem(env: &Env, ticket_id: u64, claimer: Address) -> Result<(), Error> {
     if escrow.remaining_amount == 0 {
         escrow.status = EscrowStatus::Released;
     }
+    crate::index::sync_status(env, bounty_id, escrow.status);
     env.storage()
         .persistent()
         .set(&DataKey::Escrow(bounty_id), &escrow);

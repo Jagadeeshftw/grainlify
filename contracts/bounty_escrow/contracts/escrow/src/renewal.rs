@@ -191,6 +191,7 @@ pub fn create_next_cycle(
         archived: false,
         archived_at: None,
     };
+    crate::index::sync_status(&env, new_bounty_id, new_escrow.status);
     env.storage()
         .persistent()
         .set(&DataKey::Escrow(new_bounty_id), &new_escrow);
