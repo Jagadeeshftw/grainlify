@@ -252,7 +252,7 @@ mod test {
         // Initialize program
         let program_id = String::from_str(&env, "prog1");
         client.init_program(&program_id, &admin, &token_addr, &admin, &None, &None);
-        client.publish_program(&program_id);
+        client.publish_program(&program_id, &admin);
 
         // Open circuit
         env.as_contract(&client.address, || {
@@ -260,7 +260,7 @@ mod test {
         });
 
         // Try single payout - should panic
-        let result = client.try_single_payout(&user, &100i128);
+        let result = client.try_single_payout(&user, &100i128, &None);
         assert!(result.is_err());
     }
 
@@ -276,7 +276,7 @@ mod test {
 
         let program_id = String::from_str(&env, "prog1");
         client.init_program(&program_id, &admin, &token_addr, &admin, &None, &None);
-        client.publish_program(&program_id);
+        client.publish_program(&program_id, &admin);
 
         // Open circuit
         env.as_contract(&client.address, || {

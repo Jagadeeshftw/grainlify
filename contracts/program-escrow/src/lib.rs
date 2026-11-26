@@ -288,17 +288,15 @@ pub mod chaos {
 
 #[cfg(test)]
 mod test_token_math;
-// #[cfg(test)] mod test_circuit_breaker_audit; // pre-existing breakage
 // #[cfg(test)] mod error_recovery_tests; // pre-existing breakage
 mod malicious_reentrant;
 mod reentrancy_tests;
-#[cfg(any())] // pre-existing syntax error in file
-mod test_circuit_breaker_enforcement;
-#[cfg(any())] // pre-existing syntax error in file
+#[cfg(test)]
 mod test_circuit_breaker_enforcement;
 #[cfg(test)]
-#[cfg(any())] // pre-existing breakage: uses std
 mod test_circuit_breaker_threshold;
+#[cfg(test)]
+mod test_circuit_breaker_audit;
 // #[cfg(test)] mod test_dispute_resolution; // pre-existing breakage
 mod fot_routing;
 mod reputation;
@@ -8170,14 +8168,10 @@ mod rbac_tests;
 
 #[cfg(test)]
 mod test_set_paused_auth;
-// Pre-existing breakage: receipt storage path incomplete / CB enforcement suite
-// out of sync with current guard ordering. Keep gated until repaired upstream.
+// Pre-existing breakage: receipt storage path incomplete.
 #[cfg(test)]
 #[cfg(any())]
 mod test_batch_receipts;
-#[cfg(test)]
-#[cfg(any())]
-mod test_circuit_breaker_enforcement;
 #[cfg(test)]
 #[cfg(any())]
 mod test_event_ordering;
