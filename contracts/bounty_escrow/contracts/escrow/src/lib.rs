@@ -140,9 +140,11 @@ pub(crate) mod claim_tickets;
 pub(crate) mod claims;
 pub(crate) mod fee;
 pub(crate) mod gas;
+pub(crate) mod index;
 pub(crate) mod lock;
 pub(crate) mod participant_filter;
 pub(crate) mod pause_freeze;
+pub(crate) mod query;
 pub(crate) mod refund;
 pub(crate) mod release;
 pub(crate) mod renewal;
@@ -413,7 +415,7 @@ pub struct BountyTaggingMetadata {
 }
 
 #[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EscrowStatus {
     Draft,
     Locked,
@@ -707,6 +709,12 @@ pub enum DataKey {
     OracleEnabled,
     /// Marks a bounty refunded through oracle attestation.
     OracleRefundUsed(u64),
+    /// Per-status index of bounty_ids for regular (non-anonymous) escrows.
+    ///
+    /// The `u32` payload is the [`EscrowStatus`] discriminant as defined by
+    /// [`crate::index::status_discriminant`]. Appended so existing DataKey
+    /// discriminants remain stable for deployed contracts.
+    StatusIndex(u32),
 }
 
 #[contracttype]
@@ -1553,6 +1561,74 @@ impl BountyEscrowContract {
             .len()
     }
 
+    /// Paginated, read-only query over escrows filtered by `status`.
+    ///
+    /// Backed by the `StatusIndex` secondary index maintained at write time.
+    /// `limit` is clamped to `MAX_QUERY_PAGE_SIZE` (50); out-of-range offsets
+    /// return an empty page. Anonymous escrows are excluded (they have no
+    /// address-bearing [`Escrow`] record).
+    pub fn query_escrows_by_status(
+        env: Env,
+        status: EscrowStatus,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<EscrowWithId> {
+        crate::query::query_by_status(&env, status, offset, limit)
+    }
+
+    /// Paginated bounty ids for a single escrow status (lightweight variant
+    /// of [`Self::query_escrows_by_status`] that skips record hydration).
+    pub fn get_escrow_ids_by_status(
+        env: Env,
+        status: EscrowStatus,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<u64> {
+        crate::query::ids_by_status(&env, status, offset, limit)
+    }
+
+    /// Paginated, read-only query over escrows filtered by `depositor`.
+    ///
+    /// Backed by `DataKey::DepositorIndex`, maintained at write time.
+    pub fn query_escrows_by_depositor(
+        env: Env,
+        depositor: Address,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<EscrowWithId> {
+        crate::query::query_by_depositor(&env, &depositor, offset, limit)
+    }
+
+    /// Paginated, read-only query over escrows with
+    /// `min_amount <= escrow.amount <= max_amount` (bounds inclusive).
+    ///
+    /// No dedicated index exists for amount; the scan walks `EscrowIndex`
+    /// and is hard-bounded per call — see `query` module docs for the cost
+    /// model. Narrow with the status/depositor queries for large datasets.
+    pub fn query_escrows_by_amount(
+        env: Env,
+        min_amount: i128,
+        max_amount: i128,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<EscrowWithId> {
+        crate::query::query_by_amount(&env, min_amount, max_amount, offset, limit)
+    }
+
+    /// Paginated, read-only query over escrows with
+    /// `min_deadline <= escrow.deadline <= max_deadline` (bounds inclusive).
+    ///
+    /// Same bounded-scan cost model as [`Self::query_escrows_by_amount`].
+    pub fn query_escrows_by_deadline(
+        env: Env,
+        min_deadline: u64,
+        max_deadline: u64,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<EscrowWithId> {
+        crate::query::query_by_deadline(&env, min_deadline, max_deadline, offset, limit)
+    }
+
     pub fn issue_capability(
         env: Env,
         owner: Address,
@@ -2127,6 +2203,9 @@ impl BountyEscrowContract {
         bounty_id: u64,
         escrow: &Escrow,
     ) -> Result<(), Error> {
+        // Keep the status secondary index in sync before the record is
+        // overwritten; `sync_status` reads the previously stored status.
+        crate::index::sync_status(env, bounty_id, escrow.status);
         env.storage()
             .persistent()
             .set(&DataKey::Escrow(bounty_id), escrow);
@@ -2175,6 +2254,8 @@ mod test_invariants;
 mod test_lifecycle;
 #[cfg(test)]
 mod test_metadata;
+#[cfg(test)]
+mod test_query_filters;
 
 // Boundary coverage for `update_metadata` numeric/time arguments.
 //
