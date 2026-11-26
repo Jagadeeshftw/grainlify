@@ -254,6 +254,7 @@ pub fn claim(env: Env, bounty_id: u64) -> Result<(), Error> {
     if escrow.remaining_amount == 0 {
         escrow.status = EscrowStatus::Released;
     }
+    crate::index::sync_status(&env, bounty_id, escrow.status);
     env.storage()
         .persistent()
         .set(&DataKey::Escrow(bounty_id), &escrow);
@@ -368,6 +369,7 @@ pub fn claim_with_capability(
     if escrow.remaining_amount == 0 {
         escrow.status = EscrowStatus::Released;
     }
+    crate::index::sync_status(&env, bounty_id, escrow.status);
     env.storage()
         .persistent()
         .set(&DataKey::Escrow(bounty_id), &escrow);

@@ -288,6 +288,9 @@ pub mod chaos {
 
 #[cfg(test)]
 mod test_token_math;
+// #[cfg(test)] mod test_circuit_breaker_audit; // pre-existing breakage
+#[cfg(test)]
+mod error_recovery_tests;
 // #[cfg(test)] mod error_recovery_tests; // pre-existing breakage
 mod malicious_reentrant;
 mod reentrancy_tests;

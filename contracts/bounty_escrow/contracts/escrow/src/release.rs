@@ -156,6 +156,7 @@ pub(crate) fn release_funds_logic(
     escrow.status = EscrowStatus::Released;
     escrow.remaining_amount = 0;
     invariants::assert_escrow(&env, &escrow);
+    crate::index::sync_status(&env, bounty_id, escrow.status);
     env.storage()
         .persistent()
         .set(&DataKey::Escrow(bounty_id), &escrow);
@@ -333,6 +334,7 @@ pub(crate) fn release_with_conversion_logic(
     escrow.status = EscrowStatus::Released;
     escrow.remaining_amount = 0;
     invariants::assert_escrow(&env, &escrow);
+    crate::index::sync_status(&env, bounty_id, escrow.status);
     env.storage()
         .persistent()
         .set(&DataKey::Escrow(bounty_id), &escrow);
@@ -690,6 +692,7 @@ pub fn release_with_capability(
     if escrow.remaining_amount == 0 {
         escrow.status = EscrowStatus::Released;
     }
+    crate::index::sync_status(&env, bounty_id, escrow.status);
     env.storage()
         .persistent()
         .set(&DataKey::Escrow(bounty_id), &escrow);
@@ -803,6 +806,7 @@ pub fn partial_release(
         escrow.status = EscrowStatus::Released;
     }
 
+    crate::index::sync_status(&env, bounty_id, escrow.status);
     env.storage()
         .persistent()
         .set(&DataKey::Escrow(bounty_id), &escrow);
@@ -995,6 +999,7 @@ pub fn batch_release_funds(env: Env, items: Vec<ReleaseFundsItem>) -> Result<u32
             let amount = escrow.amount;
             escrow.status = EscrowStatus::Released;
             escrow.remaining_amount = 0;
+            crate::index::sync_status(&env, item.bounty_id, escrow.status);
             env.storage()
                 .persistent()
                 .set(&DataKey::Escrow(item.bounty_id), &escrow);
@@ -1213,6 +1218,7 @@ pub fn execute_queued_release(env: Env, bounty_id: u64) -> Result<(), Error> {
         escrow.status = EscrowStatus::Released;
         escrow.remaining_amount = 0;
         invariants::assert_escrow(&env, &escrow);
+        crate::index::sync_status(&env, bounty_id, escrow.status);
         env.storage()
             .persistent()
             .set(&DataKey::Escrow(bounty_id), &escrow);

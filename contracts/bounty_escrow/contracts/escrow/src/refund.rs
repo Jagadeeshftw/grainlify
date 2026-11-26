@@ -534,6 +534,7 @@ pub fn refund(env: Env, bounty_id: u64) -> Result<(), Error> {
     });
 
     // Save updated escrow
+    crate::index::sync_status(&env, bounty_id, escrow.status);
     env.storage()
         .persistent()
         .set(&DataKey::Escrow(bounty_id), &escrow);
@@ -691,6 +692,7 @@ fn execute_conditional_refund(
         timestamp: now,
         mode: RefundMode::Full,
     });
+    crate::index::sync_status(env, bounty_id, escrow.status);
     env.storage()
         .persistent()
         .set(&DataKey::Escrow(bounty_id), &escrow);
@@ -1072,6 +1074,7 @@ pub fn refund_with_capability(
             RefundMode::Partial
         },
     });
+    crate::index::sync_status(&env, bounty_id, escrow.status);
     env.storage()
         .persistent()
         .set(&DataKey::Escrow(bounty_id), &escrow);
