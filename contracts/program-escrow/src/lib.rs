@@ -1129,7 +1129,9 @@ impl ProgramEscrowContract {
             if meta.custom_fields.len() > MAX_PROGRAM_METADATA_CUSTOM_FIELDS {
                 panic_with_error!(&env, &ContractError::MetadataUpdateFailed);
             }
-            validate_metadata_custom_fields(meta);
+            if let Err(err) = validate_metadata_custom_fields(meta) {
+                panic_with_error!(&env, &err);
+            }
         }
 
         let mut program_data = Self::initialize_program(
@@ -3040,9 +3042,8 @@ impl ProgramEscrowContract {
     ///
     /// # Panics
     /// - `"RateLimitExceeded"` if the delegate rate limit is exceeded.
-    /// - `"CustomFieldsLimitExceeded"` if `metadata.custom_fields.len() > MAX_CUSTOM_FIELDS`.
-    /// - `"CustomFieldKeyTooLong"` if any key exceeds `MAX_CUSTOM_FIELD_KEY_LEN` bytes.
-    /// - `"CustomFieldValueTooLong"` if any value exceeds `MAX_CUSTOM_FIELD_VALUE_LEN` bytes.
+    /// - `ContractError::MetadataUpdateFailed` if any `custom_fields` limit is
+    ///   exceeded (count, key length, value length or aggregate payload).
     pub fn update_program_metadata(
         env: Env,
         program_id: String,
@@ -3065,7 +3066,9 @@ impl ProgramEscrowContract {
         // Bounds storage size regardless of who calls, preventing unbounded
         // storage growth even via the admin path.
         // Shared with init_program_with_metadata; keep both paths in sync.
-        validate_metadata_custom_fields(&metadata);
+        if let Err(err) = validate_metadata_custom_fields(&metadata) {
+            panic_with_error!(&env, &err);
+        }
 
         // ── (2) Rate-limit delegate-invoked writes ────────────────────────────
         // Admin and program owner bypass this check — they are trusted parties
@@ -3800,7 +3803,8 @@ impl ProgramEscrowContract {
 
     pub fn reset_circuit_breaker(env: Env, caller: Address) {
         caller.require_auth();
-        let admin = error_recovery::get_circuit_admin(&env).expect("Circuit admin not set");
+        let admin = error_recovery::get_circuit_admin(&env)
+            .unwrap_or_else(|| panic_with_error!(&env, &ContractError::CircuitBreakerAdminNotSet));
         if caller != admin {
             panic_with_error!(&env, &ContractError::Unauthorized);
         }
@@ -3816,7 +3820,8 @@ impl ProgramEscrowContract {
         recovery_window: u64,
     ) {
         caller.require_auth();
-        let admin = error_recovery::get_circuit_admin(&env).expect("Circuit admin not set");
+        let admin = error_recovery::get_circuit_admin(&env)
+            .unwrap_or_else(|| panic_with_error!(&env, &ContractError::CircuitBreakerAdminNotSet));
         if caller != admin {
             panic_with_error!(&env, &ContractError::Unauthorized);
         }
@@ -3871,7 +3876,8 @@ impl ProgramEscrowContract {
     /// Emits a `cb_open` audit event with reason `"emergency"`.
     pub fn emergency_open_circuit(env: Env, admin: Address) {
         admin.require_auth();
-        let stored = error_recovery::get_circuit_admin(&env).expect("Circuit admin not set");
+        let stored = error_recovery::get_circuit_admin(&env)
+            .unwrap_or_else(|| panic_with_error!(&env, &ContractError::CircuitBreakerAdminNotSet));
         if admin != stored {
             panic_with_error!(&env, &ContractError::Unauthorized);
         }

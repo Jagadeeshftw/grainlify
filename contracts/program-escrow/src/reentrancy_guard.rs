@@ -4,8 +4,9 @@
 //! Soroban rolls back all state on panic or `Err` return, so the flag
 //! cannot get permanently stuck.
 
+use crate::errors::ContractError;
 use crate::DataKey;
-use soroban_sdk::Env;
+use soroban_sdk::{panic_with_error, Env};
 
 /// State constants for the reentrancy guard.
 /// Using non-zero values prevents default-zero value confusion.
@@ -18,7 +19,7 @@ const ENTERED: u32 = 2;
 /// this function panics — indicating a re-entrant call.
 ///
 /// # Panics
-/// Panics with `"Reentrancy detected"` if the guard is already held.
+/// Panics with `ContractError::InvalidState` if the guard is already held.
 pub fn acquire(env: &Env) {
     let status: u32 = env
         .storage()
@@ -27,7 +28,7 @@ pub fn acquire(env: &Env) {
         .unwrap_or(NOT_ENTERED);
 
     if status != NOT_ENTERED {
-        panic!("Reentrancy detected");
+        panic_with_error!(env, &ContractError::InvalidState);
     }
 
     env.storage()
@@ -62,7 +63,7 @@ pub fn set_entered(env: &Env) {
 }
 
 /// Assert the guard is NOT_ENTERED without acquiring it.
-/// Panics with `"Reentrancy detected"` if already entered.
+/// Panics with `ContractError::InvalidState` if already entered.
 #[inline(always)]
 pub fn check_not_entered(env: &Env) {
     let status: u32 = env
@@ -71,7 +72,7 @@ pub fn check_not_entered(env: &Env) {
         .get(&DataKey::ReentrancyGuard)
         .unwrap_or(NOT_ENTERED);
     if status != NOT_ENTERED {
-        panic!("Reentrancy detected");
+        panic_with_error!(env, &ContractError::InvalidState);
     }
 }
 

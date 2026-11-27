@@ -5,7 +5,11 @@
 //! cannot get permanently stuck.
 
 use crate::DataKey;
-use soroban_sdk::Env;
+use soroban_sdk::{panic_with_error, Env};
+
+// Re-entrancy surfaces to clients as the callback-depth error: the guard
+// exists to stop recursive token callbacks from re-entering the contract.
+use crate::Error;
 
 /// State constants for the reentrancy guard.
 /// Using non-zero values prevents default-zero value confusion.
@@ -15,10 +19,11 @@ const ENTERED: u32 = 2;
 /// Acquire the reentrancy guard.
 ///
 /// Sets a u32 flag (ENTERED) in instance storage. If the flag is already set to ENTERED,
-/// this function panics — indicating a re-entrant call.
+/// this function panics with [`Error::CallbackDepthExceeded`] — indicating a
+/// re-entrant call.
 ///
 /// # Panics
-/// Panics with `"Reentrancy detected"` if the guard is already held.
+/// Panics with `Error::CallbackDepthExceeded` if the guard is already held.
 pub fn acquire(env: &Env) {
     let status: u32 = env
         .storage()
@@ -27,7 +32,7 @@ pub fn acquire(env: &Env) {
         .unwrap_or(NOT_ENTERED);
 
     if status != NOT_ENTERED {
-        panic!("Reentrancy detected");
+        panic_with_error!(env, &Error::CallbackDepthExceeded);
     }
 
     env.storage()

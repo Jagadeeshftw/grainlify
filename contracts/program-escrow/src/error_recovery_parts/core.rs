@@ -21,7 +21,8 @@
 // All circuit breaker state is stored in persistent storage keyed by
 // `CircuitBreakerKey::*`.
 
-use soroban_sdk::{contracttype, symbol_short, Address, Env, String, Symbol, Vec};
+use crate::errors::ContractError;
+use soroban_sdk::{contracttype, panic_with_error, symbol_short, Address, Env, String, Symbol, Vec};
 
 /// Maximum number of full failure records retained in hot contract storage.
 /// Older records are moved into compact per-program archives.
@@ -506,7 +507,7 @@ pub fn reset_circuit_breaker(env: &Env, admin: &Address) {
         Some(ref a) if a == admin => {
             admin.require_auth();
         }
-        _ => panic!("Unauthorized: only registered circuit breaker admin can reset"),
+        _ => panic_with_error!(env, &ContractError::Unauthorized),
     }
 
     let state = get_state(env);
@@ -534,7 +535,7 @@ pub fn set_circuit_admin(env: &Env, new_admin: Address, caller: Option<Address>)
             Some(ref c) if c == current => {
                 current.require_auth();
             }
-            _ => panic!("Unauthorized: only current admin can change circuit breaker admin"),
+            _ => panic_with_error!(env, &ContractError::Unauthorized),
         }
     }
 
@@ -567,7 +568,10 @@ pub fn get_error_log(env: &Env) -> soroban_sdk::Vec<ErrorEntry> {
 /// This is intended for admin cleanup of long-running programs. The circuit
 /// admin must authorize the call.
 pub fn archive_circuit_breaker_logs(env: &Env, program_id: String) -> CompactFailureArchive {
-    let admin = get_circuit_admin(env).expect("Circuit admin not set");
+    // Circuit admin must be registered before any breaker operation; a missing
+    // admin is a configuration error surfaced as a typed error.
+    let admin = get_circuit_admin(env)
+        .unwrap_or_else(|| panic_with_error!(env, &ContractError::CircuitBreakerAdminNotSet));
     admin.require_auth();
 
     let mut log = get_error_log(env);
@@ -575,7 +579,10 @@ pub fn archive_circuit_breaker_logs(env: &Env, program_id: String) -> CompactFai
     let mut archived = Vec::new(env);
 
     while log.len() > 0 {
-        let entry = log.get(0).unwrap();
+        // Head of a non-empty log; absence would be an invariant violation.
+        let entry = log
+            .get(0)
+            .unwrap_or_else(|| panic_with_error!(env, &ContractError::EntryNotFound));
         log.remove(0);
         if entry.program_id == program_id {
             archived.push_back(entry);
